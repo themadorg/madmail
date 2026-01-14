@@ -1,0 +1,53 @@
+# gitignore.io
+*.o
+*.a
+*.so
+_obj
+_test
+*.[568vq]
+[568vq].out
+*.cgo1.go
+*.cgo2.c
+_cgo_defun.c
+_cgo_gotypes.go
+_cgo_export.*
+_testmain.go
+*.exe
+*.exe~
+*.test
+*.prof
+**/.envrc
+**/.DS_Store
+.env
+
+# Tests coverage
+*.out
+
+# Compiled binaries
+cmd/maddy/maddy
+cmd/maddy-*-helper/maddy-*-helper
+/maddy
+
+# Man pages
+docs/man/*.1
+docs/man/*.5
+
+# Certificates and private keys.
+*.pem
+*.crt
+*.key
+
+# Some directories that may be created during test-runs
+# in repo directory.
+cmd/maddy/*mtasts-cache
+cmd/maddy/*queue
+
+build/
+
+tests/maddy.cover
+tests/maddy
+
+.idea/
+tmp
+
+publish.sh

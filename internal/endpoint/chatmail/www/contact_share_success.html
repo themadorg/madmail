@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لینک ایجاد شد! - {{.WebDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <style>
+        .success-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid rgba(46, 204, 113, 0.2);
+            text-align: center;
+            max-width: 600px;
+            margin: 40px auto;
+        }
+
+        .share-url {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            border-radius: 12px;
+            font-family: monospace;
+            font-size: 1.2rem;
+            margin: 25px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            word-break: break-all;
+            color: var(--accent-color);
+            direction: ltr;
+        }
+
+        .copy-btn {
+            background: var(--primary-gradient);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: inherit;
+        }
+    </style>
+</head>
+
+<body>
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+        <li><a href="/share">اشتراک‌گذاری</a></li>
+        <li><a href="/info.html">راهنما</a></li>
+        <li><a href="/security.html">امنیت</a></li>
+        <li><a href="/deploy.html">راه‌اندازی</a></li>
+    </ul>
+
+    <div class="success-card">
+        <div style="font-size: 4rem; color: var(--success-color); margin-bottom: 20px;">✓</div>
+        <h2>لینک با موفقیت ایجاد شد!</h2>
+        <p>لینک اختصاصی شما آماده است. آن را با هر کسی که می‌خواهید با شما چت کند به اشتراک بگذارید.</p>
+
+        <div class="share-url" id="linkText" dir="ltr">
+            https://{{.WebDomain | cleanDomain}}/{{.Custom.Slug}}
+        </div>
+
+        <button class="copy-btn" onclick="copyLink()">کپی لینک</button>
+        <div id="copyMsg" style="margin-top: 10px; font-size: 0.9rem; color: var(--success-color); display: none;">در
+            حافظه کپی شد!</div>
+
+        <div style="margin-top: 40px;">
+            <a href="/{{.Custom.Slug}}" class="cta-button">مشاهده صفحه شما</a>
+        </div>
+    </div>
+
+    <script>
+        function copyLink() {
+            var link = document.getElementById('linkText').innerText;
+            navigator.clipboard.writeText(link.trim());
+            var msg = document.getElementById('copyMsg');
+            msg.style.display = 'block';
+            setTimeout(function () {
+                msg.style.display = 'none';
+            }, 2000);
+        }
+    </script>
+</body>
+
+</html>

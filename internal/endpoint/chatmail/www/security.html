@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>امنیت — {{.MailDomain}}</title>
+    <link rel="stylesheet" href="./main.css">
+    <style>
+        body {
+            font-family: Tahoma, Arial, sans-serif;
+            text-align: center;
+        }
+
+        #menu {
+            justify-content: center;
+            display: flex;
+            list-style: none;
+            padding: 0;
+            margin-bottom: 40px;
+        }
+
+        #menu li {
+            margin: 0 10px;
+        }
+
+        h2 {
+            margin-bottom: 20px;
+        }
+
+        .security-box {
+            text-align: right;
+            display: inline-block;
+            max-width: 650px;
+            width: 90%;
+            margin: 20px auto;
+            line-height: 1.8;
+            background: rgba(255, 68, 68, 0.05);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 68, 68, 0.2);
+        }
+
+        .warning-text {
+            color: #ff4444;
+            font-weight: bold;
+        }
+
+        ul {
+            padding-right: 20px;
+        }
+
+        li {
+            margin-bottom: 15px;
+        }
+
+        .highlight {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            direction: ltr;
+            display: inline-block;
+        }
+    </style>
+</head>
+
+<body>
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+        <li><a href="/share">اشتراک‌گذاری</a></li>
+        <li><a href="/info.html">راهنما</a></li>
+        <li><a href="/security.html">امنیت</a></li>
+        <li><a href="/deploy.html">راه‌اندازی</a></li>
+    </ul>
+
+    <h2>امنیت و حریم خصوصی</h2>
+
+    <div class="security-box">
+        <p>کاربران عزیز توجه داشته باشید که دلتاچت می‌تواند هم برای ارتباط <strong>امن و رمزنگاری‌شده</strong> و هم برای
+            ارتباط <strong>غیر امن (ایمیل سنتی)</strong> استفاده شود.</p>
+
+        <p class="warning-text">برای حفظ امنیت کامل، حتما موارد زیر را رعایت کنید:</p>
+
+        <ul>
+            <li><strong>توقف استفاده از ایمیل کلاسیک:</strong> در تنظیمات دلتاچت، بخش <span
+                    class="highlight">Advanced</span>، گزینه «ایمیل سنتی» را روی <strong>«نه»</strong> قرار دهید.</li>
+            <li><strong>تشخیص پیام‌های ناامن:</strong> پیام‌هایی که با آیکون <strong>پاکت‌نامه</strong> ظاهر می‌شوند، در
+                واقع ایمیل کلاسیک هستند. این پیام‌ها را ناامن و شنودشده در نظر بگیرید.</li>
+            <li><strong>شروع چت فقط با لینک:</strong> به هیچ عنوان مستقیما به ID (آدرس ایمیل) پیام ندهید. ارتباط باید
+                حتما از طریق اشتراک‌گذاری لینک به فرمت <span class="highlight">https://i.delta.chat/#..</span> شروع شود.
+                هرگونه ID خارج از این فرمت ناامن است.</li>
+            <li><strong>تفاوت سرورها:</strong> سرورهای <span class="highlight">chatmail</span> (مانند <span
+                    class="highlight">tiiz.ir</span>) تبادل ایمیل رمزنشده را کلا رد می‌کنند. اما <span
+                    class="highlight">madmail</span> در نسخه‌های قدیمی ممکن است اجازه ارسال غیرامن را بدهد که توسط صاحب
+                سرور یا دیتاسنتر قابل مشاهده است.</li>
+        </ul>
+
+        <div style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
+            <p>💡 <strong>نکته برای مدیران:</strong> اگر از نسخه‌های قدیمی Madmail استفاده می‌کنید، حتما سرور خود را
+                به‌روزرسانی کنید تا امنیت کاربران حفظ شود.</p>
+        </div>
+    </div>
+
+    <footer style="margin-top: 50px; padding: 20px; font-size: 0.8em; color: #888;">
+        نسخه {{.Version}}
+    </footer>
+</body>
+
+</html>
