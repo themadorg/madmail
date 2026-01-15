@@ -173,21 +173,6 @@ func (s *state) CheckBody(ctx context.Context, header textproto.Header, body buf
 	}
 
 	// Check each recipient
-	mimeFromParts := strings.Split(s.mailFrom, "@")
-	if len(mimeFromParts) != 2 {
-		return module.CheckResult{
-			Reject: true,
-			Reason: &exterrors.SMTPError{
-				Code:         554,
-				EnhancedCode: exterrors.EnhancedCode{5, 6, 0},
-				Message:      "Invalid sender address format",
-				Reason:       "invalid sender format",
-				CheckName:    "pgp_encryption",
-			},
-		}
-	}
-	fromDomain := mimeFromParts[1]
-
 	for _, recipient := range s.rcptTos {
 		// Check for self-sent Autocrypt Setup Messages (Python logic)
 		if strings.EqualFold(s.mailFrom, recipient) {
@@ -213,7 +198,7 @@ func (s *state) CheckBody(ctx context.Context, header textproto.Header, body buf
 			continue
 		}
 
-		// Parse recipient domain
+		// Parse recipient domain (for validation)
 		rcptParts := strings.Split(recipient, "@")
 		if len(rcptParts) != 2 {
 			return module.CheckResult{
@@ -227,95 +212,92 @@ func (s *state) CheckBody(ctx context.Context, header textproto.Header, body buf
 				},
 			}
 		}
-		recipientDomain := rcptParts[1]
 
-		// Determine if this is an outgoing message
-		isOutgoing := !strings.EqualFold(recipientDomain, fromDomain)
-
-		if isOutgoing {
-			// Check if message is encrypted
-			r, err := body.Open()
-			if err != nil {
-				return module.CheckResult{
-					Reject: true,
-					Reason: &exterrors.SMTPError{
-						Code:         451,
-						EnhancedCode: exterrors.EnhancedCode{4, 0, 0},
-						Message:      "Cannot read message body",
-						Reason:       "body read error",
-						CheckName:    "pgp_encryption",
-						Err:          err,
-					},
-				}
+		// For chatmail: ALL messages (same domain or different domain) must be encrypted
+		// when require_encryption is enabled, since this check runs in the submission
+		// endpoint where all senders are authenticated local users.
+		// Check if message is encrypted
+		r, err := body.Open()
+		if err != nil {
+			return module.CheckResult{
+				Reject: true,
+				Reason: &exterrors.SMTPError{
+					Code:         451,
+					EnhancedCode: exterrors.EnhancedCode{4, 0, 0},
+					Message:      "Cannot read message body",
+					Reason:       "body read error",
+					CheckName:    "pgp_encryption",
+					Err:          err,
+				},
 			}
-			defer r.Close()
+		}
+		defer r.Close()
 
-			isEncrypted, err := s.isValidEncryptedMessage(s.subject, s.contentType, r)
-			if err != nil {
-				return module.CheckResult{
-					Reject: true,
-					Reason: &exterrors.SMTPError{
-						Code:         451,
-						EnhancedCode: exterrors.EnhancedCode{4, 0, 0},
-						Message:      "Error validating message encryption",
-						Reason:       "encryption validation error",
-						CheckName:    "pgp_encryption",
-						Err:          err,
-					},
-				}
+		isEncrypted, err := s.isValidEncryptedMessage(s.subject, s.contentType, r)
+		if err != nil {
+			return module.CheckResult{
+				Reject: true,
+				Reason: &exterrors.SMTPError{
+					Code:         451,
+					EnhancedCode: exterrors.EnhancedCode{4, 0, 0},
+					Message:      "Error validating message encryption",
+					Reason:       "encryption validation error",
+					CheckName:    "pgp_encryption",
+					Err:          err,
+				},
 			}
+		}
 
-			if !isEncrypted {
-				// Check if this is a secure join request - be more permissive here
-				if s.c.allowSecureJoin {
-					// First check the header - this is the most important check
-					isSecureJoinHeader := strings.EqualFold(s.secureJoin, "vc-request") ||
-						strings.EqualFold(s.secureJoin, "vg-request")
+		if !isEncrypted {
+			// Check if this is a secure join request - be more permissive here
+			if s.c.allowSecureJoin {
+				// First check the header - this is the most important check
+				isSecureJoinHeader := strings.EqualFold(s.secureJoin, "vc-request") ||
+					strings.EqualFold(s.secureJoin, "vg-request")
 
-					if isSecureJoinHeader {
-						s.log.Msg("allowing secure join request based on header", "recipient", recipient, "secure-join", s.secureJoin)
+				if isSecureJoinHeader {
+					s.log.Msg("allowing secure join request based on header", "recipient", recipient, "secure-join", s.secureJoin)
+					continue
+				}
+
+				// Also check the message body structure more permissively
+				r2, err := body.Open()
+				if err == nil {
+					defer r2.Close()
+					isSecureJoin := s.isSecureJoinMessagePermissive(s.secureJoin, s.contentType, r2)
+					if isSecureJoin {
+						s.log.Msg("allowing secure join request based on body", "recipient", recipient)
 						continue
 					}
-
-					// Also check the message body structure more permissively
-					r2, err := body.Open()
-					if err == nil {
-						defer r2.Close()
-						isSecureJoin := s.isSecureJoinMessagePermissive(s.secureJoin, s.contentType, r2)
-						if isSecureJoin {
-							s.log.Msg("allowing secure join request based on body", "recipient", recipient)
-							continue
-						}
-					}
 				}
+			}
 
-				// Check for Delta Chat conversation initiation messages
-				if s.isDeltaChatInitMessageWithHeader(header) {
-					s.log.Msg("allowing Delta Chat initialization message", "recipient", recipient, "subject", s.subject)
-					continue
-				}
+			// Check for Delta Chat conversation initiation messages
+			if s.isDeltaChatInitMessageWithHeader(header) {
+				s.log.Msg("allowing Delta Chat initialization message", "recipient", recipient, "subject", s.subject)
+				continue
+			}
 
-				// Check for Autocrypt header exchange messages (used in initial contact)
-				if s.hasAutocryptHeaderWithHeader(header) {
-					s.log.Msg("allowing message with Autocrypt header", "recipient", recipient, "subject", s.subject)
-					continue
-				}
+			// Check for Autocrypt header exchange messages (used in initial contact)
+			if s.hasAutocryptHeaderWithHeader(header) {
+				s.log.Msg("allowing message with Autocrypt header", "recipient", recipient, "subject", s.subject)
+				continue
+			}
 
-				// Reject unencrypted outgoing message
-				return module.CheckResult{
-					Reject: true,
-					Reason: &exterrors.SMTPError{
-						Code:         523, // Use 523 like in the Python code
-						EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
-						Message:      "Encryption Needed: Invalid Unencrypted Mail",
-						Reason:       "unencrypted outgoing message",
-						CheckName:    "pgp_encryption",
-						Misc: map[string]interface{}{
-							"recipient": recipient,
-							"sender":    s.mailFrom,
-						},
+			// Reject unencrypted message
+			return module.CheckResult{
+				Reject: true,
+				Reason: &exterrors.SMTPError{
+					Code:         523, // Use 523 like in the Python code
+					EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
+					Message:      "Encryption Needed: Invalid Unencrypted Mail",
+					Reason:       "unencrypted message",
+					CheckName:    "pgp_encryption",
+					Misc: map[string]interface{}{
+						"recipient": recipient,
+						"sender":    s.mailFrom,
 					},
-				}
+				},
 			}
 		}
 	}
