@@ -251,37 +251,10 @@ func (s *state) CheckBody(ctx context.Context, header textproto.Header, body buf
 		if !isEncrypted {
 			// Check if this is a secure join request - be more permissive here
 			if s.c.allowSecureJoin {
-				// First check the header - this is the most important check
-				isSecureJoinHeader := strings.EqualFold(s.secureJoin, "vc-request") ||
-					strings.EqualFold(s.secureJoin, "vg-request")
-
-				if isSecureJoinHeader {
-					s.log.Msg("allowing secure join request based on header", "recipient", recipient, "secure-join", s.secureJoin)
+				if isSecureJoin(s.secureJoin, s.contentType, body) {
+					s.log.Msg("allowing secure join request based on body", "recipient", recipient)
 					continue
 				}
-
-				// Also check the message body structure more permissively
-				r2, err := body.Open()
-				if err == nil {
-					defer r2.Close()
-					isSecureJoin := s.isSecureJoinMessagePermissive(s.secureJoin, s.contentType, r2)
-					if isSecureJoin {
-						s.log.Msg("allowing secure join request based on body", "recipient", recipient)
-						continue
-					}
-				}
-			}
-
-			// Check for Delta Chat conversation initiation messages
-			if s.isDeltaChatInitMessageWithHeader(header) {
-				s.log.Msg("allowing Delta Chat initialization message", "recipient", recipient, "subject", s.subject)
-				continue
-			}
-
-			// Check for Autocrypt header exchange messages (used in initial contact)
-			if s.hasAutocryptHeaderWithHeader(header) {
-				s.log.Msg("allowing message with Autocrypt header", "recipient", recipient, "subject", s.subject)
-				continue
 			}
 
 			// Reject unencrypted message
@@ -478,73 +451,64 @@ func (s *state) Close() error {
 	return nil
 }
 
-// More permissive secure join detection for better compatibility
-func (s *state) isSecureJoinMessagePermissive(secureJoinHeader, contentType string, bodyReader io.Reader) bool {
-	// Quick check - if header indicates secure join, allow it
-	if strings.EqualFold(secureJoinHeader, "vc-request") ||
-		strings.EqualFold(secureJoinHeader, "vg-request") {
-		return true
+func (s *state) isSecureJoin(secureJoinHeader string, contentType string, body buffer.Buffer) bool {
+	if !(strings.EqualFold(secureJoinHeader, "vc-request") ||
+		strings.EqualFold(secureJoinHeader, "vg-request")) {
+		return false
 	}
 
+	bodyReader, err := body.Open()
+	if err != nil {
+		return false
+	}
+	defer bodyReader.Close()
+
 	// Check content type for multipart/mixed or text/plain
-	if strings.HasPrefix(strings.ToLower(contentType), "multipart/mixed") ||
-		strings.HasPrefix(strings.ToLower(contentType), "text/plain") {
-		// Read some of the body to look for secure join patterns
-		bodyBytes, err := io.ReadAll(io.LimitReader(bodyReader, 8192)) // Read up to 8KB
+	if !strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
+		return false
+	}
+
+	mediatype, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false, err
+	}
+
+	// Parse multipart message
+	mpr := multipart.NewReader(body, params["boundary"])
+	partsCount := 0
+
+	for {
+		part, err := mpr.NextPart()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
 			return false
 		}
-		bodyStr := string(bodyBytes)
 
-		// Look for patterns that indicate secure join
-		lowerBody := strings.ToLower(bodyStr)
-		if strings.Contains(lowerBody, "securejoin") ||
-			strings.Contains(lowerBody, "vc-request") ||
-			strings.Contains(lowerBody, "vg-request") ||
-			strings.Contains(lowerBody, "invite") {
-			return true
+		partsCount++
+		if partsCount > 1 {
+			return false
+		}
+
+		partContentType := part.Header.Get("Content-Type")
+
+		if partContentType != "text/plain" {
+			return false
+		}
+
+		partBody, err := io.ReadAll(io.LimitReader(part, 8192)) // Read up to 8KB
+		if err != nil {
+			return false
+		}
+
+		body := strings.TrimSpace(string(partBody)).ToLower()
+		if body != "secure-join: vc-request" && body != "secure-join: vg-request" {
+			return false
 		}
 	}
 
-	return false
-}
-
-// Check if this is a Delta Chat initialization message with access to headers
-func (s *state) isDeltaChatInitMessageWithHeader(header textproto.Header) bool {
-	// Check for Delta Chat specific subjects or headers
-	if s.subject != "" {
-		lowerSubject := strings.ToLower(s.subject)
-		// Common Delta Chat initialization patterns
-		if strings.Contains(lowerSubject, "chat:") ||
-			strings.Contains(lowerSubject, "delta") ||
-			strings.Contains(lowerSubject, "message from") ||
-			strings.Contains(lowerSubject, "contact request") ||
-			lowerSubject == "..." { // Delta Chat often uses "..." as initial subject
-			return true
-		}
-	}
-
-	// Check for Chat-* headers which indicate Delta Chat messages
-	for field := header.Fields(); field.Next(); {
-		headerName := strings.ToLower(field.Key())
-		if strings.HasPrefix(headerName, "chat-") {
-			return true
-		}
-	}
-
-	return false
-}
-
-// Check if the message has Autocrypt headers (used for key exchange)
-// Check if the message has Autocrypt headers with access to headers
-func (s *state) hasAutocryptHeaderWithHeader(header textproto.Header) bool {
-	for field := header.Fields(); field.Next(); {
-		headerName := strings.ToLower(field.Key())
-		if strings.HasPrefix(headerName, "autocrypt") {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 var (
