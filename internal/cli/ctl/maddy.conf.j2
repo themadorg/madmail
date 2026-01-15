@@ -224,6 +224,17 @@ chatmail tcp://0.0.0.0:{{.ChatmailHTTPPort}} {
     public_ip $(public_ip)
     turn_off_tls {{if .TurnOffTLS}}yes{{else}}no{{end}}
     enable_contact_sharing {{if .EnableContactSharing}}yes{{else}}no{{end}}
+
+{{if .EnableSS}}
+    ss_addr "{{.SSAddr}}"
+    ss_password "{{.SSPassword}}"
+    ss_cipher "{{.SSCipher}}"
+{{else}}
+    # Shadowsocks proxy for faster messaging (optional)
+    # ss_addr 0.0.0.0:8388
+    # ss_password somepassword
+    # ss_cipher aes-128-gcm
+{{end}}
 }
 
 # HTTPS endpoint (port {{.ChatmailHTTPSPort}}) - uncomment to enable
@@ -242,5 +253,16 @@ chatmail tls://0.0.0.0:{{.ChatmailHTTPSPort}} {
     alpn_smtp submission
     alpn_imap imap
     enable_contact_sharing {{if .EnableContactSharing}}yes{{else}}no{{end}}
+
+{{if .EnableSS}}
+    ss_addr "{{.SSAddr}}"
+    ss_password "{{.SSPassword}}"
+    ss_cipher "{{.SSCipher}}"
+{{else}}
+    # Shadowsocks proxy for faster messaging (optional)
+    # ss_addr 0.0.0.0:8388
+    # ss_password somepassword
+    # ss_cipher aes-128-gcm
+{{end}}
 }
 {{end}}

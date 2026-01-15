@@ -59,23 +59,10 @@ push: build
 	$(call deploy_remote,$(REMOTE1))
 	$(call deploy_remote,$(REMOTE2))
 
-# Publish to Telegram (Increment version -> Build -> Send)
+# Publish to Telegram then Arvan (Increment version -> Build -> Script)
+# Use ARGS="--publish-no-telegram" to skip Telegram.
 publish: bump_version build
-	@echo "🚀 Publishing binary to Telegram..."
-	@VERSION=$$(cat $(VERSION_FILE)) && \
-	GIT_HASH=$$(git rev-parse --short HEAD) && \
-	FULL_VERSION="$$VERSION+$$GIT_HASH" && \
-	CHECKSUM=$$(sha256sum $(BINARY) | awk '{print $$1}') && \
-	printf "📦 *Madmail Release v$$FULL_VERSION*\n\n🔐 *SHA256:*\n\`$$CHECKSUM\`" > .caption.tmp && \
-	curl -s -F chat_id="$$TELEGRAM_RELEASE_CHANNEL" \
-		-F document=@$(BINARY) \
-		-F caption="<.caption.tmp" \
-		-F parse_mode="Markdown" \
-		"https://api.telegram.org/bot$$TELEGRAM_BOT_TOKEN/sendDocument" > /dev/null && \
-	rm .caption.tmp && \
-	echo "✅ Successfully published Madmail v$$FULL_VERSION to Telegram."
-	@echo "🇮🇷 Deploying to Arvan (IR)..."
-	@bash publish.sh
+	@bash publish.sh $(ARGS)
 
 
 # Logs

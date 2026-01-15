@@ -51,6 +51,22 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+func silentPrint(noLog bool, format string, a ...interface{}) {
+	if !noLog {
+		if len(a) > 0 {
+			fmt.Printf(format, a...)
+		} else {
+			fmt.Print(format)
+		}
+	}
+}
+
+func silentPrintln(noLog bool, a ...interface{}) {
+	if !noLog {
+		fmt.Println(a...)
+	}
+}
+
 //go:embed dns.zone.j2
 var dnsZoneTemplate string
 
@@ -86,6 +102,12 @@ type InstallConfig struct {
 	ChatmailUsernameLen  int
 	ChatmailPasswordLen  int
 	EnableContactSharing bool
+
+	// Shadowsocks configuration
+	EnableSS   bool
+	SSAddr     string
+	SSPassword string
+	SSCipher   string
 
 	// PGP Encryption configuration
 	RequirePGPEncryption     bool
@@ -156,6 +178,9 @@ func defaultConfig() *InstallConfig {
 		BinaryPath:               "/usr/local/bin/maddy",
 		LibexecDir:               "/var/lib/maddy",
 		NoLog:                    true,
+		EnableSS:                 true,
+		SSAddr:                   "0.0.0.0:8388",
+		SSCipher:                 "aes-128-gcm",
 	}
 }
 
@@ -279,6 +304,14 @@ Examples:
 					Aliases: []string{"d"},
 					Usage:   "Enable debug logging (overrides --simple silence)",
 				},
+				&cli.BoolFlag{
+					Name:  "enable-ss",
+					Usage: "Enable Shadowsocks proxy for faster messaging",
+				},
+				&cli.StringFlag{
+					Name:  "ss-password",
+					Usage: "Shadowsocks password",
+				},
 			},
 		})
 }
@@ -301,11 +334,14 @@ func installCommand(ctx *cli.Context) error {
 	}
 
 	logger.Println("Starting maddy installation process")
-	fmt.Println("🚀 Maddy Mail Server Installation")
-	fmt.Println("==================================")
+	silentPrintln(config.NoLog, "🚀 Maddy Mail Server Installation")
+	silentPrintln(config.NoLog, "==================================")
 
 	// Check if running as root
 	if os.Geteuid() != 0 && !ctx.Bool("dry-run") {
+		if config.NoLog {
+			os.Exit(1)
+		}
 		return fmt.Errorf("installation must be run as root (use sudo)")
 	}
 
@@ -377,6 +413,13 @@ func installCommand(ctx *cli.Context) error {
 		config.TurnOffTLS = true
 	}
 
+	if ctx.Bool("enable-ss") {
+		config.EnableSS = true
+	}
+	if ctx.IsSet("ss-password") {
+		config.SSPassword = ctx.String("ss-password")
+	}
+
 	// Run interactive configuration if not in non-interactive mode
 	if !ctx.Bool("non-interactive") {
 		if err := runInteractiveConfig(config); err != nil {
@@ -403,15 +446,18 @@ func installCommand(ctx *cli.Context) error {
 	}
 
 	for i, step := range steps {
-		fmt.Printf("\n[%d/%d] %s...\n", i+1, len(steps), step.name)
+		silentPrint(config.NoLog, "\n[%d/%d] %s...\n", i+1, len(steps), step.name)
 		logger.Printf("Step %d: %s", i+1, step.name)
 
 		if err := step.fn(config, ctx.Bool("dry-run")); err != nil {
 			logger.Printf("Step %d failed: %v", i+1, err)
+			if config.NoLog {
+				os.Exit(1)
+			}
 			return fmt.Errorf("step '%s' failed: %v", step.name, err)
 		}
 
-		fmt.Printf("✅ %s completed\n", step.name)
+		silentPrint(config.NoLog, "✅ %s completed\n", step.name)
 		logger.Printf("Step %d completed successfully", i+1)
 	}
 
@@ -434,6 +480,7 @@ func installCommand(ctx *cli.Context) error {
 	// Print next steps
 	printNextSteps(config)
 
+	silentPrintln(config.NoLog, "\n🎉 Installation completed successfully!")
 	// Log final summary
 	logger.Println("=== INSTALLATION SUMMARY ===")
 	logger.Printf("User created: %s with home directory %s", config.MaddyUser, config.StateDir)
@@ -509,6 +556,13 @@ func runInteractiveConfig(config *InstallConfig) error {
 
 		config.A = config.PublicIP
 
+		// Generate a random password for Shadowsocks if it's enabled and not set
+		if config.EnableSS && config.SSPassword == "" {
+			b := make([]byte, 16)
+			rand.Read(b)
+			config.SSPassword = base64.RawURLEncoding.EncodeToString(b)
+		}
+
 		return nil
 	}
 
@@ -573,6 +627,21 @@ func runInteractiveConfig(config *InstallConfig) error {
 		config.ChatmailHTTPSPort = promptString("Chatmail HTTPS port", config.ChatmailHTTPSPort)
 		config.ChatmailUsernameLen = promptInt("Chatmail username length", config.ChatmailUsernameLen)
 		config.ChatmailPasswordLen = promptInt("Chatmail password length", config.ChatmailPasswordLen)
+	}
+
+	// Shadowsocks configuration
+	fmt.Println("\n🚀 Shadowsocks Configuration")
+	if config.SSPassword == "" {
+		// Generate a random password if not set
+		b := make([]byte, 16)
+		rand.Read(b)
+		config.SSPassword = base64.RawURLEncoding.EncodeToString(b)
+	}
+	config.EnableSS = clitools2.Confirmation("Enable Shadowsocks proxy for faster messaging?", config.EnableSS)
+	if config.EnableSS {
+		config.SSAddr = promptString("Shadowsocks listen address", config.SSAddr)
+		config.SSPassword = promptString("Shadowsocks password", config.SSPassword)
+		config.SSCipher = promptString("Shadowsocks cipher", config.SSCipher)
 	}
 
 	// PGP Encryption configuration
@@ -1337,6 +1406,9 @@ func generateDKIMDNSRecord(keyPath, dnsPath string) error {
 }
 
 func printNextSteps(config *InstallConfig) {
+	if config.NoLog {
+		return
+	}
 	// Print installation summary first
 	printInstallationSummary(config)
 
@@ -1420,6 +1492,9 @@ func printNextSteps(config *InstallConfig) {
 }
 
 func printInstallationSummary(config *InstallConfig) {
+	if config.NoLog {
+		return
+	}
 	fmt.Println("\n📊 Installation Summary")
 	fmt.Println("=======================")
 

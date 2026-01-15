@@ -25,6 +25,7 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,14 +40,17 @@ import (
 
 	"github.com/emersion/go-message/textproto"
 	"github.com/emersion/go-smtp"
+	"github.com/skip2/go-qrcode"
 	"github.com/themadorg/madmail/framework/buffer"
 	"github.com/themadorg/madmail/framework/config"
 	tls2 "github.com/themadorg/madmail/framework/config/tls"
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth/pass_table"
-	"github.com/skip2/go-qrcode"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/shadowsocks/go-shadowsocks2/core"
+	"github.com/shadowsocks/go-shadowsocks2/socks"
 )
 
 //go:embed www/*
@@ -90,6 +94,11 @@ type Endpoint struct {
 	sharingDB            *sql.DB
 
 	wwwDir string
+
+	// Shadowsocks configuration
+	ssAddr     string
+	ssPassword string
+	ssCipher   string
 }
 
 type AccountResponse struct {
@@ -122,6 +131,9 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("alpn_imap", false, false, "", &e.alpnIMAP)
 	cfg.Bool("enable_contact_sharing", false, false, &e.enableContactSharing)
 	cfg.String("www_dir", false, false, "", &e.wwwDir)
+	cfg.String("ss_addr", false, false, "0.0.0.0:8388", &e.ssAddr)
+	cfg.String("ss_password", false, false, "", &e.ssPassword)
+	cfg.String("ss_cipher", false, false, "aes-128-gcm", &e.ssCipher)
 
 	// Get references to the authentication database and storage
 	var authDBName, storageName string
@@ -257,6 +269,17 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 			}
 			e.listenersWg.Done()
 		}()
+	}
+
+	if e.ssPassword == "" {
+		// Use a predictable but unique-ish default password if none provided
+		// Or better, generate one if we can't find it.
+		// For now, let's just ensure it's set to something if we want it DEFAULT.
+		e.ssPassword = "chatmail-default-pass"
+	}
+
+	if e.ssAddr != "" {
+		go e.runShadowsocks()
 	}
 
 	return nil
@@ -458,6 +481,7 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 			PublicIP   string
 			TurnOffTLS bool
 			Version    string
+			SSURL      string
 		}{
 			MailDomain: e.mailDomain,
 			MXDomain:   e.mxDomain,
@@ -465,6 +489,7 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 			PublicIP:   e.publicIP,
 			TurnOffTLS: e.turnOffTLS,
 			Version:    config.Version,
+			SSURL:      e.getShadowsocksURL(),
 		}
 
 		w.Header().Set("Content-Type", contentType)
@@ -625,6 +650,105 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	e.logger.Msg("received email via "+scheme, "from", mailFrom, "to", mailTo)
 	w.WriteHeader(http.StatusOK)
+}
+
+var shadowsocksOnce sync.Once
+
+func (e *Endpoint) runShadowsocks() {
+	shadowsocksOnce.Do(func() {
+		e.runShadowsocksInternal()
+	})
+}
+
+func (e *Endpoint) runShadowsocksInternal() {
+	ciph, err := core.PickCipher(e.ssCipher, nil, e.ssPassword)
+	if err != nil {
+		e.logger.Error("Shadowsocks: failed to pick cipher", err)
+		return
+	}
+
+	l, err := net.Listen("tcp", e.ssAddr)
+	if err != nil {
+		e.logger.Error("Shadowsocks: failed to listen", err)
+		return
+	}
+	defer l.Close()
+
+	e.logger.Printf("Shadowsocks: listening on %s (cipher: %s)", e.ssAddr, e.ssCipher)
+
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			e.logger.Error("Shadowsocks: accept failed", err)
+			continue
+		}
+
+		go func(conn net.Conn) {
+			defer conn.Close()
+			cConn := ciph.StreamConn(conn)
+			tgtAddr, err := socks.ReadAddr(cConn)
+			if err != nil {
+				e.logger.Error("Shadowsocks: failed to read target address", err)
+				return
+			}
+
+			tgtHost, tgtPort, err := net.SplitHostPort(tgtAddr.String())
+			if err != nil {
+				// Address might be just a port or something else, try to handle it
+				e.logger.Error("Shadowsocks: failed to split host:port", err, "addr", tgtAddr.String())
+				return
+			}
+
+			// Restrict to SMTP and IMAP ports
+			allowedPorts := map[string]bool{
+				"25":  true,
+				"143": true,
+				"465": true,
+				"587": true,
+				"993": true,
+			}
+
+			if !allowedPorts[tgtPort] {
+				e.logger.Msg("Shadowsocks: blocking unauthorized port", "port", tgtPort, "host", tgtHost)
+				return
+			}
+
+			// Restrict relaying ONLY to the local machine ports.
+			// This prevents the proxy from being used to reach other servers.
+			// Users MUST use the proxy of the server they are registered on.
+			localAddr := net.JoinHostPort("127.0.0.1", tgtPort)
+			e.logger.Msg("Shadowsocks: relaying", "from", conn.RemoteAddr(), "to", localAddr)
+
+			remote, err := net.Dial("tcp", localAddr)
+			if err != nil {
+				e.logger.Error("Shadowsocks: failed to connect to local port", err, "addr", localAddr)
+				return
+			}
+			defer remote.Close()
+
+			go func() {
+				_, _ = io.Copy(remote, cConn)
+			}()
+			_, _ = io.Copy(cConn, remote)
+		}(conn)
+	}
+}
+
+func (e *Endpoint) getShadowsocksURL() string {
+	if e.ssAddr == "" {
+		return ""
+	}
+
+	// format: ss://BASE64(method:password)@host:port
+	userInfo := fmt.Sprintf("%s:%s", e.ssCipher, e.ssPassword)
+	auth := base64.RawStdEncoding.EncodeToString([]byte(userInfo))
+
+	host, port, _ := net.SplitHostPort(e.ssAddr)
+	if host == "" || host == "0.0.0.0" {
+		host = strings.Trim(e.webDomain, "[]")
+	}
+
+	return fmt.Sprintf("ss://%s@%s:%s", auth, host, port)
 }
 
 func (e *Endpoint) serveALPNMultiplexed(l net.Listener) {
@@ -1023,6 +1147,7 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		PublicIP   string
 		TurnOffTLS bool
 		Version    string
+		SSURL      string
 		Custom     interface{}
 	}{
 		MailDomain: e.mailDomain,
@@ -1031,6 +1156,7 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		PublicIP:   e.publicIP,
 		TurnOffTLS: e.turnOffTLS,
 		Version:    config.Version,
+		SSURL:      e.getShadowsocksURL(),
 		Custom:     customData,
 	}
 

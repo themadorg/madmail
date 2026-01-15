@@ -196,3 +196,50 @@ img.banner {
 .copy-btn:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+.ss-prominent-box {
+  background: rgba(0, 210, 255, 0.1);
+  border: 2px solid #00d2ff;
+  border-radius: 12px;
+  padding: 25px;
+  margin: 30px auto;
+  max-width: 600px;
+  text-align: center;
+}
+
+.ss-prominent-box strong {
+  display: block;
+  font-size: 1.2rem;
+  color: #00d2ff;
+  margin-bottom: 15px;
+}
+
+.ss-copy-container {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 15px;
+  border-radius: 8px;
+  margin: 15px 0;
+}
+
+.ss-copy-container p {
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-bottom: 5px;
+}
+
+.ss-copy-text {
+  font-family: monospace;
+  background: #222;
+  padding: 8px;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  word-break: break-all;
+  display: block;
+  font-size: 1.1rem;
+  direction: ltr;
+}
+
+.ss-copy-text:hover {
+  background: #333;
+}
