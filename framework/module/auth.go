@@ -41,4 +41,6 @@ type PlainUserDB interface {
 	CreateUser(username, password string) error
 	SetUserPassword(username, password string) error
 	DeleteUser(username string) error
+	IsRegistrationOpen() (bool, error)
+	SetRegistrationOpen(open bool) error
 }

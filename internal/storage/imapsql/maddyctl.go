@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package imapsql
 
 import (
+	"time"
+
 	"github.com/emersion/go-imap/backend"
 )
 
@@ -30,11 +32,31 @@ func (store *Storage) ListIMAPAccts() ([]string, error) {
 }
 
 func (store *Storage) CreateIMAPAcct(accountName string) error {
-	return store.Back.CreateUser(accountName)
+	if err := store.Back.CreateUser(accountName); err != nil {
+		return err
+	}
+
+	db := store.Back.DB
+	_, _ = db.Exec(`INSERT INTO quotas (username, created_at) VALUES (?, ?)
+		ON CONFLICT(username) DO UPDATE SET created_at = excluded.created_at WHERE created_at IS NULL`,
+		accountName, time.Now().Unix())
+	return nil
 }
 
 func (store *Storage) DeleteIMAPAcct(accountName string) error {
+	db := store.Back.DB
+	_, _ = db.Exec(`DELETE FROM quotas WHERE username = ?`, accountName)
 	return store.Back.DeleteUser(accountName)
+}
+
+func (store *Storage) PurgeIMAPMsgs(username string) error {
+	db := store.Back.DB
+	_, err := db.Exec(`DELETE FROM msgs WHERE mboxId IN (
+		SELECT id FROM mboxes WHERE uid IN (
+			SELECT id FROM users WHERE username = ?
+		)
+	)`, username)
+	return err
 }
 
 func (store *Storage) GetIMAPAcct(accountName string) (backend.User, error) {

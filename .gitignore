@@ -51,3 +51,4 @@ tests/maddy
 tmp
 
 publish.sh
+publish/

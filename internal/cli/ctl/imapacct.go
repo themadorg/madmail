@@ -22,8 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/emersion/go-imap"
+	"github.com/themadorg/madmail/framework/config"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth"
 	maddycli "github.com/themadorg/madmail/internal/cli"
@@ -152,6 +155,157 @@ or other buffering takes effect.`,
 					},
 				},
 				{
+					Name:  "quota",
+					Usage: "Manage accounts's quota",
+					Subcommands: []*cli.Command{
+						{
+							Name:      "get",
+							Usage:     "Get current usage and limit",
+							ArgsUsage: "USERNAME",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_mailboxes",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openStorage(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								return imapAcctQuotaGet(be, ctx)
+							},
+						},
+						{
+							Name:      "set",
+							Usage:     "Set a new limit",
+							ArgsUsage: "USERNAME LIMIT",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_mailboxes",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openStorage(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								return imapAcctQuotaSet(be, ctx)
+							},
+						},
+						{
+							Name:      "reset",
+							Usage:     "Reset quota to default",
+							ArgsUsage: "USERNAME",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_mailboxes",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openStorage(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								return imapAcctQuotaReset(be, ctx)
+							},
+						},
+						{
+							Name:  "list",
+							Usage: "List all accounts with quota info",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_mailboxes",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openStorage(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								return imapAcctQuotaList(be, ctx)
+							},
+						},
+						{
+							Name:      "set-default",
+							Usage:     "Set the global default limit",
+							ArgsUsage: "LIMIT",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_mailboxes",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openStorage(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								return imapAcctQuotaSetDefault(be, ctx)
+							},
+						},
+					},
+				},
+				{
+					Name:      "purge-msgs",
+					Usage:     "Delete all messages for a storage account",
+					ArgsUsage: "USERNAME",
+					Flags: []cli.Flag{
+						&cli.StringFlag{
+							Name:    "cfg-block",
+							Usage:   "Module configuration block to use",
+							EnvVars: []string{"MADDY_CFGBLOCK"},
+							Value:   "local_mailboxes",
+						},
+					},
+					Action: func(ctx *cli.Context) error {
+						be, err := openStorage(ctx)
+						if err != nil {
+							return err
+						}
+						defer closeIfNeeded(be)
+						return imapAcctPurge(be, ctx)
+					},
+				},
+				{
+					Name:  "stat",
+					Usage: "Show storage statistics",
+					Flags: []cli.Flag{
+						&cli.StringFlag{
+							Name:    "cfg-block",
+							Usage:   "Module configuration block to use",
+							EnvVars: []string{"MADDY_CFGBLOCK"},
+							Value:   "local_mailboxes",
+						},
+					},
+					Action: func(ctx *cli.Context) error {
+						be, err := openStorage(ctx)
+						if err != nil {
+							return err
+						}
+						defer closeIfNeeded(be)
+						return imapAcctStat(be, ctx)
+					},
+				},
+				{
 					Name:  "appendlimit",
 					Usage: "Query or set accounts's APPENDLIMIT value",
 					Description: `APPENDLIMIT value determines the size of a message that
@@ -195,6 +349,22 @@ type SpecialUseUser interface {
 	CreateMailboxSpecial(name, specialUseAttr string) error
 }
 
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+		if exp >= 5 { // PB is max in the string "KMGTPE"
+			break
+		}
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
 func imapAcctList(be module.Storage, ctx *cli.Context) error {
 	mbe, ok := be.(module.ManageableStorage)
 	if !ok {
@@ -208,10 +378,20 @@ func imapAcctList(be module.Storage, ctx *cli.Context) error {
 
 	if len(list) == 0 && !ctx.Bool("quiet") {
 		fmt.Fprintln(os.Stderr, "No users.")
+		return nil
 	}
 
+	fmt.Printf("%-40s %-20s %-15s\n", "User", "Created At", "Usage")
 	for _, user := range list {
-		fmt.Println(user)
+		created, _ := mbe.GetAccountDate(user)
+		used, _, _, _ := mbe.GetQuota(user)
+
+		createdStr := "None"
+		if created > 0 {
+			createdStr = time.Unix(created, 0).Format("2006-01-02 15:04:05")
+		}
+
+		fmt.Printf("%-40s %-20s %-15s\n", user, createdStr, formatBytes(used))
 	}
 	return nil
 }
@@ -287,8 +467,8 @@ func imapAcctRemove(be module.Storage, ctx *cli.Context) error {
 		return cli.Exit("Error: storage backend does not support accounts management using maddy command", 2)
 	}
 
-	username := auth.NormalizeUsername(ctx.Args().First())
-	if username == "" {
+	rawUsername := ctx.Args().First()
+	if rawUsername == "" {
 		return cli.Exit("Error: USERNAME is required", 2)
 	}
 
@@ -298,5 +478,198 @@ func imapAcctRemove(be module.Storage, ctx *cli.Context) error {
 		}
 	}
 
-	return mbe.DeleteIMAPAcct(username)
+	err := mbe.DeleteIMAPAcct(rawUsername)
+	if err != nil && strings.Contains(err.Error(), "doesn't exists") {
+		// try normalized
+		err = mbe.DeleteIMAPAcct(auth.NormalizeUsername(rawUsername))
+	}
+	return err
+}
+
+func imapAcctQuotaGet(be module.Storage, ctx *cli.Context) error {
+	mbe, ok := be.(module.ManageableStorage)
+	if !ok {
+		return cli.Exit("Error: storage backend does not support accounts management using maddy command", 2)
+	}
+
+	rawUsername := ctx.Args().First()
+	if rawUsername == "" {
+		return cli.Exit("Error: USERNAME is required", 2)
+	}
+
+	used, max, isDef, err := mbe.GetQuota(rawUsername)
+	if (err != nil || max == 0 && used == 0) && !strings.Contains(rawUsername, "[") {
+		// try normalized
+		used, max, isDef, err = mbe.GetQuota(auth.NormalizeUsername(rawUsername))
+	}
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("User: %s\n", rawUsername)
+	fmt.Printf("Storage used: %s\n", formatBytes(used))
+	if max > 0 {
+		limitStr := formatBytes(max)
+		if isDef {
+			limitStr += " (default)"
+		}
+		fmt.Printf("Quota limit:  %s\n", limitStr)
+	} else {
+		fmt.Println("Quota limit:  None")
+	}
+
+	return nil
+}
+
+func imapAcctQuotaSet(be module.Storage, ctx *cli.Context) error {
+	mbe, ok := be.(module.ManageableStorage)
+	if !ok {
+		return cli.Exit("Error: storage backend does not support accounts management using maddy command", 2)
+	}
+
+	rawUsername := ctx.Args().First()
+	if rawUsername == "" {
+		return cli.Exit("Error: USERNAME is required", 2)
+	}
+
+	limitStr := ctx.Args().Get(1)
+	if limitStr == "" {
+		return cli.Exit("Error: LIMIT is required", 2)
+	}
+
+	limit, err := config.ParseDataSize(limitStr)
+	if err != nil {
+		return fmt.Errorf("invalid limit value: %w", err)
+	}
+
+	err = mbe.SetQuota(rawUsername, int64(limit))
+	if err != nil && !strings.Contains(rawUsername, "[") {
+		// try normalized
+		err = mbe.SetQuota(auth.NormalizeUsername(rawUsername), int64(limit))
+	}
+	return err
+}
+
+func imapAcctQuotaReset(be module.Storage, ctx *cli.Context) error {
+	mbe, ok := be.(module.ManageableStorage)
+	if !ok {
+		return cli.Exit("Error: storage backend does not support accounts management using maddy command", 2)
+	}
+
+	rawUsername := ctx.Args().First()
+	if rawUsername == "" {
+		return cli.Exit("Error: USERNAME is required", 2)
+	}
+
+	err := mbe.ResetQuota(rawUsername)
+	if err != nil && !strings.Contains(rawUsername, "[") {
+		// try normalized
+		err = mbe.ResetQuota(auth.NormalizeUsername(rawUsername))
+	}
+	return err
+}
+
+func imapAcctQuotaSetDefault(be module.Storage, ctx *cli.Context) error {
+	mbe, ok := be.(module.ManageableStorage)
+	if !ok {
+		return cli.Exit("Error: storage backend does not support accounts management using maddy command", 2)
+	}
+
+	limitStr := ctx.Args().First()
+	if limitStr == "" {
+		return cli.Exit("Error: LIMIT is required", 2)
+	}
+
+	limit, err := config.ParseDataSize(limitStr)
+	if err != nil {
+		return fmt.Errorf("invalid limit value: %w", err)
+	}
+
+	return mbe.SetDefaultQuota(int64(limit))
+}
+
+func imapAcctQuotaList(be module.Storage, ctx *cli.Context) error {
+	mbe, ok := be.(module.ManageableStorage)
+	if !ok {
+		return cli.Exit("Error: storage backend does not support accounts management using maddy command", 2)
+	}
+
+	list, err := mbe.ListIMAPAccts()
+	if err != nil {
+		return err
+	}
+
+	defQuota := mbe.GetDefaultQuota()
+	defQuotaStr := "None"
+	if defQuota > 0 {
+		defQuotaStr = formatBytes(defQuota)
+	}
+	fmt.Printf("Global default quota: %s\n\n", defQuotaStr)
+
+	fmt.Printf("%-40s %-20s %-15s %-15s\n", "User", "Created At", "Used", "Limit")
+	for _, user := range list {
+		created, _ := mbe.GetAccountDate(user)
+		used, max, isDef, err := mbe.GetQuota(user)
+		if err != nil {
+			fmt.Printf("%-40s %-20s %-15s %-15s (error: %v)\n", user, "-", "-", "-", err)
+			continue
+		}
+
+		createdStr := "None"
+		if created > 0 {
+			createdStr = time.Unix(created, 0).Format("2006-01-02 15:04:05")
+		}
+
+		maxStr := "None"
+		if max > 0 {
+			maxStr = formatBytes(max)
+			if isDef {
+				maxStr = "Default (" + maxStr + ")"
+			}
+		}
+		fmt.Printf("%-40s %-20s %-15s %-15s\n", user, createdStr, formatBytes(used), maxStr)
+	}
+	return nil
+}
+
+func imapAcctStat(be module.Storage, ctx *cli.Context) error {
+	mbe, ok := be.(module.ManageableStorage)
+	if !ok {
+		return cli.Exit("Error: storage backend does not support accounts management using maddy command", 2)
+	}
+
+	totalStorage, accountsCount, err := mbe.GetStat()
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Total storage used: %s\n", formatBytes(totalStorage))
+	fmt.Printf("Number of users:    %d\n", accountsCount)
+	fmt.Println("Active connections: N/A (not supported by storage CLI)")
+
+	return nil
+}
+
+func imapAcctPurge(be module.Storage, ctx *cli.Context) error {
+	mbe, ok := be.(module.ManageableStorage)
+	if !ok {
+		return cli.Exit("Error: storage backend does not support accounts management using maddy command", 2)
+	}
+
+	rawUsername := ctx.Args().First()
+	if rawUsername == "" {
+		return cli.Exit("Error: USERNAME is required", 2)
+	}
+
+	if !clitools2.Confirmation(fmt.Sprintf("Are you sure you want to delete ALL messages for %s?", rawUsername), false) {
+		return errors.New("Cancelled")
+	}
+
+	err := mbe.PurgeIMAPMsgs(rawUsername)
+	if err != nil && !strings.Contains(rawUsername, "[") {
+		// try normalized
+		err = mbe.PurgeIMAPMsgs(auth.NormalizeUsername(rawUsername))
+	}
+	return err
 }

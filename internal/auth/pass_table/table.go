@@ -86,7 +86,11 @@ func (a *Auth) AuthPlain(username, password string) error {
 
 	hash, ok, err := a.table.Lookup(context.TODO(), key)
 	if !ok {
-		if a.autoCreate {
+		open, err := a.IsRegistrationOpen()
+		if err != nil {
+			return err
+		}
+		if open {
 			if err := a.CreateUser(username, password); err != nil {
 				return fmt.Errorf("%s: auto-create failed for %s: %w", a.modName, key, err)
 			}
@@ -205,6 +209,30 @@ func (a *Auth) DeleteUser(username string) error {
 		return fmt.Errorf("%s: del user %s: %w", a.modName, key, err)
 	}
 	return nil
+}
+
+func (a *Auth) IsRegistrationOpen() (bool, error) {
+	val, ok, err := a.table.Lookup(context.TODO(), "__REGISTRATION_OPEN__")
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		// Fallback to static config
+		return a.autoCreate, nil
+	}
+	return val == "true", nil
+}
+
+func (a *Auth) SetRegistrationOpen(open bool) error {
+	tbl, ok := a.table.(module.MutableTable)
+	if !ok {
+		return fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
+	}
+	val := "false"
+	if open {
+		val = "true"
+	}
+	return tbl.SetKey("__REGISTRATION_OPEN__", val)
 }
 
 func init() {

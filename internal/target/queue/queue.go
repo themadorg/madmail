@@ -993,6 +993,65 @@ func (q *Queue) emitDSN(meta *QueueMetadata, header textproto.Header, failedRcpt
 	bodyTask.End()
 }
 
+func (q *Queue) PurgeBySender(from string) (int, error) {
+	q.Log.Msg("purging queue by sender", "sender", from)
+	dirInfo, err := os.ReadDir(q.location)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, entry := range dirInfo {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".meta") {
+			continue
+		}
+		id := entry.Name()[:len(entry.Name())-5]
+
+		meta, err := q.readMessageMeta(id)
+		if err != nil {
+			continue
+		}
+
+		if meta.From == from {
+			q.removeFromDisk(&module.MsgMetadata{ID: id})
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+func (q *Queue) PurgeByRecipient(rcpt string) (int, error) {
+	q.Log.Msg("purging queue by recipient", "recipient", rcpt)
+	dirInfo, err := os.ReadDir(q.location)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, entry := range dirInfo {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".meta") {
+			continue
+		}
+		id := entry.Name()[:len(entry.Name())-5]
+
+		meta, err := q.readMessageMeta(id)
+		if err != nil {
+			continue
+		}
+
+		for _, to := range meta.To {
+			if to == rcpt {
+				q.removeFromDisk(&module.MsgMetadata{ID: id})
+				count++
+				break
+			}
+		}
+	}
+
+	return count, nil
+}
+
 func init() {
 	module.Register("target.queue", NewQueue)
 }

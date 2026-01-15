@@ -47,4 +47,13 @@ type ManageableStorage interface {
 	ListIMAPAccts() ([]string, error)
 	CreateIMAPAcct(username string) error
 	DeleteIMAPAcct(username string) error
+	PurgeIMAPMsgs(username string) error
+
+	GetQuota(username string) (used, max int64, isDefault bool, err error)
+	SetQuota(username string, max int64) error
+	ResetQuota(username string) error
+	GetAccountDate(username string) (created int64, err error)
+	GetDefaultQuota() int64
+	SetDefaultQuota(max int64) error
+	GetStat() (totalStorage int64, accountsCount int, err error)
 }

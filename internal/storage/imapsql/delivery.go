@@ -102,6 +102,24 @@ func (d *delivery) AddRcpt(ctx context.Context, rcptTo string, _ smtp.RcptOption
 func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffer.Buffer) error {
 	defer trace.StartRegion(ctx, "sql/Body").End()
 
+	// Quota check
+	for rcpt := range d.addedRcpts {
+		used, max, _, err := d.store.GetQuota(rcpt)
+		if err != nil {
+			d.store.Log.Error("Failed to get quota for recipient", err, "rcpt", rcpt)
+			continue
+		}
+
+		if max > 0 && used+int64(body.Len()) > max {
+			return &exterrors.SMTPError{
+				Code:         552,
+				EnhancedCode: exterrors.EnhancedCode{5, 2, 2},
+				Message:      "Quota exceeded",
+				TargetName:   "imapsql",
+			}
+		}
+	}
+
 	if !d.msgMeta.Quarantine && d.store.filters != nil {
 		for rcpt, rcptData := range d.addedRcpts {
 			folder, flags, err := d.store.filters.IMAPFilter(rcpt, rcptData.rcptTo, d.msgMeta, header, body)

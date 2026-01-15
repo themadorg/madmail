@@ -29,6 +29,7 @@ import (
 	"github.com/themadorg/madmail/framework/config"
 	"github.com/themadorg/madmail/framework/hooks"
 	"github.com/themadorg/madmail/framework/module"
+	"github.com/themadorg/madmail/internal/target/queue"
 	"github.com/themadorg/madmail/internal/updatepipe"
 	"github.com/urfave/cli/v2"
 )
@@ -130,4 +131,21 @@ func openUserDB(ctx *cli.Context) (module.PlainUserDB, error) {
 	}
 
 	return userDB, nil
+}
+func openQueueTarget(ctx *cli.Context) (*queue.Queue, error) {
+	globals, mod, err := getCfgBlockModule(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	q, ok := mod.Instance.(*queue.Queue)
+	if !ok {
+		return nil, cli.Exit(fmt.Sprintf("Error: configuration block %s is not a delivery queue", ctx.String("cfg-block")), 2)
+	}
+
+	if err := mod.Instance.Init(config.NewMap(globals, mod.Cfg)); err != nil {
+		return nil, fmt.Errorf("Error: module initialization failed: %w", err)
+	}
+
+	return q, nil
 }

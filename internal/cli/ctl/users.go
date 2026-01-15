@@ -163,6 +163,89 @@ using command flags. Otherwise, these options cannot be used.
 						return usersPassword(be, ctx)
 					},
 				},
+				{
+					Name:  "registration",
+					Usage: "Manage user registration status",
+					Subcommands: []*cli.Command{
+						{
+							Name:  "open",
+							Usage: "Open user registration",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_authdb",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openUserDB(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								if err := be.SetRegistrationOpen(true); err != nil {
+									return err
+								}
+								fmt.Println("Registration is now OPEN")
+								return nil
+							},
+						},
+						{
+							Name:  "close",
+							Usage: "Close user registration",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_authdb",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openUserDB(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								if err := be.SetRegistrationOpen(false); err != nil {
+									return err
+								}
+								fmt.Println("Registration is now CLOSED")
+								return nil
+							},
+						},
+						{
+							Name:  "status",
+							Usage: "Show registration status",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_authdb",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openUserDB(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								open, err := be.IsRegistrationOpen()
+								if err != nil {
+									return err
+								}
+								if open {
+									fmt.Println("Registration is OPEN")
+								} else {
+									fmt.Println("Registration is CLOSED")
+								}
+								return nil
+							},
+						},
+					},
+				},
 			},
 		})
 }

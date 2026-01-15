@@ -80,6 +80,8 @@ type Storage struct {
 	authNormalize     func(context.Context, string) (string, error)
 
 	retention time.Duration
+
+	defaultQuota int64
 }
 
 func (store *Storage) Name() string {
@@ -161,6 +163,7 @@ func (store *Storage) Init(cfg *config.Map) error {
 	}, modconfig.TableDirective, &store.deliveryMap)
 	cfg.String("delivery_normalize", false, false, "precis_casefold_email", &deliveryNormalize)
 	cfg.Duration("retention", false, false, 0, &store.retention)
+	cfg.DataSize("default_quota", false, false, 1073741824, &store.defaultQuota)
 
 	if _, err := cfg.Process(); err != nil {
 		return err
@@ -283,7 +286,131 @@ func (store *Storage) Init(cfg *config.Map) error {
 		go store.cleanupLoop()
 	}
 
+	if err := store.initQuotaTable(); err != nil {
+		return fmt.Errorf("imapsql: quota table init failed: %w", err)
+	}
+
 	return nil
+}
+
+func (store *Storage) initQuotaTable() error {
+	db := store.Back.DB
+
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS quotas (
+		username TEXT PRIMARY KEY,
+		max_storage INTEGER,
+		created_at INTEGER
+	)`)
+	if err != nil {
+		return err
+	}
+
+	// For existing tables before this change
+	_, _ = db.Exec(`ALTER TABLE quotas ADD COLUMN created_at INTEGER`)
+
+	return nil
+}
+
+func (store *Storage) GetQuota(username string) (used, max int64, isDefault bool, err error) {
+	db := store.Back.DB
+
+	// Get current usage
+	err = db.QueryRow(`SELECT SUM(bodyLen) FROM msgs
+		JOIN mboxes ON msgs.mboxId = mboxes.id
+		JOIN users ON mboxes.uid = users.id
+		WHERE users.username = ?`, username).Scan(&used)
+	if err != nil {
+		used = 0
+	}
+
+	// Get max storage
+	var maxVal sql.NullInt64
+	err = db.QueryRow(`SELECT max_storage FROM quotas WHERE username = ?`, username).Scan(&maxVal)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, false, err
+	}
+
+	if maxVal.Valid {
+		return used, maxVal.Int64, false, nil
+	}
+
+	// Try to get global default override from DB
+	var globalDef sql.NullInt64
+	_ = db.QueryRow(`SELECT max_storage FROM quotas WHERE username = '__GLOBAL_DEFAULT__'`).Scan(&globalDef)
+	if globalDef.Valid {
+		return used, globalDef.Int64, true, nil
+	}
+
+	return used, store.defaultQuota, true, nil
+}
+
+func (store *Storage) GetDefaultQuota() int64 {
+	db := store.Back.DB
+	var globalDef sql.NullInt64
+	_ = db.QueryRow(`SELECT max_storage FROM quotas WHERE username = '__GLOBAL_DEFAULT__'`).Scan(&globalDef)
+	if globalDef.Valid {
+		return globalDef.Int64
+	}
+	return store.defaultQuota
+}
+
+func (store *Storage) SetDefaultQuota(max int64) error {
+	db := store.Back.DB
+	_, err := db.Exec(`INSERT INTO quotas (username, max_storage) VALUES ('__GLOBAL_DEFAULT__', ?)
+		ON CONFLICT(username) DO UPDATE SET max_storage = excluded.max_storage`, max)
+	return err
+}
+
+func (store *Storage) SetQuota(username string, max int64) error {
+	db := store.Back.DB
+
+	_, err := db.Exec(`INSERT INTO quotas (username, max_storage) VALUES (?, ?)
+		ON CONFLICT(username) DO UPDATE SET max_storage = excluded.max_storage`, username, max)
+	return err
+}
+
+func (store *Storage) ResetQuota(username string) error {
+	db := store.Back.DB
+
+	_, err := db.Exec(`UPDATE quotas SET max_storage = NULL WHERE username = ?`, username)
+	return err
+}
+
+func (store *Storage) GetAccountDate(username string) (created int64, err error) {
+	db := store.Back.DB
+
+	var createdVal sql.NullInt64
+	err = db.QueryRow(`SELECT created_at FROM quotas WHERE username = ?`, username).Scan(&createdVal)
+	if err == nil && createdVal.Valid {
+		return createdVal.Int64, nil
+	}
+
+	// Fallback to oldest message if no creation date recorded
+	err = db.QueryRow(`SELECT MIN(date) FROM msgs
+		JOIN mboxes ON msgs.mboxId = mboxes.id
+		JOIN users ON mboxes.uid = users.id
+		WHERE users.username = ?`, username).Scan(&createdVal)
+	if err == nil && createdVal.Valid {
+		return createdVal.Int64, nil
+	}
+
+	return 0, nil
+}
+
+func (store *Storage) GetStat() (totalStorage int64, accountsCount int, err error) {
+	db := store.Back.DB
+
+	err = db.QueryRow(`SELECT SUM(bodyLen) FROM msgs`).Scan(&totalStorage)
+	if err != nil {
+		totalStorage = 0
+	}
+
+	err = db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&accountsCount)
+	if err != nil {
+		accountsCount = 0
+	}
+
+	return totalStorage, accountsCount, nil
 }
 
 func (store *Storage) cleanupLoop() {
@@ -296,30 +423,16 @@ func (store *Storage) cleanupLoop() {
 }
 
 func (store *Storage) PruneMessages(retention time.Duration) error {
-	// Note: This relies on go-imap-sql's internal structure.
-	// We use a separate connection to avoid interfering with the main backend.
-	// Based on chatmail requirements, we only support SQLite for pruning here
-	// as it is the default for simple installs.
-	if store.driver != "sqlite3" && store.driver != "sqlite" {
-		return nil // Not supported for other drivers yet
-	}
-
-	dsnStr := strings.Join(store.dsn, " ")
-	db, err := sql.Open(store.driver, dsnStr)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
+	db := store.Back.DB
 	cutoff := time.Now().Add(-retention).Unix()
 
 	// go-imap-sql uses 'msgs' or 'messages' table.
-	// Recent versions use 'msgs' table with 'internalDate' as Unix timestamp.
-	// We'll try to delete from 'msgs' where 'internalDate' is older than cutoff.
-	_, err = db.Exec("DELETE FROM msgs WHERE internalDate < ?", cutoff)
+	// Recent versions use 'msgs' table with 'date' as Unix timestamp.
+	// We'll try to delete from 'msgs' where 'date' is older than cutoff.
+	_, err := db.Exec("DELETE FROM msgs WHERE date < ?", cutoff)
 	if err != nil {
 		// Try 'messages' table if 'msgs' fails
-		_, err = db.Exec("DELETE FROM messages WHERE internalDate < ?", cutoff)
+		_, err = db.Exec("DELETE FROM messages WHERE date < ?", cutoff)
 	}
 
 	// Also clean up blobs if they are in the database (not common for messages though)
@@ -421,7 +534,7 @@ func (store *Storage) I18NLevel() int {
 }
 
 func (store *Storage) IMAPExtensions() []string {
-	return []string{"APPENDLIMIT", "MOVE", "CHILDREN", "SPECIAL-USE", "I18NLEVEL=1", "SORT", "THREAD=ORDEREDSUBJECT"}
+	return []string{"APPENDLIMIT", "MOVE", "CHILDREN", "SPECIAL-USE", "I18NLEVEL=1", "SORT", "THREAD=ORDEREDSUBJECT", "QUOTA"}
 }
 
 func (store *Storage) CreateMessageLimit() *uint32 {

@@ -79,6 +79,7 @@
     <h2>سرور چت {{.MailDomain | cleanDomain}}</h2>
     <p>این یک سرور اختصاصی برای استفاده در <strong>دلتاچت</strong> است.</p>
 
+    {{if .RegistrationOpen}}
     <button class="cta-button" style="font-size: 0.9em; padding: 10px 20px;" onclick="generateAccount()">مجدد</button>
 
     <div id="account-result">
@@ -128,14 +129,14 @@
         <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
 
         <p
-            style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+            style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 10px;">
             * این پروکسی مختص همین سرور Madmail است.
         </p>
     </div>
     {{end}}
 
     <div
-        style="margin-top: 40px; padding: 20px; background: var(--card-bg); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+        style="margin-top: 40px; padding: 20px; background: var(--card-bg); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
         <h3>اشتراک‌گذاری آی‌دی</h3>
         <p style="margin-bottom: 20px;">شما می‌توانید آی‌دی دلتاچت خود را به اشتراک بگذارید تا دیگران بتوانند با شما
             تماس بگیرند.</p>
@@ -143,6 +144,16 @@
             <a href="/share" class="cta-button">اشتراک‌گذاری آی‌دی من</a>
         </div>
     </div>
+    {{else}}
+    <div
+        style="margin: 60px auto; padding: 40px; background: rgba(255, 68, 68, 0.05); border: 1px solid rgba(255, 68, 68, 0.3); border-radius: 16px; max-width: 600px;">
+        <h3 style="color: #ff4444; margin-top: 0; font-size: 1.5em;">ثبت‌نام بسته شده است</h3>
+        <p style="line-height: 2; font-size: 1.1em; color: #eee;">
+            ثبت‌نام کاربر جدید در این سرور موقتاً غیرفعال شده است.
+            لطفاً از سرورهای دیگر استفاده کنید.
+        </p>
+    </div>
+    {{end}}
 
     <script>
         let currentLink = "";
@@ -191,7 +202,11 @@
             copyToClipboard(el.innerText);
         }
 
-        window.onload = generateAccount;
+        window.onload = function () {
+            if ("{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true") {
+                generateAccount();
+            }
+        };
     </script>
 
     <footer

@@ -233,7 +233,11 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 		}
 		e.imapModule = mod
 	}
-	// Priority 2: Static files and templates
+	// Priority 2: Documentation
+	e.mux.HandleFunc("/docs", e.handleDocs)
+	e.mux.HandleFunc("/docs/", e.handleDocs)
+
+	// Priority 3: Static files and templates
 	e.mux.HandleFunc("/", e.handleStaticFiles)
 	e.serv.Handler = e.mux
 
@@ -333,6 +337,17 @@ func (e *Endpoint) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	open, err := e.authDB.IsRegistrationOpen()
+	if err != nil {
+		e.logger.Error("failed to check registration status", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !open {
+		http.Error(w, "Registration is closed", http.StatusForbidden)
+		return
+	}
+
 	// Generate random username
 	username, err := e.generateRandomString(e.usernameLength)
 	if err != nil {
@@ -402,6 +417,29 @@ func (e *Endpoint) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 	e.logger.Printf("created new account: %s", email)
 }
 
+func (e *Endpoint) handleDocs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/docs")
+	path = strings.TrimPrefix(path, "/")
+
+	switch path {
+	case "", "index", "index.html":
+		e.serveTemplate(w, r, "docs_index.html", nil)
+	case "admin":
+		e.serveTemplate(w, r, "admin_docs.html", nil)
+	case "general":
+		e.serveTemplate(w, r, "general_docs.html", nil)
+	case "serve", "custom-html":
+		e.serveTemplate(w, r, "docs_serve.html", nil)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -412,11 +450,6 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path == "" {
 		path = "index.html"
-	}
-
-	if path == "docs/serve" {
-		e.serveTemplate(w, r, "docs_serve.html", nil)
-		return
 	}
 
 	// Try to read the file
@@ -466,6 +499,7 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 			"upper":       strings.ToUpper,
 			"safeURL":     func(s string) template.URL { return template.URL(s) },
 			"cleanDomain": func(s string) string { return strings.Trim(s, "[]") },
+			"formatBytes": formatBytes,
 		}).Parse(string(fileData))
 		if err != nil {
 			e.logger.Error("failed to parse template", err, "file", path)
@@ -475,21 +509,25 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 
 		// Template data
 		data := struct {
-			MailDomain string
-			MXDomain   string
-			WebDomain  string
-			PublicIP   string
-			TurnOffTLS bool
-			Version    string
-			SSURL      string
+			MailDomain       string
+			MXDomain         string
+			WebDomain        string
+			PublicIP         string
+			TurnOffTLS       bool
+			Version          string
+			SSURL            string
+			DefaultQuota     int64
+			RegistrationOpen bool
 		}{
-			MailDomain: e.mailDomain,
-			MXDomain:   e.mxDomain,
-			WebDomain:  e.webDomain,
-			PublicIP:   e.publicIP,
-			TurnOffTLS: e.turnOffTLS,
-			Version:    config.Version,
-			SSURL:      e.getShadowsocksURL(),
+			MailDomain:       e.mailDomain,
+			MXDomain:         e.mxDomain,
+			WebDomain:        e.webDomain,
+			PublicIP:         e.publicIP,
+			TurnOffTLS:       e.turnOffTLS,
+			Version:          config.Version,
+			SSURL:            e.getShadowsocksURL(),
+			DefaultQuota:     e.storage.GetDefaultQuota(),
+			RegistrationOpen: func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
 		}
 
 		w.Header().Set("Content-Type", contentType)
@@ -1132,6 +1170,7 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		"upper":       strings.ToUpper,
 		"safeURL":     func(s string) template.URL { return template.URL(s) },
 		"cleanDomain": func(s string) string { return strings.Trim(s, "[]") },
+		"formatBytes": formatBytes,
 	}).Parse(string(fileData))
 	if err != nil {
 		e.logger.Error("failed to parse template", err, "file", name)
@@ -1141,23 +1180,27 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 
 	// Composite data including default fields
 	data := struct {
-		MailDomain string
-		MXDomain   string
-		WebDomain  string
-		PublicIP   string
-		TurnOffTLS bool
-		Version    string
-		SSURL      string
-		Custom     interface{}
+		MailDomain       string
+		MXDomain         string
+		WebDomain        string
+		PublicIP         string
+		TurnOffTLS       bool
+		Version          string
+		SSURL            string
+		DefaultQuota     int64
+		RegistrationOpen bool
+		Custom           interface{}
 	}{
-		MailDomain: e.mailDomain,
-		MXDomain:   e.mxDomain,
-		WebDomain:  e.webDomain,
-		PublicIP:   e.publicIP,
-		TurnOffTLS: e.turnOffTLS,
-		Version:    config.Version,
-		SSURL:      e.getShadowsocksURL(),
-		Custom:     customData,
+		MailDomain:       e.mailDomain,
+		MXDomain:         e.mxDomain,
+		WebDomain:        e.webDomain,
+		PublicIP:         e.publicIP,
+		TurnOffTLS:       e.turnOffTLS,
+		Version:          config.Version,
+		SSURL:            e.getShadowsocksURL(),
+		DefaultQuota:     e.storage.GetDefaultQuota(),
+		RegistrationOpen: func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
+		Custom:           customData,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1166,6 +1209,19 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+}
+
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func init() {

@@ -292,22 +292,185 @@ func (endp *Endpoint) I18NLevel() int {
 
 func (endp *Endpoint) enableExtensions() error {
 	exts := endp.Store.IMAPExtensions()
+	hasQuota := false
 	for _, ext := range exts {
 		switch ext {
 		case "I18NLEVEL=1", "I18NLEVEL=2":
 			endp.serv.Enable(i18nlevel.NewExtension())
 		case "SORT":
 			endp.serv.Enable(sortthread.NewSortExtension())
+		case "QUOTA":
+			hasQuota = true
 		}
 		if strings.HasPrefix(ext, "THREAD") {
 			endp.serv.Enable(sortthread.NewThreadExtension())
 		}
 	}
 
+	if hasQuota {
+		endp.serv.Enable(&quotaExtension{endp: endp})
+	}
+
 	endp.serv.Enable(compress.NewExtension())
 	endp.serv.Enable(namespace.NewExtension())
 
 	return nil
+}
+
+type quotaExtension struct {
+	endp *Endpoint
+}
+
+func (ext *quotaExtension) Capabilities(c imapserver.Conn) []string {
+	if c.Context().State&imap.AuthenticatedState != 0 {
+		return []string{"QUOTA"}
+	}
+	return nil
+}
+
+func (ext *quotaExtension) Command(name string) imapserver.HandlerFactory {
+	switch strings.ToUpper(name) {
+	case "GETQUOTA":
+		return func() imapserver.Handler {
+			return &getQuotaHandler{endp: ext.endp}
+		}
+	case "GETQUOTAROOT":
+		return func() imapserver.Handler {
+			return &getQuotaRootHandler{endp: ext.endp}
+		}
+	case "SETQUOTA":
+		return func() imapserver.Handler {
+			return &setQuotaHandler{endp: ext.endp}
+		}
+	}
+	return nil
+}
+
+type getQuotaHandler struct {
+	endp *Endpoint
+	root string
+}
+
+func (h *getQuotaHandler) Parse(fields []interface{}) error {
+	if len(fields) < 1 {
+		return errors.New("GETQUOTA requires a quota root")
+	}
+	root, ok := fields[0].(string)
+	if !ok {
+		return errors.New("Quota root must be a string")
+	}
+	h.root = root
+	return nil
+}
+
+type quotaStore interface {
+	GetQuota(username string) (used, max int64, isDefault bool, err error)
+}
+
+func (h *getQuotaHandler) Handle(conn imapserver.Conn) error {
+	user := conn.Context().User
+	if user == nil {
+		return errors.New("Not authenticated")
+	}
+
+	qs, ok := h.endp.Store.(quotaStore)
+	if !ok {
+		return errors.New("Storage does not support quotas")
+	}
+
+	used, max, _, err := qs.GetQuota(user.Username())
+	if err != nil {
+		return err
+	}
+
+	usedKB := used / 1024
+	maxKB := max / 1024
+
+	// RFC 2087: * QUOTA "ROOT" (STORAGE 10 512)
+	conn.WriteResp(&imap.DataResp{
+		Fields: []interface{}{
+			imap.RawString("QUOTA"),
+			"ROOT",
+			[]interface{}{
+				imap.RawString("STORAGE"),
+				uint32(usedKB),
+				uint32(maxKB),
+			},
+		},
+	})
+
+	return nil
+}
+
+type getQuotaRootHandler struct {
+	endp    *Endpoint
+	mailbox string
+}
+
+func (h *getQuotaRootHandler) Parse(fields []interface{}) error {
+	if len(fields) < 1 {
+		return errors.New("GETQUOTAROOT requires a mailbox name")
+	}
+	mailbox, ok := fields[0].(string)
+	if !ok {
+		return errors.New("Mailbox name must be a string")
+	}
+	h.mailbox = mailbox
+	return nil
+}
+
+func (h *getQuotaRootHandler) Handle(conn imapserver.Conn) error {
+	user := conn.Context().User
+	if user == nil {
+		return errors.New("Not authenticated")
+	}
+
+	qs, ok := h.endp.Store.(quotaStore)
+	if !ok {
+		return errors.New("Storage does not support quotas")
+	}
+
+	used, max, _, err := qs.GetQuota(user.Username())
+	if err != nil {
+		return err
+	}
+
+	// For simplicity, we only have one quota root which is "ROOT"
+	conn.WriteResp(&imap.DataResp{
+		Fields: []interface{}{
+			imap.RawString("QUOTAROOT"),
+			h.mailbox,
+			"ROOT",
+		},
+	})
+
+	usedKB := used / 1024
+	maxKB := max / 1024
+	conn.WriteResp(&imap.DataResp{
+		Fields: []interface{}{
+			imap.RawString("QUOTA"),
+			"ROOT",
+			[]interface{}{
+				imap.RawString("STORAGE"),
+				uint32(usedKB),
+				uint32(maxKB),
+			},
+		},
+	})
+
+	return nil
+}
+
+type setQuotaHandler struct {
+	endp *Endpoint
+}
+
+func (h *setQuotaHandler) Parse(fields []interface{}) error {
+	return errors.New("SETQUOTA is not allowed via IMAP")
+}
+
+func (h *setQuotaHandler) Handle(conn imapserver.Conn) error {
+	return errors.New("SETQUOTA is not allowed via IMAP")
 }
 
 func (endp *Endpoint) SupportedThreadAlgorithms() []sortthread.ThreadAlgorithm {
