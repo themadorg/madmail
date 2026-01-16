@@ -59,7 +59,6 @@ func IsSecureJoinMessage(header textproto.Header, body io.Reader) bool {
 		return false
 	}
 
-	// Check content type for multipart/
 	if !strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
 		return false
 	}

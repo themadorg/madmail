@@ -13,14 +13,14 @@ The following types of messages are accepted by the server:
 ### 1. PGP/MIME Encrypted Messages
 Messages that follow the [RFC 3156](https://tools.ietf.org/html/rfc3156) standard for PGP/MIME encryption:
 - **Content-Type**: `multipart/encrypted; protocol="application/pgp-encrypted"`
-- **Structure**: 
+- **Structure**:
   - The first part must be `application/pgp-encrypted` with the content `Version: 1`.
   - The second part must be `application/octet-stream` containing a valid OpenPGP "Symmetrically Encrypted and Integrity Protected Data Packet" (SEIDP).
 
 ### 2. Secure Join Handshake
 To allow users to establish a verified connection (bootstrapping trust), initial Secure Join requests are accepted unencrypted:
 - **Headers**: Contains `Secure-Join: vc-request` or `Secure-Join: vg-request`.
-- **Body**: Alternatively, if the header is missing, the server scans the first 8KB of the message body for these strings (common in some Delta Chat clients).
+- **Body**: Equals `secure-join: vc-request` or `secure-join: vg-request` (case-insensitive).
 
 ### 3. Automated System Messages (Bounces)
 Certain automated messages are allowed to ensure the mail system remains functional:
