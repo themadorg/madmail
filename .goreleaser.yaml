@@ -1,0 +1,64 @@
+version: 2
+project_name: maddy
+dist: goreleaser_dist
+
+builds:
+  - id: maddy
+    main: ./cmd/maddy
+    binary: maddy
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=1
+    ldflags:
+      - -s
+      - -w
+      # support embedding version for both the upstream package path and this fork's module path
+      - -X "github.com/foxcpp/maddy.Version={{.Version}}"
+      - -X "github.com/themadorg/madmail.Version={{.Version}}"
+    # Some targets (like static linux builds) may require special tags; leave tags optional
+    tags: "osusergo netgo"
+
+archives:
+  - id: default
+    files:
+      - maddy.conf
+      - README.md
+      - COPYING
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+  - id: binaries
+    format: binary
+    name_template: "{{ .Binary }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot: {}
+
+release:
+  github:
+    owner: themadorg
+    name: maddy_chatmail
+  # make a release on tag push
+  draft: false
+  prerelease: auto
+  header: |
+    ## Release Summary
+
+    This release includes the latest changes and binaries for Maddy Chatmail Server.
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+

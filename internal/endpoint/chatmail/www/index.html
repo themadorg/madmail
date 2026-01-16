@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+    <title>سرور چت {{.MailDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="./main.css">
+    <script src="./main.js"></script>
+    <link rel="icon" href="/logo.svg">
+    <style>
+        body {
+            font-family: Tahoma, Arial, sans-serif;
+            text-align: center;
+        }
+
+        .cta-button {
+            margin: 20px 0;
+            cursor: pointer;
+            border: none;
+        }
+
+        #account-result {
+            display: none;
+            margin: 20px auto;
+            padding: 20px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            max-width: 500px;
+        }
+
+        .manual-box {
+            text-align: right;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 30px;
+            font-size: 0.9em;
+            line-height: 1.8;
+        }
+
+        .copy-text {
+            font-family: monospace;
+            background: #000;
+            padding: 5px;
+            border-radius: 4px;
+            color: #00d2ff;
+            cursor: pointer;
+            word-break: break-all;
+            display: block;
+            margin-top: 10px;
+            direction: ltr;
+        }
+
+        #menu {
+            justify-content: center;
+        }
+
+        #menu li {
+            margin: 0 10px;
+        }
+
+        #domain {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+        <li><a href="/share">اشتراک‌گذاری</a></li>
+        <li><a href="/info.html">راهنما</a></li>
+        <li><a href="/security.html">امنیت</a></li>
+        <li><a href="/deploy.html">راه‌اندازی</a></li>
+    </ul>
+
+    <h2>سرور چت {{.MailDomain | cleanDomain}}</h2>
+    <p>این یک سرور اختصاصی برای استفاده در <strong>دلتاچت</strong> است.</p>
+
+    {{if .RegistrationOpen}}
+    <button class="cta-button" style="font-size: 0.9em; padding: 10px 20px;" onclick="generateAccount()">مجدد</button>
+
+    <div id="account-result">
+        <div style="display: flex; gap: 10px; margin: 20px 0; justify-content: center; flex-wrap: wrap;">
+            <button class="cta-button" onclick="openDeltaChat()" style="font-size: 0.9em; padding: 10px 20px;">ساخت
+                اکانت و ورود</button>
+            <button class="cta-button" onclick="copyLink()"
+                style="font-size: 0.9em; padding: 10px 20px; background: #444;">کپی لینک</button>
+        </div>
+
+        <div style="background: white; padding: 10px; border-radius: 8px; display: inline-block;">
+            <img id="result-qr" width="180" alt="QR Code" />
+        </div>
+    </div>
+
+    <div class="manual-box">
+        <strong>راهنمای افزودن دستی (اگر دکمه کار نکرد):</strong>
+        <ol>
+            <li>در دلتاچت "ایجاد پروفایل جدید" (Create new profile) را انتخاب کنید.</li>
+            <li>سپس "استفاده از سرور دیگر" (Use Other server) را بزنید.</li>
+            <li>عبارت زیر را کپی کرده و در بخش اسکن کد، گزینه "جایگذاری از حافظه" (Paste from clipboard) را بزنید:</li>
+        </ol>
+        <p id="manual-link" dir="ltr" style="word-break: break-all; margin-top: 10px; color: #ccc; cursor: pointer;"
+            onclick="copyText(this)"></p>
+    </div>
+
+    <div class="manual-box" style="background: rgba(255, 255, 255, 0.05); border-top: 1px solid #444;">
+        <strong>نکته مخصوص کاربران iOS (آیفون):</strong>
+        <p style="font-size: 0.9em; margin-top: 10px;">کاربران آیفون باید لینک استاندارد بالا را کپی کرده و در هنگام
+            ساخت اکانت جدید به شکل زیر عمل کنند:</p>
+        <p dir="ltr" style="font-size: 0.85em;">new account > use other server > scan > paste</p>
+        <p style="font-size: 0.85em; margin-top: 10px;">اگرچه کلیک روی دکمه ورود در iOS ممکن است کار کند، اما به دلیل
+            محدودیت‌های سیستم‌عامل، روش کپی و جایگذاری (Paste) پیشنهاد می‌شود.</p>
+    </div>
+
+    {{if .SSURL}}
+    <div class="ss-prominent-box">
+        <strong>🚀 لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
+        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
+            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
+
+        <div class="ss-copy-container">
+            <p>لینک پروکسی Shadowsocks:</p>
+            <div class="ss-copy-text" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+        </div>
+
+        <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+
+        <p
+            style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 10px;">
+            * این پروکسی مختص همین سرور Madmail است.
+        </p>
+    </div>
+    {{end}}
+
+    <div
+        style="margin-top: 40px; padding: 20px; background: var(--card-bg); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
+        <h3>اشتراک‌گذاری آی‌دی</h3>
+        <p style="margin-bottom: 20px;">شما می‌توانید آی‌دی دلتاچت خود را به اشتراک بگذارید تا دیگران بتوانند با شما
+            تماس بگیرند.</p>
+        <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+            <a href="/share" class="cta-button">اشتراک‌گذاری آی‌دی من</a>
+        </div>
+    </div>
+    {{else}}
+    <div
+        style="margin: 60px auto; padding: 40px; background: rgba(255, 68, 68, 0.05); border: 1px solid rgba(255, 68, 68, 0.3); border-radius: 16px; max-width: 600px;">
+        <h3 style="color: #ff4444; margin-top: 0; font-size: 1.5em;">ثبت‌نام بسته شده است</h3>
+        <p style="line-height: 2; font-size: 1.1em; color: #eee;">
+            ثبت‌نام کاربر جدید در این سرور موقتاً غیرفعال شده است.
+            لطفاً از سرورهای دیگر استفاده کنید.
+        </p>
+    </div>
+    {{end}}
+
+    <script>
+        let currentLink = "";
+
+        function generateRandomString(length) {
+            const charset = "abcdefghijklmnopqrstuvwxyz0123456789";
+            let result = "";
+            for (let i = 0; i < length; i++) {
+                result += charset.charAt(Math.floor(Math.random() * charset.length));
+            }
+            return result;
+        }
+
+        function generateAccount() {
+            const username = generateRandomString(12);
+            const password = generateRandomString(24);
+            const email = formatEmail(username, "{{.MailDomain | cleanDomain}}");
+            const host = "{{.PublicIP | cleanDomain}}" || "{{.MXDomain | cleanDomain}}";
+            const turnOffTLS = ("{{if .TurnOffTLS}}true{{else}}false{{end}}" === "true");
+
+            if (turnOffTLS) {
+                currentLink = `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=143&sh=${host}&sp=25&is=plain&ss=plain&sc=3`;
+            } else {
+                currentLink = `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=993&sh=${host}&sp=465&ic=3&ss=default`;
+            }
+
+
+            document.getElementById('manual-link').innerText = currentLink;
+            document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
+            document.getElementById('account-result').style.display = 'block';
+        }
+
+        function openDeltaChat() {
+            if (currentLink) window.location.href = currentLink;
+        }
+
+
+
+        function copyLink() {
+            if (currentLink) {
+                copyToClipboard(currentLink);
+            }
+        }
+
+        function copyText(el) {
+            copyToClipboard(el.innerText);
+        }
+
+        window.onload = function () {
+            if ("{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true") {
+                generateAccount();
+            }
+        };
+    </script>
+
+    <footer
+        style="margin-top: 50px; padding: 20px; font-size: 0.8em; color: #888; border-top: 1px solid rgba(255,255,255,0.1);">
+        نسخه {{.Version}}
+    </footer>
+</body>
+
+</html>

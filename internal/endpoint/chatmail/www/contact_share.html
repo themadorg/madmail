@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>اشتراک‌گذاری آی‌دی دلتاچت - {{.WebDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <style>
+        .form-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 500px;
+            margin: 40px auto;
+            text-align: right;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            box-sizing: border-box;
+            direction: ltr;
+        }
+
+        input#name {
+            direction: rtl;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);
+        }
+
+        .help-text {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+    </style>
+    <script src="./main.js"></script>
+</head>
+
+<body>
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+        <li><a href="/share">اشتراک‌گذاری</a></li>
+        <li><a href="/info.html">راهنما</a></li>
+        <li><a href="/security.html">امنیت</a></li>
+        <li><a href="/deploy.html">راه‌اندازی</a></li>
+    </ul>
+
+    <div style="text-align: center;">
+        <h1>ایجاد لینک قابل اشتراک‌گذاری</h1>
+        <p>اجازه دهید دیگران به راحتی در دلتاچت با شما تماس بگیرند.</p>
+    </div>
+
+    <div class="form-container">
+        <form id="shareForm">
+            <div class="form-group">
+                <label for="name">نام شما (اختیاری)</label>
+                <input type="text" id="name" name="name" placeholder="مثلاً علی رضا">
+            </div>
+            <div class="form-group">
+                <label for="slug">نام مسیر (اختیاری)</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="slug" name="slug" placeholder="مثلاً ali20" style="flex-grow: 1;"
+                        pattern="[a-zA-Z0-9]+" title="فقط حروف و اعداد مجاز است">
+                    <button type="button" onclick="generateRandomSlug()" class="copy-btn"
+                        style="white-space: nowrap; font-size: 0.8rem; padding: 0 15px;">تصادفی</button>
+                </div>
+                <p class="help-text">فقط حروف و اعداد (مثلاً A231). آدرس نهایی: {{.WebDomain | cleanDomain}}/[نام]</p>
+            </div>
+            <div class="form-group">
+                <label for="url">آدرس دعوت دلتاچت شما</label>
+                <input type="text" id="url" name="url" required placeholder="https://i.delta.chat/#...">
+                <div
+                    style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin-top: 10px; font-size: 0.85rem; line-height: 1.6;">
+                    <strong style="color: var(--accent-color);">نحوه پیدا کردن لینک در اپلیکیشن:</strong>
+                    <ol style="margin: 8px 15px 0 0; padding: 0;">
+                        <li>وارد <strong>تنظیمات</strong> دلتاچت شوید.</li>
+                        <li>روی <strong>آیکون QR کد</strong> در بالا بزنید.</li>
+                        <li>گزینه <strong>اشتراک‌گذاری کد QR</strong> را بزنید.</li>
+                        <li>سپس <strong>کپی کردن لینک</strong> را انتخاب کنید.</li>
+                    </ol>
+                    <p style="margin-top: 8px; color: var(--text-secondary); font-size: 0.8rem;">⚠️ فقط لینک‌های وب که
+                        با <code dir="ltr">https://i.delta.chat/#</code> شروع می‌شوند کار می‌کنند.</p>
+                </div>
+            </div>
+            <button type="submit" class="cta-button"
+                style="width: 100%; border: none; cursor: pointer; font-family: inherit;">ایجاد لینک</button>
+        </form>
+    </div>
+
+    <!-- Error Modal -->
+    <div id="errorModal" class="modal">
+        <div class="modal-content">
+            <div class="error-popup" id="errorMessage">خطایی رخ داد</div>
+            <button onclick="closeModal()" class="cta-button" style="width: 100%; padding: 10px;">متوجه شدم</button>
+        </div>
+    </div>
+
+    {{if .SSURL}}
+    <div class="ss-prominent-box">
+        <strong>🚀 لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
+        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
+            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
+
+        <div class="ss-copy-container">
+            <p>لینک پروکسی Shadowsocks:</p>
+            <div class="ss-copy-text" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+        </div>
+
+        <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+
+        <p
+            style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+            * این پروکسی مختص همین سرور Madmail است.
+        </p>
+    </div>
+    {{end}}
+
+    <div class="experimental" style="text-align: right;">
+        <strong>نکته حریم خصوصی:</strong> آدرس دعوت شما در پایگاه داده ما ذخیره می‌شود تا دیگران بتوانند با شما ارتباط
+        برقرار کنند. هر کسی که لینک شما را داشته باشد می‌تواند این اطلاعات را ببیند.
+    </div>
+
+    <script>
+        function generateRandomSlug() {
+            const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+            let result = '';
+            for (let i = 0; i < 8; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            document.getElementById('slug').value = result;
+        }
+
+        function closeModal() {
+            document.getElementById('errorModal').style.display = 'none';
+        }
+
+        document.getElementById('shareForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+
+            fetch('/share', {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (response.ok) {
+                    return response.text().then(html => {
+                        document.open();
+                        document.write(html);
+                        document.close();
+                    });
+                } else {
+                    response.text().then(text => {
+                        document.getElementById('errorMessage').innerText = text;
+                        document.getElementById('errorModal').style.display = 'block';
+                    });
+                }
+            }).catch(error => {
+                document.getElementById('errorMessage').innerText = 'خطا در ارتباط با سرور';
+                document.getElementById('errorModal').style.display = 'block';
+            });
+        });
+    </script>
+</body>
+
+</html>

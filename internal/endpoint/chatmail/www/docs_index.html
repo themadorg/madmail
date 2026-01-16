@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>فهرست مستندات - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <style>
+        .doc-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            direction: rtl;
+        }
+
+        .doc-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .doc-list li {
+            margin: 15px 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            transition: transform 0.2s;
+        }
+
+        .doc-list li:hover {
+            transform: translateX(-10px);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .doc-list a {
+            text-decoration: none;
+            color: var(--accent-color);
+            font-weight: bold;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+    </ul>
+
+    <div class="doc-container">
+        <h1>فهرست مستندات</h1>
+        <p>مستندات {{.WebDomain | cleanDomain}} را در اینجا مدیریت کنید.</p>
+
+        <ul class="doc-list">
+            <li>
+                <a href="/docs/general">مستندات عمومی</a>
+                <span>اطلاعات پایه برای تمام کاربران.</span>
+            </li>
+            <li>
+                <a href="/docs/admin">مستندات مدیر سیستم</a>
+                <span>مدیریت پیشرفته و دستورات خط فرمان.</span>
+            </li>
+            <li>
+                <a href="/docs/custom-html">راهنمای شخصی‌سازی HTML</a>
+                <span>چگونه ظاهر این سرور را شخصی‌سازی کنید.</span>
+            </li>
+            <li>
+                <a href="/docs/database">مستندات پایگاه داده</a>
+                <span>نحوه اتصال به PostgreSQL و MySQL.</span>
+            </li>
+        </ul>
+    </div>
+</body>
+
+</html>

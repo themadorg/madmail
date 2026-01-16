@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>راهنمای شخصی‌سازی ظاهر - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <style>
+        .doc-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .code-block {
+            direction: ltr;
+            text-align: left;
+            background: #000;
+            padding: 15px;
+            border-radius: 8px;
+            color: #00d2ff;
+            font-family: monospace;
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+
+        h2 {
+            margin-top: 30px;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        .step-badge {
+            background: var(--primary-gradient);
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            margin-left: 10px;
+            color: #ffffff;
+        }
+
+        .warning-note {
+            background: rgba(255, 171, 0, 0.1);
+            border-right: 4px solid #ffab00;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+        <li><a href="/share">اشتراک‌گذاری</a></li>
+        <li><a href="/info.html">راهنما</a></li>
+        <li><a href="/security.html">امنیت</a></li>
+        <li><a href="/deploy.html">راه‌اندازی</a></li>
+    </ul>
+
+    <div class="doc-container">
+        <h1>راهنمای شخصی‌سازی ظاهر سرور (Custom HTML)</h1>
+        <p>شما می‌توانید ظاهر تمام صفحات وب سرور خود را بدون نیاز به تغییر در کد اصلی و کامپایل مجدد، تغییر دهید.</p>
+
+        <h2><span class="step-badge">مرحله ۱</span> استخراج فایل‌های اصلی</h2>
+        <p>ابتدا باید فایل‌های پیش‌فرض را در یک پوشه استخراج کنید. پوشه پیشنهادی ما <code>/var/lib/maddy/www</code> است.
+        </p>
+        <div class="code-block">
+            sudo maddy html-export /var/lib/maddy/www
+        </div>
+
+        <h2><span class="step-badge">مرحله ۲</span> تنظیم دسترسی‌ها</h2>
+        <p>برای اینکه سرور اجازه خواندن فایل‌ها را داشته باشد، باید مالکیت پوشه را به کاربر <code>maddy</code> تغییر
+            دهید.</p>
+        <div class="code-block">
+            sudo chown -R maddy:maddy /var/lib/maddy/www
+        </div>
+
+        <h2><span class="step-badge">مرحله ۳</span> فعال‌سازی در سرور</h2>
+        <p>با دستور زیر، فایل تنظیمات سرور (maddy.conf) را به‌روزرسانی کنید تا از پوشه جدید استفاده کند.</p>
+        <div class="code-block">
+            sudo maddy html-serve /var/lib/maddy/www
+        </div>
+
+        <h2><span class="step-badge">مرحله ۴</span> اعمال تغییرات</h2>
+        <p>در نهایت سرویس را ری‌استارت کنید تا تغییرات اعمال شود.</p>
+        <div class="code-block">
+            sudo systemctl restart maddy
+        </div>
+
+        <div class="warning-note">
+            <strong>نکته مهم:</strong> بعد از انجام مراحل بالا، شما می‌توانید فایل‌های داخل پوشه
+            <code>/var/lib/maddy/www</code> را با ویرایشگر (مثل nano) باز کرده و تغییر دهید. تغییرات بلافاصله (بعد از
+            رفرش صفحه) اعمال می‌شوند.
+        </div>
+
+        <h2>بازگشت به حالت اولیه</h2>
+        <p>اگر خواستید دوباره از فایل‌های داخلی خودِ برنامه استفاده کنید:</p>
+        <div class="code-block">
+            sudo maddy html-serve embedded<br>
+            sudo systemctl restart maddy
+        </div>
+    </div>
+
+    <footer style="text-align: center; margin: 40px; color: #888; font-size: 0.8em;">
+        نسخه {{.Version}}
+    </footer>
+</body>
+
+</html>

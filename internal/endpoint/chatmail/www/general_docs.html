@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مستندات عمومی - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <style>
+        .doc-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            direction: rtl;
+        }
+
+        h2 {
+            margin-top: 30px;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        .highlight {
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        .security-tip {
+            background: rgba(0, 210, 255, 0.1);
+            border-right: 4px solid #00d2ff;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+        <li><a href="/docs">مستندات</a></li>
+    </ul>
+
+    <div class="doc-container">
+        <h1>مستندات عمومی</h1>
+        <p>به بخش مستندات عمومی سرور <span class="highlight">Madmail</span> خوش آمدید.</p>
+
+        <h2>معرفی سرویس Madmail</h2>
+        <p>
+            سرویس <span class="highlight">Madmail</span> یک اپلیکیشن ایمیل قدرتمند است که بر پایه پروژه <span
+                class="highlight">Maddy</span> توسعه یافته است.
+            این سرویس به صورت یک باینری زبان <span class="highlight">Go</span> (Golang) اجرا می‌شود و هدف اصلی آن ایجاد
+            یک بستر
+            ارتباطی امن و سریع است.
+        </p>
+
+        <h2>پیام‌رسان متصل به DeltaChat</h2>
+        <p>
+            مهم‌ترین ویژگی Madmail این است که یک سرور چت <span class="highlight">End-to-End Encrypted</span> (رمزنگاری
+            شده از مبدا تا مقصد) برای شما ایجاد می‌کند.
+            شما می‌توانید از این سرویس در اپلیکیشن محبوب <span class="highlight">DeltaChat</span> استفاده کنید و
+            تجربه‌ای مشابه
+            پیام‌رسان‌های مدرن اما در بستری کاملاً خصوصی و غیرمتمرکز داشته باشید.
+        </p>
+
+        <h2>تماس‌های صوتی و تصویری (TURN)</h2>
+        <p>
+            یکی از ویژگی‌های برجسته این سرور، داشتن سرویس <span class="highlight">TURN</span> اختصاصی برای بهبود کیفیت
+            تماس‌ها در DeltaChat است.
+            این سرویس به عنوان یک واسط (Relay) عمل می‌کند تا در صورتی که دو کاربر نتوانند به صورت مستقیم (P2P) به هم
+            متصل شوند، تماس از طریق سرور با پایداری بالا برقرار شود.
+        </p>
+
+        <h2>سهمیه فضای ذخیره‌سازی</h2>
+        <p>
+            سرور برای اطمینان از توزیع عادلانه منابع، محدودیت‌هایی برای فضای ذخیره‌سازی اعمال می‌کند. شما می‌توانید
+            میزان
+            مصرف و سقف مجاز خود را از طریق هر برنامه ایمیلی که از افزونه QUOTA پشتیبانی می‌کند، مشاهده کنید.
+        </p>
+
+        <h2>توصیه‌های امنیتی</h2>
+        <div class="security-tip">
+            <p><strong>امنیت پیام‌ها:</strong> این سرویس به صورت پیش‌فرض بسیار امن است. برای اطمینان از محرمانگی
+                ارتباطات در DeltaChat، توجه داشته باشید که وجود <span class="highlight">آیکون خاکستری</span> در کنار
+                پیام‌ها به معنای
+                غیرفعال بودن رمزنگاری است؛ لذا پیام‌های حساس باید فاقد این نشان باشند.</p>
+            <p><strong>به‌روزرسانی:</strong> برای حفظ امنیت و بهره‌مندی از آخرین ویژگی‌ها، حتماً اپلیکیشن DeltaChat خود
+                را همیشه به آخرین نسخه به‌روزرسانی کنید.</p>
+        </div>
+
+        <h2>پشتیبانی</h2>
+        <p>برای دریافت پشتیبانی، لطفاً با مدیر سرور خود تماس بگیرید.</p>
+    </div>
+</body>
+
+</html>

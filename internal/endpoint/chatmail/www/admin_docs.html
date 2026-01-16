@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مستندات مدیر سیستم - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <style>
+        .doc-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            direction: rtl;
+        }
+
+        .code-block {
+            background: #000;
+            padding: 15px;
+            border-radius: 8px;
+            color: #00d2ff;
+            font-family: monospace;
+            margin: 15px 0;
+            overflow-x: auto;
+            direction: ltr;
+        }
+
+        h2 {
+            margin-top: 30px;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        .cmd-info {
+            margin-bottom: 30px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+
+        .cmd-info h3 {
+            margin-top: 0;
+            color: var(--accent-color);
+        }
+
+        .cmd-info p {
+            margin: 5px 0;
+            font-size: 0.95em;
+            color: #ccc;
+        }
+    </style>
+</head>
+
+<body>
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+        <li><a href="/docs">مستندات</a></li>
+    </ul>
+
+    <div class="doc-container">
+        <h1>مستندات مدیر سیستم</h1>
+        <p>این راهنما نحوه مدیریت سهمیه (Quota) کاربران و مشاهده آمار سرور را با استفاده از دستورات <code>maddy</code>
+            توضیح می‌دهد.</p>
+
+        <h2>مدیریت سهمیه (Quota)</h2>
+        <p>شما می‌توانید سهمیه فضای ذخیره‌سازی کاربران را با استفاده از زیر-دستورات <code>maddy imap-acct quota</code>
+            مدیریت کنید.</p>
+
+        <div class="cmd-info">
+            <h3>مشایع سهمیه کاربر</h3>
+            <p>نمایش میزان فضای مصرف شده و سقف مجاز برای یک کاربر خاص.</p>
+            <div class="code-block">
+                maddy imap-acct quota get username@example.com
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>تنظیم سهمیه کاربر</h3>
+            <p>تنظیم یک سقف فضای اختصاصی برای یک کاربر (مثلاً 1GB، 500MB یا 10KB).</p>
+            <div class="code-block">
+                maddy imap-acct quota set username@example.com 1GB
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>بازنشانی سهمیه کاربر</h3>
+            <p>حذف سقف اختصاصی کاربر و بازگرداندن آن به مقدار پیش‌فرض سیستم. با این کار تاریخ ایجاد حساب کاربر حفظ
+                می‌شود.</p>
+            <div class="code-block">
+                maddy imap-acct quota reset username@example.com
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>تنظیم سهمیه پیش‌فرض کل سیستم</h3>
+            <p>تنظیم سقف فضای ذخیره‌سازی برای تمام کاربرانی که سهمیه اختصاصی ندارند. این مقدار در دیتابیس ذخیره شده و بر
+                تنظیمات فایل maddy.conf اولویت دارد.</p>
+            <div class="code-block">
+                maddy imap-acct quota set-default 2GB
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>لیست تمام سهمیه‌ها</h3>
+            <p>نمایش لیست تمام کاربران به همراه فضای مصرفی و سقف مجاز. در این لیست مشخص می‌شود که سهمیه هر کاربر اختصاصی
+                است یا از مقدار پیش‌فرض سیستم ارث‌بری شده است.</p>
+            <div class="code-block">
+                maddy imap-acct quota list
+            </div>
+        </div>
+
+        <h2>نگهداری و پاکسازی</h2>
+        <p>دستوراتی برای مدیریت بار سرور و آزادسازی فضا با حذف داده‌های کاربران.</p>
+
+        <div class="cmd-info">
+            <h3>پاکسازی صف ارسال (Queue)</h3>
+            <p>حذف تمام پیام‌های در حال انتظار در صف ارسال که مربوط به یک کاربر خاص (فرستنده یا گیرنده) هستند. این دستور
+                برای رفع گرفتگی صف ناشی از اسپم یا پیام‌های حجیم مفید است.</p>
+            <div class="code-block">
+                maddy queue purge username@example.com
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>پاکسازی پیام‌های IMAP</h3>
+            <p>حذف تمام ایمیل‌های یک کاربر از تمام صندوق‌های پستی (Inbox، Sent و غیره) بدون حذف شدن خود حساب کاربری یا
+                تنظیمات سهمیه او. این کار برای آزاد کردن سریع فضای هارد سرور کاربرد دارد.</p>
+            <div class="code-block">
+                maddy imap-acct purge-msgs username@example.com
+            </div>
+        </div>
+
+        <h2>مدیریت ثبت‌نام (Registration)</h2>
+        <p>شما می‌توانید ثبت‌نام کاربران جدید را باز یا بسته کنید. در صورت بسته بودن، فقط کاربرانی که از قبل اکانت دارند
+            می‌توانند لاگین کنند.</p>
+
+        <div class="cmd-info">
+            <h3>باز کردن ثبت‌نام</h3>
+            <div class="code-block">
+                maddy creds registration open
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>بستن ثبت‌نام</h3>
+            <div class="code-block">
+                maddy creds registration close
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده وضعیت فعلی</h3>
+            <div class="code-block">
+                maddy creds registration status
+            </div>
+        </div>
+
+        <h2>مدیریت سرور تماس (TURN/STUN)</h2>
+        <p>شما می‌توانید سرور تماس (TURN) را برای تمام کاربران فعال یا غیرفعال کنید. در صورت غیرفعال بودن، اطلاعات مربوط
+            به
+            تماس در صفحه راهنما نمایش داده نمی‌شود.</p>
+
+        <div class="cmd-info">
+            <h3>روشن کردن سرور تماس</h3>
+            <div class="code-block">
+                maddy creds turn on
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>خاموش کردن سرور تماس</h3>
+            <div class="code-block">
+                maddy creds turn off
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده وضعیت فعلی</h3>
+            <div class="code-block">
+                maddy creds turn status
+            </div>
+        </div>
+
+        <h2>حالت مخفی (Stealth Mode)</h2>
+        <p>سرور Madmail برای امنیت بیشتر می‌تواند در حالت مخفی فعالیت کند. در این حالت فقط پورت‌های ضروری برای دنیای
+            بیرون باز می‌مانند.</p>
+        <div class="cmd-info">
+            <p><strong>پورت‌های ضروری:</strong></p>
+            <ul>
+                <li>پورت 80 و 443 (HTTP/HTTPS): برای ثبت‌نام و رابط وب.</li>
+                <li>پورت 8388 (Shadowsocks): برای اتصال امن و سریع کاربران از داخل اپلیکیشن DeltaChat.</li>
+            </ul>
+            <p>سایر پورت‌ها (مثل 25, 143, 587, 993) را می‌توانید از طریق فایروال برای دسترسی عمومی ببندید. کاربران با
+                استفاده از پروکسی Shadowsocks که در داخل اپلیکیشن تنظیم می‌کنند، به تمام خدمات دسترسی خواهند داشت و سرور
+                شما از دید اسکنرهای اینترنتی مخفی می‌ماند.</p>
+        </div>
+
+        <h2>آمار سرور</h2>
+        <div class="cmd-info">
+            <h3>مشاهده آمار کلی</h3>
+            <p>نمایش مجموع فضای ذخیره‌سازی مصرف شده در سرور و تعداد کل حساب‌های کاربری فعال.</p>
+            <div class="code-block">
+                maddy imap-acct stat
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

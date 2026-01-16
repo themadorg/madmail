@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مستندات پایگاه داده - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <style>
+        .doc-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            direction: rtl;
+        }
+
+        h2 {
+            margin-top: 30px;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        .highlight {
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        pre {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            direction: ltr;
+            text-align: left;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        code {
+            font-family: 'Courier New', Courier, monospace;
+            color: #ff9e64;
+        }
+
+        .db-tip {
+            background: rgba(255, 158, 100, 0.1);
+            border-right: 4px solid #ff9e64;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+        <li><a href="/docs">مستندات</a></li>
+    </ul>
+
+    <div class="doc-container">
+        <h1>پیکربندی پایگاه داده (Database Configuration)</h1>
+        <p>سرویس <span class="highlight">Madmail</span> اکنون از <span class="highlight">GORM</span> پشتیبانی می‌کند که
+            امکان استفاده از پایگاه داده‌های مختلف و مهاجرت خودکار (Auto Migration) را فراهم می‌سازد.</p>
+
+        <div class="db-tip">
+            <p><strong>نکته مهم:</strong> به طور پیش‌فرض از SQLite استفاده می‌شود، اما برای مقیاس‌پذیری بالا، استفاده از
+                PostgreSQL توصیه می‌گردد.</p>
+        </div>
+
+        <h2>SQLite (پیش‌فرض)</h2>
+        <p>ساده‌ترین حالت برای راه‌اندازی سریع. فایل پایگاه داده در مسیر مشخص شده ذخیره می‌شود.</p>
+        <pre><code>storage.imapsql local_mail {
+    driver sqlite3
+    dsn ./madmail.db
+}</code></pre>
+
+        <h2>PostgreSQL</h2>
+        <p>برای استفاده از PostgreSQL، ابتدا یک دیتابیس در سرور خود ایجاد کنید (می‌توانید از
+            <code>docker-compose.yml</code> موجود در پروژه استفاده کنید).</p>
+        <p>نمونه تنظیمات در فایل <code>maddy.conf</code>:</p>
+        <pre><code>storage.imapsql local_mail {
+    driver postgres
+    dsn "host=localhost user=test password=test dbname=test port=5432 sslmode=disable"
+}</code></pre>
+        <p>اطلاعات پیش‌فرض در Docker:</p>
+        <ul>
+            <li>نام کاربری: <code>test</code></li>
+            <li>رمز عبور: <code>test</code></li>
+            <li>نام دیتابیس: <code>test</code></li>
+        </ul>
+
+        <h2>MySQL</h2>
+        <p>برای استفاده از MySQL، فرمت DSN به صورت زیر است:</p>
+        <pre><code>storage.imapsql local_mail {
+    driver mysql
+    dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+}</code></pre>
+
+        <h2>مهاجرت (Migration)</h2>
+        <p>سرویس به صورت خودکار جداول مورد نیاز را در اولین اجرا ایجاد یا به‌روزرسانی می‌کند. نیازی به اجرای دستورات SQL
+            دستی برای ساخت جداول <code>quotas</code> یا <code>contacts</code> نیست.</p>
+    </div>
+</body>
+
+</html>

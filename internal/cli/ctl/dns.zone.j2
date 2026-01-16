@@ -1,0 +1,24 @@
+;
+; Required DNS entries for mail server {{ .PrimaryDomain }}
+;
+{{if .A}}{{ .PrimaryDomain }}.                   300   A     {{ .A }}{{if .UseCloudflare}} ; cf_tags=cf-proxied:false{{end}}{{end}}
+{{if .AAAA}}{{ .PrimaryDomain }}.                   300   AAAA  {{ .AAAA }}{{if .UseCloudflare}} ; cf_tags=cf-proxied:false{{end}}{{end}}
+{{ .PrimaryDomain }}.                   300   MX 10 {{ .Hostname }}.
+_mta-sts.{{ .PrimaryDomain }}.          300   TXT "v=STSv1; id={{ .STS_ID }}"
+mta-sts.{{ .PrimaryDomain }}.           300   CNAME {{ .PrimaryDomain }}.{{if .UseCloudflare}} ; cf_tags=cf-proxied:false{{end}}
+www.{{ .PrimaryDomain }}.               300   CNAME {{ .PrimaryDomain }}.{{if .UseCloudflare}} ; cf_tags=cf-proxied:false{{end}}
+{{if .DKIM_Entry}}{{ .DKIM_Entry }}{{end}}
+
+;
+; Recommended DNS entries for interoperability and security-hardening
+;
+{{ .PrimaryDomain }}.                   300   TXT "v=spf1 mx ~all"
+_dmarc.{{ .PrimaryDomain }}.            300   TXT "v=DMARC1;p=reject;adkim=s;aspf=s"
+
+{{if .ACME_Account}}{{ .PrimaryDomain }}.                   300   CAA 0 issue "letsencrypt.org;accounturi={{ .ACME_Account }}"{{end}}
+_adsp._domainkey.{{ .PrimaryDomain }}.  300   TXT "dkim=discardable"
+
+_submission._tcp.{{ .PrimaryDomain }}.  300   SRV 0 1 587 {{ .PrimaryDomain }}.
+_submissions._tcp.{{ .PrimaryDomain }}. 300   SRV 0 1 465 {{ .PrimaryDomain }}.
+_imap._tcp.{{ .PrimaryDomain }}.        300   SRV 0 1 143 {{ .PrimaryDomain }}.
+_imaps._tcp.{{ .PrimaryDomain }}.       300   SRV 0 1 993 {{ .PrimaryDomain }}.
