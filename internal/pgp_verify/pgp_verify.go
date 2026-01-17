@@ -360,10 +360,7 @@ func isEncryptedOpenPGPPayload(payload []byte) bool {
 		if i == len(payload) {
 			// Last packet should be SEIPD (Symmetrically Encrypted and Integrity Protected Data Packet)
 			// This is the only place where this function may return true
-			if packetTypeID == 18 {
-				return true
-			}
-			return false
+			return packetTypeID == 18
 		} else if packetTypeID != 1 && packetTypeID != 3 {
 			// All packets except the last one must be either
 			// Public-Key Encrypted Session Key Packet (PKESK = 1)
