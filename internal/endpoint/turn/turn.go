@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"sync"
 
 	"github.com/pion/logging"
 	"github.com/pion/stun/v3"
@@ -50,8 +49,7 @@ type Endpoint struct {
 
 	tlsConfig *tls.Config
 
-	listenersWg sync.WaitGroup
-	Log         log.Logger
+	Log log.Logger
 }
 
 func (endp *Endpoint) Name() string {

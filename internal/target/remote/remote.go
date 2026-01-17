@@ -537,7 +537,9 @@ func (rd *remoteDelivery) doHTTPRequest(ctx context.Context, scheme, host string
 		if err := textproto.WriteHeader(pw, header); err != nil {
 			return
 		}
-		io.Copy(pw, bodyR)
+		if _, err := io.Copy(pw, bodyR); err != nil {
+			rd.Log.Error("failed to copy body to pipe", err)
+		}
 	}()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, pr)

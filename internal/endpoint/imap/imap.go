@@ -418,7 +418,7 @@ func (h *getQuotaHandler) Handle(conn imapserver.Conn) error {
 	maxKB := max / 1024
 
 	// RFC 2087: * QUOTA "ROOT" (STORAGE 10 512)
-	conn.WriteResp(&imap.DataResp{
+	if err := conn.WriteResp(&imap.DataResp{
 		Fields: []interface{}{
 			imap.RawString("QUOTA"),
 			"ROOT",
@@ -428,7 +428,9 @@ func (h *getQuotaHandler) Handle(conn imapserver.Conn) error {
 				uint32(maxKB),
 			},
 		},
-	})
+	}); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -467,17 +469,19 @@ func (h *getQuotaRootHandler) Handle(conn imapserver.Conn) error {
 	}
 
 	// For simplicity, we only have one quota root which is "ROOT"
-	conn.WriteResp(&imap.DataResp{
+	if err := conn.WriteResp(&imap.DataResp{
 		Fields: []interface{}{
 			imap.RawString("QUOTAROOT"),
 			h.mailbox,
 			"ROOT",
 		},
-	})
+	}); err != nil {
+		return err
+	}
 
 	usedKB := used / 1024
 	maxKB := max / 1024
-	conn.WriteResp(&imap.DataResp{
+	if err := conn.WriteResp(&imap.DataResp{
 		Fields: []interface{}{
 			imap.RawString("QUOTA"),
 			"ROOT",
@@ -487,7 +491,9 @@ func (h *getQuotaRootHandler) Handle(conn imapserver.Conn) error {
 				uint32(maxKB),
 			},
 		},
-	})
+	}); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -633,13 +639,15 @@ func (h *getMetadataHandler) Handle(conn imapserver.Conn) error {
 			value := fmt.Sprintf("%s:%d:%s:%s", h.endp.turnServer, h.endp.turnPort, username, password)
 			h.endp.Log.Debugf("GETMETADATA: sending %s info: %s", key, value)
 
-			conn.WriteResp(&imap.DataResp{
+			if err := conn.WriteResp(&imap.DataResp{
 				Fields: []interface{}{
 					imap.RawString("METADATA"),
 					h.mailbox,
 					[]interface{}{imap.RawString(key), value},
 				},
-			})
+			}); err != nil {
+				return err
+			}
 		}
 	}
 

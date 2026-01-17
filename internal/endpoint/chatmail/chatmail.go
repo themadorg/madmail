@@ -666,7 +666,11 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	defer delivery.Abort(r.Context())
+	defer func() {
+		if err := delivery.Abort(r.Context()); err != nil {
+			e.logger.Error("failed to abort delivery", err)
+		}
+	}()
 
 	anyAccepted := false
 	for _, to := range mailTo {
@@ -988,27 +992,6 @@ func parseALPN(data []byte) string {
 	return ""
 }
 
-func (e *Endpoint) proxy(c1 net.Conn, addr string) {
-	defer c1.Close()
-	c2, err := net.Dial("tcp", addr)
-	if err != nil {
-		e.logger.Error("ALPN proxy: failed to dial target", err, "target", addr)
-		return
-	}
-	defer c2.Close()
-
-	done := make(chan struct{}, 2)
-	go func() {
-		io.Copy(c2, c1)
-		done <- struct{}{}
-	}()
-	go func() {
-		io.Copy(c1, c2)
-		done <- struct{}{}
-	}()
-	<-done
-}
-
 type multiplexedListener struct {
 	net.Listener
 	conns chan net.Conn
@@ -1125,22 +1108,13 @@ func (e *Endpoint) handleContactShare(w http.ResponseWriter, r *http.Request) {
 
 	if r.Header.Get("Accept") == "application/json" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(data)
+		if err := json.NewEncoder(w).Encode(data); err != nil {
+			e.logger.Error("failed to encode contact share response", err)
+		}
 		return
 	}
 
 	e.serveTemplate(w, r, "contact_share_success.html", data)
-}
-
-func (e *Endpoint) handleContactList(w http.ResponseWriter, r *http.Request) {
-	var contacts []mdb.Contact
-	err := e.sharingGORM.Order("created_at DESC").Limit(100).Find(&contacts).Error
-	if err != nil {
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
-	e.serveTemplate(w, r, "contact_list.html", contacts)
 }
 
 func (e *Endpoint) renderContactView(w http.ResponseWriter, r *http.Request, slug, url, name string) {

@@ -67,9 +67,6 @@ func silentPrintln(noLog bool, a ...interface{}) {
 	}
 }
 
-//go:embed dns.zone.j2
-var dnsZoneTemplate string
-
 //go:embed maddy.conf.j2
 var maddyConfigTemplate string
 
@@ -611,7 +608,9 @@ func runInteractiveConfig(config *InstallConfig) error {
 		// Generate a random password for Shadowsocks if it's enabled and not set
 		if config.EnableSS && config.SSPassword == "" {
 			b := make([]byte, 16)
-			rand.Read(b)
+			if _, err := rand.Read(b); err != nil {
+				return fmt.Errorf("failed to generate shadowsocks password: %v", err)
+			}
 			config.SSPassword = base64.RawURLEncoding.EncodeToString(b)
 		}
 
@@ -621,7 +620,9 @@ func runInteractiveConfig(config *InstallConfig) error {
 			}
 			if config.TURNSecret == "" {
 				b := make([]byte, 16)
-				rand.Read(b)
+				if _, err := rand.Read(b); err != nil {
+					return fmt.Errorf("failed to generate TURN secret: %v", err)
+				}
 				config.TURNSecret = base64.RawURLEncoding.EncodeToString(b)
 			}
 		}
@@ -697,7 +698,9 @@ func runInteractiveConfig(config *InstallConfig) error {
 	if config.SSPassword == "" {
 		// Generate a random password if not set
 		b := make([]byte, 16)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			return fmt.Errorf("failed to generate shadowsocks password: %v", err)
+		}
 		config.SSPassword = base64.RawURLEncoding.EncodeToString(b)
 	}
 	config.EnableSS = clitools2.Confirmation("Enable Shadowsocks proxy for faster messaging?", config.EnableSS)
@@ -718,7 +721,9 @@ func runInteractiveConfig(config *InstallConfig) error {
 		config.TURNPort = promptString("TURN server port", config.TURNPort)
 		if config.TURNSecret == "" {
 			b := make([]byte, 16)
-			rand.Read(b)
+			if _, err := rand.Read(b); err != nil {
+				return fmt.Errorf("failed to generate TURN secret: %v", err)
+			}
 			config.TURNSecret = base64.RawURLEncoding.EncodeToString(b)
 		}
 		config.TURNSecret = promptString("TURN server shared secret", config.TURNSecret)
@@ -1054,8 +1059,12 @@ func setupCertificates(config *InstallConfig, dryRun bool) error {
 	if err == nil {
 		uid, _ := strconv.Atoi(maddyUser.Uid)
 		gid, _ := strconv.Atoi(maddyUser.Gid)
-		os.Chown(config.TLSCertPath, uid, gid)
-		os.Chown(config.TLSKeyPath, uid, gid)
+		if err := os.Chown(config.TLSCertPath, uid, gid); err != nil {
+			logger.Printf("Warning: failed to set ownership for %s: %v", config.TLSCertPath, err)
+		}
+		if err := os.Chown(config.TLSKeyPath, uid, gid); err != nil {
+			logger.Printf("Warning: failed to set ownership for %s: %v", config.TLSKeyPath, err)
+		}
 	}
 
 	fmt.Printf("     ✓ Certificates generated successfully\n")
