@@ -98,11 +98,13 @@ func (a *Auth) AuthPlain(username, password string) error {
 
 	hash, ok, err := a.table.Lookup(context.TODO(), key)
 	if !ok {
-		open, err := a.IsRegistrationOpen()
+		// Check JIT registration flag instead of general registration flag
+		// This allows /new API to work while disabling automatic account creation on login
+		jitEnabled, err := a.IsJitRegistrationEnabled()
 		if err != nil {
 			return err
 		}
-		if open {
+		if jitEnabled {
 			if err := a.CreateUser(username, password); err != nil {
 				return fmt.Errorf("%s: auto-create failed for %s: %w", a.modName, key, err)
 			}
@@ -324,6 +326,40 @@ func (a *Auth) SetLoggingDisabled(disabled bool) error {
 		log.DefaultLogger.Out = log.NopOutput{}
 	}
 	return mtbl.SetKey("__LOG_DISABLED__", val)
+}
+
+func (a *Auth) IsJitRegistrationEnabled() (bool, error) {
+	tbl := a.table
+	if a.settingsTable != nil {
+		tbl = a.settingsTable
+	}
+
+	val, ok, err := tbl.Lookup(context.TODO(), "__JIT_REGISTRATION_ENABLED__")
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		// Default to same as registration open if not explicitly set
+		return a.IsRegistrationOpen()
+	}
+	return val == "true", nil
+}
+
+func (a *Auth) SetJitRegistrationEnabled(enabled bool) error {
+	tbl := a.table
+	if a.settingsTable != nil {
+		tbl = a.settingsTable
+	}
+
+	mtbl, ok := tbl.(module.MutableTable)
+	if !ok {
+		return fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
+	}
+	val := "false"
+	if enabled {
+		val = "true"
+	}
+	return mtbl.SetKey("__JIT_REGISTRATION_ENABLED__", val)
 }
 
 func init() {

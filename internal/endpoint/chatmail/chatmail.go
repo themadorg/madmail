@@ -526,31 +526,33 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 
 		// Template data
 		data := struct {
-			MailDomain       string
-			MXDomain         string
-			WebDomain        string
-			PublicIP         string
-			TurnOffTLS       bool
-			Version          string
-			SSURL            string
-			STUNAddr         string
-			DefaultQuota     int64
-			MaxMessageSize   string
-			RegistrationOpen bool
-			TurnEnabled      bool
+			MailDomain             string
+			MXDomain               string
+			WebDomain              string
+			PublicIP               string
+			TurnOffTLS             bool
+			Version                string
+			SSURL                  string
+			STUNAddr               string
+			DefaultQuota           int64
+			MaxMessageSize         string
+			RegistrationOpen       bool
+			JitRegistrationEnabled bool
+			TurnEnabled            bool
 		}{
-			MailDomain:       e.mailDomain,
-			MXDomain:         e.mxDomain,
-			WebDomain:        e.webDomain,
-			PublicIP:         e.publicIP,
-			TurnOffTLS:       e.turnOffTLS,
-			Version:          config.Version,
-			SSURL:            e.getShadowsocksURL(),
-			STUNAddr:         net.JoinHostPort(strings.Trim(e.webDomain, "[]"), "3478"),
-			DefaultQuota:     e.storage.GetDefaultQuota(),
-			MaxMessageSize:   e.maxMessageSize,
-			RegistrationOpen: func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
-			TurnEnabled:      func() bool { enabled, _ := e.authDB.IsTurnEnabled(); return enabled }(),
+			MailDomain:             e.mailDomain,
+			MXDomain:               e.mxDomain,
+			WebDomain:              e.webDomain,
+			PublicIP:               e.publicIP,
+			TurnOffTLS:             e.turnOffTLS,
+			Version:                config.Version,
+			SSURL:                  e.getShadowsocksURL(),
+			STUNAddr:               net.JoinHostPort(strings.Trim(e.webDomain, "[]"), "3478"),
+			DefaultQuota:           e.storage.GetDefaultQuota(),
+			MaxMessageSize:         e.maxMessageSize,
+			RegistrationOpen:       func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
+			JitRegistrationEnabled: func() bool { enabled, _ := e.authDB.IsJitRegistrationEnabled(); return enabled }(),
+			TurnEnabled:            func() bool { enabled, _ := e.authDB.IsTurnEnabled(); return enabled }(),
 		}
 
 		w.Header().Set("Content-Type", contentType)
@@ -1172,19 +1174,21 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		Version          string
 		SSURL            string
 		DefaultQuota     int64
-		RegistrationOpen bool
-		Custom           interface{}
+		RegistrationOpen       bool
+		JitRegistrationEnabled bool
+		Custom                 interface{}
 	}{
-		MailDomain:       e.mailDomain,
-		MXDomain:         e.mxDomain,
-		WebDomain:        e.webDomain,
-		PublicIP:         e.publicIP,
-		TurnOffTLS:       e.turnOffTLS,
-		Version:          config.Version,
-		SSURL:            e.getShadowsocksURL(),
-		DefaultQuota:     e.storage.GetDefaultQuota(),
-		RegistrationOpen: func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
-		Custom:           customData,
+		MailDomain:             e.mailDomain,
+		MXDomain:               e.mxDomain,
+		WebDomain:              e.webDomain,
+		PublicIP:               e.publicIP,
+		TurnOffTLS:             e.turnOffTLS,
+		Version:                config.Version,
+		SSURL:                  e.getShadowsocksURL(),
+		DefaultQuota:           e.storage.GetDefaultQuota(),
+		RegistrationOpen:       func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
+		JitRegistrationEnabled: func() bool { enabled, _ := e.authDB.IsJitRegistrationEnabled(); return enabled }(),
+		Custom:                 customData,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -80,18 +80,29 @@
     <p>این یک سرور اختصاصی برای استفاده در <strong>دلتاچت</strong> است.</p>
 
     {{if .RegistrationOpen}}
-    <button class="cta-button" style="font-size: 0.9em; padding: 10px 20px;" onclick="generateAccount()">مجدد</button>
-
-    <div id="account-result">
-        <div style="display: flex; gap: 10px; margin: 20px 0; justify-content: center; flex-wrap: wrap;">
-            <button class="cta-button" onclick="openDeltaChat()" style="font-size: 0.9em; padding: 10px 20px;">ساخت
-                اکانت و ورود</button>
-            <button class="cta-button" onclick="copyLink()"
-                style="font-size: 0.9em; padding: 10px 20px; background: #444;">کپی لینک</button>
-        </div>
-
+    <button class="cta-button" style="font-size: 0.9em; padding: 10px 20px;" onclick="generateAccount()" id="generate-btn">ساخت اکانت جدید</button>
+    
+    <div id="qr-container" style="display: none; margin: 20px 0;">
         <div style="background: white; padding: 10px; border-radius: 8px; display: inline-block;">
             <img id="result-qr" width="180" alt="QR Code" />
+        </div>
+    </div>
+    
+    <div id="loading-indicator" style="display: none; margin: 20px 0; color: #888;">
+        در حال ایجاد اکانت...
+    </div>
+    <div id="error-message" style="display: none; margin: 20px auto; padding: 15px; background: rgba(255, 68, 68, 0.1); border: 1px solid rgba(255, 68, 68, 0.3); border-radius: 8px; max-width: 500px; color: #ff4444;">
+    </div>
+    <div id="deltachat-error" style="display: none; margin: 20px auto; padding: 15px; background: rgba(255, 200, 0, 0.1); border: 1px solid rgba(255, 200, 0, 0.3); border-radius: 8px; max-width: 500px; color: #ffc800;">
+        <strong>دلتاچت نصب نشده است</strong>
+        <p style="margin-top: 10px; font-size: 0.9em;">لطفاً ابتدا اپلیکیشن دلتاچت را نصب کنید و سپس از دکمه "کپی لینک" استفاده کنید.</p>
+    </div>
+
+    <div id="account-result" style="display: none;">
+        <div style="display: flex; gap: 10px; margin: 20px 0; justify-content: center; flex-wrap: wrap;">
+            <button class="cta-button" onclick="openDeltaChat()" id="open-deltachat-btn" style="font-size: 0.9em; padding: 10px 20px;" disabled>ورود به دلتاچت</button>
+            <button class="cta-button" onclick="copyLink()" id="copy-link-btn"
+                style="font-size: 0.9em; padding: 10px 20px; background: #444;" disabled>کپی لینک</button>
         </div>
     </div>
 
@@ -157,6 +168,8 @@
 
     <script>
         let currentLink = "";
+        const registrationOpen = "{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true";
+        const jitEnabled = "{{if .JitRegistrationEnabled}}true{{else}}false{{end}}" === "true";
 
         function generateRandomString(length) {
             const charset = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -167,30 +180,163 @@
             return result;
         }
 
-        function generateAccount() {
-            const username = generateRandomString(12);
-            const password = generateRandomString(24);
-            const email = formatEmail(username, "{{.MailDomain | cleanDomain}}");
+        function createDcloginLink(email, password) {
             const host = "{{.PublicIP | cleanDomain}}" || "{{.MXDomain | cleanDomain}}";
             const turnOffTLS = ("{{if .TurnOffTLS}}true{{else}}false{{end}}" === "true");
 
             if (turnOffTLS) {
-                currentLink = `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=143&sh=${host}&sp=25&is=plain&ss=plain&sc=3`;
+                return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=143&sh=${host}&sp=25&is=plain&ss=plain&sc=3`;
             } else {
-                currentLink = `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=993&sh=${host}&sp=465&ic=3&ss=default`;
+                return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=993&sh=${host}&sp=465&ic=3&ss=default`;
             }
+        }
 
-
+        function generateAccountRandom() {
+            // Client-side random generation (JIT enabled)
+            const username = generateRandomString(12);
+            const password = generateRandomString(24);
+            const email = formatEmail(username, "{{.MailDomain | cleanDomain}}");
+            
+            currentLink = createDcloginLink(email, password);
+            
             document.getElementById('manual-link').innerText = currentLink;
             document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
+            document.getElementById('qr-container').style.display = 'block';
             document.getElementById('account-result').style.display = 'block';
+            updateButtonStates();
+        }
+
+        function generateAccountAPI() {
+            // Use /new API (JIT disabled but registration open)
+            document.getElementById('account-result').style.display = 'none';
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('loading-indicator').style.display = 'block';
+            document.getElementById('generate-btn').disabled = true;
+
+            fetch('/new', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        throw new Error('ثبت‌نام بسته شده است');
+                    }
+                    throw new Error('خطا در ایجاد اکانت: ' + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const email = data.email;
+                const password = data.password;
+                
+                currentLink = createDcloginLink(email, password);
+                
+                document.getElementById('manual-link').innerText = currentLink;
+                document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
+                document.getElementById('qr-container').style.display = 'block';
+                document.getElementById('account-result').style.display = 'block';
+                document.getElementById('loading-indicator').style.display = 'none';
+                document.getElementById('generate-btn').disabled = false;
+                updateButtonStates();
+            })
+            .catch(error => {
+                document.getElementById('loading-indicator').style.display = 'none';
+                document.getElementById('error-message').style.display = 'block';
+                document.getElementById('error-message').innerText = error.message || 'خطا در ارتباط با سرور';
+                document.getElementById('generate-btn').disabled = false;
+            });
+        }
+
+        function generateAccount() {
+            // Choose method based on JIT status
+            if (jitEnabled) {
+                // JIT enabled: use client-side random generation
+                generateAccountRandom();
+            } else {
+                // JIT disabled: use /new API
+                generateAccountAPI();
+            }
+        }
+
+        function updateButtonStates() {
+            const hasLink = currentLink && currentLink.length > 0;
+            document.getElementById('open-deltachat-btn').disabled = !hasLink;
+            document.getElementById('copy-link-btn').disabled = !hasLink;
         }
 
         function openDeltaChat() {
-            if (currentLink) window.location.href = currentLink;
+            if (!currentLink) {
+                document.getElementById('deltachat-error').style.display = 'block';
+                return;
+            }
+            
+            // Hide error message if it was shown
+            document.getElementById('deltachat-error').style.display = 'none';
+            
+            // Track if DeltaChat opened successfully (page lost focus)
+            let deltaChatOpened = false;
+            let timeoutId = null;
+            
+            // Clean up function
+            const cleanup = () => {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
+                }
+                window.removeEventListener('blur', handleBlur);
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+            };
+            
+            // Detect if page loses focus (DeltaChat opened successfully)
+            const handleBlur = () => {
+                deltaChatOpened = true;
+                cleanup();
+            };
+            
+            const handleVisibilityChange = () => {
+                if (document.hidden) {
+                    deltaChatOpened = true;
+                    cleanup();
+                }
+            };
+            
+            // Listen for focus/visibility changes
+            // Note: These events may not fire reliably in all browsers, but it's the best we can do
+            window.addEventListener('blur', handleBlur, { once: true });
+            document.addEventListener('visibilitychange', handleVisibilityChange, { once: true });
+            
+            // Try to open DeltaChat using the protocol handler
+            try {
+                window.location.href = currentLink;
+            } catch (e) {
+                // If direct navigation fails, try creating a link element
+                const link = document.createElement('a');
+                link.href = currentLink;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+            
+            // Fallback timeout: Show warning if DeltaChat didn't open after 2.5 seconds
+            // This is a common pattern used by libraries like custom-protocol-detection
+            // The timeout is short enough to not interfere with popup reading, but long enough
+            // to detect if the protocol handler doesn't exist
+            timeoutId = setTimeout(() => {
+                cleanup();
+                
+                // Only show warning if DeltaChat didn't open (no blur event)
+                // This means either:
+                // 1. Protocol handler doesn't exist (no popup appeared)
+                // 2. User dismissed popup (but we can't detect that reliably)
+                if (!deltaChatOpened) {
+                    document.getElementById('deltachat-error').style.display = 'block';
+                }
+            }, 2500);
         }
-
-
 
         function copyLink() {
             if (currentLink) {
@@ -203,7 +349,9 @@
         }
 
         window.onload = function () {
-            if ("{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true") {
+            updateButtonStates();
+            // Only auto-generate if registration is open AND JIT is enabled
+            if (registrationOpen && jitEnabled) {
                 generateAccount();
             }
         };

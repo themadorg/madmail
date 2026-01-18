@@ -247,6 +247,89 @@ using command flags. Otherwise, these options cannot be used.
 					},
 				},
 				{
+					Name:  "jit",
+					Usage: "Manage just-in-time (JIT) account creation",
+					Subcommands: []*cli.Command{
+						{
+							Name:  "enable",
+							Usage: "Enable JIT account creation (auto-create accounts on login/delivery)",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_authdb",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openUserDB(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								if err := be.SetJitRegistrationEnabled(true); err != nil {
+									return err
+								}
+								fmt.Println("JIT registration is now ENABLED")
+								return nil
+							},
+						},
+						{
+							Name:  "disable",
+							Usage: "Disable JIT account creation (only /new API can create accounts)",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_authdb",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openUserDB(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								if err := be.SetJitRegistrationEnabled(false); err != nil {
+									return err
+								}
+								fmt.Println("JIT registration is now DISABLED")
+								return nil
+							},
+						},
+						{
+							Name:  "status",
+							Usage: "Show JIT registration status",
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "cfg-block",
+									Usage:   "Module configuration block to use",
+									EnvVars: []string{"MADDY_CFGBLOCK"},
+									Value:   "local_authdb",
+								},
+							},
+							Action: func(ctx *cli.Context) error {
+								be, err := openUserDB(ctx)
+								if err != nil {
+									return err
+								}
+								defer closeIfNeeded(be)
+								enabled, err := be.IsJitRegistrationEnabled()
+								if err != nil {
+									return err
+								}
+								if enabled {
+									fmt.Println("JIT registration is ENABLED")
+								} else {
+									fmt.Println("JIT registration is DISABLED")
+								}
+								return nil
+							},
+						},
+					},
+				},
+				{
 					Name:  "turn",
 					Usage: "Manage TURN server status",
 					Subcommands: []*cli.Command{

@@ -323,6 +323,23 @@ func (store *Storage) IsRegistrationOpen() (bool, error) {
 	return val == "true", nil
 }
 
+func (store *Storage) IsJitRegistrationEnabled() (bool, error) {
+	if store.settingsTable == nil {
+		// Default to same as registration open if no settings table
+		return store.IsRegistrationOpen()
+	}
+
+	val, ok, err := store.settingsTable.Lookup(context.TODO(), "__JIT_REGISTRATION_ENABLED__")
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		// Default to same as registration open if not explicitly set
+		return store.IsRegistrationOpen()
+	}
+	return val == "true", nil
+}
+
 func (store *Storage) initQuotaTable() error {
 	return store.GORMDB.AutoMigrate(&mdb.Quota{})
 }
@@ -570,7 +587,25 @@ func (store *Storage) GetOrCreateIMAPAcct(username string) (backend.User, error)
 		return nil, backend.ErrInvalidCredentials
 	}
 
-	return store.Back.GetOrCreateUser(accountName)
+	// Check if JIT registration is enabled before auto-creating accounts
+	jitEnabled, err := store.IsJitRegistrationEnabled()
+	if err != nil {
+		return nil, err
+	}
+
+	if jitEnabled {
+		return store.Back.GetOrCreateUser(accountName)
+	}
+
+	// JIT disabled - only return existing users
+	user, err := store.Back.GetUser(accountName)
+	if err != nil {
+		if errors.Is(err, imapsql.ErrUserDoesntExists) {
+			return nil, backend.ErrInvalidCredentials
+		}
+		return nil, err
+	}
+	return user, nil
 }
 
 func (store *Storage) Lookup(ctx context.Context, key string) (string, bool, error) {
