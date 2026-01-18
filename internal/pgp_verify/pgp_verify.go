@@ -31,28 +31,14 @@ import (
 
 func IsAcceptedMessage(header textproto.Header, body io.Reader) (bool, error) {
 	contentType := header.Get("Content-Type")
-	secureJoin := header.Get("Secure-Join")
-	secureJoinInvitenumber := header.Get("Secure-Join-Invitenumber")
 
-	// 1. Check for Secure Join based on headers FIRST (before consuming body)
-	// The Secure-Join-Invitenumber header is the primary indicator of a secure join request
-	if secureJoinInvitenumber != "" {
-		return true, nil
-	}
-
-	// Check Secure-Join header values
-	sjLower := strings.ToLower(strings.TrimSpace(secureJoin))
-	if strings.HasPrefix(sjLower, "vc-") || strings.HasPrefix(sjLower, "vg-") {
-		return true, nil
-	}
-
-	// 2. Buffer the body so we can read it multiple times
+	// Buffer the body so we can read it multiple times
 	bodyData, err := io.ReadAll(body)
 	if err != nil {
 		return false, err
 	}
 
-	// 3. Check if it's a valid PGP encrypted message
+	// Check if it's a valid PGP encrypted message
 	isEncrypted, err := IsValidEncryptedMessage(contentType, bytes.NewReader(bodyData))
 	if err != nil {
 		return false, err
@@ -70,76 +56,30 @@ func IsAcceptedMessage(header textproto.Header, body io.Reader) (bool, error) {
 }
 
 func IsSecureJoinMessage(header textproto.Header, body io.Reader) bool {
+	secureJoinHeader := header.Get("Secure-Join")
 	contentType := header.Get("Content-Type")
 
-	// Check for Secure-Join-Invitenumber header (used in initial vc-request/vg-request step)
-	// This is the primary indicator of a secure join request according to securejoin.rs
-	secureJoinInvitenumber := header.Get("Secure-Join-Invitenumber")
-	if secureJoinInvitenumber != "" {
-		return true
-	}
-
-	// Also check lowercase variant
-	for f := header.FieldsByKey("Secure-Join-Invitenumber"); f.Next(); {
-		if f.Value() != "" {
-			return true
-		}
-	}
-	for f := header.FieldsByKey("secure-join-invitenumber"); f.Next(); {
-		if f.Value() != "" {
-			return true
-		}
-	}
-
-	// Check for Secure-Join header with valid handshake values
-	// Valid values according to Python filtermail: vc-request, vg-request
-	// And from securejoin.rs: vc-auth-required, vg-auth-required, vc-request-with-auth, vg-request-with-auth,
-	// vc-contact-confirm, vg-member-added
-	isSecureJoinHeaderValue := func(v string) bool {
-		v = strings.ToLower(strings.TrimSpace(v))
-		return strings.HasPrefix(v, "vc-") || strings.HasPrefix(v, "vg-")
-	}
-
-	checkSecureJoinHeader := func(key string) bool {
-		for f := header.FieldsByKey(key); f.Next(); {
-			if isSecureJoinHeaderValue(f.Value()) {
-				return true
-			}
-		}
+	// Require Secure-Join header to be exactly vc-request or vg-request
+	if !(strings.EqualFold(secureJoinHeader, "vc-request") ||
+		strings.EqualFold(secureJoinHeader, "vg-request")) {
 		return false
 	}
 
-	if checkSecureJoinHeader("Secure-Join") || checkSecureJoinHeader("secure-join") {
-		return true
-	}
-
-	// Body check (only if headers are missing)
-	// For multipart messages, check if body contains secure-join pattern
-	// This matches Python filtermail's is_securejoin() behavior
+	// Check content type for multipart/
 	if !strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
-		// For non-multipart, check if it's text/plain with secure-join content
-		if strings.HasPrefix(strings.ToLower(contentType), "text/plain") {
-			if body != nil {
-				bodyData, err := io.ReadAll(io.LimitReader(body, 8192))
-				if err == nil {
-					bodyStr := strings.TrimSpace(strings.ToLower(string(bodyData)))
-					// Check for exact patterns from Python filtermail
-					if bodyStr == "secure-join: vc-request" || bodyStr == "secure-join: vg-request" {
-						return true
-					}
-				}
-			}
-		}
 		return false
 	}
-
 	mediatype, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		return false
 	}
-	_ = mediatype // not strictly needed but good to have parsed
 
-	// Parse multipart message to look for secure-join string
+	// Only accept multipart/mixed
+	if mediatype != "multipart/mixed" {
+		return false
+	}
+
+	// Parse multipart message
 	mpr := multipart.NewReader(body, params["boundary"])
 	partsCount := 0
 
@@ -153,28 +93,30 @@ func IsSecureJoinMessage(header textproto.Header, body io.Reader) bool {
 		}
 
 		partsCount++
-		if partsCount > 1 { // Secure join requests usually only have one part according to Python filtermail
-			break
+		if partsCount > 1 {
+			return false
 		}
 
 		partContentType := part.Header.Get("Content-Type")
+
 		if !strings.HasPrefix(strings.ToLower(partContentType), "text/plain") {
-			continue
+			return false
 		}
 
 		partBody, err := io.ReadAll(io.LimitReader(part, 8192)) // Read up to 8KB
 		if err != nil {
-			continue
+			return false
 		}
 
-		bodyStr := strings.TrimSpace(strings.ToLower(string(partBody)))
-		// Check for exact patterns from Python filtermail
-		if bodyStr == "secure-join: vc-request" || bodyStr == "secure-join: vg-request" {
-			return true
+		bodyStr := strings.ToLower(strings.TrimSpace(string(partBody)))
+
+		// Ensure header and body match for security consistency
+		if bodyStr != "secure-join: vc-request" && bodyStr != "secure-join: vg-request" {
+			return false
 		}
 	}
 
-	return false
+	return partsCount == 1
 }
 
 func IsValidEncryptedMessage(contentType string, body io.Reader) (bool, error) {

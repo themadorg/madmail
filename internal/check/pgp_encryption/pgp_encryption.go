@@ -118,23 +118,7 @@ func (s *state) CheckBody(ctx context.Context, header textproto.Header, body buf
 	s.contentType = header.Get("Content-Type")
 	s.mimeFrom = header.Get("From")
 	s.secureJoin = header.Get("Secure-Join")
-	secureJoinInvitenumber := header.Get("Secure-Join-Invitenumber")
 	autoSubmitted := header.Get("Auto-Submitted")
-
-	// Check for Secure Join requests BEFORE any other checks
-	// The Secure-Join-Invitenumber header is the primary indicator from securejoin.rs
-	if s.c.allowSecureJoin {
-		if secureJoinInvitenumber != "" {
-			s.log.Msg("allowing secure join request (Secure-Join-Invitenumber header present)", "value", secureJoinInvitenumber)
-			return module.CheckResult{}
-		}
-		// Check Secure-Join header values (vc-*, vg-* prefixes)
-		sjLower := strings.ToLower(strings.TrimSpace(s.secureJoin))
-		if strings.HasPrefix(sjLower, "vc-") || strings.HasPrefix(sjLower, "vg-") {
-			s.log.Msg("allowing secure join request (Secure-Join header has valid value)", "value", s.secureJoin)
-			return module.CheckResult{}
-		}
-	}
 
 	// Check if sender is in passthrough list
 	if slices.Contains(s.c.passthroughSenders, s.mailFrom) {

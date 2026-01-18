@@ -29,10 +29,9 @@ The server performs a deep inspection of the OpenPGP payload without decrypting 
   - The sequence **must** terminate with exactly one **SEIPD** (Symmetrically Encrypted and Integrity Protected Data, Type 18) packet.
 
 ### 2. Secure Join Handshake
-Initial Secure Join requests are accepted unencrypted to facilitate bootstrapping:
-- **Primary Indicator**: Presence of the `Secure-Join-Invitenumber` header.
-- **Handshake Values**: `Secure-Join` header containing values starting with `vc-` or `vg-` (e.g., `vc-request`, `vg-auth-required`).
-- **Body Scanning**: If headers are missing, the server performs a fallback scan of the first **8KB** of a `text/plain` body (or the first part of a multipart message) for the exact strings `secure-join: vc-request` or `secure-join: vg-request`.
+To allow users to establish a verified connection (bootstrapping trust), initial Secure Join requests are accepted unencrypted:
+- **Headers**: Contains `Secure-Join: vc-request` or `Secure-Join: vg-request`.
+- **Body**: Equals `secure-join: vc-request` or `secure-join: vg-request` (case-insensitive).
 
 ### 3. Automated System Messages (Bounces)
 Certain automated messages are allowed for system health:
