@@ -455,6 +455,21 @@ Let's Encrypt certificates renew automatically, but you may need to reload maddy
 sudo systemctl reload maddy
 ```
 
+### Managing JIT Registration
+
+JIT registration controls automatic account creation during login attempts and email delivery:
+
+```bash
+# Enable automatic account creation
+sudo maddy --config /etc/maddy/maddy.conf creds jit enable
+
+# Disable automatic account creation
+sudo maddy --config /etc/maddy/maddy.conf creds jit disable
+
+# Check JIT registration status
+sudo maddy --config /etc/maddy/maddy.conf creds jit status
+```
+
 ## Troubleshooting
 
 ### Common Issues

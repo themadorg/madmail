@@ -12,12 +12,12 @@ The core logic resides in the `auth.pass_table` module (`internal/auth/pass_tabl
 3.  **Branching Logic**:
     *   **User Exists**: Standard password verification is performed (Bcrypt hash comparison).
     *   **User Does Not Exist**:
-        *   The system queries the registration status (dynamically stored in the `settings` table).
-        *   If `__REGISTRATION_OPEN__` is `true`:
+        *   The system queries the JIT registration status (`__JIT_REGISTRATION_ENABLED__`).
+        *   If `__JIT_REGISTRATION_ENABLED__` is `true`:
             *   A new user entry is created immediately.
             *   The provided password is hashed and stored.
             *   The login attempt is granted.
-        *   If `__REGISTRATION_OPEN__` is `false`:
+        *   If `__JIT_REGISTRATION_ENABLED__` is `false`:
             *   The login attempt is rejected with `Invalid Credentials`.
 
 ## Technical Implementation Details
@@ -33,13 +33,22 @@ System-wide flags are decoupled from user credentials to ensure performance and 
 - **Key-Value Pair**: `__REGISTRATION_OPEN__` -> `"true"`/`"false"`.
 - **Precedence**: If the key is missing from the table, the system falls back to the static `auto_create` value defined in `maddy.conf`.
 
+The JIT registration flag (`__JIT_REGISTRATION_ENABLED__`) controls automatic account creation. If not explicitly set, it defaults to the value of `__REGISTRATION_OPEN__`.
+
 ### Mailbox Provisioning
 When a user is auto-registered during login, their IMAP mailbox is lazily provisioned on the first access or first mail delivery. 
-- **Delivery Hook**: `internal/storage/imapsql/delivery.go` also verifies registration status to determine if a non-existent recipient should be auto-created during incoming mail delivery.
+- **Delivery Hook**: `internal/storage/imapsql/delivery.go` also verifies JIT registration status to determine if a non-existent recipient should be auto-created during incoming mail delivery.
 
 ## Management CLI
 Registration status can be toggled without restarting the server:
 ```bash
 maddy creds registration open   # Sets __REGISTRATION_OPEN__ to true
 maddy creds registration close  # Sets __REGISTRATION_OPEN__ to false
+```
+
+JIT registration can be managed independently:
+```bash
+maddy creds jit enable   # Enable automatic account creation
+maddy creds jit disable  # Disable automatic account creation
+maddy creds jit status   # Show current JIT registration status
 ```
