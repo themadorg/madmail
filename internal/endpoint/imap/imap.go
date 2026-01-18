@@ -526,6 +526,9 @@ type metadataExtension struct {
 func (ext *metadataExtension) Capabilities(c imapserver.Conn) []string {
 	turnEnabled := ext.endp.enableTURN && ext.endp.saslAuth.IsTurnEnabled()
 	ext.endp.Log.Debugf("IMAP: Capabilities check (state=%v, turnEnabled=%v)", c.Context().State, turnEnabled)
+	if !turnEnabled {
+		return nil
+	}
 	return []string{"METADATA"}
 }
 
