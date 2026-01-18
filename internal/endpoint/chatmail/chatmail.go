@@ -138,7 +138,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("alpn_imap", false, false, "", &e.alpnIMAP)
 	cfg.Bool("enable_contact_sharing", false, false, &e.enableContactSharing)
 	cfg.String("www_dir", false, false, "", &e.wwwDir)
-	cfg.String("ss_addr", false, false, "0.0.0.0:8388", &e.ssAddr)
+	cfg.String("ss_addr", false, false, "", &e.ssAddr)
 	cfg.String("ss_password", false, false, "", &e.ssPassword)
 	cfg.String("ss_cipher", false, false, "aes-128-gcm", &e.ssCipher)
 	cfg.String("sharing_driver", false, false, "sqlite3", &e.sharingDriver)
