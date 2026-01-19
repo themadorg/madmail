@@ -84,6 +84,9 @@ type Storage struct {
 
 	retention time.Duration
 
+	unusedAccountRetention time.Duration
+	authDBName             string
+
 	defaultQuota int64
 	autoCreate   bool
 
@@ -169,6 +172,8 @@ func (store *Storage) Init(cfg *config.Map) error {
 	}, modconfig.TableDirective, &store.deliveryMap)
 	cfg.String("delivery_normalize", false, false, "precis_casefold_email", &deliveryNormalize)
 	cfg.Duration("retention", false, false, 0, &store.retention)
+	cfg.Duration("unused_account_retention", false, false, 0, &store.unusedAccountRetention)
+	cfg.String("auth_db", false, false, "", &store.authDBName)
 	cfg.DataSize("default_quota", false, false, 1073741824, &store.defaultQuota)
 	cfg.Bool("auto_create", false, false, &store.autoCreate)
 	cfg.Custom("settings_table", false, false, func() (interface{}, error) {
@@ -292,10 +297,6 @@ func (store *Storage) Init(cfg *config.Map) error {
 	store.driver = driver
 	store.dsn = dsn
 
-	if store.retention > 0 {
-		go store.cleanupLoop()
-	}
-
 	store.GORMDB, err = mdb.New(driver, dsn, store.Log.Debug)
 	if err != nil {
 		return fmt.Errorf("imapsql: gorm init failed: %w", err)
@@ -309,6 +310,16 @@ func (store *Storage) Init(cfg *config.Map) error {
 		store.Log.Error("failed to migrate first login times", err)
 	}
 
+	if store.unusedAccountRetention > 0 && store.authDBName == "" {
+		return fmt.Errorf("imapsql: auth_db is required when unused_account_retention is set")
+	}
+
+	if store.retention > 0 {
+		go store.cleanupLoop()
+	}
+	if store.unusedAccountRetention > 0 {
+		go store.cleanupUnusedAccountsLoop()
+	}
 
 	return nil
 }
@@ -485,6 +496,62 @@ func (store *Storage) MigrateFirstLoginFromCreatedAt() error {
 	return nil
 }
 
+func (store *Storage) PruneUnusedAccounts(retention time.Duration) error {
+	cutoff := time.Now().Add(-retention).Unix()
+
+	var quotas []mdb.Quota
+	err := store.GORMDB.Model(&mdb.Quota{}).
+		Where("first_login_at = 1 AND created_at < ?", cutoff).
+		Find(&quotas).Error
+
+	if err != nil {
+		return fmt.Errorf("failed to query unused accounts: %w", err)
+	}
+
+	if len(quotas) == 0 {
+		return nil
+	}
+
+	// Get auth DB if configured
+	var authDB module.PlainUserDB
+	if store.authDBName != "" {
+		mod, err := module.GetInstance(store.authDBName)
+		if err != nil {
+			store.Log.Error("failed to get auth DB instance", err, "auth_db", store.authDBName)
+		} else {
+			if db, ok := mod.(module.PlainUserDB); ok {
+				authDB = db
+			} else {
+				store.Log.Error("auth DB instance does not implement PlainUserDB", nil, "auth_db", store.authDBName)
+			}
+		}
+	}
+
+	deletedCount := 0
+	for _, quota := range quotas {
+		// Delete from storage
+		if err := store.DeleteIMAPAcct(quota.Username); err != nil {
+			store.Log.Error("failed to delete unused account from storage", err, "username", quota.Username)
+			continue
+		}
+
+		// Delete from auth DB if configured
+		if authDB != nil {
+			if err := authDB.DeleteUser(quota.Username); err != nil {
+				store.Log.Error("failed to delete unused account from auth DB", err, "username", quota.Username)
+			}
+		}
+
+		deletedCount++
+	}
+
+	if deletedCount > 0 {
+		store.Log.Printf("deleted %d unused account(s) (never logged in, older than %v)", deletedCount, retention)
+	}
+
+	return nil
+}
+
 func (store *Storage) GetStat() (totalStorage int64, accountsCount int, err error) {
 	store.GORMDB.Table("msgs").Select("SUM(bodylen)").Scan(&totalStorage)
 	if totalStorage == 0 {
@@ -504,6 +571,15 @@ func (store *Storage) cleanupLoop() {
 	for range ticker.C {
 		if err := store.PruneMessages(store.retention); err != nil {
 			store.Log.Error("message cleanup failed", err)
+		}
+	}
+}
+
+func (store *Storage) cleanupUnusedAccountsLoop() {
+	ticker := time.NewTicker(1 * time.Hour)
+	for range ticker.C {
+		if err := store.PruneUnusedAccounts(store.unusedAccountRetention); err != nil {
+			store.Log.Error("unused account cleanup failed", err)
 		}
 	}
 }
