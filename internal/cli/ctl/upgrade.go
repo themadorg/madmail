@@ -127,7 +127,9 @@ func performUpgrade(newBinPath string) error {
 	if _, err := io.Copy(dst, src); err != nil {
 		return fmt.Errorf("failed to copy new binary: %w", err)
 	}
-	dst.Sync()
+	if err := dst.Sync(); err != nil {
+		return fmt.Errorf("failed to sync destination binary: %w", err)
+	}
 	dst.Close()
 
 	fmt.Println("▶️ Starting maddy.service...")

@@ -1,0 +1,33 @@
+{
+  "name": "madmail",
+  "version": "1.0.0",
+  "description": "A mad fork of [maddy](https://github.com/foxcpp/maddy), bringing the madness to mail delivery — optimized for instant, secure messaging with #deltachat.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/themadorg/madmail.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/themadorg/madmail/issues"
+  },
+  "homepage": "https://github.com/themadorg/madmail#readme",
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/release-notes-generator": "^14.1.0",
+    "semantic-release": "^25.0.2"
+  }
+}
