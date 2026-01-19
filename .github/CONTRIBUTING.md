@@ -7,15 +7,17 @@ better.
 
 **Issue tracker is meant to be used only if you have a problem or a feature
 request. If you just have some questions about maddy - prefer to use the
-[IRC channel](https://webchat.oftc.net/?channels=maddy&uio=MT11bmRlZmluZWQb1).**
+[GitHub Discussions](https://github.com/themadorg/madmail/discussions) or the
+[Delta Chat Support Forum](https://support.delta.chat/categories).**
 
-- Provide log files, preferably with 'debug' directive set.
+- Since Madmail has a **strict no-log policy**, the server does not generate log files.
+- You MUST provide a **very detailed explanation** of exactly what you were doing.
 - Provide the exact steps to reproduce the issue.
 - Provide the example message that causes the error, if applicable.
 - "Too much information is better than not enough information".
 
 Issues without enough information will be ignored and possibly closed.
-Take some time to be more useful.
+Take some time to be as detailed as possible.
 
 See SECURITY.md for information on how to report vulnerabilities.
 
