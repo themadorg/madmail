@@ -10,8 +10,7 @@ unusable in certain configurations with no workaround.
 
 ## Reporting a Vulnerability
 
-If you believe the vulnerabilitiy does have a big impact on existing
-deployments - email `fox.cpp at disroot.org`, put "[maddy security]" in the
-Subject.
+- If the vulnerability is specific to **Madmail**'s fork features, please email: `omid.zamani.4t@gmail.com`.
+- If the vulnerability also affects the original **maddy** project, please email **BOTH** `omid.zamani.4t@gmail.com` and the original author at `fox.cpp@disroot.org` (include "[maddy security]" in the subject).
 
-Otherwise, open a public issue.
+Otherwise, if it's a minor issue with low impact, you can open a public issue.
