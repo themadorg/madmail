@@ -35,8 +35,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
 
-  lint:
-    name: Lint
+  lint-and-build:
+    name: Lint and Build
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -44,17 +44,17 @@ jobs:
         with:
           go-version: '1.23.5'
           cache: true
-      - name: Install libpam
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libpam-dev
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.60
           args: --timeout=30m
+      - name: Build maddy
+        run: |
+          ./build.sh
+          ./build.sh --destdir destdir/ install
 
   build-summary:
-    needs: [lint]
+    needs: [lint-and-build]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -71,7 +71,7 @@ jobs:
           echo "### ✅ Build Status" >> $GITHUB_STEP_SUMMARY
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint & Build | ${{ needs.lint-and-build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
           echo "- [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
