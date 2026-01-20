@@ -6,6 +6,8 @@ issues:
 
 run:
   timeout: 5m
+  skip-dirs:
+    - cmd/maddy-pam-helper
 
 linters:
   enable:
