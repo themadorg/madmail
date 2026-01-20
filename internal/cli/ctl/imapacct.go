@@ -341,6 +341,31 @@ APPENDLIMIT value (either global or per-account) cannot be larger than
 						return imapAcctAppendlimit(be, ctx)
 					},
 				},
+				{
+					Name:      "prune-unused",
+					Usage:     "Delete accounts that never logged in",
+					ArgsUsage: "RETENTION",
+					Description: `Delete accounts that have never logged in (FirstLoginAt = 1)
+and were created more than RETENTION ago.
+
+Example: maddyctl imap-acct prune-unused 720h`,
+					Flags: []cli.Flag{
+						&cli.StringFlag{
+							Name:    "cfg-block",
+							Usage:   "Module configuration block to use",
+							EnvVars: []string{"MADDY_CFGBLOCK"},
+							Value:   "local_mailboxes",
+						},
+					},
+					Action: func(ctx *cli.Context) error {
+						be, err := openStorage(ctx)
+						if err != nil {
+							return err
+						}
+						defer closeIfNeeded(be)
+						return imapAcctPruneUnused(be, ctx)
+					},
+				},
 			},
 		})
 }
@@ -672,4 +697,22 @@ func imapAcctPurge(be module.Storage, ctx *cli.Context) error {
 		err = mbe.PurgeIMAPMsgs(auth.NormalizeUsername(rawUsername))
 	}
 	return err
+}
+func imapAcctPruneUnused(be module.Storage, ctx *cli.Context) error {
+	mbe, ok := be.(module.ManageableStorage)
+	if !ok {
+		return cli.Exit("Error: storage backend does not support accounts management using maddy command", 2)
+	}
+
+	retentionStr := ctx.Args().First()
+	if retentionStr == "" {
+		return cli.Exit("Error: RETENTION is required (e.g. 720h)", 2)
+	}
+
+	retention, err := time.ParseDuration(retentionStr)
+	if err != nil {
+		return fmt.Errorf("invalid retention value: %w", err)
+	}
+
+	return mbe.PruneUnusedAccounts(retention)
 }

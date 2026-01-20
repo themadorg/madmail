@@ -543,6 +543,7 @@ func (store *Storage) PruneUnusedAccounts(retention time.Duration) error {
 		}
 
 		deletedCount++
+		store.Log.Debugln("deleted unused account:", quota.Username)
 	}
 
 	if deletedCount > 0 {
@@ -706,7 +707,33 @@ func (store *Storage) GetOrCreateIMAPAcct(username string) (backend.User, error)
 		return nil, backend.ErrInvalidCredentials
 	}
 
-	return store.Back.GetOrCreateUser(accountName)
+	u, err := store.Back.GetOrCreateUser(accountName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure quota record exists with FirstLoginAt=1 for JIT users.
+	// This is required to track them for pruning if they remain unused.
+	var quota mdb.Quota
+	err = store.GORMDB.Where("username = ?", accountName).First(&quota).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		quota = mdb.Quota{
+			Username:     accountName,
+			CreatedAt:    time.Now().Unix(),
+			FirstLoginAt: 1,
+		}
+		if err := store.GORMDB.Create(&quota).Error; err != nil {
+			store.Log.Error("failed to create quota record for JIT user", err, "username", accountName)
+		}
+	} else if err == nil && quota.CreatedAt == 0 {
+		// Fix legacy records missing CreatedAt
+		quota.CreatedAt = time.Now().Unix()
+		if err := store.GORMDB.Save(&quota).Error; err != nil {
+			store.Log.Error("failed to fix CreatedAt for JIT user", err, "username", accountName)
+		}
+	}
+
+	return u, nil
 }
 
 func (store *Storage) Lookup(ctx context.Context, key string) (string, bool, error) {

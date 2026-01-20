@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package module
 
 import (
+	"time"
+
 	imapbackend "github.com/emersion/go-imap/backend"
 )
 
@@ -54,6 +56,7 @@ type ManageableStorage interface {
 	ResetQuota(username string) error
 	GetAccountDate(username string) (created int64, err error)
 	UpdateFirstLogin(username string) error
+	PruneUnusedAccounts(retention time.Duration) error
 	GetDefaultQuota() int64
 	SetDefaultQuota(max int64) error
 	GetStat() (totalStorage int64, accountsCount int, err error)

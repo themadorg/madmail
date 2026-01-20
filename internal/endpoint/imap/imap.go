@@ -279,6 +279,13 @@ func (endp *Endpoint) openAccount(c imapserver.Conn, identity string) error {
 	if err != nil {
 		return err
 	}
+
+	if manageableStore, ok := endp.Store.(module.ManageableStorage); ok {
+		if err := manageableStore.UpdateFirstLogin(username); err != nil {
+			endp.Log.Error("failed to update first login time", err, "username", username)
+		}
+	}
+
 	ctx := c.Context()
 	ctx.State = imap.AuthenticatedState
 	ctx.User = &encryptionWrapperUser{u}
