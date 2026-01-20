@@ -22,7 +22,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package imapsql
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -362,36 +361,4 @@ func TestMigrateFirstLoginFromCreatedAt(t *testing.T) {
 			t.Errorf("Expected FirstLoginAt to remain 1 (new users should not be migrated), got %d", updatedQuota.FirstLoginAt)
 		}
 	})
-}
-
-// mockSettingsTable is a simple mock implementation of module.Table for testing
-type mockSettingsTable struct {
-	db *gorm.DB
-}
-
-type Setting struct {
-	Key   string `gorm:"primaryKey"`
-	Value string
-}
-
-func (m *mockSettingsTable) Lookup(ctx context.Context, key string) (string, bool, error) {
-	var setting Setting
-	err := m.db.Where("key = ?", key).First(&setting).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return "", false, nil
-		}
-		return "", false, err
-	}
-	return setting.Value, true, nil
-}
-
-func (m *mockSettingsTable) LookupMulti(ctx context.Context, key string) ([]string, error) {
-	// Not needed for this test
-	return nil, nil
-}
-
-func (m *mockSettingsTable) SetKey(key, value string) error {
-	setting := Setting{Key: key, Value: value}
-	return m.db.Save(&setting).Error
 }
