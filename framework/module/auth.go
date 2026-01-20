@@ -43,6 +43,8 @@ type PlainUserDB interface {
 	DeleteUser(username string) error
 	IsRegistrationOpen() (bool, error)
 	SetRegistrationOpen(open bool) error
+	IsJitRegistrationEnabled() (bool, error)
+	SetJitRegistrationEnabled(enabled bool) error
 	IsTurnEnabled() (bool, error)
 	SetTurnEnabled(enabled bool) error
 	IsLoggingDisabled() (bool, error)

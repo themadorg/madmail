@@ -1,18 +1,26 @@
-Release process (maintainers)
+# Release Process
 
-This repository uses GoReleaser and GitHub Actions to publish release artifacts to GitHub Releases. Tagging the repository with a semver tag (for example `v0.8.3`) will trigger the `goreleaser` GitHub Actions workflow which builds binaries for Linux, macOS and Windows (amd64 and arm64), creates archives, and uploads them to the release.
+This document describes how versions and releases are managed in the Madmail project.
 
-Requirements and notes for maintainers:
+## Versioning and Automatic Bumping
 
-- CI requires standard GitHub Actions permissions. The workflow uses `${{ secrets.GITHUB_TOKEN }}` to upload artifacts.
-- For additional publishers (Homebrew, Winget, notarization, or pushing Docker images to GHCR), configure additional secrets (GH_PAT, MACOS_SIGN_P12, etc.) and update `.goreleaser.yaml` accordingly.
-- To run a local smoke test of the release builds without publishing, install goreleaser locally and run:
+We use a semantic release process triggered by pushes to the `main` branch. 
 
-  goreleaser build --snapshot --clean
+- **Automatic Bumping**: Every time code is merged into `main`, a process (e.g., Semantic Release) is triggered to increment the software version.
+- **Tracking Changes**: These automatic version bumps are intended for **tracking internal changes** in the project and do not represent a public release.
+- **Maintenance**: Version updates are pushed back to the repository to keep the metadata synchronized with the development state.
 
-- To produce a real release from your local machine, create and push a tag and push it to remote:
+## Official Releases
 
-  git tag -a vX.Y.Z -m "Release vX.Y.Z"
-  git push origin vX.Y.Z
+Official releases (publicly available binaries) are handled **manually** by the maintainers.
 
-The GitHub Actions workflow will run and create the GitHub Release with artifacts.
+### Publishing Steps:
+1. **Manual Trigger**: A maintainer decides when a version is stable enough for a release.
+2. **GitHub Releases**: The release is manually created on GitHub, and the signed binaries are uploaded.
+3. **Telegram Channel**: The same signed binary and its changelog are posted to the official [Telegram Channel](https://t.me/the_madmail).
+
+### Signing:
+All official binaries are digitally signed with the developer's private key before being uploaded to GitHub or Telegram.
+
+## Developer Note
+Do not rely on the `main` branch's automatic version bump alone to consider something a "release". Always check the [GitHub Releases](https://github.com/themadorg/madmail/releases) section or the Telegram channel for official stable builds.

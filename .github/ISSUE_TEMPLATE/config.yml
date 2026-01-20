@@ -1,7 +1,10 @@
 contact_links:
-  - name: Questions 
-    url: "https://github.com/foxcpp/maddy/discussions/new?category=q-a"
-    about: "Use GitHub discussions for any questions"
-  - name: IRC channel
-    url: "https://webchat.oftc.net/?channels=maddy&uio=MT11bmRlZmluZWQb1"
-    about: "... or there is also an IRC channel for any discussions"
+  - name: GitHub Discussions
+    url: "https://github.com/themadorg/madmail/discussions"
+    about: "Please use GitHub Discussions for questions and support. We do not have an IRC channel."
+  - name: Project Priorities
+    url: "https://github.com/orgs/themadorg/projects/1"
+    about: "Check our Project Board for current priorities and tasks."
+  - name: Delta Chat Support Forum
+    url: "https://support.delta.chat/categories"
+    about: "Official Delta Chat community forum for all users."

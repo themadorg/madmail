@@ -138,7 +138,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("alpn_imap", false, false, "", &e.alpnIMAP)
 	cfg.Bool("enable_contact_sharing", false, false, &e.enableContactSharing)
 	cfg.String("www_dir", false, false, "", &e.wwwDir)
-	cfg.String("ss_addr", false, false, "0.0.0.0:8388", &e.ssAddr)
+	cfg.String("ss_addr", false, false, "", &e.ssAddr)
 	cfg.String("ss_password", false, false, "", &e.ssPassword)
 	cfg.String("ss_cipher", false, false, "aes-128-gcm", &e.ssCipher)
 	cfg.String("sharing_driver", false, false, "sqlite3", &e.sharingDriver)
@@ -526,31 +526,33 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 
 		// Template data
 		data := struct {
-			MailDomain       string
-			MXDomain         string
-			WebDomain        string
-			PublicIP         string
-			TurnOffTLS       bool
-			Version          string
-			SSURL            string
-			STUNAddr         string
-			DefaultQuota     int64
-			MaxMessageSize   string
-			RegistrationOpen bool
-			TurnEnabled      bool
+			MailDomain             string
+			MXDomain               string
+			WebDomain              string
+			PublicIP               string
+			TurnOffTLS             bool
+			Version                string
+			SSURL                  string
+			STUNAddr               string
+			DefaultQuota           int64
+			MaxMessageSize         string
+			RegistrationOpen       bool
+			JitRegistrationEnabled bool
+			TurnEnabled            bool
 		}{
-			MailDomain:       e.mailDomain,
-			MXDomain:         e.mxDomain,
-			WebDomain:        e.webDomain,
-			PublicIP:         e.publicIP,
-			TurnOffTLS:       e.turnOffTLS,
-			Version:          config.Version,
-			SSURL:            e.getShadowsocksURL(),
-			STUNAddr:         net.JoinHostPort(strings.Trim(e.webDomain, "[]"), "3478"),
-			DefaultQuota:     e.storage.GetDefaultQuota(),
-			MaxMessageSize:   e.maxMessageSize,
-			RegistrationOpen: func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
-			TurnEnabled:      func() bool { enabled, _ := e.authDB.IsTurnEnabled(); return enabled }(),
+			MailDomain:             e.mailDomain,
+			MXDomain:               e.mxDomain,
+			WebDomain:              e.webDomain,
+			PublicIP:               e.publicIP,
+			TurnOffTLS:             e.turnOffTLS,
+			Version:                config.Version,
+			SSURL:                  e.getShadowsocksURL(),
+			STUNAddr:               net.JoinHostPort(strings.Trim(e.webDomain, "[]"), "3478"),
+			DefaultQuota:           e.storage.GetDefaultQuota(),
+			MaxMessageSize:         e.maxMessageSize,
+			RegistrationOpen:       func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
+			JitRegistrationEnabled: func() bool { enabled, _ := e.authDB.IsJitRegistrationEnabled(); return enabled }(),
+			TurnEnabled:            func() bool { enabled, _ := e.authDB.IsTurnEnabled(); return enabled }(),
 		}
 
 		w.Header().Set("Content-Type", contentType)
@@ -668,7 +670,10 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() {
 		if err := delivery.Abort(r.Context()); err != nil {
-			e.logger.Error("failed to abort delivery", err)
+			// Ignore error if transaction was already committed or rolled back
+			if !strings.Contains(err.Error(), "transaction has already been committed") {
+				e.logger.Error("failed to abort delivery", err)
+			}
 		}
 	}()
 
@@ -1164,27 +1169,29 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 
 	// Composite data including default fields
 	data := struct {
-		MailDomain       string
-		MXDomain         string
-		WebDomain        string
-		PublicIP         string
-		TurnOffTLS       bool
-		Version          string
-		SSURL            string
-		DefaultQuota     int64
-		RegistrationOpen bool
-		Custom           interface{}
+		MailDomain             string
+		MXDomain               string
+		WebDomain              string
+		PublicIP               string
+		TurnOffTLS             bool
+		Version                string
+		SSURL                  string
+		DefaultQuota           int64
+		RegistrationOpen       bool
+		JitRegistrationEnabled bool
+		Custom                 interface{}
 	}{
-		MailDomain:       e.mailDomain,
-		MXDomain:         e.mxDomain,
-		WebDomain:        e.webDomain,
-		PublicIP:         e.publicIP,
-		TurnOffTLS:       e.turnOffTLS,
-		Version:          config.Version,
-		SSURL:            e.getShadowsocksURL(),
-		DefaultQuota:     e.storage.GetDefaultQuota(),
-		RegistrationOpen: func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
-		Custom:           customData,
+		MailDomain:             e.mailDomain,
+		MXDomain:               e.mxDomain,
+		WebDomain:              e.webDomain,
+		PublicIP:               e.publicIP,
+		TurnOffTLS:             e.turnOffTLS,
+		Version:                config.Version,
+		SSURL:                  e.getShadowsocksURL(),
+		DefaultQuota:           e.storage.GetDefaultQuota(),
+		RegistrationOpen:       func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
+		JitRegistrationEnabled: func() bool { enabled, _ := e.authDB.IsJitRegistrationEnabled(); return enabled }(),
+		Custom:                 customData,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

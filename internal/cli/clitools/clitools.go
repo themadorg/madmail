@@ -20,6 +20,7 @@ package clitools
 
 import (
 	"bufio"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"os"
@@ -115,4 +116,40 @@ func ReadPassword(prompt string) (string, error) {
 	}
 
 	return stdinScanner.Text(), nil
+}
+
+// VerifySignature checks if the file at the given path has a valid Ed25519 signature
+// appended to it. The signature must be the last 64 bytes of the file.
+func VerifySignature(path string, publicKey []byte) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return false, err
+	}
+
+	size := info.Size()
+	if size < ed25519.SignatureSize {
+		return false, fmt.Errorf("file too small to contain a signature")
+	}
+
+	// Read the signature (last 64 bytes)
+	sig := make([]byte, ed25519.SignatureSize)
+	if _, err := f.ReadAt(sig, size-int64(ed25519.SignatureSize)); err != nil {
+		return false, err
+	}
+
+	// Read the content (all bytes except the last 64)
+	contentSize := size - int64(ed25519.SignatureSize)
+	content := make([]byte, contentSize)
+	if _, err := f.ReadAt(content, 0); err != nil {
+		return false, err
+	}
+
+	// Verify the signature
+	return ed25519.Verify(publicKey, content, sig), nil
 }

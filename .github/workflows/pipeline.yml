@@ -1,280 +1,62 @@
-name: "CI Release Pipeline"
+name: "CI Pipeline"
 
 on:
   push:
-    tags: [ 'v*' ]
     branches: [ main, dev ]
-
+  pull_request:
+    branches: [ main ]
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
   packages: write
-  pull-requests: read
+  id-token: write
   checks: write
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Clean Go mod cache
-        run: rm -rf $HOME/go/pkg/mod
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-      - name: Install libpam
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libpam-dev
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.60
-          args: --timeout=30m
-
-  verify-build:
-    name: Verify build.sh
+  semantic-release:
+    name: Semantic Release
     runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-      - name: Install libpam
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libpam-dev scdoc
-      - name: Verify build.sh
-        run: |
-          ./build.sh
-          ./build.sh --destdir destdir/ install
-          find destdir/
-
-  tests:
-    name: Build and test
-    runs-on: ubuntu-latest
-    needs: verify-build
-    steps:
-      - uses: actions/checkout@v4
-      - name: Clean Go mod cache
-        run: rm -rf $HOME/go/pkg/mod
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-      - name: Install libpam
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libpam-dev
-      - name: Unit & module tests
-        run: |
-          go test ./... -coverprofile=coverage.out -covermode=atomic
-      - name: Integration tests
-        run: |
-          cd tests/
-          ./run.sh
-      - uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.out
-          flags: unit
-      - uses: codecov/codecov-action@v4
-        with:
-          files: ./tests/coverage.out
-          flags: integration
-
-  release-artifacts-x86:
-    name: Prepare release artifacts (x86)
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-    needs: tests
-    permissions:
-      contents: write
-      id-token: write
-      packages: write
-      attestations: write
-    container:
-      image: alpine:edge
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install build dependencies
-        run: |
-          apk add --no-cache gcc go zstd musl-dev scdoc
-      - name: Create and package build tree
-        run: |
-          ./build.sh --builddir ~/package-output/ --static build
-          ver=$(cat .version)
-          if [ "v$ver" != "${{ github.ref_name }}" ]; then echo ".version does not match the Git tag"; exit 1; fi
-          mv ~/package-output/ ~/maddy-$ver-x86_64-linux-musl
-          cd ~
-          tar c ./maddy-$ver-x86_64-linux-musl | zstd > ~/maddy-x86_64-linux-musl.tar.zst
-          cd -
-      - name: Save source tree
-        run: |
-          rm -rf .git
-          ver=$(cat .version)
-          cp -r . ~/maddy-$ver-src
-          cd ~
-          tar c ./maddy-$ver-src | zstd > ~/maddy-src.tar.zst
-          cd -
-      - name: Upload source tree
-        uses: actions/upload-artifact@v4
-        with:
-          name: maddy-src.tar.zst
-          path: ~/maddy-src.tar.zst
-          if-no-files-found: error
-      - name: Upload binary tree
-        uses: actions/upload-artifact@v4
-        with:
-          name: maddy-binary.tar.zst
-          path: ~/maddy-x86_64-linux-musl.tar.zst
-          if-no-files-found: error
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: ~/maddy-x86_64-linux-musl.tar.zst
-
-  release-artifacts-arm:
-    name: Prepare release artifacts (aarch64)
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-22.04-arm
-    needs: release-artifacts-x86
-    permissions:
-      contents: write
-      id-token: write
-      packages: write
-      attestations: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build in Docker container
-        run: |
-          cat > Dockerfile <<'EOF'
-          FROM alpine:edge
-          RUN apk add --no-cache gcc go zstd musl-dev scdoc
-          WORKDIR /build
-          COPY . .
-          RUN ./build.sh --builddir /package-output/ --static build && \
-              ver=$(cat .version) && \
-              if [ "v$ver" != "${{ github.ref_name }}" ]; then echo ".version does not match the Git tag"; exit 1; fi && \
-              mv /package-output/ /maddy-$ver-aarch64-linux-musl && \
-              cd / && \
-              tar c ./maddy-$ver-aarch64-linux-musl | zstd > /maddy-aarch64-linux-musl.tar.zst
-          EOF
-          docker build -t maddy-builder .
-          container_id=$(docker.create maddy-builder)
-          docker cp $container_id:/maddy-aarch64-linux-musl.tar.zst .
-          docker.rm $container_id
-      - name: Upload binary tree
-        uses: actions/upload-artifact@v4
-        with:
-          name: maddy-binary-aarch64.tar.zst
-          path: maddy-aarch64-linux-musl.tar.zst
-          if-no-files-found: error
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: maddy-aarch64-linux-musl.tar.zst
-
-  docker-image:
-    name: Build & push Docker image
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-    needs: release-artifacts-arm
-    permissions:
-      contents: write
-      id-token: write
-      packages: write
-      attestations: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
-        with:
-          platforms: arm64
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          logout: false
-      - name: Generate container metadata
-        uses: docker/metadata-action@v5
-        id: meta
-        with:
-          images: |
-            ghcr.io/themadorg/madmail
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-          labels: |
-            org.opencontainers.image.title=Maddy Chatmail Server
-            org.opencontainers.image.documentation=https://github.com/themadorg/madmail
-            org.opencontainers.image.url=https://github.com/themadorg/madmail
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        id: docker
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          file: Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-      - name: Generate container attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ghcr.io/themadorg/madmail
-          subject-digest: ${{ steps.docker.outputs.digest }}
-          push-to-registry: true
-
-  goreleaser:
-    name: Run GoReleaser
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-    needs: docker-image
-    permissions:
-      contents: write
-      packages: write
-      id-token: write
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Set up Go
-        uses: actions/setup-go@v5
+          persist-credentials: false
+      - uses: actions/setup-node@v4
         with:
-          go-version: '1.23'
-      - name: Set up QEMU (for cross builds)
-        uses: docker/setup-qemu-action@v2
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --clean
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+  lint-and-build:
+    name: Lint and Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.5'
+          cache: true
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.60
+          args: --timeout=30m
+      - name: Build maddy
+        run: |
+          ./build.sh
+          ./build.sh --destdir destdir/ install
 
   build-summary:
-    needs: tests
+    needs: [lint-and-build]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -288,24 +70,10 @@ jobs:
           echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Build Matrix" >> $GITHUB_STEP_SUMMARY
-          echo "- **Platforms:** Linux, Windows, macOS (handled by GoReleaser)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Architectures:** AMD64, ARM64 (handled by GoReleaser)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Go Version:** 1.23.1" >> $GITHUB_STEP_SUMMARY
-          echo "- **CGO:** Disabled" >> $GITHUB_STEP_SUMMARY
-
           echo "### ✅ Build Status" >> $GITHUB_STEP_SUMMARY
-          echo "| Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|" >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ needs.tests.result }}" = "success" ]; then
-            echo "| ✅ Success |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| ❌ Failed |" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint & Build | ${{ needs.lint-and-build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
           echo "- [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY

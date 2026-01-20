@@ -1,7 +1,8 @@
 # Upgrading from older maddy versions
 
-It is generally possible to just install latest version (e.g. using build.sh
-script) over the existing installation.
+It is generally possible to just install latest version (e.g. using build.sh script) over the existing installation.
+
+**Recommended Method**: For versions **v0.8.103 and later**, use the built-in `maddy update` or `maddy upgrade` commands to safely replace the binary with signature verification. See the [Setup Guide](./chatmail-setup.md) for details.
 
 It is recommended to backup state directory (usually /var/lib/maddy for Linux)
 before doing so. The new server version may automatically convert DB files in a
@@ -20,8 +21,7 @@ be used in 0.3 and auto-migration is not possible. Additionally, the way
 passwords are hashed is changed, meaning that after migration passwords will
 need to be reset.
 
-**Migration utility is SQLite-specific, if you need one that works for
-Postgres - reach out at the IRC channel.**
+**Migration utility is SQLite-specific. If you need assistance with other databases, please open a [GitHub Discussion](https://github.com/themadorg/madmail/discussions).**
 
 1. Make sure the server is not running.
 

@@ -7,21 +7,27 @@ assignees: ''
 
 ---
 
-# Describe the bug
+# Bug Description
 
-What do you think is wrong?
+**Please confirm:**
+- [ ] I have checked the [Project Board](https://github.com/orgs/themadorg/projects/1) for known issues.
 
-# Steps to reproduce
+## Describe the bug
+What is happening vs what should happen?
 
-# Log files
+## Steps to reproduce
+1. [...]
+2. [...]
 
-Use a service like hastebin.com or attach a file if it is big
+## Environment information
+- **maddy version**: (run `maddy --version`)
+- **OS**: (e.g., Ubuntu 22.04)
 
-# Configuration file
+## Detailed Context
+Since this project follows a **strict no-log policy**, the server does not generate traditional log files. Because of this, it is **CRITICAL** that you provide a very detailed explanation of:
+- Exactly what you were doing when the issue occurred.
+- The expected behavior vs. the actual observed behavior.
+- Any error messages displayed in your client (e.g., Delta Chat).
 
-Located in /etc/maddy/maddy.conf by default, don't forget to remove DB passwords
-and other security-related stuff.
-
-# Environment information
-
-* maddy version: ?
+## Configuration
+- **Config**: Relevant parts of `/etc/maddy/maddy.conf` (hide sensitive data like domains if necessary, but keep the logic).

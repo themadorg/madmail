@@ -57,4 +57,4 @@ __pycache__
 *.pyo
 tmp/
 
-node_modules
+node_modules/

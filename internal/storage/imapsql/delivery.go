@@ -71,11 +71,16 @@ func (d *delivery) AddRcpt(ctx context.Context, rcptTo string, _ smtp.RcptOption
 		return nil
 	}
 
-	open, err := d.store.IsRegistrationOpen()
-	if err == nil && open {
+	// Check JIT registration flag instead of general registration flag
+	// This allows /new API to work while disabling automatic account creation on email delivery
+	jitEnabled, err := d.store.IsJitRegistrationEnabled()
+	if err == nil && jitEnabled {
+		d.store.Log.Msg("JIT registration enabled, ensuring account exists", "rcpt", accountName)
 		if err := d.store.CreateIMAPAcct(accountName); err != nil {
 			d.store.Log.Error("Failed to auto-create account on delivery", err, "rcpt", accountName)
 		}
+	} else if err != nil {
+		d.store.Log.Error("Failed to check JIT registration status", err)
 	}
 
 	// This header is added to the message only for that recipient.

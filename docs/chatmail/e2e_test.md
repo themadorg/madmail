@@ -77,6 +77,15 @@ The suite consists of several scenarios located in `tests/deltachat-test/scenari
 - Checks `journalctl` to ensure that no (or minimal) logs were generated during these operations.
 - Automatically re-enables logging after completion.
 
+### 9. Big File Transfer (`test_09_send_bigfile.py`)
+- Stress tests the SMTP/IMAP pipeline with multiple large file attachments.
+- Verifies that `appendlimit` and `max_message_size` are correctly enforced and handled.
+
+### 10. Binary Signature & Upgrade (`test_10_upgrade_mechanism.py`)
+- Verifies the integrity of the binary upgrade mechanism.
+- Tests both successful signed upgrades and rejection of unsigned/tampered binaries.
+- Simulates updates from both local files and remote URLs.
+
 ## Prerequisites
 
 - **Python environment**: The tests use `uv` for dependency management.

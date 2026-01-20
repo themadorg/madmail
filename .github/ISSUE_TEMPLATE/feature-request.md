@@ -7,16 +7,17 @@ assignees: ''
 
 ---
 
-# Use case
+# Proposal Description
 
-What problem you are trying to solve?
+**Please confirm:**
+- [ ] I have checked the [Project Board](https://github.com/orgs/themadorg/projects/1) for current priorities.
+- [ ] I am seeking approval from authors before starting implementation.
 
+## Use case
+What problem are you trying to solve?
 Note alternatives you considered and why they are not useful.
 
-# Your idea for a solution
-
-How your solution would work in general?
-Note that some overly complicated solutions may be rejected because maddy is
-meant to be simple.
+## Proposed Solution
+How would your solution work in general?
 
 - [ ] I'm willing to help with the implementation

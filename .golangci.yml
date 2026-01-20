@@ -3,6 +3,8 @@ issues:
     - path: _test.go
       linters:
         - gofmt
+  exclude-dirs:
+    - cmd/maddy-pam-helper
 
 run:
   timeout: 5m

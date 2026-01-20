@@ -53,6 +53,7 @@ auth.pass_table local_authdb {
 # imap-* subcommands of maddy.
 
 storage.imapsql local_mailboxes {
+    auto_create yes
     driver sqlite3
     dsn imapsql.db
     retention 24h

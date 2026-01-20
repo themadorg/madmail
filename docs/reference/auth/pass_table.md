@@ -36,6 +36,22 @@ hash algorithm name, salt and other necessary parameters.
 You should use `maddy hash` command to generate suitable values.
 See `maddy hash --help` for details.
 
+## Just-In-Time (JIT) Registration
+
+Automatic account creation during authentication attempts is controlled by the JIT registration flag (`__JIT_REGISTRATION_ENABLED__`), which is separate from the general registration flag (`__REGISTRATION_OPEN__`).
+
+- **JIT Registration** (`__JIT_REGISTRATION_ENABLED__`): Controls whether accounts are automatically created during IMAP/SMTP login attempts with non-existent credentials and email delivery to non-existent recipients.
+
+If `__JIT_REGISTRATION_ENABLED__` is not explicitly set, it defaults to the value of `__REGISTRATION_OPEN__`.
+
+Use the `maddy creds jit` command to manage JIT registration:
+
+```
+maddy creds jit enable   # Enable automatic account creation
+maddy creds jit disable  # Disable automatic account creation
+maddy creds jit status   # Show current JIT registration status
+```
+
 ## maddy creds
 
 If the underlying table is a "mutable" table (see maddy-tables(5)) then

@@ -9,6 +9,8 @@ Make targets:
 - `make lint` - run `golangci-lint run ./...` (requires golangci-lint installed)
 - `make test` - run `go test ./...`
 - `make coverage` - generate `coverage.out` and `coverage.html`
+- **[Contributing Guide](../CONTRIBUTING.md)** - Detailed workflow, branching, and PR instructions.
+- **[E2E Testing Guide](./chatmail/e2e_test.md)** - Details on running the Python-based test suite.
 
 Notes about SQLite / CGO:
 

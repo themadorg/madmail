@@ -9,6 +9,8 @@ export
 
 # Variables
 BINARY=build/maddy
+BINARY_AMD64=build/maddy-amd64
+BINARY_ARM64=build/maddy-arm64
 VERSION_FILE=.version
 # Unit tests
 test-unit:
@@ -31,6 +33,12 @@ coverage:
 # Build target
 build:
 	sh build.sh build
+
+build_all:
+	@echo "🏗️ Building for x86_64..."
+	GOARCH=amd64 sh build.sh build
+	@echo "🏗️ Building for Raspberry Pi (ARM64)..."
+	GOARCH=arm64 CGO_ENABLED=0 sh build.sh build
 
 test:
 	uv run python3 tests/deltachat-test/main.py
@@ -62,10 +70,16 @@ push: build
 	$(call deploy_remote,$(REMOTE1))
 	$(call deploy_remote,$(REMOTE2))
 
-# Publish to Telegram then Arvan (Increment version -> Build -> Script)
+# Publish to Telegram then GitHub (Increment version -> Build -> Sign -> Script)
 # Use ARGS="--publish-no-telegram" to skip Telegram.
-publish: bump_version build
+publish: build_all
 	@bash publish.sh $(ARGS)
+
+sign_all:
+	@echo "🔏 Signing binaries with local private key..."
+	@if [ -f $(BINARY_AMD64) ]; then uv run internal/cli/clitools/sign.py $(BINARY_AMD64) ../imp/private_key.hex; fi
+	@if [ -f $(BINARY_ARM64) ]; then uv run internal/cli/clitools/sign.py $(BINARY_ARM64) ../imp/private_key.hex; fi
+	@if [ -f $(BINARY) ]; then uv run internal/cli/clitools/sign.py $(BINARY) ../imp/private_key.hex; fi
 
 
 # Logs
