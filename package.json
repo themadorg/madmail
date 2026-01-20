@@ -1,6 +1,6 @@
 {
   "name": "madmail",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "A mad fork of [maddy](https://github.com/foxcpp/maddy), bringing the madness to mail delivery — optimized for instant, secure messaging with #deltachat.",
   "main": "index.js",
   "directories": {

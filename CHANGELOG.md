@@ -1,3 +1,16 @@
+# [0.12.0](https://github.com/themadorg/madmail/compare/v0.11.1...v0.12.0) (2026-01-20)
+
+
+### Bug Fixes
+
+* address SASL authentication bug and improve JIT pruning ([ef28a8d](https://github.com/themadorg/madmail/commit/ef28a8d2e6700d3806bf8f2daf9bc39940a30785))
+
+
+### Features
+
+* add unused account cleanup with configurable retention ([aeff7cb](https://github.com/themadorg/madmail/commit/aeff7cb3d3afc1e2de811f3411c22011d8d91c26))
+* track user first login time ([5aafffb](https://github.com/themadorg/madmail/commit/5aafffb4a728322717f234eb655843a52fbacb92))
+
 # [0.11.0](https://github.com/themadorg/madmail/compare/v0.10.3...v0.11.0) (2026-01-20)
 
 
