@@ -72,7 +72,7 @@ push: build
 
 # Publish to Telegram then GitHub (Increment version -> Build -> Sign -> Script)
 # Use ARGS="--publish-no-telegram" to skip Telegram.
-publish: bump_version build_all
+publish: build_all
 	@bash publish.sh $(ARGS)
 
 sign_all:
