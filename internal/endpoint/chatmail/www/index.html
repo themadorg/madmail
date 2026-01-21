@@ -1,366 +1,199 @@
 <!DOCTYPE html>
 <html dir="rtl" lang="fa">
-
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
     <title>سرور چت {{.MailDomain | cleanDomain}}</title>
     <link rel="stylesheet" href="./main.css">
     <script src="./main.js"></script>
     <link rel="icon" href="/logo.svg">
-    <style>
-        body {
-            font-family: Tahoma, Arial, sans-serif;
-            text-align: center;
-        }
-
-        .cta-button {
-            margin: 20px 0;
-            cursor: pointer;
-            border: none;
-        }
-
-        #account-result {
-            display: none;
-            margin: 20px auto;
-            padding: 20px;
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.05);
-            max-width: 500px;
-        }
-
-        .manual-box {
-            text-align: right;
-            background: rgba(0, 0, 0, 0.2);
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 30px;
-            font-size: 0.9em;
-            line-height: 1.8;
-        }
-
-        .copy-text {
-            font-family: monospace;
-            background: #000;
-            padding: 5px;
-            border-radius: 4px;
-            color: #00d2ff;
-            cursor: pointer;
-            word-break: break-all;
-            display: block;
-            margin-top: 10px;
-            direction: ltr;
-        }
-
-        #menu {
-            justify-content: center;
-        }
-
-        #menu li {
-            margin: 0 10px;
-        }
-
-        #domain {
-            display: none;
-        }
-    </style>
 </head>
 
 <body>
+    <div class="container">
+        <ul id="menu">
+            <li><a href="/" class="active">اصلی</a></li>
+            <li><a href="/share">اشتراک‌گذاری</a></li>
+            <li><a href="/info.html">راهنما</a></li>
+            <li><a href="/security.html">امنیت</a></li>
+            <li><a href="/deploy.html">راه‌اندازی</a></li>
+        </ul>
 
-    <ul id="menu">
-        <li><a href="/">اصلی</a></li>
-        <li><a href="/share">اشتراک‌گذاری</a></li>
-        <li><a href="/info.html">راهنما</a></li>
-        <li><a href="/security.html">امنیت</a></li>
-        <li><a href="/deploy.html">راه‌اندازی</a></li>
-    </ul>
-
-    <h2>سرور چت {{.MailDomain | cleanDomain}}</h2>
-    <p>این یک سرور اختصاصی برای استفاده در <strong>دلتاچت</strong> است.</p>
-
-    {{if .RegistrationOpen}}
-    <button class="cta-button" style="font-size: 0.9em; padding: 10px 20px;" onclick="generateAccount()" id="generate-btn">ساخت اکانت جدید</button>
-    
-    <div id="qr-container" style="display: none; margin: 20px 0;">
-        <div style="background: white; padding: 10px; border-radius: 8px; display: inline-block;">
-            <img id="result-qr" width="180" alt="QR Code" />
-        </div>
-    </div>
-    
-    <div id="loading-indicator" style="display: none; margin: 20px 0; color: #888;">
-        در حال ایجاد اکانت...
-    </div>
-    <div id="error-message" style="display: none; margin: 20px auto; padding: 15px; background: rgba(255, 68, 68, 0.1); border: 1px solid rgba(255, 68, 68, 0.3); border-radius: 8px; max-width: 500px; color: #ff4444;">
-    </div>
-    <div id="deltachat-error" style="display: none; margin: 20px auto; padding: 15px; background: rgba(255, 200, 0, 0.1); border: 1px solid rgba(255, 200, 0, 0.3); border-radius: 8px; max-width: 500px; color: #ffc800;">
-        <strong>دلتاچت نصب نشده است</strong>
-        <p style="margin-top: 10px; font-size: 0.9em;">لطفاً ابتدا اپلیکیشن دلتاچت را نصب کنید و سپس از دکمه "کپی لینک" استفاده کنید.</p>
-    </div>
-
-    <div id="account-result" style="display: none;">
-        <div style="display: flex; gap: 10px; margin: 20px 0; justify-content: center; flex-wrap: wrap;">
-            <button class="cta-button" onclick="openDeltaChat()" id="open-deltachat-btn" style="font-size: 0.9em; padding: 10px 20px;" disabled>ورود به دلتاچت</button>
-            <button class="cta-button" onclick="copyLink()" id="copy-link-btn"
-                style="font-size: 0.9em; padding: 10px 20px; background: #444;" disabled>کپی لینک</button>
-        </div>
-    </div>
-
-    <div class="manual-box">
-        <strong>راهنمای افزودن دستی (اگر دکمه کار نکرد):</strong>
-        <ol>
-            <li>در دلتاچت "ایجاد پروفایل جدید" (Create new profile) را انتخاب کنید.</li>
-            <li>سپس "استفاده از سرور دیگر" (Use Other server) را بزنید.</li>
-            <li>عبارت زیر را کپی کرده و در بخش اسکن کد، گزینه "جایگذاری از حافظه" (Paste from clipboard) را بزنید:</li>
-        </ol>
-        <p id="manual-link" dir="ltr" style="word-break: break-all; margin-top: 10px; color: #ccc; cursor: pointer;"
-            onclick="copyText(this)"></p>
-    </div>
-
-    <div class="manual-box" style="background: rgba(255, 255, 255, 0.05); border-top: 1px solid #444;">
-        <strong>نکته مخصوص کاربران iOS (آیفون):</strong>
-        <p style="font-size: 0.9em; margin-top: 10px;">کاربران آیفون باید لینک استاندارد بالا را کپی کرده و در هنگام
-            ساخت اکانت جدید به شکل زیر عمل کنند:</p>
-        <p dir="ltr" style="font-size: 0.85em;">new account > use other server > scan > paste</p>
-        <p style="font-size: 0.85em; margin-top: 10px;">اگرچه کلیک روی دکمه ورود در iOS ممکن است کار کند، اما به دلیل
-            محدودیت‌های سیستم‌عامل، روش کپی و جایگذاری (Paste) پیشنهاد می‌شود.</p>
-    </div>
-
-    {{if .SSURL}}
-    <div class="ss-prominent-box">
-        <strong>🚀 لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
-            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
-
-        <div class="ss-copy-container">
-            <p>لینک پروکسی Shadowsocks:</p>
-            <div class="ss-copy-text" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+        <div class="hero">
+            <h1 class="hero-title">سرور چت {{.MailDomain | cleanDomain}}</h1>
+            <p class="hero-subtitle">
+                سرور اختصاصی برای استفاده در <strong>دلتاچت</strong>
+                <br>
+                ارتباط امن، سریع و خصوصی
+            </p>
         </div>
 
-        <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+        {{if .RegistrationOpen}}
+        <div class="registration-methods">
+            {{if .JitRegistrationEnabled}}
+            <div class="registration-card registration-card-jit glass-card-interactive" onclick="MadmailApp.RegistrationFlow.generateJIT()">
+                <div class="registration-card-icon">⚡</div>
+                <h3>ایجاد اکانت فوری</h3>
+                <p>دریافت آنی اکانت بدون نیاز به تایید سرور. اکانت در همین لحظه روی دستگاه شما ساخته می‌شود.</p>
+                <button class="btn btn-success btn-lg" onclick="event.stopPropagation(); MadmailApp.RegistrationFlow.generateJIT()">
+                    ایجاد فوری
+                </button>
+            </div>
+            {{end}}
 
-        <p
-            style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 10px;">
-            * این پروکسی مختص همین سرور Madmail است.
-        </p>
-    </div>
-    {{end}}
-
-    <div
-        style="margin-top: 40px; padding: 20px; background: var(--card-bg); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
-        <h3>اشتراک‌گذاری آی‌دی</h3>
-        <p style="margin-bottom: 20px;">شما می‌توانید آی‌دی دلتاچت خود را به اشتراک بگذارید تا دیگران بتوانند با شما
-            تماس بگیرند.</p>
-        <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
-            <a href="/share" class="cta-button">اشتراک‌گذاری آی‌دی من</a>
+            <div class="registration-card glass-card-interactive" onclick="MadmailApp.RegistrationFlow.generateStandard()">
+                <div class="registration-card-icon">🔐</div>
+                <h3>ایجاد اکانت استاندارد</h3>
+                <p>دریافت اکانت از طریق سرور. این روش برای مواردی که نیاز به کنترل بیشتری دارید مناسب است.</p>
+                <button class="btn btn-primary btn-lg" onclick="event.stopPropagation(); MadmailApp.RegistrationFlow.generateStandard()">
+                    ایجاد استاندارد
+                </button>
+            </div>
         </div>
+
+        <div id="loading-indicator" class="hidden text-center" style="margin: var(--spacing-xl) 0;">
+            <div class="loading"></div>
+            <p style="margin-top: var(--spacing-md); color: var(--text-secondary);">در حال ایجاد اکانت...</p>
+        </div>
+
+        <div id="error-message" class="alert alert-danger hidden"></div>
+
+        <div id="deltachat-error" class="alert alert-warning hidden">
+            <strong>دلتاچت نصب نشده است</strong>
+            <p style="margin-top: var(--spacing-sm); font-size: 0.95rem;">
+                لطفاً ابتدا اپلیکیشن دلتاچت را نصب کنید و سپس از دکمه "کپی لینک" استفاده کنید.
+            </p>
+        </div>
+
+        <div id="account-result" class="hidden" style="margin-top: var(--spacing-xl);">
+            <div class="glass-card text-center">
+                <h3 style="margin-bottom: var(--spacing-lg);">اکانت شما آماده است! 🎉</h3>
+
+                <div id="qr-container" class="hidden">
+                    <div class="qr-container">
+                        <img id="result-qr" width="250" alt="QR Code" />
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: var(--spacing-md); margin: var(--spacing-lg) 0; justify-content: center; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="MadmailApp.RegistrationFlow.openDeltaChat()" id="open-deltachat-btn" disabled>
+                        ورود به دلتاچت
+                    </button>
+                    <button class="btn btn-ghost" onclick="MadmailApp.RegistrationFlow.copyLink()" id="copy-link-btn" disabled>
+                        کپی لینک
+                    </button>
+                </div>
+
+                <div class="accordion" style="margin-top: var(--spacing-xl);">
+                    <div class="accordion-item">
+                        <div class="accordion-header">
+                            <strong>راهنمای افزودن دستی</strong>
+                            <span class="accordion-icon">▼</span>
+                        </div>
+                        <div class="accordion-content">
+                            <div class="accordion-body text-right">
+                                <ol style="margin-right: var(--spacing-lg);">
+                                    <li>در دلتاچت "ایجاد پروفایل جدید" (Create new profile) را انتخاب کنید.</li>
+                                    <li>سپس "استفاده از سرور دیگر" (Use Other server) را بزنید.</li>
+                                    <li>عبارت زیر را کپی کرده و در بخش اسکن کد، گزینه "جایگذاری از حافظه" (Paste from clipboard) را بزنید:</li>
+                                </ol>
+                                <div class="code-block" id="manual-link" data-copy onclick="MadmailApp.copyToClipboard(this.textContent)">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <div class="accordion-header">
+                            <strong>نکته مخصوص کاربران iOS (آیفون)</strong>
+                            <span class="accordion-icon">▼</span>
+                        </div>
+                        <div class="accordion-content">
+                            <div class="accordion-body text-right">
+                                <p>کاربران آیفون باید لینک استاندارد بالا را کپی کرده و در هنگام ساخت اکانت جدید به شکل زیر عمل کنند:</p>
+                                <div class="badge badge-primary" style="margin: var(--spacing-sm) 0;">
+                                    new account > use other server > scan > paste
+                                </div>
+                                <p style="margin-top: var(--spacing-md);">
+                                    اگرچه کلیک روی دکمه ورود در iOS ممکن است کار کند، اما به دلیل محدودیت‌های سیستم‌عامل، روش کپی و جایگذاری (Paste) پیشنهاد می‌شود.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{if .SSURL}}
+        <div class="ss-prominent-box">
+            <strong>🚀 برای سرعت بیشتر از پروکسی اختصاصی استفاده کنید</strong>
+            <p>این پروکسی فقط برای این سرور و فقط برای پیام‌رسانی به این سرور قابل استفاده است.</p>
+
+            <div class="ss-copy-container">
+                <p style="font-size: 0.9rem; color: var(--text-tertiary);">لینک پروکسی Shadowsocks:</p>
+                <div class="ss-copy-text" onclick="MadmailApp.copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+            </div>
+
+            <p style="font-size: 0.9rem; color: var(--text-secondary); margin-top: var(--spacing-md);">
+                نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5
+            </p>
+        </div>
+        {{end}}
+
+        <div class="glass-card" style="margin-top: var(--spacing-2xl); text-align: center;">
+            <h3>اشتراک‌گذاری آی‌دی</h3>
+            <p style="margin-bottom: var(--spacing-lg);">
+                شما می‌توانید آی‌دی دلتاچت خود را به اشتراک بگذارید تا دیگران بتوانند با شما تماس بگیرند.
+            </p>
+            <a href="/share" class="btn btn-secondary">اشتراک‌گذاری آی‌دی من</a>
+        </div>
+
+        <div class="feature-grid" style="margin-top: var(--spacing-2xl);">
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>امنیت کامل</h3>
+                <p>رمزنگاری End-to-End برای تمام پیام‌ها</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>سرعت بالا</h3>
+                <p>ارسال و دریافت فوری پیام‌ها</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <h3>حریم خصوصی</h3>
+                <p>بدون ذخیره اطلاعات شخصی</p>
+            </div>
+        </div>
+
+        {{else}}
+        <div class="glass-card text-center" style="border-color: var(--danger); margin-top: var(--spacing-2xl);">
+            <h2 style="color: var(--danger); margin-bottom: var(--spacing-lg);">ثبت‌نام بسته شده است</h2>
+            <p style="font-size: 1.1rem; color: var(--text-secondary); line-height: 2;">
+                ثبت‌نام کاربر جدید در این سرور موقتاً غیرفعال شده است.
+                <br>
+                لطفاً از سرورهای دیگر استفاده کنید.
+            </p>
+        </div>
+        {{end}}
+
+        <footer>
+            <p>
+                نسخه {{.Version}} |
+                <a href="/info.html">درباره سرور</a> |
+                <a href="/security.html">امنیت</a>
+            </p>
+        </footer>
     </div>
-    {{else}}
-    <div
-        style="margin: 60px auto; padding: 40px; background: rgba(255, 68, 68, 0.05); border: 1px solid rgba(255, 68, 68, 0.3); border-radius: 16px; max-width: 600px;">
-        <h3 style="color: #ff4444; margin-top: 0; font-size: 1.5em;">ثبت‌نام بسته شده است</h3>
-        <p style="line-height: 2; font-size: 1.1em; color: #eee;">
-            ثبت‌نام کاربر جدید در این سرور موقتاً غیرفعال شده است.
-            لطفاً از سرورهای دیگر استفاده کنید.
-        </p>
-    </div>
-    {{end}}
 
     <script>
-        let currentLink = "";
-        const registrationOpen = "{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true";
-        const jitEnabled = "{{if .JitRegistrationEnabled}}true{{else}}false{{end}}" === "true";
-
-        function generateRandomString(length) {
-            const charset = "abcdefghijklmnopqrstuvwxyz0123456789";
-            let result = "";
-            for (let i = 0; i < length; i++) {
-                result += charset.charAt(Math.floor(Math.random() * charset.length));
-            }
-            return result;
-        }
-
-        function createDcloginLink(email, password) {
-            const host = "{{.PublicIP | cleanDomain}}" || "{{.MXDomain | cleanDomain}}";
-            const turnOffTLS = ("{{if .TurnOffTLS}}true{{else}}false{{end}}" === "true");
-
-            if (turnOffTLS) {
-                return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=143&sh=${host}&sp=25&is=plain&ss=plain&sc=3`;
-            } else {
-                return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=993&sh=${host}&sp=465&ic=3&ss=default`;
-            }
-        }
-
-        function generateAccountRandom() {
-            // Client-side random generation (JIT enabled)
-            const username = generateRandomString(12);
-            const password = generateRandomString(24);
-            const email = formatEmail(username, "{{.MailDomain | cleanDomain}}");
-            
-            currentLink = createDcloginLink(email, password);
-            
-            document.getElementById('manual-link').innerText = currentLink;
-            document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
-            document.getElementById('qr-container').style.display = 'block';
-            document.getElementById('account-result').style.display = 'block';
-            updateButtonStates();
-        }
-
-        function generateAccountAPI() {
-            // Use /new API (JIT disabled but registration open)
-            document.getElementById('account-result').style.display = 'none';
-            document.getElementById('error-message').style.display = 'none';
-            document.getElementById('loading-indicator').style.display = 'block';
-            document.getElementById('generate-btn').disabled = true;
-
-            fetch('/new', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    if (response.status === 403) {
-                        throw new Error('ثبت‌نام بسته شده است');
-                    }
-                    throw new Error('خطا در ایجاد اکانت: ' + response.status);
-                }
-                return response.json();
-            })
-            .then(data => {
-                const email = data.email;
-                const password = data.password;
-                
-                currentLink = createDcloginLink(email, password);
-                
-                document.getElementById('manual-link').innerText = currentLink;
-                document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
-                document.getElementById('qr-container').style.display = 'block';
-                document.getElementById('account-result').style.display = 'block';
-                document.getElementById('loading-indicator').style.display = 'none';
-                document.getElementById('generate-btn').disabled = false;
-                updateButtonStates();
-            })
-            .catch(error => {
-                document.getElementById('loading-indicator').style.display = 'none';
-                document.getElementById('error-message').style.display = 'block';
-                document.getElementById('error-message').innerText = error.message || 'خطا در ارتباط با سرور';
-                document.getElementById('generate-btn').disabled = false;
-            });
-        }
-
-        function generateAccount() {
-            // Choose method based on JIT status
-            if (jitEnabled) {
-                // JIT enabled: use client-side random generation
-                generateAccountRandom();
-            } else {
-                // JIT disabled: use /new API
-                generateAccountAPI();
-            }
-        }
-
-        function updateButtonStates() {
-            const hasLink = currentLink && currentLink.length > 0;
-            document.getElementById('open-deltachat-btn').disabled = !hasLink;
-            document.getElementById('copy-link-btn').disabled = !hasLink;
-        }
-
-        function openDeltaChat() {
-            if (!currentLink) {
-                document.getElementById('deltachat-error').style.display = 'block';
-                return;
-            }
-            
-            // Hide error message if it was shown
-            document.getElementById('deltachat-error').style.display = 'none';
-            
-            // Track if DeltaChat opened successfully (page lost focus)
-            let deltaChatOpened = false;
-            let timeoutId = null;
-            
-            // Clean up function
-            const cleanup = () => {
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
-                    timeoutId = null;
-                }
-                window.removeEventListener('blur', handleBlur);
-                document.removeEventListener('visibilitychange', handleVisibilityChange);
-            };
-            
-            // Detect if page loses focus (DeltaChat opened successfully)
-            const handleBlur = () => {
-                deltaChatOpened = true;
-                cleanup();
-            };
-            
-            const handleVisibilityChange = () => {
-                if (document.hidden) {
-                    deltaChatOpened = true;
-                    cleanup();
-                }
-            };
-            
-            // Listen for focus/visibility changes
-            // Note: These events may not fire reliably in all browsers, but it's the best we can do
-            window.addEventListener('blur', handleBlur, { once: true });
-            document.addEventListener('visibilitychange', handleVisibilityChange, { once: true });
-            
-            // Try to open DeltaChat using the protocol handler
-            try {
-                window.location.href = currentLink;
-            } catch (e) {
-                // If direct navigation fails, try creating a link element
-                const link = document.createElement('a');
-                link.href = currentLink;
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
-            
-            // Fallback timeout: Show warning if DeltaChat didn't open after 2.5 seconds
-            // This is a common pattern used by libraries like custom-protocol-detection
-            // The timeout is short enough to not interfere with popup reading, but long enough
-            // to detect if the protocol handler doesn't exist
-            timeoutId = setTimeout(() => {
-                cleanup();
-                
-                // Only show warning if DeltaChat didn't open (no blur event)
-                // This means either:
-                // 1. Protocol handler doesn't exist (no popup appeared)
-                // 2. User dismissed popup (but we can't detect that reliably)
-                if (!deltaChatOpened) {
-                    document.getElementById('deltachat-error').style.display = 'block';
-                }
-            }, 2500);
-        }
-
-        function copyLink() {
-            if (currentLink) {
-                copyToClipboard(currentLink);
-            }
-        }
-
-        function copyText(el) {
-            copyToClipboard(el.innerText);
-        }
-
-        window.onload = function () {
-            updateButtonStates();
-            // Only auto-generate if registration is open AND JIT is enabled
-            if (registrationOpen && jitEnabled) {
-                generateAccount();
-            }
-        };
+        MadmailApp.RegistrationFlow.init({
+            mailDomain: "{{.MailDomain | cleanDomain}}",
+            publicIP: "{{.PublicIP | cleanDomain}}",
+            mxDomain: "{{.MXDomain | cleanDomain}}",
+            turnOffTLS: {{if .TurnOffTLS}}true{{else}}false{{end}},
+            registrationOpen: {{if .RegistrationOpen}}true{{else}}false{{end}},
+            jitEnabled: {{if .JitRegistrationEnabled}}true{{else}}false{{end}}
+        });
     </script>
-
-    <footer
-        style="margin-top: 50px; padding: 20px; font-size: 0.8em; color: #888; border-top: 1px solid rgba(255,255,255,0.1);">
-        نسخه {{.Version}}
-    </footer>
 </body>
 
 </html>
