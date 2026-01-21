@@ -46,10 +46,27 @@ Madmail uses **Ed25519** signatures for binary verification.
 - The private key is kept outside the repository.
 - If you modify the `upgrade` or `update` commands, you **must** verify them using `make test --test-10`.
 
-## Submission Process
+## Issue Tracking & Labels
 
-1. **Check Priorities**: Review the [Project Board](https://github.com/orgs/themadorg/projects/1) for current priorities.
-2. **Open an Issue**: Use the [Issue Template](https://github.com/themadorg/madmail/issues/new/choose) to describe your proposal. **Wait for approval** from the main authors before writing code.
+We distinguish between functional features and technical tasks.
+
+### Issue Templates
+- **[Feature Request](../.github/ISSUE_TEMPLATE/feature.md)**: Use this for new functional additions or user-facing features.
+- **[Task Template](../.github/ISSUE_TEMPLATE/pbi-task.md)**: Use this for technical improvements, refactoring, and general tasks.
+
+### Standard Labels
+- `feature`: New functional additions or user-facing features.
+- `task`: General technical improvements, refactors, or sub-tasks.
+- `bug`: Something that isn't working as expected.
+- `frontend`: Web UI and assets.
+- `backend`: Server logic and API.
+- `ui/ux`: Design and user experience.
+- `security`: Privacy and security hardening.
+- `refactor`: Code cleanup.
+
+## PR Process:
+1. **Check Priorities**: Review the [Project Board](https://github.com/orgs/themadorg/projects/1).
+2. **Open an Issue**: Use the appropriate template (**Feature** or **Task**) and apply relevant labels. **Wait for approval** before coding.
 3. **Branching**:
    - `feat/feature-short-name` for new features.
    - `fix/bug-fix-short-name` for bug fixes.
