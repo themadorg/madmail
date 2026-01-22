@@ -191,7 +191,7 @@ func defaultConfig() *InstallConfig {
 		TURNPort:                 "3478",
 		TURNTTL:                  86400,
 		MaxMessageSize:           "32M",
-		SkipSync:                false,
+		SkipSync:                 false,
 	}
 }
 
