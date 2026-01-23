@@ -31,19 +31,43 @@ type SyncLockPlugin struct {
 func (p *SyncLockPlugin) Name() string { return "sync_lock" }
 
 func (p *SyncLockPlugin) Initialize(db *gorm.DB) error {
-	db.Callback().Create().Before("*").Register("sync_lock:before", p.lock)
-	db.Callback().Query().Before("*").Register("sync_lock:before", p.lock)
-	db.Callback().Update().Before("*").Register("sync_lock:before", p.lock)
-	db.Callback().Delete().Before("*").Register("sync_lock:before", p.lock)
-	db.Callback().Row().Before("*").Register("sync_lock:before", p.lock)
-	db.Callback().Raw().Before("*").Register("sync_lock:before", p.lock)
+	if err := db.Callback().Create().Before("*").Register("sync_lock:before", p.lock); err != nil {
+		return err
+	}
+	if err := db.Callback().Query().Before("*").Register("sync_lock:before", p.lock); err != nil {
+		return err
+	}
+	if err := db.Callback().Update().Before("*").Register("sync_lock:before", p.lock); err != nil {
+		return err
+	}
+	if err := db.Callback().Delete().Before("*").Register("sync_lock:before", p.lock); err != nil {
+		return err
+	}
+	if err := db.Callback().Row().Before("*").Register("sync_lock:before", p.lock); err != nil {
+		return err
+	}
+	if err := db.Callback().Raw().Before("*").Register("sync_lock:before", p.lock); err != nil {
+		return err
+	}
 
-	db.Callback().Create().After("*").Register("sync_lock:after", p.unlock)
-	db.Callback().Query().After("*").Register("sync_lock:after", p.unlock)
-	db.Callback().Update().After("*").Register("sync_lock:after", p.unlock)
-	db.Callback().Delete().After("*").Register("sync_lock:after", p.unlock)
-	db.Callback().Row().After("*").Register("sync_lock:after", p.unlock)
-	db.Callback().Raw().After("*").Register("sync_lock:after", p.unlock)
+	if err := db.Callback().Create().After("*").Register("sync_lock:after", p.unlock); err != nil {
+		return err
+	}
+	if err := db.Callback().Query().After("*").Register("sync_lock:after", p.unlock); err != nil {
+		return err
+	}
+	if err := db.Callback().Update().After("*").Register("sync_lock:after", p.unlock); err != nil {
+		return err
+	}
+	if err := db.Callback().Delete().After("*").Register("sync_lock:after", p.unlock); err != nil {
+		return err
+	}
+	if err := db.Callback().Row().After("*").Register("sync_lock:after", p.unlock); err != nil {
+		return err
+	}
+	if err := db.Callback().Raw().After("*").Register("sync_lock:after", p.unlock); err != nil {
+		return err
+	}
 	return nil
 }
 
