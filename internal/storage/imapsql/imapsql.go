@@ -31,6 +31,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -264,6 +265,14 @@ func (store *Storage) Init(cfg *config.Map) error {
 	var err error
 
 	dsnStr := strings.Join(dsn, " ")
+	if driver == "sqlite3" && os.Getenv("MADDY_SQLITE_UNSAFE_SYNC_OFF") == "1" {
+		// WARNING: this reduces durability and can corrupt data on crash.
+		sep := "?"
+		if strings.Contains(dsnStr, "?") {
+			sep = "&"
+		}
+		dsnStr = dsnStr + sep + "_journal_mode=WAL&_synchronous=OFF"
+	}
 
 	if len(compression) != 0 {
 		switch compression[0] {

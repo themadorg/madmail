@@ -142,6 +142,7 @@ type InstallConfig struct {
 	NoLog          bool
 	Debug          bool
 	MaxMessageSize string
+	SkipSync       bool
 	// Internal state
 	SkipPrompts bool
 }
@@ -190,6 +191,7 @@ func defaultConfig() *InstallConfig {
 		TURNPort:                 "3478",
 		TURNTTL:                  86400,
 		MaxMessageSize:           "32M",
+		SkipSync:                 false,
 	}
 }
 
@@ -343,6 +345,10 @@ Examples:
 					Usage: "Maximum message size (e.g. 32M, 100M)",
 					Value: "32M",
 				},
+				&cli.BoolFlag{
+					Name:  "skip-sync",
+					Usage: "Disable SQLite synchronous mode (unsafe, may corrupt data on crash)",
+				},
 			},
 		})
 }
@@ -382,6 +388,9 @@ func installCommand(ctx *cli.Context) error {
 		if !ctx.IsSet("hostname") {
 			config.Hostname = ctx.String("domain")
 		}
+	}
+	if ctx.Bool("skip-sync") {
+		config.SkipSync = true
 	}
 	if ctx.IsSet("hostname") {
 		config.Hostname = ctx.String("hostname")
@@ -1748,6 +1757,10 @@ Restart=on-failure
 # ... Unless it is a configuration problem.
 RestartPreventExitStatus=2
 
+{{if .SkipSync}}
+Environment=MADDY_SQLITE_UNSAFE_SYNC_OFF=1
+{{end}}
+
 ExecStart={{.BinaryPath}} --config {{.ConfigDir}}/maddy.conf {{if .Debug}}--debug {{end}}run --libexec {{.LibexecDir}}
 
 ExecReload=/bin/kill -USR1 $MAINPID
@@ -1827,6 +1840,10 @@ LimitNPROC=512
 Restart=on-failure
 # ... Unless it is a configuration problem.
 RestartPreventExitStatus=2
+
+{{if .SkipSync}}
+Environment=MADDY_SQLITE_UNSAFE_SYNC_OFF=1
+{{end}}
 
 ExecStart={{.BinaryPath}} --config {{.ConfigDir}}/%i.conf run --libexec {{.LibexecDir}}
 ExecReload=/bin/kill -USR1 $MAINPID
