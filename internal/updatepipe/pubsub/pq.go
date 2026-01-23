@@ -31,7 +31,11 @@ func NewPQ(dsn string) (*PqPubSub, error) {
 	}
 	l.L = pq.NewListener(dsn, 10*time.Second, time.Minute, l.eventHandler)
 	var err error
-	l.sender, err = mdb.New("postgres", []string{dsn}, l.Log.Debug)
+	l.sender, err = mdb.New(mdb.Config{
+		Driver: "postgres",
+		DSN:    []string{dsn},
+		Debug:  l.Log.Debug,
+	})
 	if err != nil {
 		return nil, err
 	}

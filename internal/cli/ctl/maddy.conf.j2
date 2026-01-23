@@ -42,6 +42,10 @@ auth.pass_table local_authdb {
         driver sqlite3
         dsn credentials.db
         table_name passwords
+        {{if .SqliteInMemory -}}
+        sqlite_in_memory yes
+        sqlite_sync_interval {{.SqliteSyncInterval}}
+        {{- end}}
     }
 }
 
@@ -56,6 +60,10 @@ storage.imapsql local_mailboxes {
     auto_create yes
     driver sqlite3
     dsn imapsql.db
+    {{if .SqliteInMemory -}}
+    sqlite_in_memory yes
+    sqlite_sync_interval {{.SqliteSyncInterval}}
+    {{- end}}
     retention 24h
     default_quota 1G
     appendlimit {{.MaxMessageSize}}

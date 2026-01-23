@@ -143,6 +143,11 @@ type InstallConfig struct {
 	Debug          bool
 	MaxMessageSize string
 	SkipSync       bool
+
+	// SQLite In-Memory configuration
+	SqliteInMemory     bool
+	SqliteSyncInterval string
+
 	// Internal state
 	SkipPrompts bool
 }
@@ -192,6 +197,8 @@ func defaultConfig() *InstallConfig {
 		TURNTTL:                  86400,
 		MaxMessageSize:           "32M",
 		SkipSync:                 false,
+		SqliteInMemory:           false,
+		SqliteSyncInterval:       "20m",
 	}
 }
 
@@ -349,6 +356,15 @@ Examples:
 					Name:  "skip-sync",
 					Usage: "Disable SQLite synchronous mode (unsafe, may corrupt data on crash)",
 				},
+				&cli.BoolFlag{
+					Name:  "sqlite-in-memory",
+					Usage: "Enable in-memory SQLite database",
+				},
+				&cli.StringFlag{
+					Name:  "sqlite-sync-interval",
+					Usage: "Interval for syncing in-memory SQLite to disk (e.g. 20m, 1h, 0 to disable)",
+					Value: "20m",
+				},
 			},
 		})
 }
@@ -476,6 +492,13 @@ func installCommand(ctx *cli.Context) error {
 
 	if ctx.IsSet("max-message-size") {
 		config.MaxMessageSize = ctx.String("max-message-size")
+	}
+
+	if ctx.Bool("sqlite-in-memory") {
+		config.SqliteInMemory = true
+	}
+	if ctx.IsSet("sqlite-sync-interval") {
+		config.SqliteSyncInterval = ctx.String("sqlite-sync-interval")
 	}
 
 	// Run interactive configuration if not in non-interactive mode
@@ -760,6 +783,13 @@ func runInteractiveConfig(config *InstallConfig) error {
 	// Message size limit
 	fmt.Println("\n📦 Message Size Configuration")
 	config.MaxMessageSize = promptString("Maximum message size (e.g., 32M, 100M)", config.MaxMessageSize)
+
+	// SQLite In-Memory
+	fmt.Println("\n💾 SQLite Performance Configuration")
+	config.SqliteInMemory = clitools2.Confirmation("Enable in-memory SQLite (faster, requires background sync)?", config.SqliteInMemory)
+	if config.SqliteInMemory {
+		config.SqliteSyncInterval = promptString("Sync interval (e.g., 20m, 1h, 1d, 0 to disable)", config.SqliteSyncInterval)
+	}
 
 	// DNS Provider Configuration
 	fmt.Println("\n🌐 DNS Provider Configuration")

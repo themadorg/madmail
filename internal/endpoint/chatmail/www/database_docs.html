@@ -79,7 +79,8 @@
 
         <h2>PostgreSQL</h2>
         <p>برای استفاده از PostgreSQL، ابتدا یک دیتابیس در سرور خود ایجاد کنید (می‌توانید از
-            <code>docker-compose.yml</code> موجود در پروژه استفاده کنید).</p>
+            <code>docker-compose.yml</code> موجود در پروژه استفاده کنید).
+        </p>
         <p>نمونه تنظیمات در فایل <code>maddy.conf</code>:</p>
         <pre><code>storage.imapsql local_mail {
     driver postgres
@@ -98,6 +99,25 @@
     driver mysql
     dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
 }</code></pre>
+
+        <h2>بهینه‌سازی عملکرد با SQLite In-Memory</h2>
+        <p>برای سرورهای با ترافیک بالا، می‌توانید SQLite را کاملاً در حافظه RAM اجرا کنید تا سرعت عملیات دیتابیس به شدت
+            افزایش یابد.</p>
+        <div class="db-tip">
+            <p><strong>هشدار:</strong> در صورت استفاده از این حالت، دیتابیس باید به صورت دوره‌ای روی دیسک ذخیره شود تا
+                از دست رفتن داده‌ها در صورت قطع برق یا کرش جلوگیری شود.</p>
+        </div>
+        <pre><code>storage.imapsql local_mail {
+    driver sqlite3
+    dsn imapsql.db
+    sqlite_in_memory yes
+    sqlite_sync_interval 20m  # هر ۲۰ دقیقه از رم روی دیسک کپی می‌شود
+}</code></pre>
+        <ul>
+            <li><code>sqlite_in_memory</code>: فعال‌سازی اجرای دیتابیس در RAM</li>
+            <li><code>sqlite_sync_interval</code>: فواصل زمانی ذخیره‌سازی روی دیسک (مثلاً <code>1h</code> یا
+                <code>1d</code>). مقدار <code>0</code> ذخیره‌سازی را غیرفعال می‌کند.</li>
+        </ul>
 
         <h2>مهاجرت (Migration)</h2>
         <p>سرویس به صورت خودکار جداول مورد نیاز را در اولین اجرا ایجاد یا به‌روزرسانی می‌کند. نیازی به اجرای دستورات SQL

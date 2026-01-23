@@ -61,12 +61,17 @@ func (s *SQLTable) Init(cfg *config.Map) error {
 		tableName   string
 		keyColumn   string
 		valueColumn string
+
+		sqliteInMemory     bool
+		sqliteSyncInterval string
 	)
 	cfg.String("driver", false, true, "", &driver)
 	cfg.StringList("dsn", false, true, nil, &dsnParts)
 	cfg.String("table_name", false, true, "", &tableName)
 	cfg.String("key_column", false, false, "key", &keyColumn)
 	cfg.String("value_column", false, false, "value", &valueColumn)
+	cfg.Bool("sqlite_in_memory", false, false, &sqliteInMemory)
+	cfg.String("sqlite_sync_interval", false, false, "20m", &sqliteSyncInterval)
 	if _, err := cfg.Process(); err != nil {
 		return err
 	}
@@ -139,6 +144,14 @@ func (s *SQLTable) Init(cfg *config.Map) error {
 					%s TEXT PRIMARY KEY NOT NULL,
 					%s TEXT NOT NULL
 				)`, tableName, keyColumn, valueColumn)},
+			},
+			{
+				Name: "sqlite_in_memory",
+				Args: []string{fmt.Sprintf("%v", sqliteInMemory)},
+			},
+			{
+				Name: "sqlite_sync_interval",
+				Args: []string{sqliteSyncInterval},
 			},
 		},
 	}))

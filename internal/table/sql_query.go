@@ -21,6 +21,7 @@ package table
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/themadorg/madmail/framework/config"
 	"github.com/themadorg/madmail/framework/log"
@@ -42,6 +43,9 @@ type SQL struct {
 	listQuery   string
 	setQuery    string
 	removeQuery string
+
+	sqliteInMemory     bool
+	sqliteSyncInterval time.Duration
 }
 
 func NewSQL(modName, instName string, _, _ []string) (module.Module, error) {
@@ -82,6 +86,8 @@ func (s *SQL) Init(cfg *config.Map) error {
 	cfg.String("list", false, false, "", &listQuery)
 	cfg.String("del", false, false, "", &removeQuery)
 	cfg.String("set", false, false, "", &setQuery)
+	cfg.Bool("sqlite_in_memory", false, false, &s.sqliteInMemory)
+	cfg.Duration("sqlite_sync_interval", false, false, 0, &s.sqliteSyncInterval)
 	if _, err := cfg.Process(); err != nil {
 		return err
 	}
@@ -90,7 +96,13 @@ func (s *SQL) Init(cfg *config.Map) error {
 		return config.NodeErr(cfg.Block, "PostgreSQL driver does not support named_args")
 	}
 
-	db, err := mdb.New(driver, dsnParts, log.DefaultLogger.Debug)
+	db, err := mdb.New(mdb.Config{
+		Driver:       driver,
+		DSN:          dsnParts,
+		Debug:        log.DefaultLogger.Debug,
+		InMemory:     s.sqliteInMemory,
+		SyncInterval: s.sqliteSyncInterval,
+	})
 	if err != nil {
 		return config.NodeErr(cfg.Block, "failed to open db: %v", err)
 	}

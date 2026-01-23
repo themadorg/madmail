@@ -174,7 +174,12 @@ func openSharingGORM(ctx *cli.Context) (*gorm.DB, error) {
 		dsn = []string{filepath.Join(config.StateDirectory, "sharing.db")}
 	}
 
-	db, err := mdb.New(driver, dsn, ctx.Bool("debug"))
+	db, err := mdb.New(mdb.Config{
+		Driver:   driver,
+		DSN:      dsn,
+		Debug:    ctx.Bool("debug"),
+		InMemory: false,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sharing GORM DB: %v", err)
 	}
