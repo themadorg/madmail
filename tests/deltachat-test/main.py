@@ -42,6 +42,7 @@ from scenarios import (
     test_11_jit_registration,
 )
 from utils.lxc import LXCManager
+from stress import run_stress
 
 REMOTE1 = os.getenv("REMOTE1", "127.0.0.1")
 REMOTE2 = os.getenv("REMOTE2", "127.0.0.1")
@@ -82,6 +83,11 @@ def main():
     parser.add_argument("--lxc", action="store_true", help="Run tests in local LXC containers")
     parser.add_argument("--keep-lxc", action="store_true", help="Keep LXC containers alive after test")
     parser.add_argument("--all", action="store_true", help="Run all tests (default)")
+    parser.add_argument("--stress", action="store_true", help="Run stress test against a remote server")
+    parser.add_argument("--stress-users", type=int, default=50, help="Total users to create (default: 50)")
+    parser.add_argument("--stress-workers", type=int, default=8, help="Worker processes to use (default: 8)")
+    parser.add_argument("--stress-duration", type=int, default=60, help="Send duration per worker in seconds (default: 60)")
+    parser.add_argument("--stress-report", default="", help="Path to write stress report JSON")
     
     args = parser.parse_args()
     
@@ -99,6 +105,35 @@ def main():
     print(f"Starting E2E tests. Results will be stored in: {test_dir}")
     print("="*60)
     
+    success = False
+    acc1 = None
+    acc2 = None
+    acc3 = None
+    group_chat = None
+    lxc = None
+    
+    remote1 = REMOTE1
+    remote2 = REMOTE2
+
+    if args.stress:
+        report_path = args.stress_report or os.path.join(test_dir, "stress_report.json")
+        print("\n" + "="*60)
+        print("STRESS TEST")
+        print("="*60)
+        report_path, report_md_path, report = run_stress(
+            remote=remote1,
+            test_dir=test_dir,
+            users=args.stress_users,
+            workers=args.stress_workers,
+            duration=args.stress_duration,
+            report_path=report_path,
+        )
+        print(f"Stress report written to {report_path}")
+        print(f"Stakeholder report written to {report_md_path}")
+        print(f"Messages sent: {report['messages_sent']}")
+        print(f"Send rate (messages/sec): {report['send_rate_mps']:.2f}")
+        return
+
     data_dir = os.path.join(test_dir, "dc_data")
     
     # RPC server logs
@@ -113,16 +148,6 @@ def main():
     
     rpc = Rpc(accounts_dir=data_dir, rpc_server_path=rpc_server_path, stderr=rpc_log_file, env=env)
     
-    success = False
-    acc1 = None
-    acc2 = None
-    acc3 = None
-    group_chat = None
-    lxc = None
-    
-    remote1 = REMOTE1
-    remote2 = REMOTE2
-
     if args.lxc:
         lxc = LXCManager()
         remote1, remote2 = lxc.setup()

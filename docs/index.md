@@ -11,6 +11,7 @@ Welcome to the Madmail documentation. This page serves as a central hub for all 
 ## 💬 Chatmail Specifics
 - **[Authentication Specification](./chatmail/authentication.md)** - Details on "just-in-time" auto-registration and credential lookup logic.
 - **[E2E Test Suite](./chatmail/e2e_test.md)** - Overview of automated tests using Delta Chat to verify server behavior.
+- **[Stress Testing](./stress.md)** - Running load tests and interpreting performance reports.
 - **[No Log Policy](./chatmail/nolog.md)** - Privacy enforcement via dynamic logging toggles and `NopOutput` backends.
 - **[PGP-Only Email Policy](./chatmail/only_pgp_mails.md)** - In-depth look at PGP/MIME verification and message rejection criteria.
 - **[Settings Database](./chatmail/settings_db.md)** - Dynamic configuration storage for flags like registration and logging.
