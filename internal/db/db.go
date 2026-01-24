@@ -37,5 +37,17 @@ func New(driver string, dsn []string, debug bool) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	// Configure connection pool for better scalability with many concurrent users
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+
+	// Support up to 1000 concurrent IMAP connections
+	// Each connection may need 1-2 DB connections for operations
+	sqlDB.SetMaxOpenConns(2000)
+	// Keep 100 idle connections ready to reduce connection overhead
+	sqlDB.SetMaxIdleConns(100)
+
 	return db, nil
 }

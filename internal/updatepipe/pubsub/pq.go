@@ -28,8 +28,10 @@ type PqPubSub struct {
 
 func NewPQ(dsn string) (*PqPubSub, error) {
 	l := &PqPubSub{
-		Log:    log.Logger{Name: "pgpubsub"},
-		Notify: make(chan Msg),
+		Log: log.Logger{Name: "pgpubsub"},
+		// Buffer size increased to handle bursts from many concurrent users
+		// With 1000 users and messages to 100 recipients, we need substantial buffering
+		Notify: make(chan Msg, 1024),
 	}
 	l.L = pq.NewListener(dsn, 10*time.Second, time.Minute, l.eventHandler)
 	var err error

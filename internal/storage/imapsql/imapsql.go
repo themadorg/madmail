@@ -660,8 +660,8 @@ func (store *Storage) EnableUpdatePipe(mode updatepipe.BackendMode) error {
 		return errors.New("imapsql: driver does not have an update pipe implementation")
 	}
 
-	inbound := make(chan mess.Update, 32)
-	outbound := make(chan mess.Update, 10)
+	inbound := make(chan mess.Update, 256)
+	outbound := make(chan mess.Update, 128)
 	store.outboundUpds = outbound
 
 	if mode == updatepipe.ModeReplicate {
