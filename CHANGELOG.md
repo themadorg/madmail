@@ -1,3 +1,10 @@
+## [0.12.1](https://github.com/themadorg/madmail/compare/v0.12.0...v0.12.1) (2026-01-24)
+
+
+### Bug Fixes
+
+* **install:** support non-root local installation and absolute paths ([4f0f1f9](https://github.com/themadorg/madmail/commit/4f0f1f9c1bf9abefaf608f4d97cfb631cd480590))
+
 # [0.12.0](https://github.com/themadorg/madmail/compare/v0.11.1...v0.12.0) (2026-01-20)
 
 
