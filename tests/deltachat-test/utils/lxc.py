@@ -4,10 +4,12 @@ import os
 import sys
 
 class LXCManager:
-    def __init__(self, logger=None):
+    def __init__(self, logger=None, cpu_limit=None, mem_limit=None):
         self.containers = ["madmail-server1", "madmail-server2"]
         self.ips = {}
         self.logger = logger or print
+        self.cpu_limit = cpu_limit
+        self.mem_limit = mem_limit
 
     def _run(self, cmd, check=True):
         if isinstance(cmd, str):
@@ -47,6 +49,16 @@ class LXCManager:
             self.logger(f"Creating container {name} (Debian 12)...")
             # Using download template for Debian Bookworm (12)
             self._sudo(f"lxc-create -n {name} -t download -- -d debian -r bookworm -a amd64")
+
+            # Apply resource limits to config
+            config_path = f"/var/lib/lxc/{name}/config"
+            if self.mem_limit:
+                self.logger(f"Setting memory limit to {self.mem_limit} for {name}...")
+                self._sudo(["sh", "-c", f"echo 'lxc.cgroup2.memory.max = {self.mem_limit}' | tee -a {config_path}"])
+            if self.cpu_limit:
+                self.logger(f"Setting CPU limit to {self.cpu_limit} cores for {name}...")
+                # We'll use cpuset.cpus to pin to a specific core, e.g. core 0
+                self._sudo(["sh", "-c", f"echo 'lxc.cgroup2.cpuset.cpus = 0' | tee -a {config_path}"])
 
             self.logger(f"Starting container {name}...")
             self._sudo(f"lxc-start -n {name}")
