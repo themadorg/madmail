@@ -35,7 +35,7 @@ Welcome to the Madmail documentation. This page serves as a central hub for all 
 - **[Implementation Quirks](./internals/quirks.md)** - Documented deviations from standards or unusual behaviors.
 - **[SQLite Optimization](./internals/sqlite.md)** - WAL mode, auto-vacuuming, and performance notes for the SQLite backend.
 - **[Unicode Support](./internals/unicode.md)** - Internal UTF-8 handling, internationalized domains, and PRECIS profiles.
-- **[Development Guide](./DEVELOPMENT.md)** - Common developer tasks (tidy, lint, test) and make targets.
+- **[Development Guide](./DEVELOPMENT.md)** - Common developer tasks, debugging/logging, and local non-root installation instructions.
 - **[Hacking Madmail](../HACKING.md)** - Design goals, module architecture, and core philosophy.
 - **[Detailed Contribution Guide](./contributing.md)** - Branching strategy, PR workflow, and AI responsibility.
 - **[Style Guide](./STYLEGUIDE.md)** - Lightweight checklist for documentation voice, tone, and formatting.

@@ -77,6 +77,7 @@ type InstallConfig struct {
 	PrimaryDomain string
 	LocalDomains  string
 	StateDir      string
+	RuntimeDir    string
 	Generated     string
 	SimpleInstall bool
 
@@ -143,6 +144,8 @@ type InstallConfig struct {
 	Debug          bool
 	MaxMessageSize string
 	SkipSync       bool
+	SkipUser       bool
+	SkipSystemd    bool
 	// Internal state
 	SkipPrompts bool
 }
@@ -183,6 +186,7 @@ func defaultConfig() *InstallConfig {
 		SystemdPath:              "/etc/systemd/system",
 		BinaryPath:               "/usr/local/bin/maddy",
 		LibexecDir:               "/var/lib/maddy",
+		RuntimeDir:               "/run/maddy",
 		NoLog:                    true,
 		EnableSS:                 true,
 		SSAddr:                   "0.0.0.0:8388",
@@ -349,6 +353,34 @@ Examples:
 					Name:  "skip-sync",
 					Usage: "Disable SQLite synchronous mode (unsafe, may corrupt data on crash)",
 				},
+				&cli.StringFlag{
+					Name:  "binary-path",
+					Usage: "Path to install maddy binary",
+					Value: "/usr/local/bin/maddy",
+				},
+				&cli.StringFlag{
+					Name:  "systemd-path",
+					Usage: "Directory for systemd service files",
+					Value: "/etc/systemd/system",
+				},
+				&cli.StringFlag{
+					Name:  "maddy-user",
+					Usage: "User to run maddy as",
+					Value: "maddy",
+				},
+				&cli.StringFlag{
+					Name:  "maddy-group",
+					Usage: "Group to run maddy as",
+					Value: "maddy",
+				},
+				&cli.BoolFlag{
+					Name:  "skip-user",
+					Usage: "Skip creation of maddy user and group",
+				},
+				&cli.BoolFlag{
+					Name:  "skip-systemd",
+					Usage: "Skip installation of systemd service files",
+				},
 			},
 		})
 }
@@ -374,12 +406,43 @@ func installCommand(ctx *cli.Context) error {
 	silentPrintln(config.NoLog, "🚀 Maddy Mail Server Installation")
 	silentPrintln(config.NoLog, "==================================")
 
+	// Apply early flags needed for root check
+	if ctx.IsSet("binary-path") {
+		config.BinaryPath = ctx.String("binary-path")
+	}
+	if ctx.IsSet("config-dir") {
+		config.ConfigDir = ctx.String("config-dir")
+	}
+	if ctx.IsSet("state-dir") {
+		config.StateDir = ctx.String("state-dir")
+	}
+
 	// Check if running as root
 	if os.Geteuid() != 0 && !ctx.Bool("dry-run") {
-		if config.NoLog {
-			os.Exit(1)
+		// If we're not root, we can only continue if we're not using system-wide paths
+		isSystemInstall := config.ConfigDir == "/etc/maddy" ||
+			config.StateDir == "/var/lib/maddy" ||
+			config.BinaryPath == "/usr/local/bin/maddy"
+
+		if isSystemInstall {
+			if config.NoLog {
+				os.Exit(1)
+			}
+			return fmt.Errorf("installation to system paths requires root (use sudo or specify local paths with --config-dir, --state-dir, and --binary-path)")
 		}
-		return fmt.Errorf("installation must be run as root (use sudo)")
+
+		// Non-root, local install: default to current user/group and skip system-level steps
+		u, err := user.Current()
+		if err == nil {
+			config.MaddyUser = u.Username
+			config.SkipUser = true
+			config.SkipSystemd = true
+			if g, err := user.LookupGroupId(u.Gid); err == nil {
+				config.MaddyGroup = g.Name
+			}
+		}
+		// In local install, runtime_dir should be inside state_dir to avoid permission issues
+		config.RuntimeDir = filepath.Join(config.StateDir, "run")
 	}
 
 	// Apply command line flags
@@ -409,10 +472,16 @@ func installCommand(ctx *cli.Context) error {
 	}
 	if ctx.IsSet("cert-path") {
 		config.TLSCertPath = ctx.String("cert-path")
+	} else if ctx.IsSet("config-dir") {
+		config.TLSCertPath = filepath.Join(config.ConfigDir, "certs", "fullchain.pem")
 	}
+
 	if ctx.IsSet("key-path") {
 		config.TLSKeyPath = ctx.String("key-path")
+	} else if ctx.IsSet("config-dir") {
+		config.TLSKeyPath = filepath.Join(config.ConfigDir, "certs", "privkey.pem")
 	}
+
 	if ctx.IsSet("generate-certs") {
 		config.GenerateCerts = ctx.Bool("generate-certs")
 	}
@@ -477,6 +546,40 @@ func installCommand(ctx *cli.Context) error {
 	if ctx.IsSet("max-message-size") {
 		config.MaxMessageSize = ctx.String("max-message-size")
 	}
+	if ctx.IsSet("systemd-path") {
+		config.SystemdPath = ctx.String("systemd-path")
+	}
+	if ctx.IsSet("maddy-user") {
+		config.MaddyUser = ctx.String("maddy-user")
+	}
+	if ctx.IsSet("maddy-group") {
+		config.MaddyGroup = ctx.String("maddy-group")
+	}
+	if ctx.Bool("skip-user") {
+		config.SkipUser = true
+	}
+	if ctx.Bool("skip-systemd") {
+		config.SkipSystemd = true
+	}
+
+	// Convert all paths to absolute paths to avoid issues with relative paths in config
+	paths := []*string{
+		&config.StateDir,
+		&config.ConfigDir,
+		&config.LibexecDir,
+		&config.BinaryPath,
+		&config.TLSCertPath,
+		&config.TLSKeyPath,
+		&config.RuntimeDir,
+	}
+	for _, p := range paths {
+		if *p != "" {
+			abs, err := filepath.Abs(*p)
+			if err == nil {
+				*p = abs
+			}
+		}
+	}
 
 	// Run interactive configuration if not in non-interactive mode
 	if !ctx.Bool("non-interactive") {
@@ -491,19 +594,25 @@ func installCommand(ctx *cli.Context) error {
 	steps := []struct {
 		name string
 		fn   func(*InstallConfig, bool) error
+		skip bool
 	}{
-		{"Checking system requirements", checkSystemRequirements},
-		{"Creating maddy user and group", createMaddyUser},
-		{"Creating directories", createDirectories},
-		{"Setting up certificates", setupCertificates},
-		{"Generating DKIM keys", prepareDKIMKeys},
-		{"Installing systemd service files", installSystemdFiles},
-		{"Generating configuration file", generateConfigFile},
-		{"Setting up permissions", setupPermissions},
-		{"Installing binary", installBinary},
+		{"Checking system requirements", checkSystemRequirements, config.SkipSystemd},
+		{"Creating maddy user and group", createMaddyUser, config.SkipUser},
+		{"Creating directories", createDirectories, false},
+		{"Setting up certificates", setupCertificates, false},
+		{"Generating DKIM keys", prepareDKIMKeys, false},
+		{"Installing systemd service files", installSystemdFiles, config.SkipSystemd},
+		{"Generating configuration file", generateConfigFile, false},
+		{"Setting up permissions", setupPermissions, false},
+		{"Installing binary", installBinary, false},
 	}
 
 	for i, step := range steps {
+		if step.skip {
+			logger.Printf("Skipping step %d: %s", i+1, step.name)
+			continue
+		}
+
 		silentPrint(config.NoLog, "\n[%d/%d] %s...\n", i+1, len(steps), step.name)
 		logger.Printf("Step %d: %s", i+1, step.name)
 
@@ -1571,17 +1680,23 @@ func printNextSteps(config *InstallConfig) {
 		config.BinaryPath, config.ConfigDir, config.PrimaryDomain)
 
 	fmt.Printf("\n4. Test configuration (optional):\n")
-	fmt.Printf("   sudo %s --config %s/maddy.conf run --libexec %s\n",
-		config.BinaryPath, config.ConfigDir, config.LibexecDir)
+	prefix := "sudo "
+	if os.Geteuid() != 0 {
+		prefix = ""
+	}
+	fmt.Printf("   %s%s --config %s/maddy.conf run --libexec %s\n",
+		prefix, config.BinaryPath, config.ConfigDir, config.LibexecDir)
 	fmt.Printf("   (Press Ctrl+C to stop test run)\n")
 
-	fmt.Printf("\n5. Start maddy service:\n")
-	fmt.Printf("   sudo systemctl enable maddy\n")
-	fmt.Printf("   sudo systemctl start maddy\n")
+	if !config.SkipSystemd {
+		fmt.Printf("\n5. Start maddy service:\n")
+		fmt.Printf("   sudo systemctl enable maddy\n")
+		fmt.Printf("   sudo systemctl start maddy\n")
 
-	fmt.Printf("\n6. Check service status:\n")
-	fmt.Printf("   sudo systemctl status maddy\n")
-	fmt.Printf("   sudo journalctl -u maddy -f\n")
+		fmt.Printf("\n6. Check service status:\n")
+		fmt.Printf("   sudo systemctl status maddy\n")
+		fmt.Printf("   sudo journalctl -u maddy -f\n")
+	}
 
 	if config.EnableChatmail {
 		fmt.Printf("\n7. Chatmail is enabled:\n")
