@@ -37,6 +37,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/emersion/go-message/textproto"
 	"github.com/emersion/go-smtp"
@@ -99,6 +100,8 @@ type Endpoint struct {
 	sharingDriver        string
 	sharingDSN           []string
 	sharingGORM          *gorm.DB
+	sharingInMemory      bool
+	sharingSyncInterval  time.Duration
 
 	wwwDir string
 
@@ -143,6 +146,8 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("ss_cipher", false, false, "aes-128-gcm", &e.ssCipher)
 	cfg.String("sharing_driver", false, false, "sqlite3", &e.sharingDriver)
 	cfg.StringList("sharing_dsn", false, false, nil, &e.sharingDSN)
+	cfg.Bool("sharing_sqlite_in_memory", false, false, &e.sharingInMemory)
+	cfg.Duration("sharing_sqlite_sync_interval", false, false, 0, &e.sharingSyncInterval)
 	cfg.String("max_message_size", false, false, "32M", &e.maxMessageSize)
 
 	// Get references to the authentication database and storage
@@ -183,7 +188,13 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 			dsn = []string{filepath.Join(config.StateDirectory, "sharing.db")}
 		}
 
-		gdb, err := mdb.New(driver, dsn, e.logger.Debug)
+		gdb, err := mdb.New(mdb.Config{
+			Driver:       driver,
+			DSN:          dsn,
+			Debug:        e.logger.Debug,
+			InMemory:     e.sharingInMemory,
+			SyncInterval: e.sharingSyncInterval,
+		})
 		if err != nil {
 			return fmt.Errorf("%s: failed to open sharing GORM DB: %v", modName, err)
 		}

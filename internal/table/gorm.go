@@ -3,6 +3,7 @@ package table
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/themadorg/madmail/framework/config"
 	"github.com/themadorg/madmail/framework/log"
@@ -16,6 +17,9 @@ type GORMTable struct {
 	instName string
 	db       *gorm.DB
 	table    string
+
+	sqliteInMemory     bool
+	sqliteSyncInterval time.Duration
 }
 
 func NewGORMTable(modName, instName string, _, _ []string) (module.Module, error) {
@@ -42,11 +46,19 @@ func (g *GORMTable) Init(cfg *config.Map) error {
 	cfg.String("driver", false, true, "", &driver)
 	cfg.StringList("dsn", false, true, nil, &dsnParts)
 	cfg.String("table_name", false, true, "", &tableName)
+	cfg.Bool("sqlite_in_memory", false, false, &g.sqliteInMemory)
+	cfg.Duration("sqlite_sync_interval", false, false, 0, &g.sqliteSyncInterval)
 	if _, err := cfg.Process(); err != nil {
 		return err
 	}
 
-	database, err := db.New(driver, dsnParts, log.DefaultLogger.Debug)
+	database, err := db.New(db.Config{
+		Driver:       driver,
+		DSN:          dsnParts,
+		Debug:        log.DefaultLogger.Debug,
+		InMemory:     g.sqliteInMemory,
+		SyncInterval: g.sqliteSyncInterval,
+	})
 	if err != nil {
 		return err
 	}

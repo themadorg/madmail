@@ -91,7 +91,9 @@ type Storage struct {
 	defaultQuota int64
 	autoCreate   bool
 
-	settingsTable module.Table
+	settingsTable      module.Table
+	sqliteInMemory     bool
+	sqliteSyncInterval time.Duration
 }
 
 func (store *Storage) Name() string {
@@ -180,6 +182,8 @@ func (store *Storage) Init(cfg *config.Map) error {
 	cfg.Custom("settings_table", false, false, func() (interface{}, error) {
 		return nil, nil
 	}, modconfig.TableDirective, &store.settingsTable)
+	cfg.Bool("sqlite_in_memory", false, false, &store.sqliteInMemory)
+	cfg.Duration("sqlite_sync_interval", false, false, 0, &store.sqliteSyncInterval)
 
 	if _, err := cfg.Process(); err != nil {
 		return err
@@ -306,7 +310,13 @@ func (store *Storage) Init(cfg *config.Map) error {
 	store.driver = driver
 	store.dsn = dsn
 
-	store.GORMDB, err = mdb.New(driver, dsn, store.Log.Debug)
+	store.GORMDB, err = mdb.New(mdb.Config{
+		Driver:       driver,
+		DSN:          dsn,
+		Debug:        store.Log.Debug,
+		InMemory:     store.sqliteInMemory,
+		SyncInterval: store.sqliteSyncInterval,
+	})
 	if err != nil {
 		return fmt.Errorf("imapsql: gorm init failed: %w", err)
 	}

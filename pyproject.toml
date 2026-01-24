@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "cryptography>=46.0.3",
     "deltachat-rpc-client>=2.37.0",
+    "matplotlib>=3.10.8",
     "python-dotenv>=1.2.1",
     "requests>=2.32.5",
     "toml>=0.10.2",
