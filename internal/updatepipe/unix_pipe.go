@@ -129,22 +129,23 @@ func (usp *UnixSockPipe) InitPush() error {
 
 func (usp *UnixSockPipe) Push(upd mess.Update) error {
 	usp.mu.Lock()
+	defer usp.mu.Unlock()
+
 	if usp.sender == nil {
 		usp.mu.Unlock()
-		if err := usp.InitPush(); err != nil {
+		err := usp.InitPush()
+		usp.mu.Lock()
+		if err != nil {
 			return err
 		}
-		usp.mu.Lock()
 	}
-	sender := usp.sender
-	usp.mu.Unlock()
 
 	updStr, err := formatUpdate(usp.myID(), upd)
 	if err != nil {
 		return err
 	}
 
-	_, err = io.WriteString(sender, updStr)
+	_, err = io.WriteString(usp.sender, updStr)
 	return err
 }
 

@@ -24,10 +24,6 @@ func (p *PubSubPipe) Listen(upds chan<- mess.Update) error {
 				p.Log.Error("failed to parse update", err)
 				continue
 			}
-			if upd == nil {
-				p.Log.Msg("parseUpdate returned nil update")
-				continue
-			}
 			if id == p.myID() {
 				continue
 			}
