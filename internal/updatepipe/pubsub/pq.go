@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/lib/pq"
@@ -18,6 +19,7 @@ type Msg struct {
 type PqPubSub struct {
 	Notify chan Msg
 
+	mu     sync.Mutex
 	L      *pq.Listener
 	sender *gorm.DB
 
@@ -73,10 +75,14 @@ func (l *PqPubSub) eventHandler(ev pq.ListenerEventType, err error) {
 }
 
 func (l *PqPubSub) Subscribe(_ context.Context, key string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.L.Listen(key)
 }
 
 func (l *PqPubSub) Unsubscribe(_ context.Context, key string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.L.Unlisten(key)
 }
 

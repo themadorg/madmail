@@ -24,6 +24,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 
 	mess "github.com/foxcpp/go-imap-mess"
 	"github.com/themadorg/madmail/framework/log"
@@ -46,8 +47,10 @@ type UnixSockPipe struct {
 	SockPath string
 	Log      log.Logger
 
+	mu       sync.Mutex
 	listener net.Listener
 	sender   net.Conn
+	closed   bool
 }
 
 var _ P = &UnixSockPipe{}
@@ -57,11 +60,13 @@ func (usp *UnixSockPipe) myID() string {
 }
 
 func (usp *UnixSockPipe) readUpdates(conn net.Conn, updCh chan<- mess.Update) {
+	defer conn.Close()
 	scnr := bufio.NewScanner(conn)
 	for scnr.Scan() {
 		id, upd, err := parseUpdate(scnr.Text())
 		if err != nil {
 			usp.Log.Error("malformed update received", err, "str", scnr.Text())
+			continue
 		}
 
 		// It is our own update, skip.
@@ -74,6 +79,13 @@ func (usp *UnixSockPipe) readUpdates(conn net.Conn, updCh chan<- mess.Update) {
 }
 
 func (usp *UnixSockPipe) Listen(upd chan<- mess.Update) error {
+	usp.mu.Lock()
+	defer usp.mu.Unlock()
+
+	if usp.listener != nil {
+		return fmt.Errorf("Listen already called")
+	}
+
 	l, err := net.Listen("unix", usp.SockPath)
 	if err != nil {
 		return err
@@ -83,6 +95,13 @@ func (usp *UnixSockPipe) Listen(upd chan<- mess.Update) error {
 		for {
 			conn, err := l.Accept()
 			if err != nil {
+				usp.mu.Lock()
+				closed := usp.closed
+				usp.mu.Unlock()
+				if closed {
+					return
+				}
+				usp.Log.Error("accept failed", err)
 				return
 			}
 			go usp.readUpdates(conn, upd)
@@ -92,6 +111,13 @@ func (usp *UnixSockPipe) Listen(upd chan<- mess.Update) error {
 }
 
 func (usp *UnixSockPipe) InitPush() error {
+	usp.mu.Lock()
+	defer usp.mu.Unlock()
+
+	if usp.sender != nil {
+		return nil
+	}
+
 	sock, err := net.Dial("unix", usp.SockPath)
 	if err != nil {
 		return err
@@ -102,22 +128,31 @@ func (usp *UnixSockPipe) InitPush() error {
 }
 
 func (usp *UnixSockPipe) Push(upd mess.Update) error {
+	usp.mu.Lock()
 	if usp.sender == nil {
+		usp.mu.Unlock()
 		if err := usp.InitPush(); err != nil {
 			return err
 		}
+		usp.mu.Lock()
 	}
+	sender := usp.sender
+	usp.mu.Unlock()
 
 	updStr, err := formatUpdate(usp.myID(), upd)
 	if err != nil {
 		return err
 	}
 
-	_, err = io.WriteString(usp.sender, updStr)
+	_, err = io.WriteString(sender, updStr)
 	return err
 }
 
 func (usp *UnixSockPipe) Close() error {
+	usp.mu.Lock()
+	defer usp.mu.Unlock()
+
+	usp.closed = true
 	if usp.sender != nil {
 		usp.sender.Close()
 	}
