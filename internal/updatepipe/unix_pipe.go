@@ -25,6 +25,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	mess "github.com/foxcpp/go-imap-mess"
 	"github.com/themadorg/madmail/framework/log"
@@ -50,7 +51,7 @@ type UnixSockPipe struct {
 	mu       sync.Mutex
 	listener net.Listener
 	sender   net.Conn
-	closed   bool
+	closed   atomic.Bool
 }
 
 var _ P = &UnixSockPipe{}
@@ -95,10 +96,7 @@ func (usp *UnixSockPipe) Listen(upd chan<- mess.Update) error {
 		for {
 			conn, err := l.Accept()
 			if err != nil {
-				usp.mu.Lock()
-				closed := usp.closed
-				usp.mu.Unlock()
-				if closed {
+				if usp.closed.Load() {
 					return
 				}
 				usp.Log.Error("accept failed", err)
@@ -132,11 +130,17 @@ func (usp *UnixSockPipe) Push(upd mess.Update) error {
 	defer usp.mu.Unlock()
 
 	if usp.sender == nil {
+		// Temporarily unlock to avoid holding mutex during network I/O
 		usp.mu.Unlock()
 		err := usp.InitPush()
 		usp.mu.Lock()
 		if err != nil {
 			return err
+		}
+		// Check again after reacquiring lock - another goroutine might have initialized
+		if usp.sender == nil {
+			// InitPush failed or another goroutine closed it
+			return fmt.Errorf("failed to initialize sender connection")
 		}
 	}
 
@@ -153,7 +157,7 @@ func (usp *UnixSockPipe) Close() error {
 	usp.mu.Lock()
 	defer usp.mu.Unlock()
 
-	usp.closed = true
+	usp.closed.Store(true)
 	if usp.sender != nil {
 		usp.sender.Close()
 	}
