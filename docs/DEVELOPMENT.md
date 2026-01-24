@@ -50,7 +50,7 @@ go build ./cmd/maddy
 ### Debug Run Command
 After installation, you can run maddy in the foreground for debugging (ensure you use absolute paths for config and libexec):
 ```bash
-./dev/maddy --config $(pwd)/dev/config/maddy.conf run --libexec $(pwd)/dev/state
+sudo ./dev/maddy --config $(pwd)/dev/config/maddy.conf run --libexec $(pwd)/dev/state
 ```
 
 This setup keeps all maddy files (config, database, etc.) within the specified local directories.
