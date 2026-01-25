@@ -46,6 +46,7 @@ import (
 	"github.com/emersion/go-imap/backend"
 	"github.com/emersion/go-message/textproto"
 	"github.com/emersion/go-smtp"
+	mess "github.com/foxcpp/go-imap-mess"
 	"github.com/themadorg/madmail/framework/buffer"
 	"github.com/themadorg/madmail/framework/config"
 	"github.com/themadorg/madmail/framework/exterrors"
@@ -172,6 +173,9 @@ type Storage struct {
 	// appendLimit is the maximum message size
 	appendLimit uint32
 
+	// updateManager handles IMAP updates (IDLE notifications, etc.)
+	updateManager *mess.Manager
+
 	// mu protects global state modifications
 	mu sync.RWMutex
 }
@@ -187,11 +191,12 @@ func (s *Storage) InstanceName() string {
 // New creates a new in-memory storage module
 func New(_, instName string, _, inlineArgs []string) (module.Module, error) {
 	store := &Storage{
-		instName:     instName,
-		Log:          log.Logger{Name: "memstore"},
-		junkMbox:     "Junk",
-		defaultQuota: 1073741824, // 1 GB default
-		appendLimit:  32 * 1024 * 1024,
+		instName:      instName,
+		Log:           log.Logger{Name: "memstore"},
+		junkMbox:      "Junk",
+		defaultQuota:  1073741824, // 1 GB default
+		appendLimit:   32 * 1024 * 1024,
+		updateManager: mess.NewManager(),
 	}
 	return store, nil
 }
@@ -407,7 +412,7 @@ func (s *Storage) GetOrCreateIMAPAcct(username string) (backend.User, error) {
 	}
 
 	acct := s.getOrCreateAccount(accountName)
-	return &User{storage: s, account: acct}, nil
+	return &User{storage: s, account: acct, mngr: s.updateManager}, nil
 }
 
 // GetIMAPAcct returns an existing IMAP account
@@ -421,7 +426,7 @@ func (s *Storage) GetIMAPAcct(username string) (backend.User, error) {
 	if acct == nil {
 		return nil, backend.ErrInvalidCredentials
 	}
-	return &User{storage: s, account: acct}, nil
+	return &User{storage: s, account: acct, mngr: s.updateManager}, nil
 }
 
 // ListIMAPAccts lists all IMAP accounts
@@ -823,6 +828,11 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 		// Update quota used
 		acct.QuotaUsed += int64(len(bodyBytes))
 		acct.mu.Unlock()
+
+		// Notify IDLE clients about the new message
+		// The key is username + "\x00" + mailbox name (same format as go-imap-mess memory backend)
+		mailboxKey := rcpt + "\x00" + targetMailbox
+		d.store.updateManager.NewMessage(mailboxKey, uid)
 
 		// Log successful delivery
 		fromAddr := headerCopy.Get("From")

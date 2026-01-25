@@ -30,12 +30,14 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/backend"
 	"github.com/emersion/go-message/textproto"
+	mess "github.com/foxcpp/go-imap-mess"
 )
 
 // User implements backend.User
 type User struct {
 	storage *Storage
 	account *Account
+	mngr    *mess.Manager
 }
 
 func (u *User) Username() string {
@@ -178,6 +180,10 @@ func (u *User) CreateMessage(mboxName string, flags []string, date time.Time, bo
 	u.account.QuotaUsed += int64(len(bodyBytes))
 	u.account.mu.Unlock()
 
+	// Notify IDLE clients about the new message
+	mailboxKey := u.account.Username + "\x00" + mboxName
+	u.mngr.NewMessage(mailboxKey, uid)
+
 	return nil
 }
 
@@ -235,13 +241,6 @@ func (u *User) GetMailbox(name string, readOnly bool, conn backend.Conn) (*imap.
 		return nil, nil, backend.ErrNoSuchMailbox
 	}
 
-	mb := &MailboxBackend{
-		storage:  u.storage,
-		account:  u.account,
-		mailbox:  mbox,
-		readOnly: readOnly,
-	}
-
 	status, err := u.Status(name, []imap.StatusItem{
 		imap.StatusMessages,
 		imap.StatusRecent,
@@ -253,7 +252,57 @@ func (u *User) GetMailbox(name string, readOnly bool, conn backend.Conn) (*imap.
 		return nil, nil, err
 	}
 
-	return status, mb, nil
+	// Collect UIDs and recent flags under lock
+	var (
+		uids   []uint32
+		recent imap.SeqSet
+	)
+	mbox.mu.Lock()
+	for _, ref := range mbox.Messages {
+		uids = append(uids, ref.UID)
+		for _, f := range ref.Flags {
+			if f == imap.RecentFlag {
+				recent.AddNum(ref.UID)
+				// Clear the Recent flag after selecting (RFC 3501 semantics)
+				// Recent flag is only shown to the first session that selects the mailbox
+				break
+			}
+		}
+	}
+	// Clear recent flags from stored messages
+	for _, ref := range mbox.Messages {
+		newFlags := make([]string, 0, len(ref.Flags))
+		for _, f := range ref.Flags {
+			if f != imap.RecentFlag {
+				newFlags = append(newFlags, f)
+			}
+		}
+		ref.Flags = newFlags
+	}
+	mbox.mu.Unlock()
+
+	// Sort UIDs
+	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
+
+	// Create the selected mailbox with update handle
+	mailboxKey := u.account.Username + "\x00" + name
+	selected := &SelectedMailbox{
+		storage:  u.storage,
+		account:  u.account,
+		mailbox:  mbox,
+		readOnly: readOnly,
+		conn:     conn,
+		mngr:     u.mngr,
+	}
+
+	// Get an update handle from the manager
+	handle, err := u.mngr.Mailbox(mailboxKey, selected, uids, &recent)
+	if err != nil {
+		return nil, nil, err
+	}
+	selected.handle = handle
+
+	return status, selected, nil
 }
 
 func (u *User) CreateMailbox(name string) error {
@@ -338,24 +387,34 @@ func (u *User) Logout() error {
 	return nil
 }
 
-// MailboxBackend implements backend.Mailbox
-type MailboxBackend struct {
+// SelectedMailbox implements backend.Mailbox with IDLE support via go-imap-mess
+type SelectedMailbox struct {
 	storage  *Storage
 	account  *Account
 	mailbox  *Mailbox
 	readOnly bool
+	conn     backend.Conn
+	mngr     *mess.Manager
+	handle   *mess.MailboxHandle
 }
 
-func (m *MailboxBackend) Name() string {
+// Conn returns the IMAP connection (required by mess.Mailbox interface)
+func (m *SelectedMailbox) Conn() backend.Conn {
+	return m.conn
+}
+
+func (m *SelectedMailbox) Name() string {
 	return m.mailbox.Name
 }
 
-func (m *MailboxBackend) Close() error {
-	// Nothing to do for in-memory storage
+func (m *SelectedMailbox) Close() error {
+	if m.handle != nil {
+		return m.handle.Close()
+	}
 	return nil
 }
 
-func (m *MailboxBackend) Info() (*imap.MailboxInfo, error) {
+func (m *SelectedMailbox) Info() (*imap.MailboxInfo, error) {
 	m.mailbox.mu.RLock()
 	defer m.mailbox.mu.RUnlock()
 
@@ -387,8 +446,11 @@ func (m *MailboxBackend) Info() (*imap.MailboxInfo, error) {
 	return info, nil
 }
 
-// Poll checks for updates (no-op for in-memory)
-func (m *MailboxBackend) Poll(expunge bool) error {
+// Poll checks for updates and synchronizes with the update manager
+func (m *SelectedMailbox) Poll(expunge bool) error {
+	if m.handle != nil {
+		m.handle.Sync(expunge)
+	}
 	if expunge {
 		return m.Expunge()
 	}
@@ -396,14 +458,14 @@ func (m *MailboxBackend) Poll(expunge bool) error {
 }
 
 // getSortedUIDs returns UIDs in ascending order (acquires read lock)
-func (m *MailboxBackend) getSortedUIDs() []uint32 {
+func (m *SelectedMailbox) getSortedUIDs() []uint32 {
 	m.mailbox.mu.RLock()
 	defer m.mailbox.mu.RUnlock()
 	return m.getSortedUIDsLocked()
 }
 
 // getSortedUIDsLocked returns UIDs in ascending order (caller must hold lock)
-func (m *MailboxBackend) getSortedUIDsLocked() []uint32 {
+func (m *SelectedMailbox) getSortedUIDsLocked() []uint32 {
 	uids := make([]uint32, 0, len(m.mailbox.Messages))
 	for u := range m.mailbox.Messages {
 		uids = append(uids, u)
@@ -412,7 +474,7 @@ func (m *MailboxBackend) getSortedUIDsLocked() []uint32 {
 	return uids
 }
 
-func (m *MailboxBackend) ListMessages(uid bool, seqSet *imap.SeqSet, items []imap.FetchItem, ch chan<- *imap.Message) error {
+func (m *SelectedMailbox) ListMessages(uid bool, seqSet *imap.SeqSet, items []imap.FetchItem, ch chan<- *imap.Message) error {
 	defer close(ch)
 
 	m.mailbox.mu.RLock()
@@ -447,7 +509,7 @@ func (m *MailboxBackend) ListMessages(uid bool, seqSet *imap.SeqSet, items []ima
 	return nil
 }
 
-func (m *MailboxBackend) fetchMessage(ref *MessageRef, seqNum uint32, items []imap.FetchItem) (*imap.Message, error) {
+func (m *SelectedMailbox) fetchMessage(ref *MessageRef, seqNum uint32, items []imap.FetchItem) (*imap.Message, error) {
 	val, ok := m.storage.messages.Load(ref.MessageID)
 	if !ok {
 		return nil, errors.New("message not found")
@@ -561,7 +623,7 @@ func parseAddressList(value string) []*imap.Address {
 	return addrs
 }
 
-func (m *MailboxBackend) SearchMessages(uid bool, criteria *imap.SearchCriteria) ([]uint32, error) {
+func (m *SelectedMailbox) SearchMessages(uid bool, criteria *imap.SearchCriteria) ([]uint32, error) {
 	m.mailbox.mu.RLock()
 	defer m.mailbox.mu.RUnlock()
 
@@ -585,7 +647,7 @@ func (m *MailboxBackend) SearchMessages(uid bool, criteria *imap.SearchCriteria)
 	return results, nil
 }
 
-func (m *MailboxBackend) matchesCriteria(ref *MessageRef, seqNum uint32, criteria *imap.SearchCriteria) bool {
+func (m *SelectedMailbox) matchesCriteria(ref *MessageRef, seqNum uint32, criteria *imap.SearchCriteria) bool {
 	// Basic criteria matching - called under mailbox lock
 	if criteria == nil {
 		return true
@@ -628,7 +690,7 @@ func (m *MailboxBackend) matchesCriteria(ref *MessageRef, seqNum uint32, criteri
 	return true
 }
 
-func (m *MailboxBackend) UpdateMessagesFlags(uid bool, seqSet *imap.SeqSet, operation imap.FlagsOp, silent bool, flags []string) error {
+func (m *SelectedMailbox) UpdateMessagesFlags(uid bool, seqSet *imap.SeqSet, operation imap.FlagsOp, silent bool, flags []string) error {
 	// Use write lock for flag modifications
 	m.mailbox.mu.Lock()
 	defer m.mailbox.mu.Unlock()
@@ -689,7 +751,7 @@ func (m *MailboxBackend) UpdateMessagesFlags(uid bool, seqSet *imap.SeqSet, oper
 	return nil
 }
 
-func (m *MailboxBackend) CopyMessages(uid bool, seqSet *imap.SeqSet, destName string) error {
+func (m *SelectedMailbox) CopyMessages(uid bool, seqSet *imap.SeqSet, destName string) error {
 	// Use account lock to ensure consistent access to both mailboxes
 	m.account.mu.RLock()
 	destMbox, ok := m.account.Mailboxes[destName]
@@ -757,7 +819,7 @@ func (m *MailboxBackend) CopyMessages(uid bool, seqSet *imap.SeqSet, destName st
 	return nil
 }
 
-func (m *MailboxBackend) Expunge() error {
+func (m *SelectedMailbox) Expunge() error {
 	m.mailbox.mu.Lock()
 	defer m.mailbox.mu.Unlock()
 
@@ -801,13 +863,18 @@ func (m *MailboxBackend) Expunge() error {
 }
 
 // Idle allows backend to send updates without explicit Poll calls
-func (m *MailboxBackend) Idle(done <-chan struct{}) {
-	// For in-memory backend, we just wait for done
-	<-done
+// This uses the go-imap-mess update manager to notify clients of new messages
+func (m *SelectedMailbox) Idle(done <-chan struct{}) {
+	if m.handle != nil {
+		m.handle.Idle(done)
+	} else {
+		// Fallback: just wait for done
+		<-done
+	}
 }
 
 // MoveMessages implements the MOVE extension
-func (m *MailboxBackend) MoveMessages(uid bool, seqSet *imap.SeqSet, dest string) error {
+func (m *SelectedMailbox) MoveMessages(uid bool, seqSet *imap.SeqSet, dest string) error {
 	// Copy messages first (this handles its own locking)
 	if err := m.CopyMessages(uid, seqSet, dest); err != nil {
 		return err
@@ -883,5 +950,6 @@ func (m *MailboxBackend) MoveMessages(uid bool, seqSet *imap.SeqSet, dest string
 // Compile-time interface checks
 var (
 	_ backend.User    = (*User)(nil)
-	_ backend.Mailbox = (*MailboxBackend)(nil)
+	_ backend.Mailbox = (*SelectedMailbox)(nil)
+	_ mess.Mailbox    = (*SelectedMailbox)(nil)
 )

@@ -29,16 +29,19 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-message/textproto"
 	"github.com/emersion/go-smtp"
+	mess "github.com/foxcpp/go-imap-mess"
 	"github.com/themadorg/madmail/framework/buffer"
 	"github.com/themadorg/madmail/framework/module"
 )
 
-func TestStorageBasic(t *testing.T) {
+// newTestStorage creates a new Storage with all required fields initialized
+func newTestStorage() *Storage {
 	store := &Storage{
-		instName:     "test",
-		junkMbox:     "Junk",
-		defaultQuota: 1073741824,
-		appendLimit:  32 * 1024 * 1024,
+		instName:      "test",
+		junkMbox:      "Junk",
+		defaultQuota:  1073741824,
+		appendLimit:   32 * 1024 * 1024,
+		updateManager: mess.NewManager(),
 	}
 	store.deliveryNormalize = func(ctx context.Context, s string) (string, error) {
 		return s, nil
@@ -46,6 +49,11 @@ func TestStorageBasic(t *testing.T) {
 	store.authNormalize = func(ctx context.Context, s string) (string, error) {
 		return s, nil
 	}
+	return store
+}
+
+func TestStorageBasic(t *testing.T) {
+	store := newTestStorage()
 
 	// Test creating an account
 	user, err := store.GetOrCreateIMAPAcct("test@example.com")
@@ -94,19 +102,8 @@ func TestStorageBasic(t *testing.T) {
 }
 
 func TestMessageDeduplication(t *testing.T) {
-	store := &Storage{
-		instName:     "test",
-		junkMbox:     "Junk",
-		defaultQuota: 1073741824,
-		appendLimit:  32 * 1024 * 1024,
-		autoCreate:   true,
-	}
-	store.deliveryNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
-	store.authNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
+	store := newTestStorage()
+	store.autoCreate = true
 
 	// Create test message
 	header := textproto.Header{}
@@ -160,19 +157,8 @@ func TestMessageDeduplication(t *testing.T) {
 }
 
 func TestDeliveryToMultipleRecipients(t *testing.T) {
-	store := &Storage{
-		instName:     "test",
-		junkMbox:     "Junk",
-		defaultQuota: 1073741824,
-		appendLimit:  32 * 1024 * 1024,
-		autoCreate:   true,
-	}
-	store.deliveryNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
-	store.authNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
+	store := newTestStorage()
+	store.autoCreate = true
 
 	// Create accounts
 	store.getOrCreateAccount("user1@example.com")
@@ -252,19 +238,8 @@ func TestDeliveryToMultipleRecipients(t *testing.T) {
 }
 
 func TestConcurrentAccess(t *testing.T) {
-	store := &Storage{
-		instName:     "test",
-		junkMbox:     "Junk",
-		defaultQuota: 1073741824,
-		appendLimit:  32 * 1024 * 1024,
-		autoCreate:   true,
-	}
-	store.deliveryNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
-	store.authNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
+	store := newTestStorage()
+	store.autoCreate = true
 
 	// Create initial account
 	store.getOrCreateAccount("shared@example.com")
@@ -348,19 +323,9 @@ func TestConcurrentAccess(t *testing.T) {
 }
 
 func TestQuota(t *testing.T) {
-	store := &Storage{
-		instName:     "test",
-		junkMbox:     "Junk",
-		defaultQuota: 1000, // 1000 bytes
-		appendLimit:  32 * 1024 * 1024,
-		autoCreate:   true,
-	}
-	store.deliveryNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
-	store.authNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
+	store := newTestStorage()
+	store.defaultQuota = 1000 // 1000 bytes
+	store.autoCreate = true
 
 	// Create account
 	store.getOrCreateAccount("quota-test@example.com")
@@ -406,12 +371,7 @@ func TestQuota(t *testing.T) {
 }
 
 func TestIMAPExtensions(t *testing.T) {
-	store := &Storage{
-		instName:     "test",
-		junkMbox:     "Junk",
-		defaultQuota: 1073741824,
-		appendLimit:  32 * 1024 * 1024,
-	}
+	store := newTestStorage()
 
 	exts := store.IMAPExtensions()
 
@@ -431,18 +391,7 @@ func TestIMAPExtensions(t *testing.T) {
 }
 
 func TestMailboxOperations(t *testing.T) {
-	store := &Storage{
-		instName:     "test",
-		junkMbox:     "Junk",
-		defaultQuota: 1073741824,
-		appendLimit:  32 * 1024 * 1024,
-	}
-	store.deliveryNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
-	store.authNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
+	store := newTestStorage()
 
 	// Create account and get user
 	user, err := store.GetOrCreateIMAPAcct("mbox-test@example.com")
@@ -511,18 +460,7 @@ func TestMailboxOperations(t *testing.T) {
 }
 
 func TestCreateMessageViaIMAP(t *testing.T) {
-	store := &Storage{
-		instName:     "test",
-		junkMbox:     "Junk",
-		defaultQuota: 1073741824,
-		appendLimit:  32 * 1024 * 1024,
-	}
-	store.deliveryNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
-	store.authNormalize = func(ctx context.Context, s string) (string, error) {
-		return s, nil
-	}
+	store := newTestStorage()
 
 	// Create account and get user
 	user, err := store.GetOrCreateIMAPAcct("append-test@example.com")
