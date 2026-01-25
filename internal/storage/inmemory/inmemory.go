@@ -746,7 +746,26 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 	headerCopy.Add("Return-Path", "<"+target.SanitizeForHeader(d.mailFrom)+">")
 
 	// Store the message once (with deduplication)
+	// storeMessage creates the first reference (refcount starts at 1 or gets incremented if duplicate)
 	messageID := d.store.storeMessage(headerCopy, bodyBytes)
+
+	// Count how many recipients we'll actually deliver to
+	recipientCount := 0
+	for rcpt := range d.addedRcpts {
+		if d.store.getAccount(rcpt) != nil {
+			recipientCount++
+		}
+	}
+
+	// For multi-recipient delivery, we need to increment the ref count
+	// The first reference is created by storeMessage, each additional recipient needs +1
+	if recipientCount > 1 {
+		if val, ok := d.store.messages.Load(messageID); ok {
+			msg := val.(*Message)
+			// Add recipientCount-1 additional references (first one is already counted)
+			atomic.AddInt32(&msg.RefCount, int32(recipientCount-1))
+		}
+	}
 
 	// Deliver to each recipient
 	for rcpt := range d.addedRcpts {
@@ -807,14 +826,6 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 			Flags:     []string{imap.RecentFlag},
 		}
 		mbox.Messages[uid] = ref
-
-		// Increment ref count for additional recipients
-		if len(d.addedRcpts) > 1 {
-			atomic.AddInt32(&(&Message{}).RefCount, 1)
-			if val, ok := d.store.messages.Load(messageID); ok {
-				atomic.AddInt32(&val.(*Message).RefCount, 1)
-			}
-		}
 
 		mbox.mu.Unlock()
 
