@@ -585,7 +585,12 @@ func (dd *msgpipelineDelivery) rcptBlockForAddr(ctx context.Context, rcptTo stri
 		if !ok {
 			// Fallback to the default source block.
 			rcptBlock = dd.sourceBlock.defaultRcpt
-			dd.log.Debugf("recipient %s matched by default rule (clean = %s)", rcptTo, cleanRcpt)
+			// Log available domain rules for debugging
+			availableRules := make([]string, 0, len(dd.sourceBlock.perRcpt))
+			for rule := range dd.sourceBlock.perRcpt {
+				availableRules = append(availableRules, rule)
+			}
+			dd.log.Debugf("recipient %s matched by default rule (clean = %s, domain = %s, available rules = %v)", rcptTo, cleanRcpt, domain, availableRules)
 		} else {
 			dd.log.Debugf("recipient %s matched by domain rule '%s'", rcptTo, domain)
 		}
