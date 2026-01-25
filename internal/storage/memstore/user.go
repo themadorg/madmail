@@ -31,6 +31,7 @@ import (
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/backend"
+	"github.com/emersion/go-imap/backend/backendutil"
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/textproto"
 	mess "github.com/foxcpp/go-imap-mess"
@@ -553,7 +554,15 @@ func (m *SelectedMailbox) fetchMessage(ref *MessageRef, seqNum uint32, items []i
 			textproto.WriteHeader(&buf, storedMsg.Header)
 			buf.Write(storedMsg.Body)
 
-			msg.Body[section] = imap.Literal(bytes.NewReader(buf.Bytes()))
+			// Use backendutil to properly handle body section requests
+			// This correctly handles BODY[1], BODY[1.1], BODY[HEADER], etc.
+			literal, err := backendutil.FetchBodySection(storedMsg.Header, bytes.NewReader(storedMsg.Body), section)
+			if err != nil {
+				// Fallback to empty if section parsing fails
+				msg.Body[section] = bytes.NewReader(nil)
+			} else {
+				msg.Body[section] = literal
+			}
 		}
 	}
 
