@@ -266,13 +266,6 @@ target.queue remote_queue {
 # IMAP endpoints
 
 imap tls://0.0.0.0:{{.IMAPTLS}} tcp://0.0.0.0:{{.IMAPPort}} {
-{{if .SimpleInstall}}
-    limits {
-        # High concurrency limits for 10K concurrent users
-        all rate 1000 1s
-        all concurrency 10000
-    }
-{{end}}
     auth &local_authdb
     storage &local_mailboxes
     insecure_auth {{if .AllowInsecureAuth}}yes{{else}}no{{end}}
