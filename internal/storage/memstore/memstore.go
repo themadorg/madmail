@@ -28,7 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // - module.Storage
 // - module.ManageableStorage
 // - module.DeliveryTarget
-package inmemory
+package memstore
 
 import (
 	"context"
@@ -182,7 +182,7 @@ type Storage struct {
 }
 
 func (s *Storage) Name() string {
-	return "inmemory"
+	return "memstore"
 }
 
 func (s *Storage) InstanceName() string {
@@ -193,7 +193,7 @@ func (s *Storage) InstanceName() string {
 func New(_, instName string, _, inlineArgs []string) (module.Module, error) {
 	store := &Storage{
 		instName:     instName,
-		Log:          log.Logger{Name: "inmemory"},
+		Log:          log.Logger{Name: "memstore"},
 		junkMbox:     "Junk",
 		defaultQuota: 1073741824, // 1 GB default
 		appendLimit:  32 * 1024 * 1024,
@@ -868,6 +868,6 @@ func (s *Storage) Lookup(ctx context.Context, key string) (string, bool, error) 
 }
 
 func init() {
-	module.Register("storage.inmemory", New)
-	module.Register("target.inmemory", New)
+	module.Register("storage.memstore", New)
+	module.Register("target.memstore", New)
 }
