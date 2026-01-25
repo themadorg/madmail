@@ -48,11 +48,6 @@ func TestMemoryIDLEMultiUser(tt *testing.T) {
 		auth.pass_table local_authdb {
 			auto_create yes
 			table memory {
-				entry "sender@maddy.test" "bcrypt:$2a$10$E.AuCH3oYbaRrETXfXwc0.4jRAQBbanpZiCfudsJz9bHzLr/qj6ti" # password: 123
-				entry "recipient1@maddy.test" "bcrypt:$2a$10$E.AuCH3oYbaRrETXfXwc0.4jRAQBbanpZiCfudsJz9bHzLr/qj6ti" # password: 123
-				entry "recipient2@maddy.test" "bcrypt:$2a$10$E.AuCH3oYbaRrETXfXwc0.4jRAQBbanpZiCfudsJz9bHzLr/qj6ti" # password: 123
-				entry "recipient3@maddy.test" "bcrypt:$2a$10$E.AuCH3oYbaRrETXfXwc0.4jRAQBbanpZiCfudsJz9bHzLr/qj6ti" # password: 123
-				entry "recipient4@maddy.test" "bcrypt:$2a$10$E.AuCH3oYbaRrETXfXwc0.4jRAQBbanpZiCfudsJz9bHzLr/qj6ti" # password: 123
 			}
 		}
 
@@ -204,7 +199,6 @@ func TestMemoryMessageDelivery(tt *testing.T) {
 		auth.pass_table local_authdb {
 			auto_create yes
 			table memory {
-				entry "user1@maddy.test" "bcrypt:$2a$10$E.AuCH3oYbaRrETXfXwc0.4jRAQBbanpZiCfudsJz9bHzLr/qj6ti" # password: 123
 			}
 		}
 

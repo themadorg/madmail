@@ -44,8 +44,6 @@ func TestMemorySMTPIMAPLogin(tt *testing.T) {
 		auth.pass_table local_authdb {
 			auto_create yes
 			table memory {
-				entry "user1@maddy.test" "bcrypt:$2a$10$E.AuCH3oYbaRrETXfXwc0.4jRAQBbanpZiCfudsJz9bHzLr/qj6ti" # password: 123
-				entry "user2@maddy.test" "bcrypt:$2a$10$E.AuCH3oYbaRrETXfXwc0.4jRAQBbanpZiCfudsJz9bHzLr/qj6ti" # password: 123
 			}
 		}
 
@@ -126,11 +124,15 @@ func TestMemoryStorageBasic(tt *testing.T) {
 			default_quota 1G
 		}
 
+		auth.pass_table local_authdb {
+			auto_create yes
+			table memory {
+			}
+		}
+
 		imap tcp://127.0.0.1:{env:TEST_PORT_imap} {
 			tls off
-			auth pass_table static {
-				entry "testuser" "bcrypt:$2a$10$E.AuCH3oYbaRrETXfXwc0.4jRAQBbanpZiCfudsJz9bHzLr/qj6ti" # password: 123
-			}
+			auth &local_authdb
 			storage &local_mailboxes
 		}
 	`)

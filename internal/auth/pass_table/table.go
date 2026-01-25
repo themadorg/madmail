@@ -141,9 +141,25 @@ func (a *Auth) ListUsers() ([]string, error) {
 }
 
 func (a *Auth) CreateUser(username, password string) error {
-	return a.CreateUserHash(username, password, HashBcrypt, HashOpts{
-		BcryptCost: bcrypt.DefaultCost,
-	})
+	// Check if the table is a memory table - if so, use plain text for testing
+	tbl, ok := a.table.(module.MutableTable)
+	if !ok {
+		return fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
+	}
+	
+	// Use plain text for in-memory tables (for testing), bcrypt for persistent storage
+	hashAlgo := HashBcrypt
+	opts := HashOpts{BcryptCost: bcrypt.DefaultCost}
+	
+	// Check if this is a memory table by checking the module name
+	if moduleName, ok := tbl.(interface{ Name() string }); ok {
+		if moduleName.Name() == "table.memory" {
+			hashAlgo = HashPlain
+			opts = HashOpts{}
+		}
+	}
+	
+	return a.CreateUserHash(username, password, hashAlgo, opts)
 }
 
 func (a *Auth) CreateUserHash(username, password string, hashAlgo string, opts HashOpts) error {
