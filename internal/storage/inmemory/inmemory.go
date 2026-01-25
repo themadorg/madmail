@@ -744,24 +744,8 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 	headerCopy := header.Copy()
 	headerCopy.Add("Return-Path", "<"+target.SanitizeForHeader(d.mailFrom)+">")
 
-	// Count how many recipients we'll actually deliver to
-	recipientCount := int32(0)
-	for rcpt := range d.addedRcpts {
-		if d.store.getAccount(rcpt) != nil {
-			recipientCount++
-		}
-	}
-
-	// If no valid recipients, return early
-	if recipientCount == 0 {
-		return nil
-	}
-
-	// Store the message once (with deduplication) with the correct reference count
-	// This avoids race conditions by setting all references atomically
-	messageID := d.store.storeMessageWithRefCount(headerCopy, bodyBytes, recipientCount)
-
-	// Deliver to each recipient
+	// First pass: check quotas and count valid recipients
+	validRecipients := make([]string, 0, len(d.addedRcpts))
 	for rcpt := range d.addedRcpts {
 		acct := d.store.getAccount(rcpt)
 		if acct == nil {
@@ -776,13 +760,30 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 		}
 
 		if max > 0 && used+int64(len(bodyBytes)) > max {
+			// Skip this recipient due to quota exceeded, but continue with others
+			d.store.Log.Debugf("Quota exceeded for %s: used=%d, max=%d, msgSize=%d", rcpt, used, max, len(bodyBytes))
+			continue
+		}
+
+		validRecipients = append(validRecipients, rcpt)
+	}
+
+	// If no valid recipients after quota checks, return early
+	if len(validRecipients) == 0 {
+		return nil
+	}
+
+	// Store the message once (with deduplication) with the correct reference count
+	// Only count the recipients that passed quota checks
+	messageID := d.store.storeMessageWithRefCount(headerCopy, bodyBytes, int32(len(validRecipients)))
+
+	// Second pass: deliver to valid recipients only
+	for _, rcpt := range validRecipients {
+		acct := d.store.getAccount(rcpt)
+		if acct == nil {
+			// Account was deleted between checks - release a reference
 			d.store.releaseMessage(messageID)
-			return &exterrors.SMTPError{
-				Code:         552,
-				EnhancedCode: exterrors.EnhancedCode{5, 2, 2},
-				Message:      "Quota exceeded",
-				TargetName:   "inmemory",
-			}
+			continue
 		}
 
 		// Determine target mailbox
@@ -795,13 +796,17 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 		mbox, ok := acct.Mailboxes[targetMailbox]
 		if !ok {
 			// Create mailbox if it doesn't exist
+			d.store.mu.Lock()
 			d.store.uidValidityCounter++
+			uidValidity := d.store.uidValidityCounter
+			d.store.mu.Unlock()
+
 			mbox = &Mailbox{
 				Name:        targetMailbox,
 				Subscribed:  true,
 				Messages:    make(map[uint32]*MessageRef),
 				UIDNext:     1,
-				UIDValidity: d.store.uidValidityCounter,
+				UIDValidity: uidValidity,
 			}
 			acct.Mailboxes[targetMailbox] = mbox
 		}
@@ -809,10 +814,6 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 		mbox.mu.Lock()
 		uid := mbox.UIDNext
 		mbox.UIDNext++
-
-		// Add per-recipient Delivered-To header
-		perUserHeader := headerCopy.Copy()
-		perUserHeader.Add("Delivered-To", rcpt)
 
 		ref := &MessageRef{
 			MessageID: messageID,
