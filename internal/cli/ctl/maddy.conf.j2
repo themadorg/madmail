@@ -19,7 +19,10 @@ runtime_dir {{.RuntimeDir}}
 
 tls file {{.TLSCertPath}} {{.TLSKeyPath}}
 
-{{if .Debug}}debug yes
+{{if .SimpleInstall}}# Simple install: debug logging to syslog (journalctl)
+debug yes
+log syslog
+{{else if .Debug}}debug yes
 log stderr
 {{else if .NoLog}}# Disable logging as requested
 log off
