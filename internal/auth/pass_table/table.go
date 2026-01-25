@@ -152,8 +152,8 @@ func (a *Auth) CreateUser(username, password string) error {
 	opts := HashOpts{BcryptCost: bcrypt.DefaultCost}
 	
 	// Check if this is a memory table by checking the module name
-	if moduleName, ok := tbl.(interface{ Name() string }); ok {
-		if moduleName.Name() == "table.memory" {
+	if mod, ok := tbl.(module.Module); ok {
+		if mod.Name() == "table.memory" {
 			hashAlgo = HashPlain
 			opts = HashOpts{}
 		}
