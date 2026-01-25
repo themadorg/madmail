@@ -17,7 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 // Package memauth implements an in-memory authentication module.
-// Credentials are stored in RAM and will be lost on restart.
+// Credentials are stored in RAM in plaintext and will be lost on restart.
 // This is suitable for simple/ephemeral deployments where persistent
 // credential storage is not required.
 package memauth
@@ -31,7 +31,6 @@ import (
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth"
-	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/text/secure/precis"
 )
 
@@ -40,7 +39,7 @@ type Auth struct {
 	instName string
 	Log      log.Logger
 
-	// credentials maps username -> bcrypt hash
+	// credentials maps username -> plaintext password
 	credentials sync.Map
 
 	// settings stores configuration flags
@@ -86,7 +85,7 @@ func (a *Auth) AuthPlain(username, password string) error {
 		return err
 	}
 
-	hashVal, ok := a.credentials.Load(key)
+	storedPassword, ok := a.credentials.Load(key)
 	if !ok {
 		// Check JIT registration
 		jitEnabled, err := a.IsJitRegistrationEnabled()
@@ -102,8 +101,8 @@ func (a *Auth) AuthPlain(username, password string) error {
 		return module.ErrUnknownCredentials
 	}
 
-	hash := hashVal.(string)
-	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+	// Compare plaintext passwords
+	if storedPassword.(string) != password {
 		return module.ErrUnknownCredentials
 	}
 
@@ -133,13 +132,8 @@ func (a *Auth) CreateUser(username, password string) error {
 		return fmt.Errorf("memauth: user %s already exists", key)
 	}
 
-	// Hash the password
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("memauth: create user %s: hash generation: %w", key, err)
-	}
-
-	a.credentials.Store(key, string(hash))
+	// Store plaintext password
+	a.credentials.Store(key, password)
 	a.Log.Debugf("created user: %s", key)
 	return nil
 }
@@ -152,13 +146,8 @@ func (a *Auth) SetUserPassword(username, password string) error {
 		return fmt.Errorf("memauth: set password %s: %w", username, err)
 	}
 
-	// Hash the password
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("memauth: set password %s: hash generation: %w", key, err)
-	}
-
-	a.credentials.Store(key, string(hash))
+	// Store plaintext password
+	a.credentials.Store(key, password)
 	return nil
 }
 
