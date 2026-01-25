@@ -36,6 +36,7 @@ const (
 	HashSHA256 = "sha256"
 	HashBcrypt = "bcrypt"
 	HashArgon2 = "argon2"
+	HashPlain  = "plain"
 
 	DefaultHash = HashBcrypt
 
@@ -66,13 +67,15 @@ var (
 	HashCompute = map[string]FuncHashCompute{
 		HashBcrypt: computeBcrypt,
 		HashArgon2: computeArgon2,
+		HashPlain:  computePlain,
 	}
 	HashVerify = map[string]FuncHashVerify{
 		HashBcrypt: verifyBcrypt,
 		HashArgon2: verifyArgon2,
+		HashPlain:  verifyPlain,
 	}
 
-	Hashes = []string{HashSHA256, HashBcrypt, HashArgon2}
+	Hashes = []string{HashSHA256, HashBcrypt, HashArgon2, HashPlain}
 )
 
 func computeArgon2(opts HashOpts, pass string) (string, error) {
@@ -172,6 +175,18 @@ func computeBcrypt(opts HashOpts, pass string) (string, error) {
 
 func verifyBcrypt(pass, hashSalt string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hashSalt), []byte(pass))
+}
+
+func computePlain(_ HashOpts, pass string) (string, error) {
+	// Plain text password storage - only for in-memory testing
+	return pass, nil
+}
+
+func verifyPlain(pass, storedPass string) error {
+	if pass != storedPass {
+		return fmt.Errorf("pass_table: password mismatch")
+	}
+	return nil
 }
 
 func addSHA256() {
