@@ -816,12 +816,18 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 			Flags:     []string{imap.RecentFlag},
 		}
 		mbox.Messages[uid] = ref
+		msgCount := len(mbox.Messages)
 
 		mbox.mu.Unlock()
 
 		// Update quota used
 		acct.QuotaUsed += int64(len(bodyBytes))
 		acct.mu.Unlock()
+
+		// Log successful delivery
+		fromAddr := headerCopy.Get("From")
+		d.store.Log.Printf("message delivered: mailbox=%s/%s from=%q size=%d messages=%d",
+			rcpt, targetMailbox, fromAddr, len(bodyBytes), msgCount)
 	}
 
 	return nil
