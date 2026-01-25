@@ -22,6 +22,8 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"io"
+	"mime"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -29,6 +31,7 @@ import (
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/backend"
+	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/textproto"
 	mess "github.com/foxcpp/go-imap-mess"
 )
@@ -526,13 +529,8 @@ func (m *SelectedMailbox) fetchMessage(ref *MessageRef, seqNum uint32, items []i
 		case imap.FetchEnvelope:
 			msg.Envelope = parseEnvelope(storedMsg.Header)
 		case imap.FetchBody, imap.FetchBodyStructure:
-			// Simplified body structure
-			msg.BodyStructure = &imap.BodyStructure{
-				MIMEType:    "text",
-				MIMESubType: "plain",
-				Encoding:    "7bit",
-				Size:        uint32(storedMsg.Size),
-			}
+			// Parse actual MIME structure from the message
+			msg.BodyStructure = parseBodyStructure(storedMsg.Header, storedMsg.Body)
 		case imap.FetchFlags:
 			// Flags are accessed under mailbox lock (caller holds it)
 			msg.Flags = make([]string, len(ref.Flags))
@@ -623,6 +621,95 @@ func parseAddressList(value string) []*imap.Address {
 	}
 
 	return addrs
+}
+
+// parseBodyStructure parses the MIME structure of a message and returns an imap.BodyStructure.
+// This correctly handles multipart messages (including encrypted messages) so that
+// Delta Chat and other clients can properly identify message types.
+func parseBodyStructure(header textproto.Header, body []byte) *imap.BodyStructure {
+	// Build the full message for parsing
+	var fullMsg bytes.Buffer
+	textproto.WriteHeader(&fullMsg, header)
+	fullMsg.Write(body)
+
+	// Try to parse as a MIME entity
+	entity, err := message.Read(bytes.NewReader(fullMsg.Bytes()))
+	if err != nil {
+		// Fallback to simple text/plain structure
+		return &imap.BodyStructure{
+			MIMEType:    "text",
+			MIMESubType: "plain",
+			Encoding:    "7bit",
+			Size:        uint32(len(body)),
+		}
+	}
+
+	return entityToBodyStructure(entity)
+}
+
+// entityToBodyStructure converts a go-message Entity to an imap.BodyStructure
+func entityToBodyStructure(entity *message.Entity) *imap.BodyStructure {
+	contentType := entity.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "text/plain"
+	}
+
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		mediaType = "text/plain"
+		params = make(map[string]string)
+	}
+
+	parts := strings.SplitN(mediaType, "/", 2)
+	mimeType := "text"
+	mimeSubType := "plain"
+	if len(parts) == 2 {
+		mimeType = strings.ToLower(parts[0])
+		mimeSubType = strings.ToLower(parts[1])
+	}
+
+	bs := &imap.BodyStructure{
+		MIMEType:    mimeType,
+		MIMESubType: mimeSubType,
+		Params:      params,
+		Encoding:    entity.Header.Get("Content-Transfer-Encoding"),
+		Description: entity.Header.Get("Content-Description"),
+		Id:          entity.Header.Get("Content-ID"),
+	}
+
+	// Set default encoding if not specified
+	if bs.Encoding == "" {
+		bs.Encoding = "7bit"
+	}
+
+	// Handle multipart messages
+	if strings.HasPrefix(mimeType, "multipart") {
+		mr := entity.MultipartReader()
+		if mr != nil {
+			var children []*imap.BodyStructure
+			for {
+				part, err := mr.NextPart()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					break
+				}
+				// Recursively parse child parts
+				childBs := entityToBodyStructure(part)
+				children = append(children, childBs)
+			}
+			bs.Parts = children
+		}
+	} else {
+		// For non-multipart, read the body to get the size
+		bodyContent, err := io.ReadAll(entity.Body)
+		if err == nil {
+			bs.Size = uint32(len(bodyContent))
+		}
+	}
+
+	return bs
 }
 
 func (m *SelectedMailbox) SearchMessages(uid bool, criteria *imap.SearchCriteria) ([]uint32, error) {
