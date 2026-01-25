@@ -44,6 +44,7 @@ import (
 	_ "github.com/themadorg/madmail/internal/auth/dovecot_sasl"
 	_ "github.com/themadorg/madmail/internal/auth/external"
 	_ "github.com/themadorg/madmail/internal/auth/ldap"
+	_ "github.com/themadorg/madmail/internal/auth/memauth"
 	_ "github.com/themadorg/madmail/internal/auth/netauth"
 	_ "github.com/themadorg/madmail/internal/auth/pam"
 	_ "github.com/themadorg/madmail/internal/auth/pass_table"
