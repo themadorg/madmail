@@ -294,8 +294,8 @@ func (u *User) GetMailbox(name string, readOnly bool, conn backend.Conn) (*imap.
 
 	// Create the selected mailbox with update handle
 	mailboxKey := u.account.Username + "\x00" + name
-	u.storage.Log.Debugf("IDLE: registering mailbox key for user=%q mailbox=%q key=%q",
-		u.account.Username, name, mailboxKey)
+	u.storage.Log.Printf("IDLE: entering idle mode for user=%s mailbox=%s",
+		u.account.Username, name)
 	selected := &SelectedMailbox{
 		storage:  u.storage,
 		account:  u.account,

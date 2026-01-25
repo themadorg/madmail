@@ -895,12 +895,18 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 	// This happens while still under global lock to ensure consistency
 	fromAddr := headerCopy.Get("From")
 	for _, result := range deliveryResults {
+		// Log message delivery that will wake up IDLE
+		d.store.Log.Printf("IDLE: delivering message to %s/%s - waking up idle connections",
+			result.rcpt, result.mailbox)
+
 		// Notify IDLE clients about the new message
 		// The key is username + "\x00" + mailbox name (same format as go-imap-mess memory backend)
 		mailboxKey := result.rcpt + "\x00" + result.mailbox
-		d.store.Log.Debugf("IDLE: notifying mailbox key for rcpt=%q mailbox=%q key=%q uid=%d",
-			result.rcpt, result.mailbox, mailboxKey, result.uid)
 		d.store.updateManager.NewMessage(mailboxKey, result.uid)
+
+		// Log when IDLE wakeup notification was sent
+		d.store.Log.Printf("IDLE: wakeup notification sent for user=%s mailbox=%s uid=%d",
+			result.rcpt, result.mailbox, result.uid)
 
 		// Log successful delivery
 		d.store.Log.Printf("message delivered: mailbox=%s/%s from=%q size=%d messages=%d",
