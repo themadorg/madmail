@@ -223,9 +223,9 @@ imap tcp://0.0.0.0:2143 {{
                 maddy_process.kill()
         
         # Show server logs if test failed
-        if 'log_file' in dir() and log_file:
+        if 'log_file' in locals() and log_file:
             log_file.close()
-        if 'log_file_path' in dir() and os.path.exists(log_file_path):
+        if 'log_file_path' in locals() and os.path.exists(log_file_path):
             with open(log_file_path, 'r') as f:
                 server_log = f.read()
             if not success:
@@ -272,11 +272,11 @@ def run_direct_smtp_imap_test(ip_address, logs):
         # Create a minimal valid OpenPGP encrypted payload
         # We need: optional PKESK/SKESK packets followed by exactly one SEIPD packet (type 18)
         # 
-        # OpenPGP new format packet: 0xC0 | packet_type (6 bits)
-        # SEIPD = type 18 = 0x12, so header byte = 0xC0 | 0x12 = 0xD2
+        # OpenPGP new format packet header: high 2 bits = 11 (0xC0), low 6 bits = packet type
+        # SEIPD = type 18 (0x12), so header byte = 0xC0 | 0x12 = 0xD2
+        # (18 decimal = 0x12 hex = 010010 binary, which fits in 6 bits)
         # 
-        # Length encoding: for short packets, single byte < 192
-        # Let's create a minimal SEIPD packet with some dummy encrypted data
+        # Length encoding: for short packets (<192 bytes), single byte length
         
         # SEIPD packet structure:
         # - Header: 0xD2 (new format, type 18)
