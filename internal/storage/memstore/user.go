@@ -51,6 +51,7 @@ func (u *User) Status(mboxName string, items []imap.StatusItem) (*imap.MailboxSt
 		return nil, backend.ErrNoSuchMailbox
 	}
 
+	// Single lock for entire status operation
 	mbox.mu.RLock()
 	defer mbox.mu.RUnlock()
 
@@ -65,14 +66,12 @@ func (u *User) Status(mboxName string, items []imap.StatusItem) (*imap.MailboxSt
 		case imap.StatusRecent:
 			count := uint32(0)
 			for _, ref := range mbox.Messages {
-				ref.mu.RLock()
 				for _, f := range ref.Flags {
 					if f == imap.RecentFlag {
 						count++
 						break
 					}
 				}
-				ref.mu.RUnlock()
 			}
 			status.Recent = count
 		case imap.StatusUidNext:
@@ -85,7 +84,6 @@ func (u *User) Status(mboxName string, items []imap.StatusItem) (*imap.MailboxSt
 			seqNum := uint32(0)
 			for _, ref := range mbox.Messages {
 				seqNum++
-				ref.mu.RLock()
 				seen := false
 				for _, f := range ref.Flags {
 					if f == imap.SeenFlag {
@@ -93,7 +91,6 @@ func (u *User) Status(mboxName string, items []imap.StatusItem) (*imap.MailboxSt
 						break
 					}
 				}
-				ref.mu.RUnlock()
 				if !seen {
 					count++
 					if firstUnseen == 0 {
@@ -398,8 +395,15 @@ func (m *MailboxBackend) Poll(expunge bool) error {
 	return nil
 }
 
-// getSortedUIDs returns UIDs in ascending order
+// getSortedUIDs returns UIDs in ascending order (acquires read lock)
 func (m *MailboxBackend) getSortedUIDs() []uint32 {
+	m.mailbox.mu.RLock()
+	defer m.mailbox.mu.RUnlock()
+	return m.getSortedUIDsLocked()
+}
+
+// getSortedUIDsLocked returns UIDs in ascending order (caller must hold lock)
+func (m *MailboxBackend) getSortedUIDsLocked() []uint32 {
 	uids := make([]uint32, 0, len(m.mailbox.Messages))
 	for u := range m.mailbox.Messages {
 		uids = append(uids, u)
@@ -414,7 +418,7 @@ func (m *MailboxBackend) ListMessages(uid bool, seqSet *imap.SeqSet, items []ima
 	m.mailbox.mu.RLock()
 	defer m.mailbox.mu.RUnlock()
 
-	uids := m.getSortedUIDs()
+	uids := m.getSortedUIDsLocked()
 
 	for seqNum, msgUID := range uids {
 		seqNum++ // Sequence numbers start at 1
@@ -466,10 +470,9 @@ func (m *MailboxBackend) fetchMessage(ref *MessageRef, seqNum uint32, items []im
 				Size:        uint32(storedMsg.Size),
 			}
 		case imap.FetchFlags:
-			ref.mu.RLock()
+			// Flags are accessed under mailbox lock (caller holds it)
 			msg.Flags = make([]string, len(ref.Flags))
 			copy(msg.Flags, ref.Flags)
-			ref.mu.RUnlock()
 		case imap.FetchInternalDate:
 			msg.InternalDate = storedMsg.Date
 		case imap.FetchRFC822Size:
@@ -564,7 +567,7 @@ func (m *MailboxBackend) SearchMessages(uid bool, criteria *imap.SearchCriteria)
 
 	var results []uint32
 
-	uids := m.getSortedUIDs()
+	uids := m.getSortedUIDsLocked()
 
 	for seqNum, msgUID := range uids {
 		seqNum++ // Sequence numbers start at 1
@@ -583,7 +586,7 @@ func (m *MailboxBackend) SearchMessages(uid bool, criteria *imap.SearchCriteria)
 }
 
 func (m *MailboxBackend) matchesCriteria(ref *MessageRef, seqNum uint32, criteria *imap.SearchCriteria) bool {
-	// Basic criteria matching - implement as needed
+	// Basic criteria matching - called under mailbox lock
 	if criteria == nil {
 		return true
 	}
@@ -598,10 +601,8 @@ func (m *MailboxBackend) matchesCriteria(ref *MessageRef, seqNum uint32, criteri
 		return false
 	}
 
-	// Check flags
-	ref.mu.RLock()
+	// Check flags (accessed under mailbox lock)
 	flags := ref.Flags
-	ref.mu.RUnlock()
 
 	for _, flag := range criteria.WithFlags {
 		found := false
@@ -628,10 +629,11 @@ func (m *MailboxBackend) matchesCriteria(ref *MessageRef, seqNum uint32, criteri
 }
 
 func (m *MailboxBackend) UpdateMessagesFlags(uid bool, seqSet *imap.SeqSet, operation imap.FlagsOp, silent bool, flags []string) error {
-	m.mailbox.mu.RLock()
-	defer m.mailbox.mu.RUnlock()
+	// Use write lock for flag modifications
+	m.mailbox.mu.Lock()
+	defer m.mailbox.mu.Unlock()
 
-	uids := m.getSortedUIDs()
+	uids := m.getSortedUIDsLocked()
 
 	for seqNum, msgUID := range uids {
 		seqNum++ // Sequence numbers start at 1
@@ -648,7 +650,6 @@ func (m *MailboxBackend) UpdateMessagesFlags(uid bool, seqSet *imap.SeqSet, oper
 		}
 
 		ref := m.mailbox.Messages[msgUID]
-		ref.mu.Lock()
 
 		switch operation {
 		case imap.SetFlags:
@@ -683,14 +684,13 @@ func (m *MailboxBackend) UpdateMessagesFlags(uid bool, seqSet *imap.SeqSet, oper
 			}
 			ref.Flags = newFlags
 		}
-
-		ref.mu.Unlock()
 	}
 
 	return nil
 }
 
 func (m *MailboxBackend) CopyMessages(uid bool, seqSet *imap.SeqSet, destName string) error {
+	// Use account lock to ensure consistent access to both mailboxes
 	m.account.mu.RLock()
 	destMbox, ok := m.account.Mailboxes[destName]
 	m.account.mu.RUnlock()
@@ -699,10 +699,15 @@ func (m *MailboxBackend) CopyMessages(uid bool, seqSet *imap.SeqSet, destName st
 		return backend.ErrNoSuchMailbox
 	}
 
+	// Collect messages to copy under source mailbox read lock
 	m.mailbox.mu.RLock()
-	defer m.mailbox.mu.RUnlock()
+	uids := m.getSortedUIDsLocked()
 
-	uids := m.getSortedUIDs()
+	type copyOp struct {
+		messageID string
+		flags     []string
+	}
+	var toCopy []copyOp
 
 	for seqNum, msgUID := range uids {
 		seqNum++ // Sequence numbers start at 1
@@ -719,29 +724,34 @@ func (m *MailboxBackend) CopyMessages(uid bool, seqSet *imap.SeqSet, destName st
 		}
 
 		ref := m.mailbox.Messages[msgUID]
+		// Copy flags while holding source lock
+		flagsCopy := make([]string, len(ref.Flags))
+		copy(flagsCopy, ref.Flags)
+		toCopy = append(toCopy, copyOp{messageID: ref.MessageID, flags: flagsCopy})
+	}
+	m.mailbox.mu.RUnlock()
 
-		// Increment message reference count
-		if val, ok := m.storage.messages.Load(ref.MessageID); ok {
+	// Now add to destination mailbox under its write lock
+	destMbox.mu.Lock()
+	defer destMbox.mu.Unlock()
+
+	for _, op := range toCopy {
+		// Increment message reference count atomically
+		if val, ok := m.storage.messages.Load(op.messageID); ok {
 			msg := val.(*Message)
 			atomic.AddInt32(&msg.RefCount, 1)
 		}
 
-		// Copy to destination mailbox
-		destMbox.mu.Lock()
 		newUID := destMbox.UIDNext
 		destMbox.UIDNext++
 
-		ref.mu.RLock()
 		newRef := &MessageRef{
-			MessageID: ref.MessageID,
+			MessageID: op.messageID,
 			UID:       newUID,
-			Flags:     make([]string, len(ref.Flags)),
+			Flags:     op.flags,
 		}
-		copy(newRef.Flags, ref.Flags)
-		ref.mu.RUnlock()
 
 		destMbox.Messages[newUID] = newRef
-		destMbox.mu.Unlock()
 	}
 
 	return nil
@@ -754,14 +764,12 @@ func (m *MailboxBackend) Expunge() error {
 	// Find messages with \Deleted flag
 	toDelete := make([]uint32, 0)
 	for uid, ref := range m.mailbox.Messages {
-		ref.mu.RLock()
 		for _, f := range ref.Flags {
 			if f == imap.DeletedFlag {
 				toDelete = append(toDelete, uid)
 				break
 			}
 		}
-		ref.mu.RUnlock()
 	}
 
 	// Delete them
@@ -780,7 +788,7 @@ func (m *MailboxBackend) Expunge() error {
 		// Remove from mailbox
 		delete(m.mailbox.Messages, uid)
 
-		// Update quota
+		// Update quota atomically
 		m.account.mu.Lock()
 		m.account.QuotaUsed -= msgSize
 		if m.account.QuotaUsed < 0 {
@@ -800,18 +808,76 @@ func (m *MailboxBackend) Idle(done <-chan struct{}) {
 
 // MoveMessages implements the MOVE extension
 func (m *MailboxBackend) MoveMessages(uid bool, seqSet *imap.SeqSet, dest string) error {
-	// Mark messages as deleted
-	if err := m.UpdateMessagesFlags(uid, seqSet, imap.AddFlags, true, []string{imap.DeletedFlag}); err != nil {
-		return err
-	}
-
-	// Copy messages
+	// Copy messages first (this handles its own locking)
 	if err := m.CopyMessages(uid, seqSet, dest); err != nil {
 		return err
 	}
 
-	// Expunge
-	return m.Expunge()
+	// Now mark and expunge in source mailbox (using write lock)
+	m.mailbox.mu.Lock()
+	defer m.mailbox.mu.Unlock()
+
+	uids := m.getSortedUIDsLocked()
+
+	// Mark matching messages as deleted
+	for seqNum, msgUID := range uids {
+		seqNum++
+
+		var matches bool
+		if uid {
+			matches = seqSet.Contains(msgUID)
+		} else {
+			matches = seqSet.Contains(uint32(seqNum))
+		}
+
+		if matches {
+			ref := m.mailbox.Messages[msgUID]
+			// Add deleted flag if not present
+			hasDeleted := false
+			for _, f := range ref.Flags {
+				if f == imap.DeletedFlag {
+					hasDeleted = true
+					break
+				}
+			}
+			if !hasDeleted {
+				ref.Flags = append(ref.Flags, imap.DeletedFlag)
+			}
+		}
+	}
+
+	// Find messages with \Deleted flag and expunge them
+	toDelete := make([]uint32, 0)
+	for uid, ref := range m.mailbox.Messages {
+		for _, f := range ref.Flags {
+			if f == imap.DeletedFlag {
+				toDelete = append(toDelete, uid)
+				break
+			}
+		}
+	}
+
+	// Delete them
+	for _, uid := range toDelete {
+		ref := m.mailbox.Messages[uid]
+
+		var msgSize int64
+		if val, ok := m.storage.messages.Load(ref.MessageID); ok {
+			msgSize = int64(val.(*Message).Size)
+		}
+
+		m.storage.releaseMessage(ref.MessageID)
+		delete(m.mailbox.Messages, uid)
+
+		m.account.mu.Lock()
+		m.account.QuotaUsed -= msgSize
+		if m.account.QuotaUsed < 0 {
+			m.account.QuotaUsed = 0
+		}
+		m.account.mu.Unlock()
+	}
+
+	return nil
 }
 
 // Compile-time interface checks

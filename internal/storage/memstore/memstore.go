@@ -57,71 +57,66 @@ import (
 
 // Message represents a single stored email message.
 // Messages are stored once and can be referenced from multiple mailboxes.
+// This struct is immutable after creation except for RefCount (atomic).
 type Message struct {
-	// Body contains the raw message body
+	// Body contains the raw message body (immutable)
 	Body []byte
-	// Header contains the message headers
+	// Header contains the message headers (immutable)
 	Header textproto.Header
-	// ContentHash is used for deduplication
+	// ContentHash is used for deduplication (immutable)
 	ContentHash string
-	// RefCount tracks how many mailbox entries reference this message
+	// RefCount tracks how many mailbox entries reference this message (atomic)
 	RefCount int32
-	// Size is the message size in bytes
+	// Size is the message size in bytes (immutable)
 	Size int
-	// Date is the internal date of the message
+	// Date is the internal date of the message (immutable)
 	Date time.Time
-	// UID is the unique identifier within the mailbox (set per-mailbox-entry)
-	UID uint32
-	// SeqNum is the sequence number (dynamically computed)
-	SeqNum uint32
-	// Flags are the message flags
-	Flags []string
-	// mu protects Flags
-	mu sync.RWMutex
 }
 
-// MessageRef is a reference to a message in a specific mailbox
+// MessageRef is a reference to a message in a specific mailbox.
+// All fields except Flags are immutable after creation.
+// Flags modifications are protected by the containing Mailbox's lock.
 type MessageRef struct {
-	// MessageID points to the actual message in the global store
+	// MessageID points to the actual message in the global store (immutable)
 	MessageID string
-	// UID is unique within the mailbox
+	// UID is unique within the mailbox (immutable)
 	UID uint32
-	// Flags specific to this mailbox entry
+	// Flags specific to this mailbox entry (protected by Mailbox.mu)
 	Flags []string
-	// mu protects Flags
-	mu sync.RWMutex
 }
 
-// Mailbox represents an IMAP mailbox
+// Mailbox represents an IMAP mailbox.
+// Uses a single coarse-grained lock for all operations.
 type Mailbox struct {
 	Name       string
 	Subscribed bool
-	// Messages maps UID -> MessageRef
+	// Messages maps UID -> MessageRef (protected by mu)
 	Messages map[uint32]*MessageRef
-	// UIDNext is the next UID to be assigned
+	// UIDNext is the next UID to be assigned (protected by mu)
 	UIDNext uint32
-	// UIDValidity for this mailbox
+	// UIDValidity for this mailbox (immutable after creation)
 	UIDValidity uint32
-	// Attributes for special mailboxes
+	// Attributes for special mailboxes (immutable after creation)
 	Attributes []string
-	// mu protects the mailbox
+	// mu is a coarse-grained lock protecting all mutable state
 	mu sync.RWMutex
 }
 
-// Account represents a user account with mailboxes
+// Account represents a user account with mailboxes.
+// Uses a single coarse-grained lock for all operations.
 type Account struct {
 	Username string
-	// Mailboxes maps mailbox name -> Mailbox
+	// Mailboxes maps mailbox name -> Mailbox (protected by mu)
 	Mailboxes map[string]*Mailbox
-	// QuotaUsed is the total bytes used by this account
+	// QuotaUsed is the total bytes used by this account (atomic for reads, mu for writes)
 	QuotaUsed int64
-	// QuotaMax is the quota limit for this account (0 = use default)
+	// QuotaMax is the quota limit for this account (0 = use default, protected by mu)
 	QuotaMax int64
-	// CreatedAt is when the account was created
+	// CreatedAt is when the account was created (immutable)
 	CreatedAt int64
-	// FirstLoginAt is when the user first logged in (1 = never logged in)
+	// FirstLoginAt is when the user first logged in (1 = never logged in, protected by mu)
 	FirstLoginAt int64
-	// mu protects the account
+	// mu is a coarse-grained lock protecting all mutable state
 	mu sync.RWMutex
 }
 
