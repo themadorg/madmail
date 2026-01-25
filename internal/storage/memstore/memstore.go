@@ -775,6 +775,11 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 	headerCopy := header.Copy()
 	headerCopy.Add("Return-Path", "<"+target.SanitizeForHeader(d.mailFrom)+">")
 
+	// Acquire global write lock to serialize all delivery operations
+	// This mimics SQLite's transaction serialization behavior
+	d.store.mu.Lock()
+	defer d.store.mu.Unlock()
+
 	// First pass: check quotas and count valid recipients
 	validRecipients := make([]string, 0, len(d.addedRcpts))
 	for rcpt := range d.addedRcpts {
@@ -783,16 +788,24 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 			continue
 		}
 
-		// Quota check
-		used, max, _, err := d.store.GetQuota(rcpt)
-		if err != nil {
-			d.store.Log.Error("Failed to get quota for recipient", err, "rcpt", rcpt)
-			continue
+		// Quota check (under global lock, so no need for per-account lock)
+		acct.mu.RLock()
+		quotaUsed := acct.QuotaUsed
+		quotaMax := acct.QuotaMax
+		acct.mu.RUnlock()
+
+		maxQuota := quotaMax
+		if maxQuota <= 0 {
+			if d.store.globalDefaultQuota > 0 {
+				maxQuota = d.store.globalDefaultQuota
+			} else {
+				maxQuota = d.store.defaultQuota
+			}
 		}
 
-		if max > 0 && used+int64(len(bodyBytes)) > max {
+		if maxQuota > 0 && quotaUsed+int64(len(bodyBytes)) > maxQuota {
 			// Skip this recipient due to quota exceeded, but continue with others
-			d.store.Log.Debugf("Quota exceeded for %s: used=%d, max=%d, msgSize=%d", rcpt, used, max, len(bodyBytes))
+			d.store.Log.Debugf("Quota exceeded for %s: used=%d, max=%d, msgSize=%d", rcpt, quotaUsed, maxQuota, len(bodyBytes))
 			continue
 		}
 
@@ -808,7 +821,17 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 	// Only count the recipients that passed quota checks
 	messageID := d.store.storeMessageWithRefCount(headerCopy, bodyBytes, int32(len(validRecipients)))
 
+	// Collect delivery results for IDLE notifications (sent after all writes complete)
+	type deliveryResult struct {
+		rcpt       string
+		mailbox    string
+		uid        uint32
+		msgCount   int
+	}
+	deliveryResults := make([]deliveryResult, 0, len(validRecipients))
+
 	// Second pass: deliver to valid recipients only
+	// This is now serialized under the global lock
 	for _, rcpt := range validRecipients {
 		acct := d.store.getAccount(rcpt)
 		if acct == nil {
@@ -823,14 +846,13 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 			targetMailbox = d.store.junkMbox
 		}
 
+		// Under global lock, acquire account lock for modifications
 		acct.mu.Lock()
 		mbox, ok := acct.Mailboxes[targetMailbox]
 		if !ok {
 			// Create mailbox if it doesn't exist
-			d.store.mu.Lock()
 			d.store.uidValidityCounter++
 			uidValidity := d.store.uidValidityCounter
-			d.store.mu.Unlock()
 
 			mbox = &Mailbox{
 				Name:        targetMailbox,
@@ -842,6 +864,7 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 			acct.Mailboxes[targetMailbox] = mbox
 		}
 
+		// Under account lock, access mailbox directly (consistent lock ordering)
 		mbox.mu.Lock()
 		uid := mbox.UIDNext
 		mbox.UIDNext++
@@ -853,24 +876,35 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 		}
 		mbox.Messages[uid] = ref
 		msgCount := len(mbox.Messages)
-
 		mbox.mu.Unlock()
 
 		// Update quota used
 		acct.QuotaUsed += int64(len(bodyBytes))
 		acct.mu.Unlock()
 
+		// Record delivery result for IDLE notification (sent after writes complete)
+		deliveryResults = append(deliveryResults, deliveryResult{
+			rcpt:     rcpt,
+			mailbox:  targetMailbox,
+			uid:      uid,
+			msgCount: msgCount,
+		})
+	}
+
+	// Now that all writes are complete, notify IDLE clients
+	// This happens while still under global lock to ensure consistency
+	fromAddr := headerCopy.Get("From")
+	for _, result := range deliveryResults {
 		// Notify IDLE clients about the new message
 		// The key is username + "\x00" + mailbox name (same format as go-imap-mess memory backend)
-		mailboxKey := rcpt + "\x00" + targetMailbox
-		d.store.Log.Debugf("IDLE: notifying mailbox key for rcpt=%q mailbox=%q key=%q",
-			rcpt, targetMailbox, mailboxKey)
-		d.store.updateManager.NewMessage(mailboxKey, uid)
+		mailboxKey := result.rcpt + "\x00" + result.mailbox
+		d.store.Log.Debugf("IDLE: notifying mailbox key for rcpt=%q mailbox=%q key=%q uid=%d",
+			result.rcpt, result.mailbox, mailboxKey, result.uid)
+		d.store.updateManager.NewMessage(mailboxKey, result.uid)
 
 		// Log successful delivery
-		fromAddr := headerCopy.Get("From")
 		d.store.Log.Printf("message delivered: mailbox=%s/%s from=%q size=%d messages=%d",
-			rcpt, targetMailbox, fromAddr, len(bodyBytes), msgCount)
+			result.rcpt, result.mailbox, fromAddr, len(bodyBytes), result.msgCount)
 	}
 
 	return nil

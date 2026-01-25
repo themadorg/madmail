@@ -31,7 +31,6 @@ import (
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/backend"
-	"github.com/emersion/go-imap/backend/backendutil"
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/textproto"
 	mess "github.com/foxcpp/go-imap-mess"
@@ -128,6 +127,11 @@ func (u *User) SetSubscribed(mboxName string, subscribed bool) error {
 }
 
 func (u *User) CreateMessage(mboxName string, flags []string, date time.Time, body imap.Literal, selectedMailbox backend.Mailbox) error {
+	// Acquire global write lock to serialize message creation
+	// This mimics SQLite's transaction serialization behavior
+	u.storage.mu.Lock()
+	defer u.storage.mu.Unlock()
+
 	u.account.mu.RLock()
 	mbox, ok := u.account.Mailboxes[mboxName]
 	u.account.mu.RUnlock()
@@ -154,7 +158,7 @@ func (u *User) CreateMessage(mboxName string, flags []string, date time.Time, bo
 	// Store the message
 	messageID := u.storage.storeMessage(hdr, bodyBytes)
 
-	// Add to mailbox
+	// Add to mailbox under lock
 	mbox.mu.Lock()
 	uid := mbox.UIDNext
 	mbox.UIDNext++
@@ -184,7 +188,7 @@ func (u *User) CreateMessage(mboxName string, flags []string, date time.Time, bo
 	u.account.QuotaUsed += int64(len(bodyBytes))
 	u.account.mu.Unlock()
 
-	// Notify IDLE clients about the new message
+	// Notify IDLE clients about the new message (after all writes complete)
 	mailboxKey := u.account.Username + "\x00" + mboxName
 	u.mngr.NewMessage(mailboxKey, uid)
 
@@ -554,15 +558,7 @@ func (m *SelectedMailbox) fetchMessage(ref *MessageRef, seqNum uint32, items []i
 			textproto.WriteHeader(&buf, storedMsg.Header)
 			buf.Write(storedMsg.Body)
 
-			// Use backendutil to properly handle body section requests
-			// This correctly handles BODY[1], BODY[1.1], BODY[HEADER], etc.
-			literal, err := backendutil.FetchBodySection(storedMsg.Header, bytes.NewReader(storedMsg.Body), section)
-			if err != nil {
-				// Fallback to empty if section parsing fails
-				msg.Body[section] = bytes.NewReader(nil)
-			} else {
-				msg.Body[section] = literal
-			}
+			msg.Body[section] = imap.Literal(bytes.NewReader(buf.Bytes()))
 		}
 	}
 
@@ -850,6 +846,11 @@ func (m *SelectedMailbox) UpdateMessagesFlags(uid bool, seqSet *imap.SeqSet, ope
 }
 
 func (m *SelectedMailbox) CopyMessages(uid bool, seqSet *imap.SeqSet, destName string) error {
+	// Acquire global write lock to serialize copy operations
+	// This mimics SQLite's transaction serialization behavior
+	m.storage.mu.Lock()
+	defer m.storage.mu.Unlock()
+
 	// Use account lock to ensure consistent access to both mailboxes
 	m.account.mu.RLock()
 	destMbox, ok := m.account.Mailboxes[destName]
@@ -893,8 +894,8 @@ func (m *SelectedMailbox) CopyMessages(uid bool, seqSet *imap.SeqSet, destName s
 
 	// Now add to destination mailbox under its write lock
 	destMbox.mu.Lock()
-	defer destMbox.mu.Unlock()
 
+	var newUIDs []uint32
 	for _, op := range toCopy {
 		// Increment message reference count atomically
 		if val, ok := m.storage.messages.Load(op.messageID); ok {
@@ -912,6 +913,14 @@ func (m *SelectedMailbox) CopyMessages(uid bool, seqSet *imap.SeqSet, destName s
 		}
 
 		destMbox.Messages[newUID] = newRef
+		newUIDs = append(newUIDs, newUID)
+	}
+	destMbox.mu.Unlock()
+
+	// Notify IDLE clients about the new messages in destination
+	mailboxKey := m.account.Username + "\x00" + destName
+	for _, newUID := range newUIDs {
+		m.mngr.NewMessage(mailboxKey, newUID)
 	}
 
 	return nil
@@ -973,18 +982,32 @@ func (m *SelectedMailbox) Idle(done <-chan struct{}) {
 
 // MoveMessages implements the MOVE extension
 func (m *SelectedMailbox) MoveMessages(uid bool, seqSet *imap.SeqSet, dest string) error {
-	// Copy messages first (this handles its own locking)
-	if err := m.CopyMessages(uid, seqSet, dest); err != nil {
-		return err
+	// Acquire global write lock to serialize move operations
+	// This mimics SQLite's transaction serialization behavior
+	m.storage.mu.Lock()
+	defer m.storage.mu.Unlock()
+
+	// Get destination mailbox
+	m.account.mu.RLock()
+	destMbox, ok := m.account.Mailboxes[dest]
+	m.account.mu.RUnlock()
+
+	if !ok {
+		return backend.ErrNoSuchMailbox
 	}
 
-	// Now mark and expunge in source mailbox (using write lock)
+	// Collect messages to move under source mailbox lock
 	m.mailbox.mu.Lock()
-	defer m.mailbox.mu.Unlock()
-
 	uids := m.getSortedUIDsLocked()
 
-	// Mark matching messages as deleted
+	type moveOp struct {
+		srcUID    uint32
+		messageID string
+		flags     []string
+		msgSize   int64
+	}
+	var toMove []moveOp
+
 	for seqNum, msgUID := range uids {
 		seqNum++
 
@@ -997,49 +1020,65 @@ func (m *SelectedMailbox) MoveMessages(uid bool, seqSet *imap.SeqSet, dest strin
 
 		if matches {
 			ref := m.mailbox.Messages[msgUID]
-			// Add deleted flag if not present
-			hasDeleted := false
-			for _, f := range ref.Flags {
-				if f == imap.DeletedFlag {
-					hasDeleted = true
-					break
-				}
+			flagsCopy := make([]string, len(ref.Flags))
+			copy(flagsCopy, ref.Flags)
+
+			var msgSize int64
+			if val, ok := m.storage.messages.Load(ref.MessageID); ok {
+				msgSize = int64(val.(*Message).Size)
 			}
-			if !hasDeleted {
-				ref.Flags = append(ref.Flags, imap.DeletedFlag)
-			}
+
+			toMove = append(toMove, moveOp{
+				srcUID:    msgUID,
+				messageID: ref.MessageID,
+				flags:     flagsCopy,
+				msgSize:   msgSize,
+			})
 		}
 	}
+	m.mailbox.mu.Unlock()
 
-	// Find messages with \Deleted flag and expunge them
-	toDelete := make([]uint32, 0)
-	for uid, ref := range m.mailbox.Messages {
-		for _, f := range ref.Flags {
-			if f == imap.DeletedFlag {
-				toDelete = append(toDelete, uid)
-				break
+	// Add to destination mailbox
+	destMbox.mu.Lock()
+	var newUIDs []uint32
+	for _, op := range toMove {
+		// For MOVE, we don't increment reference count - we're moving the reference
+		newUID := destMbox.UIDNext
+		destMbox.UIDNext++
+
+		// Remove \Deleted flag if present when moving to destination
+		newFlags := make([]string, 0, len(op.flags))
+		for _, f := range op.flags {
+			if f != imap.DeletedFlag {
+				newFlags = append(newFlags, f)
 			}
 		}
+
+		newRef := &MessageRef{
+			MessageID: op.messageID,
+			UID:       newUID,
+			Flags:     newFlags,
+		}
+		destMbox.Messages[newUID] = newRef
+		newUIDs = append(newUIDs, newUID)
 	}
+	destMbox.mu.Unlock()
 
-	// Delete them
-	for _, uid := range toDelete {
-		ref := m.mailbox.Messages[uid]
-
-		var msgSize int64
-		if val, ok := m.storage.messages.Load(ref.MessageID); ok {
-			msgSize = int64(val.(*Message).Size)
+	// Remove from source mailbox (don't release message - reference moved to dest)
+	m.mailbox.mu.Lock()
+	for _, op := range toMove {
+		delete(m.mailbox.Messages, op.srcUID)
+		// Notify about removal
+		if m.handle != nil {
+			m.handle.Removed(op.srcUID)
 		}
+	}
+	m.mailbox.mu.Unlock()
 
-		m.storage.releaseMessage(ref.MessageID)
-		delete(m.mailbox.Messages, uid)
-
-		m.account.mu.Lock()
-		m.account.QuotaUsed -= msgSize
-		if m.account.QuotaUsed < 0 {
-			m.account.QuotaUsed = 0
-		}
-		m.account.mu.Unlock()
+	// Notify IDLE clients about the new messages in destination
+	mailboxKey := m.account.Username + "\x00" + dest
+	for _, newUID := range newUIDs {
+		m.mngr.NewMessage(mailboxKey, newUID)
 	}
 
 	return nil
