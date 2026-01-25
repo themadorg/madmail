@@ -295,7 +295,7 @@ func (q *MemQueue) tryDelivery(msg *QueuedMessage) {
 	partialErr := q.deliver(msg)
 	dl.Debugf("errors: %v", partialErr.Errs)
 
-	smallestTriesCount := 999999
+	smallestTriesCount := math.MaxInt
 
 	if msg.TriesCount == nil {
 		msg.TriesCount = make(map[string]int)

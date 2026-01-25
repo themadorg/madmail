@@ -640,25 +640,22 @@ func hashMessage(header textproto.Header, body []byte) string {
 }
 
 // storeMessage stores a message and returns its ID (with deduplication)
+// It creates `refCount` references (default 1).
 func (s *Storage) storeMessage(header textproto.Header, body []byte) string {
+	return s.storeMessageWithRefCount(header, body, 1)
+}
+
+// storeMessageWithRefCount stores a message with a specific initial reference count
+// This is useful for multi-recipient delivery where we know upfront how many references we need
+func (s *Storage) storeMessageWithRefCount(header textproto.Header, body []byte, refCount int32) string {
 	contentHash := hashMessage(header, body)
 
-	// Check if message already exists
-	if _, ok := s.messages.Load(contentHash); ok {
-		// Increment reference count
-		if val, ok := s.messages.Load(contentHash); ok {
-			msg := val.(*Message)
-			atomic.AddInt32(&msg.RefCount, 1)
-			return contentHash
-		}
-	}
-
-	// Create new message
+	// Create new message with the specified ref count
 	msg := &Message{
 		Body:        body,
 		Header:      header,
 		ContentHash: contentHash,
-		RefCount:    1,
+		RefCount:    refCount,
 		Size:        len(body),
 		Date:        time.Now(),
 	}
@@ -666,15 +663,17 @@ func (s *Storage) storeMessage(header textproto.Header, body []byte) string {
 	// Store message (use LoadOrStore to handle race condition)
 	actual, loaded := s.messages.LoadOrStore(contentHash, msg)
 	if loaded {
-		// Another goroutine stored it first, increment ref count
+		// Another goroutine stored it first (or a previous delivery had this message)
+		// Add our references to the existing message
 		existingMsg := actual.(*Message)
-		atomic.AddInt32(&existingMsg.RefCount, 1)
+		atomic.AddInt32(&existingMsg.RefCount, refCount)
 	} else {
 		atomic.AddInt64(&s.totalStorageUsed, int64(len(body)))
 	}
 
 	return contentHash
 }
+
 
 // Delivery implementation for module.DeliveryTarget
 
@@ -745,27 +744,22 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 	headerCopy := header.Copy()
 	headerCopy.Add("Return-Path", "<"+target.SanitizeForHeader(d.mailFrom)+">")
 
-	// Store the message once (with deduplication)
-	// storeMessage creates the first reference (refcount starts at 1 or gets incremented if duplicate)
-	messageID := d.store.storeMessage(headerCopy, bodyBytes)
-
 	// Count how many recipients we'll actually deliver to
-	recipientCount := 0
+	recipientCount := int32(0)
 	for rcpt := range d.addedRcpts {
 		if d.store.getAccount(rcpt) != nil {
 			recipientCount++
 		}
 	}
 
-	// For multi-recipient delivery, we need to increment the ref count
-	// The first reference is created by storeMessage, each additional recipient needs +1
-	if recipientCount > 1 {
-		if val, ok := d.store.messages.Load(messageID); ok {
-			msg := val.(*Message)
-			// Add recipientCount-1 additional references (first one is already counted)
-			atomic.AddInt32(&msg.RefCount, int32(recipientCount-1))
-		}
+	// If no valid recipients, return early
+	if recipientCount == 0 {
+		return nil
 	}
+
+	// Store the message once (with deduplication) with the correct reference count
+	// This avoids race conditions by setting all references atomically
+	messageID := d.store.storeMessageWithRefCount(headerCopy, bodyBytes, recipientCount)
 
 	// Deliver to each recipient
 	for rcpt := range d.addedRcpts {
