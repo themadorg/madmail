@@ -832,6 +832,8 @@ func (d *delivery) Body(ctx context.Context, header textproto.Header, body buffe
 		// Notify IDLE clients about the new message
 		// The key is username + "\x00" + mailbox name (same format as go-imap-mess memory backend)
 		mailboxKey := rcpt + "\x00" + targetMailbox
+		d.store.Log.Debugf("IDLE: notifying mailbox key for rcpt=%q mailbox=%q key=%q",
+			rcpt, targetMailbox, mailboxKey)
 		d.store.updateManager.NewMessage(mailboxKey, uid)
 
 		// Log successful delivery
