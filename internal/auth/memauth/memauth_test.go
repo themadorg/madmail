@@ -53,22 +53,28 @@ func TestCreateAndAuth(t *testing.T) {
 
 func TestAutoCreate(t *testing.T) {
 	a := &Auth{
-		instName:   "test",
-		autoCreate: true,
+		instName:       "test",
+		autoCreate:     true,
+		minPasswordLen: 12,
 	}
 
-	// Auth with non-existent user should auto-create
-	if err := a.AuthPlain("newuser@example.com", "newpassword"); err != nil {
-		t.Errorf("AuthPlain with auto_create should succeed: %v", err)
+	// Auth with short password should fail (trust-on-first-login requires 12+ chars)
+	if err := a.AuthPlain("shortpass@example.com", "short"); err != module.ErrUnknownCredentials {
+		t.Errorf("AuthPlain with short password should return ErrUnknownCredentials, got: %v", err)
+	}
+
+	// Auth with 12+ char password should auto-create
+	if err := a.AuthPlain("newuser@example.com", "password12chars"); err != nil {
+		t.Errorf("AuthPlain with auto_create and 12+ char password should succeed: %v", err)
 	}
 
 	// Should be able to auth again with same password
-	if err := a.AuthPlain("newuser@example.com", "newpassword"); err != nil {
+	if err := a.AuthPlain("newuser@example.com", "password12chars"); err != nil {
 		t.Errorf("AuthPlain after auto-create failed: %v", err)
 	}
 
 	// Wrong password should still fail
-	if err := a.AuthPlain("newuser@example.com", "wrongpassword"); err != module.ErrUnknownCredentials {
+	if err := a.AuthPlain("newuser@example.com", "wrongpassword1"); err != module.ErrUnknownCredentials {
 		t.Errorf("AuthPlain with wrong password should return ErrUnknownCredentials, got: %v", err)
 	}
 }

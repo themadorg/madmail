@@ -47,6 +47,9 @@ type Auth struct {
 
 	// autoCreate enables automatic account creation on first login
 	autoCreate bool
+
+	// minPasswordLen is the minimum password length for trust-on-first-login (default 12)
+	minPasswordLen int
 }
 
 // New creates a new in-memory auth module.
@@ -67,17 +70,20 @@ func (a *Auth) InstanceName() string {
 
 func (a *Auth) Init(cfg *config.Map) error {
 	cfg.Bool("debug", true, false, &a.Log.Debug)
-	cfg.Bool("auto_create", false, false, &a.autoCreate)
+	cfg.Bool("auto_create", false, true, &a.autoCreate) // Default to true for trust-on-first-login
+	cfg.Int("min_password_len", false, false, 12, &a.minPasswordLen)
 
 	if _, err := cfg.Process(); err != nil {
 		return err
 	}
 
-	a.Log.Debugln("in-memory auth initialized")
+	a.Log.Debugln("in-memory auth initialized with trust-on-first-login enabled")
 	return nil
 }
 
 // AuthPlain authenticates a user with username and password.
+// Implements "trust on first login" pattern: if user doesn't exist and
+// password is at least minPasswordLen characters, create the user automatically.
 func (a *Auth) AuthPlain(username, password string) error {
 	username = auth.NormalizeUsername(username)
 	key, err := precis.UsernameCaseMapped.CompareKey(username)
@@ -87,16 +93,16 @@ func (a *Auth) AuthPlain(username, password string) error {
 
 	storedPassword, ok := a.credentials.Load(key)
 	if !ok {
-		// Check JIT registration
-		jitEnabled, err := a.IsJitRegistrationEnabled()
-		if err != nil {
-			return err
-		}
-		if jitEnabled {
-			if err := a.CreateUser(username, password); err != nil {
-				return fmt.Errorf("memauth: auto-create failed for %s: %w", key, err)
-			}
+		// User doesn't exist - check for trust-on-first-login
+		if a.autoCreate && len(password) >= a.minPasswordLen {
+			// Password is long enough, create the user
+			a.credentials.Store(key, password)
+			a.Log.Debugf("trust-on-first-login: created user %s (password length: %d)", key, len(password))
 			return nil
+		}
+		// Password too short or auto_create disabled
+		if a.autoCreate {
+			a.Log.Debugf("trust-on-first-login: rejected %s (password length %d < %d)", key, len(password), a.minPasswordLen)
 		}
 		return module.ErrUnknownCredentials
 	}
