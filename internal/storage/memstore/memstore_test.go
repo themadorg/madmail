@@ -520,3 +520,93 @@ func TestCreateMessageViaIMAP(t *testing.T) {
 		t.Errorf("Close failed: %v", err)
 	}
 }
+
+func TestStripIPBrackets(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"IPv4 with brackets", "user@[192.168.1.1]", "user@192.168.1.1"},
+		{"IPv4 without brackets", "user@192.168.1.1", "user@192.168.1.1"},
+		{"IPv6 with brackets", "user@[::1]", "user@::1"},
+		{"Domain name unchanged", "user@example.com", "user@example.com"},
+		{"Subdomain unchanged", "user@mail.example.com", "user@mail.example.com"},
+		{"No domain", "user", "user"},
+		{"Empty string", "", ""},
+		{"Public IP with brackets", "test@[188.245.88.45]", "test@188.245.88.45"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := StripIPBrackets(tt.input)
+			if result != tt.expected {
+				t.Errorf("StripIPBrackets(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIPAddressDelivery(t *testing.T) {
+	// This test verifies that messages to IP address domains (with and without brackets)
+	// are delivered to the same mailbox
+	store := newTestStorage()
+
+	// Create an account with a pure IP address domain (no brackets)
+	accountName := "testuser@192.168.1.1"
+	store.getOrCreateAccount(accountName)
+
+	// Verify account exists
+	acct := store.getAccount(accountName)
+	if acct == nil {
+		t.Fatal("Account not created")
+	}
+
+	// Test that deliveryNormalize strips brackets
+	store.deliveryNormalize = func(ctx context.Context, email string) (string, error) {
+		return StripIPBrackets(email), nil
+	}
+
+	// Create delivery with bracketed address
+	delivery, err := store.Start(context.Background(), &module.MsgMetadata{}, "sender@example.com")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Add recipient with brackets - should be normalized to without brackets
+	err = delivery.AddRcpt(context.Background(), "testuser@[192.168.1.1]", smtp.RcptOptions{})
+	if err != nil {
+		t.Fatalf("AddRcpt failed: %v", err)
+	}
+
+	// Create and send message
+	header := textproto.Header{}
+	header.Add("From", "sender@example.com")
+	header.Add("To", "testuser@[192.168.1.1]")
+	header.Add("Subject", "IP Address Test")
+	header.Add("Message-ID", "<ip-test@example.com>")
+
+	body := buffer.MemoryBuffer{Slice: []byte("Test message to IP address")}
+	if err := delivery.Body(context.Background(), header, body); err != nil {
+		t.Fatalf("Body failed: %v", err)
+	}
+
+	if err := delivery.Commit(context.Background()); err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+
+	// Verify message was delivered to the account with pure IP (no brackets)
+	acct = store.getAccount(accountName)
+	if acct == nil {
+		t.Fatal("Account not found after delivery")
+	}
+
+	inbox := acct.Mailboxes["INBOX"]
+	if inbox == nil {
+		t.Fatal("INBOX not found")
+	}
+
+	if len(inbox.Messages) != 1 {
+		t.Errorf("Expected 1 message, got %d", len(inbox.Messages))
+	}
+}

@@ -38,6 +38,7 @@ import (
 	"io"
 	"runtime/trace"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -55,6 +56,26 @@ import (
 	"github.com/themadorg/madmail/internal/authz"
 	"github.com/themadorg/madmail/internal/target"
 )
+
+// StripIPBrackets removes RFC5321 brackets from IP address domains.
+// Per RFC5321, SMTP allows IP address domains in brackets like [5.2.7.3],
+// but for consistent internal mailbox keying, we use just the IP address.
+// Examples:
+//   - "user@[192.168.1.1]" -> "user@192.168.1.1"
+//   - "user@example.com" -> "user@example.com" (unchanged)
+//   - "user@[::1]" -> "user@::1" (IPv6)
+func StripIPBrackets(addr string) string {
+	parts := strings.SplitN(addr, "@", 2)
+	if len(parts) != 2 {
+		return addr
+	}
+	domain := parts[1]
+	if len(domain) >= 2 && domain[0] == '[' && domain[len(domain)-1] == ']' {
+		// Strip brackets from IP address domain
+		domain = domain[1 : len(domain)-1]
+	}
+	return parts[0] + "@" + domain
+}
 
 // Message represents a single stored email message.
 // Messages are stored once and can be referenced from multiple mailboxes.
@@ -248,7 +269,12 @@ func (s *Storage) Init(cfg *config.Map) error {
 		return errors.New("inmemory: unknown normalization function: " + deliveryNormalize)
 	}
 	s.deliveryNormalize = func(ctx context.Context, email string) (string, error) {
-		return deliveryNormFunc(email)
+		normalized, err := deliveryNormFunc(email)
+		if err != nil {
+			return "", err
+		}
+		// Strip RFC5321 brackets from IP address domains for consistent mailbox keying
+		return StripIPBrackets(normalized), nil
 	}
 
 	authNormFunc, ok := authz.NormalizeFuncs[authNormalize]
@@ -256,7 +282,12 @@ func (s *Storage) Init(cfg *config.Map) error {
 		return errors.New("inmemory: unknown normalization function: " + authNormalize)
 	}
 	s.authNormalize = func(ctx context.Context, username string) (string, error) {
-		return authNormFunc(username)
+		normalized, err := authNormFunc(username)
+		if err != nil {
+			return "", err
+		}
+		// Strip RFC5321 brackets from IP address domains for consistent mailbox keying
+		return StripIPBrackets(normalized), nil
 	}
 
 	// Start cleanup goroutines if retention is set
