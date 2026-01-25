@@ -224,8 +224,29 @@ func (m *Mailbox) SearchMessages(uid bool, criteria *imap.SearchCriteria) ([]uin
 }
 
 func (m *Mailbox) matchesCriteria(msg *Message, criteria *imap.SearchCriteria) bool {
-	// Simple implementation - just match all for now
-	// In a real implementation, you would check all criteria fields
+	// Simple implementation that matches common criteria
+	// A full implementation would check all criteria fields
+	
+	// Check UID if specified
+	if criteria.Uid != nil && !criteria.Uid.Contains(msg.UID) {
+		return false
+	}
+	
+	// Check flags
+	if len(criteria.WithFlags) > 0 || len(criteria.WithoutFlags) > 0 {
+		for _, flag := range criteria.WithFlags {
+			if !contains(msg.Flags, flag) {
+				return false
+			}
+		}
+		for _, flag := range criteria.WithoutFlags {
+			if contains(msg.Flags, flag) {
+				return false
+			}
+		}
+	}
+	
+	// Default: match if no specific criteria or if criteria matched
 	return true
 }
 
@@ -254,18 +275,11 @@ func (m *Mailbox) appendMessage(msg *Message) error {
 	m.nextUID++
 	m.messages = append(m.messages, msg)
 
-	// Notify IDLE listeners
-	update := &imapbackend.ExpungeUpdate{
-		SeqNum: uint32(len(m.messages)),
-	}
-
-	for _, listener := range m.idleListeners {
-		select {
-		case listener <- update:
-		default:
-			// Don't block if listener isn't ready
-		}
-	}
+	// Note: For full IDLE support, we would need to notify IDLE listeners here.
+	// However, the current foxcpp/go-imap backend interface doesn't provide
+	// a clean way to send updates from within the backend. IDLE notifications
+	// would typically be handled at the IMAP server level when it detects
+	// new messages in the mailbox.
 
 	return nil
 }
