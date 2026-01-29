@@ -9,7 +9,7 @@ profile dev.foxcpp.maddy /usr{/local,}/bin/maddy {
   #include <abstractions/ssl_keys>
   /etc/ca-certificates/** r,
 
-  /etc/resolv.conf r,
+  /proc/[0-9]*/cpuset r,
   /proc/sys/net/core/somaxconn r,
   /sys/kernel/mm/transparent_hugepage/hpage_pmd_size r,
   deny ptrace,
@@ -24,6 +24,10 @@ profile dev.foxcpp.maddy /usr{/local,}/bin/maddy {
   /run/systemd/notify w,
 
   /etc/maddy/** r,
+  /etc/resolv.conf r,
+  /etc/machine-id r,
+  /etc/hosts r,
+  /etc/nsswitch.conf r,
   owner /run/maddy/ rw,
   owner /run/maddy/** rwkl,
   owner /var/lib/maddy/ rw,
