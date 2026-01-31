@@ -97,9 +97,9 @@ msgpipeline local_routing {
 
 smtp tcp://0.0.0.0:{{.SMTPPort}} {
     limits {
-        # Up to 20 msgs/sec across max. 10 SMTP connections.
+        # Up to 20 msgs/sec across max. 200 SMTP connections.
         all rate 20 1s
-        all concurrency 10
+        all concurrency 200
     }
 
     max_message_size {{.MaxMessageSize}}

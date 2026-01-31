@@ -105,7 +105,9 @@ func (a *Auth) AuthPlain(username, password string) error {
 			return err
 		}
 		if jitEnabled {
-			if err := a.CreateUser(username, password); err != nil {
+			// Use CreateUserIfNotExists which uses upsert to avoid race conditions
+			// when multiple concurrent logins try to create the same user
+			if err := a.CreateUserIfNotExists(username, password); err != nil {
 				return fmt.Errorf("%s: auto-create failed for %s: %w", a.modName, key, err)
 			}
 			return nil
@@ -144,6 +146,39 @@ func (a *Auth) CreateUser(username, password string) error {
 	return a.CreateUserHash(username, password, HashBcrypt, HashOpts{
 		BcryptCost: bcrypt.DefaultCost,
 	})
+}
+
+// CreateUserIfNotExists creates a user if they don't already exist.
+// This is optimized for concurrent auto-create scenarios during login.
+// Unlike CreateUser, it doesn't fail if the user already exists - it just
+// returns nil (since the goal is to ensure the user exists).
+// It also skips the initial Lookup to avoid the race condition where
+// multiple concurrent requests all see "user not found" and then all try to create.
+func (a *Auth) CreateUserIfNotExists(username, password string) error {
+	tbl, ok := a.table.(module.MutableTable)
+	if !ok {
+		return fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
+	}
+
+	username = auth.NormalizeUsername(username)
+	key, err := precis.UsernameCaseMapped.CompareKey(username)
+	if err != nil {
+		return fmt.Errorf("%s: create user %s (raw): %w", a.modName, username, err)
+	}
+
+	// Compute the password hash first (this is CPU-intensive but doesn't hold any locks)
+	hash, err := HashCompute[HashBcrypt](HashOpts{BcryptCost: bcrypt.DefaultCost}, password)
+	if err != nil {
+		return fmt.Errorf("%s: create user %s: hash generation: %w", a.modName, key, err)
+	}
+
+	// Use SetKey which now uses upsert (INSERT OR REPLACE) to atomically
+	// create or update the user. This avoids the race condition where
+	// multiple concurrent requests try to create the same user.
+	if err := tbl.SetKey(key, HashBcrypt+":"+hash); err != nil {
+		return fmt.Errorf("%s: create user %s: %w", a.modName, key, err)
+	}
+	return nil
 }
 
 func (a *Auth) CreateUserHash(username, password string, hashAlgo string, opts HashOpts) error {

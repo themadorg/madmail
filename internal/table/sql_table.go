@@ -82,6 +82,7 @@ func (s *SQLTable) Init(cfg *config.Map) error {
 		listQuery   string
 		setQuery    string
 		delQuery    string
+		upsertQuery string
 	)
 	if driver == "sqlite3" {
 		useNamedArgs = "yes"
@@ -90,6 +91,8 @@ func (s *SQLTable) Init(cfg *config.Map) error {
 		listQuery = fmt.Sprintf("SELECT %s from %s", keyColumn, tableName)
 		setQuery = fmt.Sprintf("UPDATE %s SET %s = @value WHERE %s = @key", tableName, valueColumn, keyColumn)
 		delQuery = fmt.Sprintf("DELETE FROM %s WHERE %s = @key", tableName, keyColumn)
+		// Use INSERT OR REPLACE for atomic upsert (avoids separate Lookup + Insert/Update)
+		upsertQuery = fmt.Sprintf("INSERT OR REPLACE INTO %s(%s, %s) VALUES(@key, @value)", tableName, keyColumn, valueColumn)
 	} else {
 		useNamedArgs = "no"
 		lookupQuery = fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1", valueColumn, tableName, keyColumn)
@@ -97,6 +100,8 @@ func (s *SQLTable) Init(cfg *config.Map) error {
 		listQuery = fmt.Sprintf("SELECT %s from %s", keyColumn, tableName)
 		setQuery = fmt.Sprintf("UPDATE %s SET %s = $2 WHERE %s = $1", tableName, valueColumn, keyColumn)
 		delQuery = fmt.Sprintf("DELETE FROM %s WHERE %s = $1", tableName, keyColumn)
+		// PostgreSQL uses ON CONFLICT for upsert
+		upsertQuery = fmt.Sprintf("INSERT INTO %s(%s, %s) VALUES($1, $2) ON CONFLICT (%s) DO UPDATE SET %s = $2", tableName, keyColumn, valueColumn, keyColumn, valueColumn)
 	}
 
 	return s.wrapped.Init(config.NewMap(cfg.Globals, config.Node{
@@ -132,6 +137,10 @@ func (s *SQLTable) Init(cfg *config.Map) error {
 			{
 				Name: "del",
 				Args: []string{delQuery},
+			},
+			{
+				Name: "upsert",
+				Args: []string{upsertQuery},
 			},
 			{
 				Name: "init",

@@ -42,6 +42,7 @@ type SQL struct {
 	listQuery   string
 	setQuery    string
 	removeQuery string
+	upsertQuery string
 }
 
 func NewSQL(modName, instName string, _, _ []string) (module.Module, error) {
@@ -70,6 +71,7 @@ func (s *SQL) Init(cfg *config.Map) error {
 		listQuery   string
 		removeQuery string
 		setQuery    string
+		upsertQuery string
 	)
 	cfg.StringList("init", false, false, nil, &initQueries)
 	cfg.String("driver", false, true, "", &driver)
@@ -82,6 +84,7 @@ func (s *SQL) Init(cfg *config.Map) error {
 	cfg.String("list", false, false, "", &listQuery)
 	cfg.String("del", false, false, "", &removeQuery)
 	cfg.String("set", false, false, "", &setQuery)
+	cfg.String("upsert", false, false, "", &upsertQuery)
 	if _, err := cfg.Process(); err != nil {
 		return err
 	}
@@ -107,6 +110,7 @@ func (s *SQL) Init(cfg *config.Map) error {
 	s.listQuery = listQuery
 	s.setQuery = setQuery
 	s.removeQuery = removeQuery
+	s.upsertQuery = upsertQuery
 
 	return nil
 }
@@ -185,6 +189,23 @@ func (s *SQL) RemoveKey(k string) error {
 }
 
 func (s *SQL) SetKey(k, v string) error {
+	// Use upsert query if available (avoids separate Lookup + Insert/Update)
+	// This is much faster for concurrent operations as it's a single atomic query
+	if s.upsertQuery != "" {
+		var err error
+		if s.namedArgs {
+			args := map[string]interface{}{"key": k, "value": v}
+			err = s.db.Exec(s.upsertQuery, args).Error
+		} else {
+			err = s.db.Exec(s.upsertQuery, k, v).Error
+		}
+		if err != nil {
+			return fmt.Errorf("%s: upsert %s: %w", s.modName, k, err)
+		}
+		return nil
+	}
+
+	// Fallback to old behavior if no upsert query
 	if s.setQuery == "" {
 		return fmt.Errorf("%s: table is not mutable (no 'set' query)", s.modName)
 	}
