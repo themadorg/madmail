@@ -1,3 +1,10 @@
+## [0.12.4](https://github.com/themadorg/madmail/compare/v0.12.3...v0.12.4) (2026-01-31)
+
+
+### Bug Fixes
+
+* implement imap-acct purge commands and fix storage stats ([875596d](https://github.com/themadorg/madmail/commit/875596d067bd99d3bf276ce9f2043b50b40b2458))
+
 ## [0.12.3](https://github.com/themadorg/madmail/compare/v0.12.2...v0.12.3) (2026-01-31)
 
 
