@@ -1,73 +1,202 @@
 <!DOCTYPE html>
 <html dir="rtl" lang="fa">
-
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>اطلاعات — {{.MailDomain}}</title>
   <link rel="stylesheet" href="./main.css">
-  <style>
-    body {
-      font-family: Tahoma, Arial, sans-serif;
-      text-align: center;
-    }
-
-    #menu {
-      justify-content: center;
-      display: flex;
-      list-style: none;
-      padding: 0;
-      margin-bottom: 40px;
-    }
-
-    #menu li {
-      margin: 0 10px;
-    }
-
-    h2 {
-      margin-bottom: 10px;
-    }
-  </style>
   <script src="./main.js"></script>
+  <link rel="icon" href="/logo.svg">
 </head>
 
 <body>
-  <ul id="menu">
-    <li><a href="/">اصلی</a></li>
-    <li><a href="/share">اشتراک‌گذاری</a></li>
-    <li><a href="/info.html">راهنما</a></li>
-    <li><a href="/security.html">امنیت</a></li>
-    <li><a href="/deploy.html">راه‌اندازی</a></li>
-  </ul>
-  <h2>درباره این سرور</h2>
-  <p>این یک گره (Node) از شبکه دلتاچت است. هدف آن فراهم کردن ارتباط سریع و خصوصی برای کاربران است.</p>
-  <div style="text-align: right; display: inline-block; max-width: 400px; margin-top: 20px;">
-    <ul>
-      <li>پیام‌ها بعد از ۲۰ روز به طور خودکار از سرور پاک می‌شوند.</li>
-      <li>حجم ذخیره‌سازی هر اکانت محدود به {{.DefaultQuota | formatBytes}} است.</li>
-      <li>ارسال پیام فقط به صورت رمزنگاری شده امکان‌پذیر است.</li>
+  <div class="container">
+    <ul id="menu">
+      <li><a href="/">اصلی</a></li>
+      <li><a href="/share">اشتراک‌گذاری</a></li>
+      <li><a href="/info.html" class="active">راهنما</a></li>
+      <li><a href="/security.html">امنیت</a></li>
+      <li><a href="/deploy.html">راه‌اندازی</a></li>
     </ul>
-  </div>
 
-  {{if .SSURL}}
-  <div class="ss-prominent-box">
-    <strong>🚀 لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-    <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر سرور
-      دیگر madmail پروکسی خودش را خواهد داشت</p>
-
-    <div class="ss-copy-container">
-      <p>لینک پروکسی Shadowsocks:</p>
-      <div class="ss-copy-text" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+    <div class="hero text-center">
+      <h1>درباره این سرور</h1>
+      <p class="hero-subtitle">
+        یک گره (Node) از شبکه دلتاچت برای ارتباط سریع و خصوصی
+      </p>
     </div>
 
-    <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🗑️</div>
+        <h3>حذف خودکار</h3>
+        <p>پیام‌ها بعد از ۲۰ روز به طور خودکار از سرور پاک می‌شوند.</p>
+        <div class="badge badge-primary" style="margin-top: var(--spacing-md);">
+          ۲۰ روز نگهداری
+        </div>
+      </div>
 
-    <p
-      style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
-      * این پروکسی مختص همین سرور Madmail است.
-    </p>
+      <div class="feature-card">
+        <div class="feature-icon">💾</div>
+        <h3>فضای ذخیره‌سازی</h3>
+        <p>حجم ذخیره‌سازی هر اکانت محدود است.</p>
+        <div class="badge badge-success" style="margin-top: var(--spacing-md);">
+          {{.DefaultQuota | formatBytes}}
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🔐</div>
+        <h3>رمزنگاری اجباری</h3>
+        <p>ارسال پیام فقط به صورت رمزنگاری شده امکان‌پذیر است.</p>
+        <div class="badge badge-success" style="margin-top: var(--spacing-md);">
+          End-to-End Encrypted
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🚀</div>
+        <h3>سرعت بالا</h3>
+        <p>ارسال و دریافت فوری پیام‌ها با تاخیر بسیار کم.</p>
+        <div class="badge badge-primary" style="margin-top: var(--spacing-md);">
+          پروتکل مدرن
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🌐</div>
+        <h3>دسترسی جهانی</h3>
+        <p>قابل دسترس از هر نقطه جهان با پروتکل استاندارد.</p>
+        <div class="badge badge-primary" style="margin-top: var(--spacing-md);">
+          IMAP + SMTP
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🛡️</div>
+        <h3>حریم خصوصی</h3>
+        <p>بدون ذخیره اطلاعات شخصی یا متادیتای غیرضروری.</p>
+        <div class="badge badge-success" style="margin-top: var(--spacing-md);">
+          Privacy First
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card" style="margin-top: var(--spacing-2xl);">
+      <h2>جزئیات فنی</h2>
+      <div style="text-align: right;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--spacing-lg); margin-top: var(--spacing-xl);">
+          <div>
+            <h4 style="color: var(--primary); margin-bottom: var(--spacing-sm);">پروتکل‌های پشتیبانی شده</h4>
+            <ul style="list-style: none; margin: 0; padding: 0;">
+              <li style="padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--glass-border);">
+                <strong>IMAP:</strong> دریافت ایمیل
+              </li>
+              <li style="padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--glass-border);">
+                <strong>SMTP:</strong> ارسال ایمیل
+              </li>
+              <li style="padding: var(--spacing-sm) 0;">
+                <strong>TLS:</strong> رمزنگاری ارتباط
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 style="color: var(--primary); margin-bottom: var(--spacing-sm);">محدودیت‌ها</h4>
+            <ul style="list-style: none; margin: 0; padding: 0;">
+              <li style="padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--glass-border);">
+                <strong>فضا:</strong> {{.DefaultQuota | formatBytes}} هر اکانت
+              </li>
+              <li style="padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--glass-border);">
+                <strong>نگهداری:</strong> ۲۰ روز
+              </li>
+              <li style="padding: var(--spacing-sm) 0;">
+                <strong>پیام:</strong> فقط رمزنگاری شده
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card" style="margin-top: var(--spacing-xl); text-align: right;">
+      <h3 style="margin-bottom: var(--spacing-lg);">✨ ویژگی‌های منحصر به فرد</h3>
+
+      <div class="accordion">
+        <div class="accordion-item">
+          <div class="accordion-header">
+            <strong>🔄 همگام‌سازی چند دستگاهی</strong>
+            <span class="accordion-icon">▼</span>
+          </div>
+          <div class="accordion-content">
+            <div class="accordion-body">
+              <p>می‌توانید از یک اکانت روی چند دستگاه (موبایل، تبلت، دسکتاپ) استفاده کنید. تمام پیام‌ها به صورت خودکار همگام می‌شوند.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item">
+          <div class="accordion-header">
+            <strong>📞 تماس صوتی و تصویری</strong>
+            <span class="accordion-icon">▼</span>
+          </div>
+          <div class="accordion-content">
+            <div class="accordion-body">
+              <p>دلتاچت از تماس‌های صوتی و تصویری با کیفیت بالا پشتیبانی می‌کند. تماس‌ها به صورت مستقیم (P2P) یا از طریق سرور TURN برقرار می‌شوند.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item">
+          <div class="accordion-header">
+            <strong>🗂️ ارسال فایل</strong>
+            <span class="accordion-icon">▼</span>
+          </div>
+          <div class="accordion-content">
+            <div class="accordion-body">
+              <p>امکان ارسال فایل‌های تا حجم مجاز سرور. تمام فایل‌ها به صورت رمزنگاری شده ارسال می‌شوند.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item">
+          <div class="accordion-header">
+            <strong>👥 گروه‌های خصوصی</strong>
+            <span class="accordion-icon">▼</span>
+          </div>
+          <div class="accordion-content">
+            <div class="accordion-body">
+              <p>ایجاد گروه‌های چت با رمزنگاری End-to-End. تمام اعضای گروه از امنیت کامل برخوردار هستند.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {{if .SSURL}}
+    <div class="ss-prominent-box">
+      <strong>🚀 برای سرعت بیشتر از پروکسی اختصاصی استفاده کنید</strong>
+      <p>این پروکسی فقط برای این سرور و فقط برای پیام‌رسانی به این سرور قابل استفاده است.</p>
+
+      <div class="ss-copy-container">
+        <p style="font-size: 0.9rem; color: var(--text-tertiary);">لینک پروکسی Shadowsocks:</p>
+        <div class="ss-copy-text" onclick="MadmailApp.copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+      </div>
+
+      <p style="font-size: 0.9rem; color: var(--text-secondary); margin-top: var(--spacing-md);">
+        نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5
+      </p>
+    </div>
+    {{end}}
+
+    <footer>
+      <p>
+        نسخه {{.Version}} |
+        <a href="/">صفحه اصلی</a> |
+        <a href="/security.html">امنیت</a>
+      </p>
+    </footer>
   </div>
-  {{end}}
 </body>
 
 </html>
