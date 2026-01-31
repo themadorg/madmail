@@ -1,3 +1,10 @@
+## [0.12.3](https://github.com/themadorg/madmail/compare/v0.12.2...v0.12.3) (2026-01-31)
+
+
+### Bug Fixes
+
+* **publish:** consolidate binary delivery and upgrade mechanism ([565c077](https://github.com/themadorg/madmail/commit/565c0772f85e26622314a4997df6200fdfad784d))
+
 ## [0.12.2](https://github.com/themadorg/madmail/compare/v0.12.1...v0.12.2) (2026-01-31)
 
 
