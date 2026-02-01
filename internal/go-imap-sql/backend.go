@@ -254,7 +254,7 @@ func New(driver, dsn string, extStore ExternalStore, opts Opts) (*Backend, error
 		extStore: extStore,
 		Opts:     opts,
 
-		mngr: mess.NewManager(),
+		mngr: mess.NewManager(opts.Log),
 	}
 	var err error
 

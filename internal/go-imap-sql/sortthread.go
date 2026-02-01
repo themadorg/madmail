@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/mail"
 	"sort"
 	"time"
@@ -58,7 +57,7 @@ func (m *Mailbox) Sort(uid bool, sortCrit []sortthread.SortCriterion, searchCrit
 
 	m.parent.Opts.Log.Debugln("Sort: sorting", len(sortBuffer), "messages")
 
-	sort.Slice(sortBuffer, messageCompare(sortBuffer, sortCrit))
+	sort.Slice(sortBuffer, messageCompare(m.parent.Opts.Log, sortBuffer, sortCrit))
 	ids := make([]uint32, len(sortBuffer))
 	for i, msg := range sortBuffer {
 		id := msg.ID
@@ -100,7 +99,7 @@ func sentDate(dateHeaders []string, arrivalUnix int64) time.Time {
 	return t.UTC()
 }
 
-func messageCompare(buf []*msgKey, sortCrit []sortthread.SortCriterion) func(i, j int) bool {
+func messageCompare(log Logger, buf []*msgKey, sortCrit []sortthread.SortCriterion) func(i, j int) bool {
 	return func(i, j int) bool {
 		for _, crit := range sortCrit {
 			switch crit.Field {
@@ -138,7 +137,7 @@ func messageCompare(buf []*msgKey, sortCrit []sortthread.SortCriterion) func(i, 
 			case "FROM":
 				iAddr := firstAddrFromList(buf[i].CachedHeader["From"])
 				jAddr := firstAddrFromList(buf[j].CachedHeader["From"])
-				log.Println(iAddr, "vs", jAddr, "=>", iAddr < jAddr)
+				log.Debugln(iAddr, "vs", jAddr, "=>", iAddr < jAddr)
 				if iAddr == jAddr {
 					continue
 				}

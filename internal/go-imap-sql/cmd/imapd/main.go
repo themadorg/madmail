@@ -53,11 +53,11 @@ func main() {
 		BusyTimeout: 100000,
 		Log:         stdLogger{},
 	})
-	defer bkd.Close()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Backend initialization failed: %v\n", err)
 		os.Exit(2)
 	}
+	defer bkd.Close()
 
 	srv := server.New(bkd)
 	defer srv.Close()

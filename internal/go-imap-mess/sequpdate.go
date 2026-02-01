@@ -1,7 +1,6 @@
 package mess
 
 import (
-	"log"
 	"strconv"
 	"sync"
 
@@ -9,7 +8,15 @@ import (
 	"github.com/emersion/go-imap/backend"
 )
 
+type Logger interface {
+	Printf(format string, v ...interface{})
+	Println(v ...interface{})
+	Debugf(format string, v ...interface{})
+	Debugln(v ...interface{})
+}
+
 type Manager struct {
+	Log         Logger
 	handlesLock sync.RWMutex
 	handles     map[interface{}]*sharedHandle
 
@@ -19,8 +26,15 @@ type Manager struct {
 	ExternalUnsubscribe func(key interface{})
 }
 
-func NewManager() *Manager {
+func (m *Manager) logf(format string, v ...interface{}) {
+	if m.Log != nil {
+		m.Log.Debugf(format, v...)
+	}
+}
+
+func NewManager(log Logger) *Manager {
 	return &Manager{
+		Log:     log,
 		handles: make(map[interface{}]*sharedHandle),
 	}
 }
@@ -64,7 +78,7 @@ func (m *Manager) Mailbox(key interface{}, mbox Mailbox, uids []uint32, recents 
 			key:     key,
 			handles: map[*MailboxHandle]struct{}{},
 		}
-		log.Printf("[debug] go-imap-mess: Mailbox creating new sharedHandle for key=%v", key)
+		m.logf("go-imap-mess: Mailbox creating new sharedHandle for key=%v", key)
 	}
 
 	handle := &MailboxHandle{
@@ -86,7 +100,7 @@ func (m *Manager) Mailbox(key interface{}, mbox Mailbox, uids []uint32, recents 
 	sharedHndl.handles[handle] = struct{}{}
 	numHandles := len(sharedHndl.handles)
 	sharedHndl.handlesLock.Unlock()
-	log.Printf("[debug] go-imap-mess: Mailbox registered handle for key=%v, total_handles=%d", key, numHandles)
+	m.logf("go-imap-mess: Mailbox registered handle for key=%v, total_handles=%d", key, numHandles)
 	if !ok {
 		m.handles[key] = sharedHndl
 		if m.ExternalSubscribe != nil {
@@ -149,7 +163,7 @@ func (m *Manager) newMessages(key interface{}, uid imap.SeqSet) (storeRecent boo
 }
 
 func (m *Manager) NewMessage(key interface{}, uid uint32) (storeRecent bool) {
-	log.Printf("[debug] go-imap-mess: NewMessage called with key=%v uid=%d", key, uid)
+	m.logf("go-imap-mess: NewMessage called with key=%v uid=%d", key, uid)
 
 	if m.sink != nil {
 		m.sink <- Update{
@@ -164,7 +178,7 @@ func (m *Manager) NewMessage(key interface{}, uid uint32) (storeRecent bool) {
 
 	handle := m.handles[key]
 	if handle == nil {
-		log.Printf("[debug] go-imap-mess: NewMessage key=%v has NO handles registered, returning storeRecent=true", key)
+		m.logf("go-imap-mess: NewMessage key=%v has NO handles registered, returning storeRecent=true", key)
 		return true
 	}
 
@@ -172,7 +186,7 @@ func (m *Manager) NewMessage(key interface{}, uid uint32) (storeRecent bool) {
 	defer handle.handlesLock.RUnlock()
 
 	numHandles := len(handle.handles)
-	log.Printf("[debug] go-imap-mess: NewMessage key=%v uid=%d found %d handles to notify", key, uid, numHandles)
+	m.logf("go-imap-mess: NewMessage key=%v uid=%d found %d handles to notify", key, uid, numHandles)
 
 	addedRecent := false
 	for hndl := range handle.handles {
@@ -184,12 +198,12 @@ func (m *Manager) NewMessage(key interface{}, uid uint32) (storeRecent bool) {
 			hndl.recentCount++
 			addedRecent = true
 		}
-		log.Printf("[debug] go-imap-mess: NewMessage calling idleUpdate for handle key=%v uid=%d", key, uid)
+		m.logf("go-imap-mess: NewMessage calling idleUpdate for handle key=%v uid=%d", key, uid)
 		hndl.idleUpdate()
 		hndl.lock.Unlock()
 	}
 
-	log.Printf("[debug] go-imap-mess: NewMessage completed key=%v uid=%d storeRecent=%v", key, uid, !addedRecent)
+	m.logf("go-imap-mess: NewMessage completed key=%v uid=%d storeRecent=%v", key, uid, !addedRecent)
 	return !addedRecent
 }
 

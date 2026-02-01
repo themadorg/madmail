@@ -25,7 +25,7 @@ func (be *Backend) Login(_ *imap.ConnInfo, username, password string) (backend.U
 }
 
 func New() *Backend {
-	mngr := sequpdate.NewManager()
+	mngr := sequpdate.NewManager(nil)
 	user := &User{
 		username: "username",
 		password: "password",

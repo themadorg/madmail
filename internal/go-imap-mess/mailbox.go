@@ -2,7 +2,6 @@ package mess
 
 import (
 	"errors"
-	"log"
 	"strconv"
 	"sync"
 
@@ -141,7 +140,7 @@ func (handle *MailboxHandle) Idle(done <-chan struct{}) {
 
 	// If there were pending updates, sync them immediately
 	if hasPending {
-		log.Printf("[debug] go-imap-mess: Idle found pending updates on start, syncing immediately")
+		handle.m.logf("go-imap-mess: Idle found pending updates on start, syncing immediately")
 		handle.Sync(true)
 	}
 
@@ -175,11 +174,11 @@ func (handle *MailboxHandle) Sync(expunge bool) {
 
 	// Collect all pending updates while holding the lock
 	handle.lock.Lock()
-	
+
 	// Copy pendingFlags
 	flagsUpdates := handle.pendingFlags
 	handle.pendingFlags = make([]flagsUpdate, 0, 1)
-	
+
 	// Copy pendingExpunge and compute expunged sequence numbers
 	var expunged []uint32
 	if expunge && !handle.pendingExpunge.Empty() {
@@ -195,7 +194,7 @@ func (handle *MailboxHandle) Sync(expunge bool) {
 		handle.uidMap = newMap
 		handle.pendingExpunge.Clear()
 	}
-	
+
 	// Copy pendingCreated and update uidMap
 	var newMsgCount uint32
 	var hasNewRecent bool
@@ -212,13 +211,13 @@ func (handle *MailboxHandle) Sync(expunge bool) {
 		recentCount = handle.recentCount
 		handle.hasNewRecent = false
 	}
-	
+
 	// Release the lock before sending updates (network I/O can be slow)
 	handle.lock.Unlock()
-	
+
 	// Now send updates without holding the lock - this prevents blocking
 	// message delivery when IDLE clients have slow network connections
-	
+
 	// Send flag updates
 	for _, upd := range flagsUpdates {
 		handle.lock.RLock()
@@ -234,12 +233,12 @@ func (handle *MailboxHandle) Sync(expunge bool) {
 			Message: updMsg,
 		})
 	}
-	
+
 	// Send expunge updates (in reverse order)
 	for i := len(expunged) - 1; i >= 0; i-- {
 		handle.conn.SendUpdate(&backend.ExpungeUpdate{SeqNum: expunged[i]})
 	}
-	
+
 	// Send EXISTS/RECENT updates
 	if newMsgCount > 0 {
 		status := imap.NewMailboxStatus("", []imap.StatusItem{imap.StatusMessages})
@@ -247,7 +246,7 @@ func (handle *MailboxHandle) Sync(expunge bool) {
 		handle.conn.SendUpdate(&backend.MailboxUpdate{
 			MailboxStatus: status,
 		})
-		
+
 		if hasNewRecent {
 			status := imap.NewMailboxStatus("", []imap.StatusItem{imap.StatusRecent})
 			status.Recent = recentCount
@@ -408,11 +407,11 @@ func (handle *MailboxHandle) Close() error {
 
 	delete(handle.shared.handles, handle)
 	remainingHandles := len(handle.shared.handles)
-	log.Printf("[debug] go-imap-mess: Close handle for key=%v, remaining_handles=%d", handle.key, remainingHandles)
+	handle.m.logf("go-imap-mess: Close handle for key=%v, remaining_handles=%d", handle.key, remainingHandles)
 
 	if remainingHandles == 0 {
 		delete(handle.m.handles, handle.shared.key)
-		log.Printf("[debug] go-imap-mess: Close removed sharedHandle for key=%v (no more handles)", handle.key)
+		handle.m.logf("go-imap-mess: Close removed sharedHandle for key=%v (no more handles)", handle.key)
 		if handle.m.ExternalUnsubscribe != nil {
 			handle.m.ExternalUnsubscribe(handle.shared.key)
 		}
