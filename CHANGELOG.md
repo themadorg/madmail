@@ -1,3 +1,10 @@
+## [0.12.6](https://github.com/themadorg/madmail/compare/v0.12.5...v0.12.6) (2026-02-03)
+
+
+### Bug Fixes
+
+* add iroh ([a147ea2](https://github.com/themadorg/madmail/commit/a147ea28a2e40198d6f49b151ef00a98c4c48cc8))
+
 ## [0.12.5](https://github.com/themadorg/madmail/compare/v0.12.4...v0.12.5) (2026-02-01)
 
 
