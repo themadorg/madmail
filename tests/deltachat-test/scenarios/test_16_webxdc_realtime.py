@@ -2,7 +2,7 @@ import time
 import os
 import zipfile
 import tempfile
-from deltachat_rpc_client import EventType, ViewType
+from deltachat_rpc_client.const import EventType, ViewType
 from scenarios.test_01_account_creation import run as create_account
 
 def create_dummy_xdc():

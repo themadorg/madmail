@@ -26,13 +26,7 @@ load_dotenv()
 # Path to the rpc client
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(TEST_DIR)))
-RPC_CLIENT_SRC = os.path.join(PROJECT_ROOT, "chatmail-core/deltachat-rpc-client/src")
 
-if not os.path.exists(RPC_CLIENT_SRC):
-    # Fallback for different structures if needed, but the above should work in this repo
-    RPC_CLIENT_SRC = os.path.join(os.getcwd(), "chatmail-core/deltachat-rpc-client/src")
-
-sys.path.insert(0, RPC_CLIENT_SRC)
 sys.path.append(TEST_DIR)
 
 from deltachat_rpc_client import DeltaChat, Rpc
@@ -92,6 +86,7 @@ def main():
     parser.add_argument("--test-9", action="store_true", help="Run Big File Test (10-70MB)")
     parser.add_argument("--test-10", action="store_true", help="Run Upgrade Mechanism Test")
     parser.add_argument("--test-11", action="store_true", help="Run JIT Registration Test")
+    parser.add_argument("--test-12", action="store_true", help="Run SMTP/IMAP IDLE Test")
     parser.add_argument("--test-13", action="store_true", help="Run Concurrent Profiles Test")
     parser.add_argument("--test-14", action="store_true", help="Run Purge Messages Test")
     parser.add_argument("--test-15", action="store_true", help="Run Iroh Discovery Test")
@@ -323,7 +318,7 @@ def main():
             # TEST #13: Concurrent Profiles
             # ==========================================
             if run_all or args.test_13:
-                test_13_concurrent_profiles.run(dc, remote1)
+                test_13_concurrent_profiles.run(test_dir=test_dir)
                 print("✓ TEST #13 PASSED: Concurrent profiles verified")
 
             # ==========================================
