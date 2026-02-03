@@ -86,12 +86,36 @@ The suite consists of several scenarios located in `tests/deltachat-test/scenari
 - Tests both successful signed upgrades and rejection of unsigned/tampered binaries.
 - Simulates updates from both local files and remote URLs.
 
+### 11. JIT Registration (`test_11_jit_registration.py`)
+- Verifies "Just-In-Time" account creation.
+- An account is automatically created the first time it receives an email or when a user tries to log in, without prior manual registration.
+
+### 12. SMTP/IMAP IDLE Test (`test_12_smtp_imap_idle.py`)
+- Verifies the responsiveness of the IMAP IDLE implementation.
+- Tests receiving messages in real-time without polling.
+- Ensures SMTP delivery triggers IDLE notifications correctly.
+
+### 14. Message Purging (`test_14_purge_messages.py`)
+- Verifies administrative commands for purging user data.
+- Tests `purge-read` (removes messages marked as seen).
+- Tests `purge-all` (completely wipes an account's mailbox).
+- Verifies storage reclaimed via server-side statistics.
+
+### 15. Iroh Discovery (`test_15_iroh_discovery.py`)
+- Verifies that the server correctly advertises the Iroh Relay URL via IMAP METADATA.
+- Ensures the client can fetch and parse the relay address for P2P connection establishment.
+
+### 16. WebXDC Realtime P2P (`test_16_webxdc_realtime.py`)
+- Verifies end-to-end real-time P2P communication between two WebXDC instances.
+- Coordinates the Iroh handshake via the integrated Iroh Relay.
+- Verifies that high-frequency data packets are delivered with low latency outside the standard IMAP/SMTP flow.
+
 ## Prerequisites
 
 - **Python environment**: The tests use `uv` for dependency management.
-- **Delta Chat RPC Server**: The `deltachat-rpc-server` binary must be installed on the system (usually at `/usr/bin/deltachat-rpc-server`).
-- **SSH Access**: For tests like "No Logging" and for log collection, the runner needs SSH access to the remote servers (`REMOTE1` and `REMOTE2`).
-- **Remote Servers**: Two configured Madmail instances are required for federation testing.
+- **Delta Chat RPC Server**: The `deltachat-rpc-server` binary must be installed on the system.
+- **SSH Access**: For tests like "No Logging" and for administrative commands (Purge), the runner needs SSH access to the remote servers.
+- **LXC (Optional)**: If using the `--lxc` flag, the runner will automatically create isolated containers to run the tests.
 
 ## Results and Debugging
 

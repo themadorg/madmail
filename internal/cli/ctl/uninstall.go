@@ -50,11 +50,16 @@ type UninstallConfig struct {
 	// Service status
 	ServiceRunning bool
 	ServiceEnabled bool
+	IrohRunning    bool
+	IrohEnabled    bool
 
 	// Installation detection
 	InstallationFound bool
 	SystemdUnit       string
+	IrohUnit          string
 	ConfigPath        string
+	IrohConfigPath    string
+	IrohBinaryPath    string
 }
 
 func init() {
@@ -250,7 +255,7 @@ func detectInstallation() (*UninstallConfig, error) {
 
 	// Check for systemd services
 	systemdPaths := []string{"/etc/systemd/system", "/usr/lib/systemd/system", "/lib/systemd/system"}
-	serviceNames := []string{"maddy.service", "maddy@.service"}
+	serviceNames := []string{"maddy.service", "maddy@.service", "iroh-relay.service"}
 
 	for _, path := range systemdPaths {
 		for _, service := range serviceNames {
@@ -261,6 +266,9 @@ func detectInstallation() (*UninstallConfig, error) {
 				if service == "maddy.service" {
 					config.SystemdUnit = "maddy"
 				}
+				if service == "iroh-relay.service" {
+					config.IrohUnit = "iroh-relay"
+				}
 			}
 		}
 	}
@@ -269,6 +277,10 @@ func detectInstallation() (*UninstallConfig, error) {
 	if config.SystemdUnit != "" {
 		config.ServiceRunning = isServiceRunning(config.SystemdUnit)
 		config.ServiceEnabled = isServiceEnabled(config.SystemdUnit)
+	}
+	if config.IrohUnit != "" {
+		config.IrohRunning = isServiceRunning(config.IrohUnit)
+		config.IrohEnabled = isServiceEnabled(config.IrohUnit)
 	}
 
 	// Try to detect configuration from systemd service
@@ -317,6 +329,16 @@ func detectInstallation() (*UninstallConfig, error) {
 	for _, path := range binaryPaths {
 		if _, err := os.Stat(path); err == nil {
 			config.BinaryPath = path
+			config.InstallationFound = true
+			break
+		}
+	}
+
+	// Check for iroh-relay binary
+	irohPaths := []string{"/usr/local/lib/maddy/iroh-relay", "/usr/lib/maddy/iroh-relay"}
+	for _, path := range irohPaths {
+		if _, err := os.Stat(path); err == nil {
+			config.IrohBinaryPath = path
 			config.InstallationFound = true
 			break
 		}
@@ -482,8 +504,8 @@ func showUninstallPlan(config *UninstallConfig, ctx *cli.Context) {
 		fmt.Printf("⚪ Service Status: Not running\n")
 	}
 
-	if config.ServiceEnabled {
-		fmt.Printf("🔴 Service Enabled: Yes (will be disabled)\n")
+	if config.ServiceEnabled || config.IrohEnabled {
+		fmt.Printf("🔴 Service Enabled: maddy=%v, iroh-relay=%v\n", config.ServiceEnabled, config.IrohEnabled)
 	} else {
 		fmt.Printf("⚪ Service Enabled: No\n")
 	}
@@ -520,9 +542,14 @@ func showUninstallPlan(config *UninstallConfig, ctx *cli.Context) {
 		}
 	}
 
-	if !ctx.Bool("keep-binary") && config.BinaryPath != "" {
-		fmt.Printf("\n🔧 Binary to Remove:\n")
-		fmt.Printf("   - %s\n", config.BinaryPath)
+	if !ctx.Bool("keep-binary") {
+		if config.BinaryPath != "" {
+			fmt.Printf("\n🔧 Binary to Remove:\n")
+			fmt.Printf("   - %s\n", config.BinaryPath)
+		}
+		if config.IrohBinaryPath != "" {
+			fmt.Printf("   - %s (iroh-relay)\n", config.IrohBinaryPath)
+		}
 	}
 
 	if !ctx.Bool("keep-user") && config.MaddyUser != "" {
@@ -561,57 +588,66 @@ func confirmUninstall(config *UninstallConfig) bool {
 }
 
 func stopService(config *UninstallConfig, ctx *cli.Context) error {
-	if config.SystemdUnit == "" {
-		fmt.Printf("ℹ️  No systemd service found to stop\n")
+	if !config.ServiceRunning && !config.IrohRunning {
+		fmt.Printf("ℹ️  No services are running\n")
 		return nil
 	}
 
-	if !config.ServiceRunning {
-		fmt.Printf("ℹ️  Service %s is not running\n", config.SystemdUnit)
-		return nil
+	if config.ServiceRunning {
+		logger.Printf("Stopping service: %s", config.SystemdUnit)
+		if ctx.Bool("dry-run") {
+			fmt.Printf("Would stop service: %s\n", config.SystemdUnit)
+		} else {
+			cmd := exec.Command("systemctl", "stop", config.SystemdUnit)
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to stop service %s: %v", config.SystemdUnit, err)
+			}
+			fmt.Printf("✅ Stopped service: %s\n", config.SystemdUnit)
+		}
 	}
 
-	logger.Printf("Stopping service: %s", config.SystemdUnit)
-
-	if ctx.Bool("dry-run") {
-		fmt.Printf("Would stop service: %s\n", config.SystemdUnit)
-		return nil
+	if config.IrohRunning {
+		logger.Printf("Stopping service: %s", config.IrohUnit)
+		if ctx.Bool("dry-run") {
+			fmt.Printf("Would stop service: %s\n", config.IrohUnit)
+		} else {
+			cmd := exec.Command("systemctl", "stop", config.IrohUnit)
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to stop service %s: %v", config.IrohUnit, err)
+			}
+			fmt.Printf("✅ Stopped service: %s\n", config.IrohUnit)
+		}
 	}
-
-	cmd := exec.Command("systemctl", "stop", config.SystemdUnit)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to stop service %s: %v", config.SystemdUnit, err)
-	}
-
-	fmt.Printf("✅ Stopped service: %s\n", config.SystemdUnit)
 	logger.Printf("Successfully stopped service: %s", config.SystemdUnit)
 	return nil
 }
 
 func disableService(config *UninstallConfig, ctx *cli.Context) error {
-	if config.SystemdUnit == "" {
-		fmt.Printf("ℹ️  No systemd service found to disable\n")
-		return nil
+	if config.ServiceEnabled {
+		logger.Printf("Disabling service: %s", config.SystemdUnit)
+		if ctx.Bool("dry-run") {
+			fmt.Printf("Would disable service: %s\n", config.SystemdUnit)
+		} else {
+			cmd := exec.Command("systemctl", "disable", config.SystemdUnit)
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to disable service %s: %v", config.SystemdUnit, err)
+			}
+			fmt.Printf("✅ Disabled service: %s\n", config.SystemdUnit)
+		}
 	}
 
-	if !config.ServiceEnabled {
-		fmt.Printf("ℹ️  Service %s is not enabled\n", config.SystemdUnit)
-		return nil
+	if config.IrohEnabled {
+		logger.Printf("Disabling service: %s", config.IrohUnit)
+		if ctx.Bool("dry-run") {
+			fmt.Printf("Would disable service: %s\n", config.IrohUnit)
+		} else {
+			cmd := exec.Command("systemctl", "disable", config.IrohUnit)
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to disable service %s: %v", config.IrohUnit, err)
+			}
+			fmt.Printf("✅ Disabled service: %s\n", config.IrohUnit)
+		}
 	}
-
-	logger.Printf("Disabling service: %s", config.SystemdUnit)
-
-	if ctx.Bool("dry-run") {
-		fmt.Printf("Would disable service: %s\n", config.SystemdUnit)
-		return nil
-	}
-
-	cmd := exec.Command("systemctl", "disable", config.SystemdUnit)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to disable service %s: %v", config.SystemdUnit, err)
-	}
-
-	fmt.Printf("✅ Disabled service: %s\n", config.SystemdUnit)
 	logger.Printf("Successfully disabled service: %s", config.SystemdUnit)
 	return nil
 }
@@ -709,24 +745,32 @@ func removeStateDir(config *UninstallConfig, ctx *cli.Context) error {
 }
 
 func removeBinary(config *UninstallConfig, ctx *cli.Context) error {
-	if config.BinaryPath == "" {
-		fmt.Printf("ℹ️  No binary found\n")
-		return nil
+	if config.BinaryPath != "" {
+		logger.Printf("Removing binary: %s", config.BinaryPath)
+		if ctx.Bool("dry-run") {
+			fmt.Printf("Would remove binary: %s\n", config.BinaryPath)
+		} else {
+			if err := os.Remove(config.BinaryPath); err != nil {
+				logger.Printf("Warning: failed to remove binary %s: %v", config.BinaryPath, err)
+				fmt.Printf("⚠️  Warning: failed to remove %s: %v\n", config.BinaryPath, err)
+			} else {
+				fmt.Printf("✅ Removed binary: %s\n", config.BinaryPath)
+			}
+		}
 	}
 
-	logger.Printf("Removing binary: %s", config.BinaryPath)
-
-	if ctx.Bool("dry-run") {
-		fmt.Printf("Would remove binary: %s\n", config.BinaryPath)
-		return nil
-	}
-
-	if err := os.Remove(config.BinaryPath); err != nil {
-		logger.Printf("Warning: failed to remove binary %s: %v", config.BinaryPath, err)
-		fmt.Printf("⚠️  Warning: failed to remove %s: %v\n", config.BinaryPath, err)
-	} else {
-		fmt.Printf("✅ Removed binary: %s\n", config.BinaryPath)
-		logger.Printf("Successfully removed binary: %s", config.BinaryPath)
+	if config.IrohBinaryPath != "" {
+		logger.Printf("Removing binary: %s", config.IrohBinaryPath)
+		if ctx.Bool("dry-run") {
+			fmt.Printf("Would remove binary: %s\n", config.IrohBinaryPath)
+		} else {
+			if err := os.Remove(config.IrohBinaryPath); err != nil {
+				logger.Printf("Warning: failed to remove binary %s: %v", config.IrohBinaryPath, err)
+				fmt.Printf("⚠️  Warning: failed to remove %s: %v\n", config.IrohBinaryPath, err)
+			} else {
+				fmt.Printf("✅ Removed binary: %s\n", config.IrohBinaryPath)
+			}
+		}
 	}
 
 	return nil
@@ -789,8 +833,14 @@ func showUninstallSummary(config *UninstallConfig, ctx *cli.Context) {
 	if config.ServiceRunning {
 		fmt.Printf("   - Stopped service: %s\n", config.SystemdUnit)
 	}
+	if config.IrohRunning {
+		fmt.Printf("   - Stopped service: %s\n", config.IrohUnit)
+	}
 	if config.ServiceEnabled {
 		fmt.Printf("   - Disabled service: %s\n", config.SystemdUnit)
+	}
+	if config.IrohEnabled {
+		fmt.Printf("   - Disabled service: %s\n", config.IrohUnit)
 	}
 	for _, file := range config.ServiceFiles {
 		fmt.Printf("   - Removed systemd file: %s\n", file)
@@ -813,9 +863,14 @@ func showUninstallSummary(config *UninstallConfig, ctx *cli.Context) {
 		}
 	}
 
-	if !ctx.Bool("keep-binary") && config.BinaryPath != "" {
-		fmt.Printf("\n🔧 Binary Removed:\n")
-		fmt.Printf("   - %s\n", config.BinaryPath)
+	if !ctx.Bool("keep-binary") {
+		if config.BinaryPath != "" {
+			fmt.Printf("\n🔧 Binary Removed:\n")
+			fmt.Printf("   - %s\n", config.BinaryPath)
+		}
+		if config.IrohBinaryPath != "" {
+			fmt.Printf("   - %s (iroh-relay)\n", config.IrohBinaryPath)
+		}
 	}
 
 	if !ctx.Bool("keep-user") && config.MaddyUser != "" {

@@ -101,8 +101,14 @@ This will:
 
 ### 5. Prerequisites & Troubleshooting
 - **Digital Signature**: All official binaries are signed. The server will reject unsigned or tampered binaries during the `update` process. See [Signature Verification](./signature.md).
-- **Open Ports**: Ensure ports `80` (HTTP), `25` (SMTP), and `143`/`993` (IMAP) are open.
+- **Open Ports**: Ensure the following ports are open:
+    - `80` (HTTP) / `443` (HTTPS) - Web registration and deployment
+    - `25` (SMTP) - Federation
+    - `465` / `587` (Submission)
+    - `143` / `993` (IMAP)
+    - `3340` (HTTP) - **Iroh Relay** (required for WebXDC real-time P2P)
 - **Configuration**: Settings are stored at `/etc/maddy/maddy.conf`.
+- **Iroh Relay**: Managed as a separate service `iroh-relay.service`. If real-time P2P isn't working, check `journalctl -u iroh-relay`.
 - **OS Support**: Best supported on Debian and Ubuntu.
 
 ### 🤝 Community & Support

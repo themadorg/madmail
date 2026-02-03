@@ -8,9 +8,22 @@ Run common developer tasks from the repository root.
 - `make vet` - run `go vet ./...`
 - `make lint` - run `golangci-lint run ./...` (requires golangci-lint installed)
 - `make test` - run `go test ./...`
+- `make build` - build the server and download latest `iroh-relay` binary (v0.35.0)
 - `make coverage` - generate `coverage.out` and `coverage.html`
 - **[Contributing Guide](../CONTRIBUTING.md)** - Detailed workflow, branching, and PR instructions.
 - **[E2E Testing Guide](./chatmail/e2e_test.md)** - Details on running the Python-based test suite.
+- **[Iroh Relay Integration](./chatmail/iroh.md)** - Details on the Iroh P2P networking stack.
+
+## Building with Iroh Relay
+
+Madmail integrates the [Iroh Relay](https://iroh.computer/docs/layers/relay) to facilitate WebXDC P2P communication. 
+
+When you run `make build` (or `sh build.sh build`), the build script automatically:
+1.  Downloads the correct version of the `iroh-relay` binary (matching the Delta Chat core version) to `internal/endpoint/iroh/assets/`.
+2.  Embeds this binary into the `maddy` executable using Go's `embed` package.
+3.  Ensures it is extracted and managed as a sidecar during installation.
+
+If you are building in an offline environment, you must manually place the `iroh-relay` binary in `internal/endpoint/iroh/assets/` before building.
 
 ## Debugging & Logging
 

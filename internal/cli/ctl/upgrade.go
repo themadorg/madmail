@@ -105,10 +105,10 @@ func performUpgrade(newBinPath string) error {
 		return cli.Exit("❌ Error: This command must be run as root (use sudo) to manage services and replace the binary.", 1)
 	}
 
-	// Stop systemd service
-	fmt.Println("⏹️ Stopping maddy.service...")
-	// We ignore error here because the service might not be running or named differently
+	// Stop systemd services
+	fmt.Println("⏹️ Stopping services...")
 	_ = exec.Command("systemctl", "stop", "maddy.service").Run()
+	_ = exec.Command("systemctl", "stop", "iroh-relay.service").Run()
 
 	// Perform binary replacement using a temporary file to avoid "text file busy"
 	fmt.Println("🔄 Replacing binary...")
@@ -153,10 +153,17 @@ func performUpgrade(newBinPath string) error {
 		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 
-	fmt.Println("▶️ Starting maddy.service...")
+	fmt.Println("▶️ Starting services...")
 	if err := exec.Command("systemctl", "start", "maddy.service").Run(); err != nil {
 		fmt.Printf("⚠️ Warning: Failed to start maddy.service: %v\n", err)
 		fmt.Println("Manual start might be required: systemctl start maddy.service")
+	}
+
+	if _, err := os.Stat("/etc/systemd/system/iroh-relay.service"); err == nil {
+		if err := exec.Command("systemctl", "start", "iroh-relay.service").Run(); err != nil {
+			fmt.Printf("⚠️ Warning: Failed to start iroh-relay.service: %v\n", err)
+			fmt.Println("Manual start might be required: systemctl start iroh-relay.service")
+		}
 	}
 
 	fmt.Println("🎉 Maddy has been successfully upgraded!")

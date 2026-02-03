@@ -62,7 +62,7 @@ define deploy_remote
 	@echo "Updating remote instance ($(1))" 
 	ssh root@$(1) "sudo systemctl stop maddy.service || true"
 	ssh root@$(1) "sudo rm -f /usr/local/bin/maddy || true"
-	ssh root@$(1) "sudo ./maddy install --simple --ip $(1) && sudo systemctl start maddy.service"
+	ssh root@$(1) "sudo ./maddy install --simple --ip $(1) --enable-iroh && sudo systemctl restart maddy.service"
 endef
 
 # Push to both servers

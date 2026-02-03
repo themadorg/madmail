@@ -25,7 +25,14 @@ load_dotenv()
 
 # Path to the rpc client
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.abspath("chatmail-core/deltachat-rpc-client/src"))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(TEST_DIR)))
+RPC_CLIENT_SRC = os.path.join(PROJECT_ROOT, "chatmail-core/deltachat-rpc-client/src")
+
+if not os.path.exists(RPC_CLIENT_SRC):
+    # Fallback for different structures if needed, but the above should work in this repo
+    RPC_CLIENT_SRC = os.path.join(os.getcwd(), "chatmail-core/deltachat-rpc-client/src")
+
+sys.path.insert(0, RPC_CLIENT_SRC)
 sys.path.append(TEST_DIR)
 
 from deltachat_rpc_client import DeltaChat, Rpc
@@ -41,14 +48,17 @@ from scenarios import (
     test_10_upgrade_mechanism,
     test_11_jit_registration,
     test_12_smtp_imap_idle,
+    test_13_concurrent_profiles,
     test_14_purge_messages,
+    test_15_iroh_discovery,
+    test_16_webxdc_realtime,
 )
 from utils.lxc import LXCManager
 from stress import run_stress
 
 REMOTE1 = os.getenv("REMOTE1", "127.0.0.1")
 REMOTE2 = os.getenv("REMOTE2", "127.0.0.1")
-ROOT_DIR = os.getenv("ROOT_DIR", os.getcwd())
+ROOT_DIR = PROJECT_ROOT
 
 def collect_server_logs(test_dir, remote1, remote2):
     print("Collecting server logs...")
@@ -82,8 +92,11 @@ def main():
     parser.add_argument("--test-9", action="store_true", help="Run Big File Test (10-70MB)")
     parser.add_argument("--test-10", action="store_true", help="Run Upgrade Mechanism Test")
     parser.add_argument("--test-11", action="store_true", help="Run JIT Registration Test")
-    parser.add_argument("--test-12", action="store_true", help="Run SMTP/IMAP IDLE Test (local server)")
+    parser.add_argument("--test-13", action="store_true", help="Run Concurrent Profiles Test")
     parser.add_argument("--test-14", action="store_true", help="Run Purge Messages Test")
+    parser.add_argument("--test-15", action="store_true", help="Run Iroh Discovery Test")
+    parser.add_argument("--test-16", action="store_true", help="Run WebXDC Realtime P2P Test")
+    parser.add_argument("--domain", help="Specify domain/IP for tests (updates REMOTE1/REMOTE2)")
     parser.add_argument("--lxc", action="store_true", help="Run tests in local LXC containers")
     parser.add_argument("--keep-lxc", action="store_true", help="Keep LXC containers alive after test")
     parser.add_argument("--all", action="store_true", help="Run all tests (default)")
@@ -98,7 +111,9 @@ def main():
     # If no specific tests selected, run all
     run_all = args.all or not any([
         args.test_1, args.test_2, args.test_3, args.test_4, 
-        args.test_5, args.test_6, args.test_7, args.test_8, args.test_9, args.test_10, args.test_11, args.test_12, args.test_14
+        args.test_5, args.test_6, args.test_7, args.test_8, args.test_9, 
+        args.test_10, args.test_11, args.test_12, args.test_13, args.test_14, 
+        args.test_15, args.test_16
     ])
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -116,8 +131,8 @@ def main():
     group_chat = None
     lxc = None
     
-    remote1 = REMOTE1
-    remote2 = REMOTE2
+    remote1 = args.domain or REMOTE1
+    remote2 = args.domain or REMOTE2
 
     if args.stress:
         report_path = args.stress_report or os.path.join(test_dir, "stress_report.json")
@@ -142,7 +157,15 @@ def main():
     
     # RPC server logs
     rpc_log_path = os.path.join(test_dir, "client_debug.log")
-    rpc_server_path = "/usr/bin/deltachat-rpc-server"
+    
+    # Try to find the built rpc server first
+    rpc_server_path = os.getenv("RPC_SERVER_PATH")
+    if not rpc_server_path:
+        local_rpc_bin = os.path.join(PROJECT_ROOT, "chatmail-core/target/debug/deltachat-rpc-server")
+        if os.path.exists(local_rpc_bin):
+            rpc_server_path = local_rpc_bin
+        else:
+            rpc_server_path = "/usr/bin/deltachat-rpc-server"
     
     rpc_log_file = open(rpc_log_path, "w")
     
@@ -297,11 +320,32 @@ def main():
                 print("✓ TEST #12 PASSED: SMTP/IMAP IDLE test verified")
 
             # ==========================================
+            # TEST #13: Concurrent Profiles
+            # ==========================================
+            if run_all or args.test_13:
+                test_13_concurrent_profiles.run(dc, remote1)
+                print("✓ TEST #13 PASSED: Concurrent profiles verified")
+
+            # ==========================================
             # TEST #14: Purge Messages
             # ==========================================
             if run_all or args.test_14:
                 test_14_purge_messages.run(rpc, dc, acc1, acc2, remote1)
                 print("✓ TEST #14 PASSED: Purge messages verified")
+
+            # ==========================================
+            # TEST #15: Iroh Discovery
+            # ==========================================
+            if run_all or args.test_15:
+                test_15_iroh_discovery.run(dc, remote1)
+                print("✓ TEST #15 PASSED: Iroh discovery verified")
+
+            # ==========================================
+            # TEST #16: WebXDC Realtime
+            # ==========================================
+            if run_all or args.test_16:
+                test_16_webxdc_realtime.run(dc, remote1)
+                print("✓ TEST #16 PASSED: WebXDC Realtime P2P verified")
 
             # ==========================================
             # ALL TESTS COMPLETE

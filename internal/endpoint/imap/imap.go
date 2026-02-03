@@ -77,6 +77,7 @@ type Endpoint struct {
 	turnSecret    string
 	turnTTL       int
 	turnPreferTLS bool
+	irohRelayURL  string
 
 	Log log.Logger
 }
@@ -124,6 +125,7 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("turn_secret", false, false, "", &endp.turnSecret)
 	cfg.Int("turn_ttl", false, false, 86400, &endp.turnTTL)
 	cfg.Bool("turn_prefer_tls", true, true, &endp.turnPreferTLS)
+	cfg.String("iroh_relay_url", false, false, "", &endp.irohRelayURL)
 
 	if _, err := cfg.Process(); err != nil {
 		return err
@@ -355,7 +357,7 @@ func (endp *Endpoint) enableExtensions() error {
 	endp.serv.Enable(compress.NewExtension())
 	endp.serv.Enable(namespace.NewExtension())
 
-	if endp.enableTURN {
+	if endp.enableTURN || endp.irohRelayURL != "" {
 		endp.serv.Enable(&metadataExtension{endp: endp})
 	}
 
@@ -538,9 +540,10 @@ type metadataExtension struct {
 }
 
 func (ext *metadataExtension) Capabilities(c imapserver.Conn) []string {
+	irEnabled := ext.endp.irohRelayURL != ""
 	turnEnabled := ext.endp.enableTURN && ext.endp.saslAuth.IsTurnEnabled()
-	ext.endp.Log.Debugf("IMAP: Capabilities check (state=%v, turnEnabled=%v)", c.Context().State, turnEnabled)
-	if !turnEnabled {
+	ext.endp.Log.Debugf("IMAP: Capabilities check (state=%v, turnEnabled=%v, irEnabled=%v)", c.Context().State, turnEnabled, irEnabled)
+	if !turnEnabled && !irEnabled {
 		return nil
 	}
 	return []string{"METADATA"}
@@ -661,6 +664,20 @@ func (h *getMetadataHandler) Handle(conn imapserver.Conn) error {
 					imap.RawString("METADATA"),
 					h.mailbox,
 					[]interface{}{imap.RawString(key), value},
+				},
+			}); err != nil {
+				return err
+			}
+		}
+
+		if h.mailbox == "" && key == "/shared/vendor/deltachat/irohrelay" && h.endp.irohRelayURL != "" {
+			h.endp.Log.Debugf("GETMETADATA: sending %s info: %s", key, h.endp.irohRelayURL)
+
+			if err := conn.WriteResp(&imap.DataResp{
+				Fields: []interface{}{
+					imap.RawString("METADATA"),
+					h.mailbox,
+					[]interface{}{imap.RawString(key), h.endp.irohRelayURL},
 				},
 			}); err != nil {
 				return err

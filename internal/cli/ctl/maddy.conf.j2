@@ -220,6 +220,9 @@ imap tls://0.0.0.0:{{.IMAPTLS}} tcp://0.0.0.0:{{.IMAPPort}} {
     turn_secret {{.TURNSecret}}
     turn_ttl {{.TURNTTL}}
 {{end}}
+{{if .EnableIroh}}
+    iroh_relay_url http://{{.PublicIP}}:{{.IrohPort}}
+{{end}}
 }
 
 {{if .EnableTURN}}

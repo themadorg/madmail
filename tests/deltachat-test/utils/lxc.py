@@ -161,7 +161,7 @@ class LXCManager:
 
         self.logger(f"Installing madmail on {name}...")
         # Run install from /tmp/maddy to target /usr/local/bin/maddy
-        self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", f"env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /tmp/maddy install --simple --ip {ip} --non-interactive --ss-password testing --turn-secret testing --debug"])
+        self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", f"env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /tmp/maddy install --simple --ip {ip} --non-interactive --ss-password testing --turn-secret testing --debug --enable-iroh"])
         self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin systemctl restart maddy"])
 
         self.logger("LXC environment ready.")

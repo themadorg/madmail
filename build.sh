@@ -107,7 +107,56 @@ build_man_pages() {
 	done
 }
 
+download_iroh_relay() {
+	echo "-- Checking for latest iroh-relay release..." >&2
+	ASSETS_DIR="internal/endpoint/iroh/assets"
+	mkdir -p "$ASSETS_DIR"
+
+	# Use iroh-relay v0.35.0 to match client version
+	LATEST_VERSION="v0.35.0"
+	RELEASE_JSON=$(curl -s https://api.github.com/repos/n0-computer/iroh/releases/tags/${LATEST_VERSION})
+
+	if [ -f "$ASSETS_DIR/VERSION" ] && [ "$(cat "$ASSETS_DIR/VERSION")" = "$LATEST_VERSION" ] && [ -f "$ASSETS_DIR/iroh-relay" ]; then
+		echo "-- iroh-relay is up to date ($LATEST_VERSION)." >&2
+		return
+	fi
+
+	echo "-- Downloading iroh-relay $LATEST_VERSION..." >&2
+
+	ARCH=$(uname -m)
+	case "$ARCH" in
+		x86_64) IROH_ARCH="x86_64-unknown-linux-musl" ;;
+		aarch64|arm64) IROH_ARCH="aarch64-unknown-linux-musl" ;;
+		*) echo "-- [!] Unsupported architecture for iroh-relay: $ARCH" >&2; return ;;
+	esac
+
+	DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep "browser_download_url" | grep "iroh-relay-$LATEST_VERSION-$IROH_ARCH.tar.gz" | cut -d '"' -f 4)
+
+	if [ -z "$DOWNLOAD_URL" ]; then
+		echo "-- [!] Could not find download URL for iroh-relay $LATEST_VERSION on $ARCH" >&2
+		return
+	fi
+
+	curl -L "$DOWNLOAD_URL" -o "$ASSETS_DIR/iroh-relay.tar.gz"
+	tar -xzf "$ASSETS_DIR/iroh-relay.tar.gz" -C "$ASSETS_DIR"
+	
+	# Try to find the binary if it's in a subfolder or has a different name
+	if [ ! -f "$ASSETS_DIR/iroh-relay" ]; then
+		RELAY_BIN=$(find "$ASSETS_DIR" -name iroh-relay -type f | head -n 1)
+		if [ -n "$RELAY_BIN" ] && [ "$RELAY_BIN" != "$ASSETS_DIR/iroh-relay" ]; then
+			mv "$RELAY_BIN" "$ASSETS_DIR/iroh-relay"
+		fi
+	fi
+	
+	rm -f "$ASSETS_DIR/iroh-relay.tar.gz"
+	rm -f "$ASSETS_DIR/iroh-relay.tmp"
+	echo "$LATEST_VERSION" > "$ASSETS_DIR/VERSION"
+	chmod +x "$ASSETS_DIR/iroh-relay"
+	echo "-- iroh-relay $LATEST_VERSION downloaded and prepared." >&2
+}
+
 build() {
+	download_iroh_relay
 	mkdir -p "${builddir}"
 	echo "-- Version: ${version}" >&2
 	if [ "$(go env CC)" = "" ]; then

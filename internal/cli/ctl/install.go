@@ -48,6 +48,7 @@ import (
 	"github.com/themadorg/madmail/internal/auth"
 	maddycli "github.com/themadorg/madmail/internal/cli"
 	clitools2 "github.com/themadorg/madmail/internal/cli/clitools"
+	"github.com/themadorg/madmail/internal/endpoint/iroh"
 	"github.com/urfave/cli/v2"
 )
 
@@ -146,6 +147,10 @@ type InstallConfig struct {
 	SkipSync       bool
 	SkipUser       bool
 	SkipSystemd    bool
+	// Iroh relay configuration
+	EnableIroh bool
+	IrohPort   string
+
 	// Internal state
 	SkipPrompts bool
 }
@@ -196,6 +201,8 @@ func defaultConfig() *InstallConfig {
 		TURNTTL:                  86400,
 		MaxMessageSize:           "32M",
 		SkipSync:                 false,
+		EnableIroh:               false,
+		IrohPort:                 "3340",
 	}
 }
 
@@ -381,6 +388,15 @@ Examples:
 					Name:  "skip-systemd",
 					Usage: "Skip installation of systemd service files",
 				},
+				&cli.BoolFlag{
+					Name:  "enable-iroh",
+					Usage: "Enable Iroh relay deployment",
+				},
+				&cli.StringFlag{
+					Name:  "iroh-port",
+					Usage: "Port for the Iroh relay",
+					Value: "3340",
+				},
 			},
 		})
 }
@@ -562,6 +578,12 @@ func installCommand(ctx *cli.Context) error {
 	if ctx.Bool("skip-systemd") {
 		config.SkipSystemd = true
 	}
+	if ctx.Bool("enable-iroh") {
+		config.EnableIroh = true
+	}
+	if ctx.IsSet("iroh-port") {
+		config.IrohPort = ctx.String("iroh-port")
+	}
 
 	// Convert all paths to absolute paths to avoid issues with relative paths in config
 	paths := []*string{
@@ -606,6 +628,7 @@ func installCommand(ctx *cli.Context) error {
 		{"Generating configuration file", generateConfigFile, false},
 		{"Setting up permissions", setupPermissions, false},
 		{"Installing binary", installBinary, false},
+		{"Installing Iroh Relay", installIrohRelay, !config.EnableIroh},
 	}
 
 	for i, step := range steps {
@@ -1429,6 +1452,74 @@ func installBinary(config *InstallConfig, dryRun bool) error {
 
 	fmt.Printf("     ✓ Binary installed successfully\n")
 	logger.Printf("Successfully installed binary from %s to %s with permissions 755", currentBinary, config.BinaryPath)
+
+	return nil
+}
+
+func installIrohRelay(config *InstallConfig, dryRun bool) error {
+	if !config.EnableIroh {
+		return nil
+	}
+
+	irohRelayPath := filepath.Join("/usr/local/lib/maddy", "iroh-relay")
+	if dryRun {
+		silentPrint(config.NoLog, "Dry-run: Extracting iroh-relay binary to %s\n", irohRelayPath)
+	} else {
+		if err := iroh.ExtractBinary(irohRelayPath); err != nil {
+			return fmt.Errorf("failed to extract iroh-relay: %v", err)
+		}
+	}
+
+	// Create config file
+	irohConfigPath := filepath.Join(config.ConfigDir, "iroh-relay.toml")
+	irohConfig := fmt.Sprintf(`enable_relay = true
+http_bind_addr = "[::]:%s"
+enable_stun = false
+enable_metrics = false
+access = "everyone"
+`, config.IrohPort)
+
+	if dryRun {
+		silentPrint(config.NoLog, "Dry-run: Writing iroh-relay config to %s\n", irohConfigPath)
+	} else {
+		if err := os.WriteFile(irohConfigPath, []byte(irohConfig), 0644); err != nil {
+			return fmt.Errorf("failed to write iroh-relay config: %v", err)
+		}
+	}
+
+	// Create systemd service
+	servicePath := filepath.Join(config.SystemdPath, "iroh-relay.service")
+	debugEnv := ""
+	if config.Debug {
+		debugEnv = "Environment=RUST_LOG=debug\n"
+	}
+	serviceContent := fmt.Sprintf(`[Unit]
+Description=Iroh Relay
+After=network.target
+
+[Service]
+%sExecStart=%s --config-path %s
+Restart=on-failure
+User=%s
+Group=%s
+
+[Install]
+WantedBy=multi-user.target
+`, debugEnv, irohRelayPath, irohConfigPath, config.MaddyUser, config.MaddyGroup)
+
+	if dryRun {
+		silentPrint(config.NoLog, "Dry-run: Writing systemd service for iroh-relay to %s\n", servicePath)
+	} else {
+		if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+			return fmt.Errorf("failed to write iroh-relay service file: %v", err)
+		}
+
+		if !config.SkipSystemd {
+			exec.Command("systemctl", "daemon-reload").Run()
+			exec.Command("systemctl", "enable", "iroh-relay").Run()
+			exec.Command("systemctl", "restart", "iroh-relay").Run()
+		}
+	}
 
 	return nil
 }
