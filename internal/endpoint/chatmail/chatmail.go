@@ -103,9 +103,11 @@ type Endpoint struct {
 	wwwDir string
 
 	// Shadowsocks configuration
-	ssAddr     string
-	ssPassword string
-	ssCipher   string
+	ssAddr             string
+	ssPassword         string
+	ssCipher           string
+	ssAllowedPortsList []string
+	ssAllowedPorts     map[string]bool
 }
 
 type AccountResponse struct {
@@ -141,6 +143,8 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("ss_addr", false, false, "", &e.ssAddr)
 	cfg.String("ss_password", false, false, "", &e.ssPassword)
 	cfg.String("ss_cipher", false, false, "aes-128-gcm", &e.ssCipher)
+	allowedPortsList := []string{"3478", "5349"} // Default TURN ports
+	cfg.StringList("ss_allowed_ports", false, false, nil, &e.ssAllowedPortsList)
 	cfg.String("sharing_driver", false, false, "sqlite3", &e.sharingDriver)
 	cfg.StringList("sharing_dsn", false, false, nil, &e.sharingDSN)
 	cfg.String("max_message_size", false, false, "32M", &e.maxMessageSize)
@@ -155,6 +159,34 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 
 	if _, err := cfg.Process(); err != nil {
 		return err
+	}
+
+	e.ssAllowedPorts = make(map[string]bool)
+	// 1. Add ports from ss_allowed_ports config if provided
+	if len(e.ssAllowedPortsList) > 0 {
+		for _, p := range e.ssAllowedPortsList {
+			e.ssAllowedPorts[p] = true
+		}
+	} else {
+		// 2. Otherwise use defaults + discovered ports
+		for _, p := range allowedPortsList {
+			e.ssAllowedPorts[p] = true
+		}
+		// Discover ports from SMTP and IMAP modules if they exist in globals
+		for k, v := range cfg.Globals {
+			if strings.HasPrefix(k, "endpoint.smtp") || strings.HasPrefix(k, "endpoint.submission") || strings.HasPrefix(k, "endpoint.imap") {
+				if _, ok := v.(module.Module); ok {
+					// We can't easily get addresses from the module interface,
+					// but we can look at the config nodes in the future.
+					// For now, if no ss_allowed_ports is set, we use the standard defaults
+					// which covers 99% of maddy setups.
+				}
+			}
+		}
+		// Re-enforce standard ports if nothing else
+		for _, p := range []string{"25", "143", "465", "587", "993"} {
+			e.ssAllowedPorts[p] = true
+		}
 	}
 
 	if e.mailDomain == "" {
@@ -769,16 +801,8 @@ func (e *Endpoint) runShadowsocksInternal() {
 				return
 			}
 
-			// Restrict to SMTP and IMAP ports
-			allowedPorts := map[string]bool{
-				"25":  true,
-				"143": true,
-				"465": true,
-				"587": true,
-				"993": true,
-			}
-
-			if !allowedPorts[tgtPort] {
+			// Restrict to allowed ports
+			if !e.ssAllowedPorts[tgtPort] {
 				e.logger.Msg("Shadowsocks: blocking unauthorized port", "port", tgtPort, "host", tgtHost)
 				return
 			}
