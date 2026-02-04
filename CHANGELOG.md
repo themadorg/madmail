@@ -1,3 +1,10 @@
+## [0.12.7](https://github.com/themadorg/madmail/compare/v0.12.6...v0.12.7) (2026-02-04)
+
+
+### Bug Fixes
+
+* **chatmail:** allow TURN and dynamic ports in Shadowsocks proxy ([2c9f40a](https://github.com/themadorg/madmail/commit/2c9f40a0dc06fb9b4775513f2e16bb8e119e7ed5))
+
 ## [0.12.6](https://github.com/themadorg/madmail/compare/v0.12.5...v0.12.6) (2026-02-03)
 
 
