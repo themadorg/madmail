@@ -1,3 +1,10 @@
+## [0.12.8](https://github.com/themadorg/madmail/compare/v0.12.7...v0.12.8) (2026-02-04)
+
+
+### Bug Fixes
+
+* **dist/apparmor:** extend rules to fit madmail ([#30](https://github.com/themadorg/madmail/issues/30)) ([1bdcb18](https://github.com/themadorg/madmail/commit/1bdcb18f1938d0264db0bcd24dd1534b0ea3a51e))
+
 ## [0.12.7](https://github.com/themadorg/madmail/compare/v0.12.6...v0.12.7) (2026-02-04)
 
 
