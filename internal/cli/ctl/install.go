@@ -319,7 +319,7 @@ Examples:
 				},
 				&cli.StringFlag{
 					Name:  "ip",
-					Usage: "Public IP address (automatically sets domain and IP for simple install)",
+					Usage: "Public IP address (sets domain/hostname in --simple mode, only PublicIP in advanced mode)",
 				},
 				&cli.BoolFlag{
 					Name:    "debug",
@@ -535,8 +535,17 @@ func installCommand(ctx *cli.Context) error {
 			config.Hostname = ctx.String("ip")
 			config.SkipPrompts = true
 		}
-	} else if ctx.Bool("turn-off-tls") {
-		config.TurnOffTLS = true
+	} else {
+		// Advanced mode
+		if ctx.Bool("turn-off-tls") {
+			config.TurnOffTLS = true
+		}
+		// Process --ip flag in advanced mode: only sets PublicIP and A record
+		if ctx.IsSet("ip") {
+			config.PublicIP = ctx.String("ip")
+			config.A = config.PublicIP
+			// Note: Domain and hostname come from their own flags or prompts
+		}
 	}
 
 	if ctx.Bool("enable-ss") {
