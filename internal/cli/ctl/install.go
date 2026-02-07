@@ -560,6 +560,7 @@ func installCommand(ctx *cli.Context) error {
 	} else if ctx.IsSet("enable-turn") {
 		config.EnableTURN = ctx.Bool("enable-turn")
 	}
+	// If neither --disable-turn nor --enable-turn is set, keep the default (true)
 
 	if ctx.IsSet("turn-server") {
 		config.EnableTURN = true
@@ -618,6 +619,11 @@ func installCommand(ctx *cli.Context) error {
 		if err := runInteractiveConfig(config); err != nil {
 			return fmt.Errorf("interactive configuration failed: %v", err)
 		}
+	}
+
+	// Ensure all required secrets are generated (for both interactive and non-interactive modes)
+	if err := ensureRequiredSecrets(config); err != nil {
+		return err
 	}
 
 	logger.Printf("Configuration: %+v", config)
@@ -755,28 +761,6 @@ func runInteractiveConfig(config *InstallConfig) error {
 		}
 
 		config.A = config.PublicIP
-
-		// Generate a random password for Shadowsocks if it's enabled and not set
-		if config.EnableSS && config.SSPassword == "" {
-			b := make([]byte, 16)
-			if _, err := rand.Read(b); err != nil {
-				return fmt.Errorf("failed to generate shadowsocks password: %v", err)
-			}
-			config.SSPassword = base64.RawURLEncoding.EncodeToString(b)
-		}
-
-		if config.EnableTURN {
-			if config.TURNServer == "" {
-				config.TURNServer = config.Hostname
-			}
-			if config.TURNSecret == "" {
-				b := make([]byte, 16)
-				if _, err := rand.Read(b); err != nil {
-					return fmt.Errorf("failed to generate TURN secret: %v", err)
-				}
-				config.TURNSecret = base64.RawURLEncoding.EncodeToString(b)
-			}
-		}
 
 		return nil
 	}
@@ -941,6 +925,33 @@ func promptInt(prompt string, defaultValue int) int {
 		}
 		fmt.Printf("Invalid number, please try again.\n")
 	}
+}
+
+// ensureRequiredSecrets generates any required but missing secrets
+func ensureRequiredSecrets(config *InstallConfig) error {
+	// Generate a random password for Shadowsocks if it's enabled and not set
+	if config.EnableSS && config.SSPassword == "" {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			return fmt.Errorf("failed to generate shadowsocks password: %v", err)
+		}
+		config.SSPassword = base64.RawURLEncoding.EncodeToString(b)
+	}
+
+	if config.EnableTURN {
+		if config.TURNServer == "" {
+			config.TURNServer = config.Hostname
+		}
+		if config.TURNSecret == "" {
+			b := make([]byte, 16)
+			if _, err := rand.Read(b); err != nil {
+				return fmt.Errorf("failed to generate TURN secret: %v", err)
+			}
+			config.TURNSecret = base64.RawURLEncoding.EncodeToString(b)
+		}
+	}
+
+	return nil
 }
 
 func checkSystemRequirements(config *InstallConfig, dryRun bool) error {
