@@ -249,6 +249,9 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	}
 
 	e.mux = http.NewServeMux()
+	// Priority 0: Well-known endpoints (DKIM key publishing for federation)
+	e.mux.HandleFunc("/.well-known/_domainkey/", e.handleDKIMKey)
+
 	// Priority 1: API endpoints
 	e.mux.HandleFunc("/new", e.handleNewAccount)
 	e.mux.HandleFunc("/qr", e.handleQRCode)
@@ -656,6 +659,73 @@ func (e *Endpoint) handleBinaryDownload(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 
 	http.ServeFile(w, r, executablePath)
+}
+
+// handleDKIMKey serves the DKIM public key record via HTTPS.
+// This enables federation with chatmail relays by providing a fallback
+// mechanism for DKIM key retrieval when DNS lookup is not available.
+// URL format: /.well-known/_domainkey/<selector>
+// Response: plain text DKIM DNS TXT record (e.g., "v=DKIM1; k=rsa; p=...")
+//
+// Security: This endpoint only serves public key material (the same data
+// that would be published in DNS TXT records). No private keys or
+// sensitive metadata are exposed.
+func (e *Endpoint) handleDKIMKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract selector from URL path: /.well-known/_domainkey/<selector>
+	selector := strings.TrimPrefix(r.URL.Path, "/.well-known/_domainkey/")
+	selector = strings.TrimSuffix(selector, "/")
+
+	if selector == "" {
+		http.Error(w, "Missing selector", http.StatusBadRequest)
+		return
+	}
+
+	// Defense-in-depth: canonicalize to bare filename component
+	selector = filepath.Base(selector)
+
+	// Strict whitelist: DKIM selectors per RFC 6376 are limited to
+	// alphanumeric characters, hyphens, and underscores.
+	// Reject anything else to prevent path injection or encoding tricks.
+	for _, c := range selector {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+			http.Error(w, "Invalid selector", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Length limit to prevent abuse
+	if len(selector) > 64 {
+		http.Error(w, "Invalid selector", http.StatusBadRequest)
+		return
+	}
+
+	// Strip brackets from IP-literal domains for file lookup
+	domain := strings.Trim(e.mailDomain, "[]")
+
+	// Build path to the DKIM DNS record file
+	// Convention: {state_dir}/dkim_keys/{domain}_{selector}.dns
+	dnsPath := filepath.Join(config.StateDirectory, "dkim_keys", fmt.Sprintf("%s_%s.dns", domain, selector))
+
+	dnsContent, err := os.ReadFile(dnsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			e.logger.Debugf("DKIM key not found for selector %q", selector)
+			http.Error(w, "DKIM key not found", http.StatusNotFound)
+			return
+		}
+		e.logger.Error("failed to read DKIM DNS record", err, "selector", selector)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24h
+	w.Write([]byte(strings.TrimSpace(string(dnsContent))))
 }
 
 func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {

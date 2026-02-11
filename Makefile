@@ -1,4 +1,4 @@
-.PHONY: all build install clean test vet lint tidy coverage deploy push publish log1 log2
+.PHONY: all build install clean test vet lint tidy coverage deploy push publish sign log1 log2
 
 # Default target
 all: build
@@ -56,17 +56,23 @@ install: build
 	sudo ./$(BINARY) install --simple --ip 127.0.0.1
 	sudo systemctl start maddy.service
 
-# Remote deployment helper
+# Signing key for dev deployments (same path as publish.sh)
+PRIV_KEY_FILE ?= ../imp/private_key.hex
+
+# Sign the binary for deployment
+sign:
+	@echo "🔏 Signing binary..."
+	@uv run internal/cli/clitools/sign.py $(BINARY) $(PRIV_KEY_FILE)
+
+# Remote deployment helper (sign → upload → upgrade with signature verification)
 define deploy_remote
-	scp $(BINARY) root@$(1):~/ 
-	@echo "Updating remote instance ($(1))" 
-	ssh root@$(1) "sudo systemctl stop maddy.service || true"
-	ssh root@$(1) "sudo rm -f /usr/local/bin/maddy || true"
-	ssh root@$(1) "sudo ./maddy install --simple --ip $(1) --enable-iroh && sudo systemctl restart maddy.service"
+	scp $(BINARY) root@$(1):~/maddy-new
+	@echo "Upgrading remote instance ($(1))"
+	ssh root@$(1) "sudo /usr/local/bin/maddy upgrade ~/maddy-new && rm ~/maddy-new"
 endef
 
-# Push to both servers
-push: build
+# Push to both servers (sign once, deploy to both)
+push: build sign
 	$(call deploy_remote,$(REMOTE1))
 	$(call deploy_remote,$(REMOTE2))
 

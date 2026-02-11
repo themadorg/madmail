@@ -21,7 +21,8 @@ func init() {
 		Usage: "Upgrade maddy binary from a local file or URL",
 		Description: `Upgrade the maddy binary. This command verifies the Ed25519 signature
 appended to the file before replacing the current executable.
-It automatically handles stopping and starting the maddy.service via systemd.`,
+It automatically handles stopping and starting the maddy.service via systemd.
+The existing configuration (maddy.conf) is never modified by this command.`,
 		ArgsUsage: "PATH_OR_URL",
 		Action:    upgradeCommand,
 	})

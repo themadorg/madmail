@@ -13,6 +13,7 @@ Run common developer tasks from the repository root.
 - **[Contributing Guide](../CONTRIBUTING.md)** - Detailed workflow, branching, and PR instructions.
 - **[E2E Testing Guide](./chatmail/e2e_test.md)** - Details on running the Python-based test suite.
 - **[Iroh Relay Integration](./chatmail/iroh.md)** - Details on the Iroh P2P networking stack.
+- **[DKIM Signing & Key Publishing](./chatmail/dkim.md)** - DKIM signing and HTTPS key publishing for federation.
 
 ## Building with Iroh Relay
 
