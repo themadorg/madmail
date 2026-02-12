@@ -172,17 +172,17 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 		for _, p := range allowedPortsList {
 			e.ssAllowedPorts[p] = true
 		}
-		// Discover ports from SMTP and IMAP modules if they exist in globals
-		for k, v := range cfg.Globals {
-			if strings.HasPrefix(k, "endpoint.smtp") || strings.HasPrefix(k, "endpoint.submission") || strings.HasPrefix(k, "endpoint.imap") {
-				if _, ok := v.(module.Module); ok {
-					// We can't easily get addresses from the module interface,
-					// but we can look at the config nodes in the future.
-					// For now, if no ss_allowed_ports is set, we use the standard defaults
-					// which covers 99% of maddy setups.
-				}
-			}
-		}
+		// TODO: Discover ports from SMTP and IMAP modules if they exist in globals
+		// for k, v := range cfg.Globals {
+		// 	if strings.HasPrefix(k, "endpoint.smtp") || strings.HasPrefix(k, "endpoint.submission") || strings.HasPrefix(k, "endpoint.imap") {
+		// 		if _, ok := v.(module.Module); ok {
+		// 			// We can't easily get addresses from the module interface,
+		// 			// but we can look at the config nodes in the future.
+		// 			// For now, if no ss_allowed_ports is set, we use the standard defaults
+		// 			// which covers 99% of maddy setups.
+		// 		}
+		// 	}
+		// }
 		// Re-enforce standard ports if nothing else
 		for _, p := range []string{"25", "143", "465", "587", "993"} {
 			e.ssAllowedPorts[p] = true
@@ -725,7 +725,7 @@ func (e *Endpoint) handleDKIMKey(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24h
-	w.Write([]byte(strings.TrimSpace(string(dnsContent))))
+	_, _ = w.Write([]byte(strings.TrimSpace(string(dnsContent))))
 }
 
 func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
