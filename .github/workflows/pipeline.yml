@@ -46,6 +46,10 @@ jobs:
           cache: true
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+      - name: Create iroh-relay placeholder for linting
+        run: |
+          mkdir -p internal/endpoint/iroh/assets
+          touch internal/endpoint/iroh/assets/iroh-relay
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.60
