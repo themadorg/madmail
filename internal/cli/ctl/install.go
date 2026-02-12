@@ -1535,9 +1535,9 @@ WantedBy=multi-user.target
 		}
 
 		if !config.SkipSystemd {
-			exec.Command("systemctl", "daemon-reload").Run()
-			exec.Command("systemctl", "enable", "iroh-relay").Run()
-			exec.Command("systemctl", "restart", "iroh-relay").Run()
+			_ = exec.Command("systemctl", "daemon-reload").Run()
+			_ = exec.Command("systemctl", "enable", "iroh-relay").Run()
+			_ = exec.Command("systemctl", "restart", "iroh-relay").Run()
 		}
 	}
 
