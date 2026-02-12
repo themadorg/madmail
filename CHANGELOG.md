@@ -1,3 +1,10 @@
+## [0.13.1](https://github.com/themadorg/madmail/compare/v0.13.0...v0.13.1) (2026-02-12)
+
+
+### Bug Fixes
+
+* in non-interactive installs, make --ip work and autogenerate TURN secret ([#32](https://github.com/themadorg/madmail/issues/32)) ([93b5f87](https://github.com/themadorg/madmail/commit/93b5f872971828a0787dd1eec287177e2884dd35))
+
 # [0.13.0](https://github.com/themadorg/madmail/compare/v0.12.8...v0.13.0) (2026-02-11)
 
 
