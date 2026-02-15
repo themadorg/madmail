@@ -1,132 +1,225 @@
 <!DOCTYPE html>
 <html dir="rtl" lang="fa">
-
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>امنیت — {{.MailDomain}}</title>
     <link rel="stylesheet" href="./main.css">
-    <style>
-        body {
-            font-family: Tahoma, Arial, sans-serif;
-            text-align: center;
-        }
-
-        #menu {
-            justify-content: center;
-            display: flex;
-            list-style: none;
-            padding: 0;
-            margin-bottom: 40px;
-        }
-
-        #menu li {
-            margin: 0 10px;
-        }
-
-        h2 {
-            margin-bottom: 20px;
-        }
-
-        .security-box {
-            text-align: right;
-            display: inline-block;
-            max-width: 650px;
-            width: 90%;
-            margin: 20px auto;
-            line-height: 1.8;
-            background: rgba(255, 68, 68, 0.05);
-            padding: 25px;
-            border-radius: 12px;
-            border: 1px solid rgba(255, 68, 68, 0.2);
-        }
-
-        .warning-text {
-            color: #ff4444;
-            font-weight: bold;
-        }
-
-        ul {
-            padding-right: 20px;
-        }
-
-        li {
-            margin-bottom: 15px;
-        }
-
-        .highlight {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: monospace;
-            direction: ltr;
-            display: inline-block;
-        }
-    </style>
     <script src="./main.js"></script>
+    <link rel="icon" href="/logo.svg">
 </head>
 
 <body>
-    <ul id="menu">
-        <li><a href="/">اصلی</a></li>
-        <li><a href="/share">اشتراک‌گذاری</a></li>
-        <li><a href="/info.html">راهنما</a></li>
-        <li><a href="/security.html">امنیت</a></li>
-        <li><a href="/deploy.html">راه‌اندازی</a></li>
-    </ul>
-    <h2>امنیت و حریم خصوصی</h2>
-    <div class="security-box">
-        <p>کاربران عزیز توجه داشته باشید که دلتاچت می‌تواند هم برای ارتباط <strong>امن و رمزنگاری‌شده</strong>و هم برای
-            ارتباط <strong>غیر امن (ایمیل سنتی)</strong>استفاده شود.</p>
-        <p class="warning-text">برای حفظ امنیت کامل، حتما موارد زیر را رعایت کنید:</p>
-        <ul>
-            <li><strong>توقف استفاده از ایمیل کلاسیک:</strong>در تنظیمات دلتاچت، بخش <span
-                    class="highlight">Advanced</span>، گزینه «ایمیل سنتی» را روی <strong>«نه»</strong>قرار دهید.</li>
-            <li><strong>تشخیص پیام‌های ناامن:</strong> پیام‌هایی که با آیکون <strong>پاکت‌نامه</strong> یا <strong>آیکون
-                    خاکستری</strong> ظاهر می‌شوند، در واقع ناامن هستند. آیکون خاکستری نشان‌دهنده غیرفعال بودن رمزنگاری
-                است.</li>
-            <li><strong>شروع چت فقط با لینک:</strong>به هیچ عنوان مستقیما به ID (آدرس ایمیل) پیام ندهید. ارتباط باید
-                حتما از طریق اشتراک‌گذاری لینک به فرمت <span class="highlight">https: //i.delta.chat/#..</span> شروع
-                شود.
-
-                هرگونه ID خارج از این فرمت ناامن است.</li>
-            <li><strong>تفاوت سرورها:</strong>سرورهای <span class="highlight">chatmail</span>(مانند <span
-                    class="highlight">tiiz.ir</span>) تبادل ایمیل رمزنشده را کلا رد می‌کنند. اما <span
-                    class="highlight">madmail</span>در نسخه‌های قدیمی ممکن است اجازه ارسال غیرامن را بدهد که توسط صاحب
-                سرور یا دیتاسنتر قابل مشاهده است.</li>
+    <div class="container">
+        <ul id="menu">
+            <li><a href="/">اصلی</a></li>
+            <li><a href="/share">اشتراک‌گذاری</a></li>
+            <li><a href="/info.html">راهنما</a></li>
+            <li><a href="/security.html" class="active">امنیت</a></li>
+            <li><a href="/deploy.html">راه‌اندازی</a></li>
         </ul>
-        <div style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
-            <p>💡 <strong>نکته برای مدیران:</strong>اگر از نسخه‌های قدیمی Madmail استفاده می‌کنید، حتما سرور خود را
-                به‌روزرسانی کنید تا امنیت کاربران حفظ شود.</p>
-        </div>
-    </div>
-    {{if .SSURL}}
-    <div class="ss-prominent-box">
-        <strong>🚀 لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
-            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
 
-        <div class="ss-copy-container">
-            <p>لینک پروکسی Shadowsocks:</p>
-            <div class="ss-copy-text" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+        <div class="hero text-center">
+            <h1>امنیت و حریم خصوصی</h1>
+            <p class="hero-subtitle">
+                راهنمای کامل استفاده امن از دلتاچت
+            </p>
         </div>
 
-        <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+        <div class="alert alert-warning text-right" style="margin-bottom: var(--spacing-xl);">
+            <strong>⚠️ نکته مهم:</strong>
+            <p style="margin-top: var(--spacing-sm);">
+                دلتاچت می‌تواند هم برای ارتباط <strong>امن و رمزنگاری‌شده</strong> و هم برای ارتباط
+                <strong>غیر امن (ایمیل سنتی)</strong> استفاده شود. برای حفظ امنیت کامل، حتماً مراحل زیر را دنبال کنید.
+            </p>
+        </div>
 
-        <p
-            style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
-            * این پروکسی مختص همین سرور Madmail است.
-        </p>
+        <h2 style="text-align: center; margin-bottom: var(--spacing-xl);">مراحل تامین امنیت</h2>
+
+        <ul class="step-list">
+            <li class="step-item">
+                <h3 style="margin-bottom: var(--spacing-sm);">غیرفعال کردن ایمیل کلاسیک</h3>
+                <p>در تنظیمات دلتاچت، به بخش <span class="badge badge-primary">Advanced</span> بروید و گزینه
+                «ایمیل سنتی» (Classic Email) را روی <strong>«نه»</strong> (No) قرار دهید.</p>
+                <div class="code-block" style="margin-top: var(--spacing-md); text-align: center;">
+                    Settings → Advanced → Classic Email → <strong>No</strong>
+                </div>
+            </li>
+
+            <li class="step-item">
+                <h3 style="margin-bottom: var(--spacing-sm);">تشخیص پیام‌های ناامن</h3>
+                <p>پیام‌هایی که با <strong>آیکون پاکت‌نامه 📧</strong> یا <strong>آیکون خاکستری 🔓</strong>
+                ظاهر می‌شوند، در واقع ناامن هستند. آیکون خاکستری نشان‌دهنده غیرفعال بودن رمزنگاری است.</p>
+                <div style="display: flex; gap: var(--spacing-lg); margin-top: var(--spacing-md); justify-content: center; flex-wrap: wrap;">
+                    <div class="badge badge-success" style="font-size: 1rem; padding: 12px 20px;">
+                        🔒 امن (رمزنگاری شده)
+                    </div>
+                    <div class="badge badge-danger" style="font-size: 1rem; padding: 12px 20px;">
+                        🔓 ناامن (بدون رمزنگاری)
+                    </div>
+                </div>
+            </li>
+
+            <li class="step-item">
+                <h3 style="margin-bottom: var(--spacing-sm);">شروع چت فقط با لینک</h3>
+                <p>به هیچ عنوان مستقیماً به ID (آدرس ایمیل) پیام ندهید. ارتباط باید حتماً از طریق
+                اشتراک‌گذاری لینک به فرمت زیر شروع شود:</p>
+                <div class="code-block" style="margin-top: var(--spacing-md); text-align: center; font-size: 1.1rem;">
+                    https://i.delta.chat/#...
+                </div>
+                <p style="margin-top: var(--spacing-sm); color: var(--danger);">
+                    <strong>هشدار:</strong> هرگونه ID خارج از این فرمت ناامن است!
+                </p>
+            </li>
+
+            <li class="step-item">
+                <h3 style="margin-bottom: var(--spacing-sm);">تفاوت سرورها</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--spacing-md); margin-top: var(--spacing-md);">
+                    <div style="padding: var(--spacing-md); background: rgba(46, 204, 113, 0.1); border: 1px solid rgba(46, 204, 113, 0.3); border-radius: var(--radius-md);">
+                        <h4 style="color: var(--success); margin-bottom: var(--spacing-sm);">✅ Chatmail (tiiz.ir)</h4>
+                        <p style="font-size: 0.95rem;">تبادل ایمیل رمزنشده را کلاً رد می‌کنند. امنیت کامل تضمین شده.</p>
+                    </div>
+                    <div style="padding: var(--spacing-md); background: rgba(243, 156, 18, 0.1); border: 1px solid rgba(243, 156, 18, 0.3); border-radius: var(--radius-md);">
+                        <h4 style="color: var(--warning); margin-bottom: var(--spacing-sm);">⚠️ Madmail (نسخه قدیم)</h4>
+                        <p style="font-size: 0.95rem;">ممکن است اجازه ارسال غیرامن را بدهد که توسط صاحب سرور یا دیتاسنتر قابل مشاهده است.</p>
+                    </div>
+                </div>
+            </li>
+        </ul>
+
+        <div class="glass-card" style="margin-top: var(--spacing-2xl); text-align: right;">
+            <h3 style="margin-bottom: var(--spacing-lg);">📋 چک‌لیست امنیتی</h3>
+            <div style="display: grid; gap: var(--spacing-md);">
+                <div style="display: flex; align-items: start; gap: var(--spacing-md); padding: var(--spacing-md); background: var(--glass-bg); border-radius: var(--radius-md);">
+                    <span style="font-size: 1.5rem;">☑️</span>
+                    <div>
+                        <strong>ایمیل کلاسیک غیرفعال شده است</strong>
+                        <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary);">
+                            Settings > Advanced > Classic Email = No
+                        </p>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: start; gap: var(--spacing-md); padding: var(--spacing-md); background: var(--glass-bg); border-radius: var(--radius-md);">
+                    <span style="font-size: 1.5rem;">☑️</span>
+                    <div>
+                        <strong>فقط از لینک‌های اشتراک‌گذاری استفاده می‌کنم</strong>
+                        <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary);">
+                            هرگز به آدرس ایمیل مستقیم پیام نمی‌فرستم
+                        </p>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: start; gap: var(--spacing-md); padding: var(--spacing-md); background: var(--glass-bg); border-radius: var(--radius-md);">
+                    <span style="font-size: 1.5rem;">☑️</span>
+                    <div>
+                        <strong>آیکون‌های امنیتی را بررسی می‌کنم</strong>
+                        <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary);">
+                            فقط پیام‌های با آیکون قفل سبز را امن می‌دانم
+                        </p>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: start; gap: var(--spacing-md); padding: var(--spacing-md); background: var(--glass-bg); border-radius: var(--radius-md);">
+                    <span style="font-size: 1.5rem;">☑️</span>
+                    <div>
+                        <strong>دلتاچت به‌روز است</strong>
+                        <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary);">
+                            آخرین نسخه دلتاچت نصب شده است
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-card" style="margin-top: var(--spacing-xl); border-color: var(--primary); background: rgba(0, 210, 255, 0.05);">
+            <div style="text-align: center;">
+                <h3 style="margin-bottom: var(--spacing-md);">💡 نکته برای مدیران سرور</h3>
+                <p style="font-size: 1.05rem; line-height: 2;">
+                    اگر از نسخه‌های قدیمی Madmail استفاده می‌کنید، حتماً سرور خود را به‌روزرسانی کنید
+                    تا امنیت کاربران حفظ شود. نسخه‌های جدید به صورت پیش‌فرض ارسال پیام‌های رمزنشده را مسدود می‌کنند.
+                </p>
+            </div>
+        </div>
+
+        <div class="glass-card" style="margin-top: var(--spacing-xl); text-align: right;">
+            <h3 style="margin-bottom: var(--spacing-lg);">❓ سوالات متداول</h3>
+
+            <div class="accordion">
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <strong>چطور می‌فهمم پیامم رمزنگاری شده است؟</strong>
+                        <span class="accordion-icon">▼</span>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="accordion-body">
+                            <p>پیام‌های رمزنگاری شده با آیکون قفل سبز 🔒 نمایش داده می‌شوند. اگر آیکون پاکت‌نامه یا قفل خاکستری می‌بینید، پیام رمزنگاری نشده است.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <strong>آیا می‌توانم با ایمیل‌های معمولی ارتباط بگیرم؟</strong>
+                        <span class="accordion-icon">▼</span>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="accordion-body">
+                            <p>بله، اما این ارتباط امن نیست. توصیه می‌شود فقط با کاربرانی که دلتاچت دارند و از لینک اشتراک‌گذاری استفاده می‌کنند، چت کنید.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <strong>سرور می‌تواند پیام‌های من را بخواند؟</strong>
+                        <span class="accordion-icon">▼</span>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="accordion-body">
+                            <p>اگر از رمزنگاری End-to-End استفاده کنید، سرور نمی‌تواند محتوای پیام‌های شما را بخواند. فقط شما و گیرنده پیام می‌توانید آن را ببینید.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <strong>چرا باید ایمیل کلاسیک را غیرفعال کنم؟</strong>
+                        <span class="accordion-icon">▼</span>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="accordion-body">
+                            <p>غیرفعال کردن ایمیل کلاسیک باعث می‌شود دلتاچت فقط با کاربران دیگر دلتاچت که از رمزنگاری استفاده می‌کنند، ارتباط برقرار کند و از ارسال/دریافت پیام‌های ناامن جلوگیری شود.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{if .SSURL}}
+        <div class="ss-prominent-box">
+            <strong>🚀 برای سرعت بیشتر از پروکسی اختصاصی استفاده کنید</strong>
+            <p>این پروکسی فقط برای این سرور و فقط برای پیام‌رسانی به این سرور قابل استفاده است.</p>
+
+            <div class="ss-copy-container">
+                <p style="font-size: 0.9rem; color: var(--text-tertiary);">لینک پروکسی Shadowsocks:</p>
+                <div class="ss-copy-text" onclick="MadmailApp.copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+            </div>
+
+            <p style="font-size: 0.9rem; color: var(--text-secondary); margin-top: var(--spacing-md);">
+                نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5
+            </p>
+        </div>
+        {{end}}
+
+        <footer>
+            <p>
+                نسخه {{.Version}} |
+                <a href="/">صفحه اصلی</a> |
+                <a href="/info.html">راهنما</a>
+            </p>
+        </footer>
     </div>
-    {{end}}
-
-    <footer style="margin-top: 50px; padding: 20px; font-size: 0.8em; color: #888;">نسخه {
-        {
-        .Version
-        }
-        }
-
-    </footer>
 </body>
 
 </html>
