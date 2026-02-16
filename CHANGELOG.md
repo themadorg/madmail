@@ -1,3 +1,18 @@
+# [0.14.0](https://github.com/themadorg/madmail/compare/v0.13.2...v0.14.0) (2026-02-16)
+
+
+### Bug Fixes
+
+* add maddy online command documentation to admin docs ([08d4fbe](https://github.com/themadorg/madmail/commit/08d4fbe1aff6185db3203ce89b421a498aca52f7))
+* remove hardcoded sqlite3 defaults for db driver/dsn ([77176cd](https://github.com/themadorg/madmail/commit/77176cdcad7fc2a2c50797dab9eea324afbb37ae))
+* use GORM for user count query to support all database backends ([0bbfd02](https://github.com/themadorg/madmail/commit/0bbfd02497dced47e4517be1aa4d07ea673f49c0))
+* use pre tags for multi-line sample outputs in admin docs ([7a24067](https://github.com/themadorg/madmail/commit/7a24067a86851df2145f0e290277b7298ecdc186))
+
+
+### Features
+
+* rename 'maddy online' to 'maddy status' and add registered user count ([db8ba9b](https://github.com/themadorg/madmail/commit/db8ba9ba89c2164d52f2f9dce53fc13de6e51477))
+
 ## [0.13.2](https://github.com/themadorg/madmail/compare/v0.13.1...v0.13.2) (2026-02-16)
 
 
