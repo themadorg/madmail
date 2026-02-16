@@ -288,28 +288,29 @@ func getTurnRelayConnections(knownPorts map[string]bool) (int, error) {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 4 {
+		// ss -unap output: State Recv-Q Send-Q LocalAddr:Port PeerAddr:Port Process
+		//                  [0]   [1]    [2]    [3]            [4]           [5]
+		if len(fields) < 5 {
 			continue
 		}
-		// Skip entries with no peer (listening sockets)
-		if fields[3] == "*:*" || fields[3] == "0.0.0.0:*" || fields[3] == "[::]:*" {
-			// This is a listening/unconnected socket.
-			// Extract the local port and skip if it's a known port (3478 etc)
-			localAddr := fields[2]
-			localPort := extractPort(localAddr)
-			if knownPorts[localPort] {
-				continue // This is the main TURN listening socket
-			}
-			// This is an ephemeral relay socket (allocated by TURN)
+		localAddr := fields[3]
+		peerAddr := fields[4]
+		localPort := extractPort(localAddr)
+
+		// Skip known listening ports (e.g. 3478)
+		if knownPorts[localPort] {
+			continue
+		}
+
+		// Skip entries with no peer that aren't relay sockets
+		// Relay sockets have UNCONN state and peer *:* but on ephemeral ports
+		if peerAddr == "*:*" || peerAddr == "0.0.0.0:*" || peerAddr == "[::]:*" {
+			// Ephemeral UNCONN socket owned by maddy = TURN relay allocation
 			count++
 			continue
 		}
 		// Connected UDP socket (has a peer) — also a relay
-		localAddr := fields[2]
-		localPort := extractPort(localAddr)
-		if !knownPorts[localPort] {
-			count++
-		}
+		count++
 	}
 	return count, nil
 }
