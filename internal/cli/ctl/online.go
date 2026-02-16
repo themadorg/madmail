@@ -268,6 +268,61 @@ func parseSSOutput(output []byte) ([]connectionInfo, error) {
 	return conns, nil
 }
 
+// getTurnRelayConnections counts active TURN relay allocations by finding
+// maddy-owned UDP sockets on ephemeral ports (not the known TURN listening ports).
+// TURN relay connections use dynamically allocated UDP ports, not port 3478.
+func getTurnRelayConnections(knownPorts map[string]bool) (int, error) {
+	// List all UDP sockets with process info
+	cmd := exec.Command("ss", "-unap")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Only count maddy-owned sockets
+		if !strings.Contains(line, "\"maddy\"") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		// Skip entries with no peer (listening sockets)
+		if fields[3] == "*:*" || fields[3] == "0.0.0.0:*" || fields[3] == "[::]:*" {
+			// This is a listening/unconnected socket.
+			// Extract the local port and skip if it's a known port (3478 etc)
+			localAddr := fields[2]
+			localPort := extractPort(localAddr)
+			if knownPorts[localPort] {
+				continue // This is the main TURN listening socket
+			}
+			// This is an ephemeral relay socket (allocated by TURN)
+			count++
+			continue
+		}
+		// Connected UDP socket (has a peer) — also a relay
+		localAddr := fields[2]
+		localPort := extractPort(localAddr)
+		if !knownPorts[localPort] {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// extractPort extracts the port from addr like "0.0.0.0:3478" or "*:3478" or "[::]:3478"
+func extractPort(addr string) string {
+	idx := strings.LastIndex(addr, ":")
+	if idx == -1 {
+		return addr
+	}
+	return addr[idx+1:]
+}
+
 // parseNetstatOutput parses netstat output filtering for the given port.
 func parseNetstatOutput(output []byte, port string) ([]connectionInfo, error) {
 	var conns []connectionInfo
@@ -324,18 +379,43 @@ func onlineAction(ctx *cli.Context) error {
 	serviceUniqueIPs := make(map[string]map[string]struct{})
 	serviceOrder := []string{"IMAP", "TURN", "Shadowsocks"}
 
+	// Collect known TURN ports to exclude from relay counting
+	knownTurnPorts := make(map[string]bool)
+	for _, p := range ports {
+		if p.Service == "TURN" && p.Proto == "udp" {
+			knownTurnPorts[p.Port] = true
+		}
+	}
+
 	for _, p := range ports {
 		conns, err := getEstablishedConnections(p.Port, p.Proto)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not query %s port %s: %v\n", p.Proto, p.Port, err)
 			continue
 		}
+
+		// For TURN UDP, also count relay allocations on ephemeral ports
+		if p.Service == "TURN" && p.Proto == "udp" {
+			relayCount, err := getTurnRelayConnections(knownTurnPorts)
+			if err == nil && relayCount > 0 {
+				// Each TURN allocation creates one relay socket
+				for i := 0; i < relayCount; i++ {
+					conns = append(conns, connectionInfo{
+						LocalAddr:  "relay",
+						RemoteAddr: "relay",
+					})
+				}
+			}
+		}
+
 		serviceTotals[p.Service] += len(conns)
 		if serviceUniqueIPs[p.Service] == nil {
 			serviceUniqueIPs[p.Service] = make(map[string]struct{})
 		}
 		for _, c := range conns {
-			serviceUniqueIPs[p.Service][extractIP(c.RemoteAddr)] = struct{}{}
+			if c.RemoteAddr != "relay" {
+				serviceUniqueIPs[p.Service][extractIP(c.RemoteAddr)] = struct{}{}
+			}
 		}
 		results = append(results, portResult{Info: p, Conns: conns})
 	}
@@ -347,7 +427,11 @@ func onlineAction(ctx *cli.Context) error {
 			continue
 		}
 		ips := len(serviceUniqueIPs[svc])
-		fmt.Printf("%-15s connections: %-6d unique IPs: %d\n", svc, count, ips)
+		if svc == "TURN" {
+			fmt.Printf("%-15s relays: %d\n", svc, count)
+		} else {
+			fmt.Printf("%-15s connections: %-6d unique IPs: %d\n", svc, count, ips)
+		}
 	}
 
 	if showDetails && len(results) > 0 {
@@ -358,9 +442,15 @@ func onlineAction(ctx *cli.Context) error {
 		for _, r := range results {
 			ips := make(map[string]struct{})
 			for _, c := range r.Conns {
-				ips[extractIP(c.RemoteAddr)] = struct{}{}
+				if c.RemoteAddr != "relay" {
+					ips[extractIP(c.RemoteAddr)] = struct{}{}
+				}
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\n", r.Info.Port, r.Info.Proto, r.Info.Label, len(r.Conns), len(ips))
+			if r.Info.Service == "TURN" && r.Info.Proto == "udp" {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%d relays\t-\n", r.Info.Port, r.Info.Proto, r.Info.Label, len(r.Conns))
+			} else {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\n", r.Info.Port, r.Info.Proto, r.Info.Label, len(r.Conns), len(ips))
+			}
 		}
 		w.Flush()
 	}
