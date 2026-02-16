@@ -1,3 +1,13 @@
+## [0.13.2](https://github.com/themadorg/madmail/compare/v0.13.1...v0.13.2) (2026-02-16)
+
+
+### Bug Fixes
+
+* add server tracker with boot time, unique sender tracking, and uptime display ([f9a05b8](https://github.com/themadorg/madmail/commit/f9a05b8b751fdcf0e9cac40ab4ebc29a5896157c))
+* correct ss output field indices for TURN relay detection ([d5ef99b](https://github.com/themadorg/madmail/commit/d5ef99b2f85730baee769eb6ab042a032f8b2d89))
+* detect TURN relay connections on ephemeral UDP ports ([20ba386](https://github.com/themadorg/madmail/commit/20ba3869da3dab0d1d5c23f2cca62cdafb228dd3))
+* tighten server_tracker.json permissions to 0640 ([3316912](https://github.com/themadorg/madmail/commit/33169129d5d5a8b4b5c0eeb538f65dc5a07fb54e))
+
 ## [0.13.1](https://github.com/themadorg/madmail/compare/v0.13.0...v0.13.1) (2026-02-12)
 
 
