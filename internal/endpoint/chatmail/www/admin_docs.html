@@ -266,23 +266,23 @@
         </div>
 
         <h2>مانیتورینگ اتصالات آنلاین</h2>
-        <p>دستور <code>maddy online</code> وضعیت لحظه‌ای اتصالات فعال سرور را نشان می‌دهد. این شامل اتصالات IMAP،
-            رله‌های TURN (تماس صوتی/تصویری) و Shadowsocks می‌شود. همچنین زمان بوت سرور و مدت آپتایم نیز نمایش داده
-            می‌شود.</p>
+        <p>دستور <code>maddy status</code> وضعیت لحظه‌ای سرور را نشان می‌دهد. این شامل اتصالات فعال IMAP،
+            رله‌های TURN (تماس صوتی/تصویری)، Shadowsocks، تعداد کاربران ثبت‌شده و زمان آپتایم می‌شود.</p>
 
         <div class="cmd-info">
             <h3>مشاهده اتصالات فعال</h3>
-            <p>نمایش خلاصه تعداد اتصالات فعال به تفکیک سرویس (IMAP، TURN، Shadowsocks) و همچنین زمان بوت و آپتایم سرور.
+            <p>نمایش خلاصه وضعیت سرور شامل اتصالات فعال، کاربران ثبت‌شده، زمان بوت و آپتایم.
             </p>
             <div class="code-block">
-                maddy online
+                maddy status
             </div>
             <p>خروجی نمونه:</p>
             <pre class="code-block">IMAP            connections: 27     unique IPs: 7
 TURN            relays: 1
 Shadowsocks     connections: 0      unique IPs: 0
 
-Boot time:  2026-02-16 20:56:19 (up 5m 24s)
+Registered users:   42
+Boot time:          2026-02-16 20:56:19 (up 5m 24s)
 
 Email servers seen (since last restart):
   Connection IPs:   1
@@ -295,7 +295,7 @@ Email servers seen (since last restart):
             <p>با استفاده از فلگ <code>--details</code> (یا <code>-d</code>) می‌توانید جزئیات اتصالات را به تفکیک هر
                 پورت ببینید.</p>
             <div class="code-block">
-                maddy online --details
+                maddy status --details
             </div>
             <p>خروجی نمونه:</p>
             <pre class="code-block">PORT   PROTO   TYPE              CONNECTIONS   UNIQUE IPs

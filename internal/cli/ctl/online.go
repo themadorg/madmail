@@ -2,15 +2,18 @@ package ctl
 
 import (
 	"bufio"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
 	parser "github.com/themadorg/madmail/framework/cfgparser"
 	maddycli "github.com/themadorg/madmail/internal/cli"
 	"github.com/themadorg/madmail/internal/servertracker"
@@ -19,14 +22,14 @@ import (
 
 func init() {
 	maddycli.AddSubcommand(&cli.Command{
-		Name:  "online",
-		Usage: "Show currently active connections (IMAP, TURN, Shadowsocks)",
-		Description: `Shows the number of currently active connections by inspecting
-established TCP/UDP connections to the listening ports.
+		Name:  "status",
+		Usage: "Show server status: connections, users, uptime",
+		Description: `Shows a comprehensive server status including active connections,
+registered user count, boot time, uptime, and email server tracking.
 
 The command reads the maddy configuration file to determine which ports
 the services are listening on, then uses 'ss' to count established
-connections.
+connections. It also queries the database for user count.
 
 Services tracked:
   - IMAP (default: 143, 993)
@@ -35,8 +38,8 @@ Services tracked:
   - Shadowsocks proxy (default: 8388)
 
 Examples:
-  madmail online
-  madmail online --details
+  maddy status
+  maddy status --details
 `,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
@@ -46,7 +49,7 @@ Examples:
 			},
 		},
 		Action: func(ctx *cli.Context) error {
-			return onlineAction(ctx)
+			return statusAction(ctx)
 		},
 	})
 }
@@ -63,6 +66,7 @@ type servicePortInfo struct {
 type parseResult struct {
 	Ports      []servicePortInfo
 	RuntimeDir string
+	StateDir   string
 }
 
 // parseServicePorts reads the maddy config and extracts all service listening ports.
@@ -80,6 +84,7 @@ func parseServicePorts(cfgPath string) (parseResult, error) {
 
 	var ports []servicePortInfo
 	runtimeDir := "/run/maddy"
+	stateDir := "/var/lib/maddy"
 
 	// Regex to extract scheme and port from addresses like "tcp://0.0.0.0:143", "tls://0.0.0.0:993", "udp://0.0.0.0:3478"
 	addrRe := regexp.MustCompile(`^(tcp|tls|udp)://[^:]+:(\d+)$`)
@@ -88,6 +93,9 @@ func parseServicePorts(cfgPath string) (parseResult, error) {
 		// Pick up runtime_dir if set
 		if node.Name == "runtime_dir" && len(node.Args) > 0 {
 			runtimeDir = node.Args[0]
+		}
+		if node.Name == "state_dir" && len(node.Args) > 0 {
+			stateDir = node.Args[0]
 		}
 		switch node.Name {
 		case "imap":
@@ -204,7 +212,7 @@ func parseServicePorts(cfgPath string) (parseResult, error) {
 		deduped = append(deduped, p)
 	}
 
-	return parseResult{Ports: deduped, RuntimeDir: runtimeDir}, nil
+	return parseResult{Ports: deduped, RuntimeDir: runtimeDir, StateDir: stateDir}, nil
 }
 
 // connectionInfo stores details of a single connection.
@@ -355,7 +363,7 @@ func parseNetstatOutput(output []byte, port string) ([]connectionInfo, error) {
 	return conns, nil
 }
 
-func onlineAction(ctx *cli.Context) error {
+func statusAction(ctx *cli.Context) error {
 	cfgPath := ctx.String("config")
 	if cfgPath == "" {
 		return cli.Exit("Error: config is required", 2)
@@ -456,14 +464,19 @@ func onlineAction(ctx *cli.Context) error {
 		w.Flush()
 	}
 
+	// Show user count from database
+	userCount, err := getUserCount(parsed.StateDir)
+	if err == nil {
+		fmt.Printf("\nRegistered users:   %d\n", userCount)
+	}
+
 	// Show server status from the tracker file
 	status, err := servertracker.ReadStatusFile(parsed.RuntimeDir)
 	if err == nil {
 		if status.BootTime > 0 {
 			bootTime := time.Unix(status.BootTime, 0)
 			uptime := time.Since(bootTime).Truncate(time.Second)
-			fmt.Println()
-			fmt.Printf("Boot time:  %s (up %s)\n", bootTime.Format("2006-01-02 15:04:05"), formatUptime(uptime))
+			fmt.Printf("Boot time:          %s (up %s)\n", bootTime.Format("2006-01-02 15:04:05"), formatUptime(uptime))
 		}
 		if status.UniqueConnIPs > 0 || status.UniqueDomains > 0 || status.UniqueIPServers > 0 {
 			fmt.Println()
@@ -475,6 +488,26 @@ func onlineAction(ctx *cli.Context) error {
 	}
 
 	return nil
+}
+
+// getUserCount queries the imapsql database for the number of registered users.
+func getUserCount(stateDir string) (int, error) {
+	if stateDir == "" {
+		stateDir = "/var/lib/maddy"
+	}
+	dbPath := filepath.Join(stateDir, "imapsql.db")
+	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // extractIP extracts the IP address from an addr:port or [ipv6]:port string.
