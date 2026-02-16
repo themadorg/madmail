@@ -41,6 +41,7 @@ import (
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth"
 	"github.com/themadorg/madmail/internal/pgp_verify"
+	"github.com/themadorg/madmail/internal/servertracker"
 )
 
 func limitReader(r io.Reader, n int64, err error) *limitedReader {
@@ -266,6 +267,9 @@ func (s *Session) startDelivery(ctx context.Context, from string, opts smtp.Mail
 	if err := s.endp.limits.TakeMsg(context.Background(), remoteIP.IP, domain); err != nil {
 		return "", err
 	}
+
+	// Track unique server IP and domain for the online command.
+	servertracker.Global().RecordServer(remoteIP.IP.String(), domain)
 
 	s.msgCtx, s.msgTask = trace.NewTask(ctx, "Incoming Message")
 

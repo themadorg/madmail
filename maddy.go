@@ -38,6 +38,7 @@ import (
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/authz"
 	maddycli "github.com/themadorg/madmail/internal/cli"
+	"github.com/themadorg/madmail/internal/servertracker"
 	"github.com/urfave/cli/v2"
 
 	// Import packages for side-effect of module registration.
@@ -319,6 +320,9 @@ func moduleMain(cfg []config.Node) error {
 	if err := InitDirs(); err != nil {
 		return err
 	}
+
+	// Initialize server tracker early so boot time is recorded accurately.
+	servertracker.Global()
 
 	hooks.AddHook(hooks.EventLogRotate, reinitLogging)
 
