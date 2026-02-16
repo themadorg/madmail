@@ -264,6 +264,66 @@
                 maddy imap-acct stat
             </div>
         </div>
+
+        <h2>مانیتورینگ اتصالات آنلاین</h2>
+        <p>دستور <code>maddy online</code> وضعیت لحظه‌ای اتصالات فعال سرور را نشان می‌دهد. این شامل اتصالات IMAP،
+            رله‌های TURN (تماس صوتی/تصویری) و Shadowsocks می‌شود. همچنین زمان بوت سرور و مدت آپتایم نیز نمایش داده
+            می‌شود.</p>
+
+        <div class="cmd-info">
+            <h3>مشاهده اتصالات فعال</h3>
+            <p>نمایش خلاصه تعداد اتصالات فعال به تفکیک سرویس (IMAP، TURN، Shadowsocks) و همچنین زمان بوت و آپتایم سرور.
+            </p>
+            <div class="code-block">
+                maddy online
+            </div>
+            <p>خروجی نمونه:</p>
+            <div class="code-block">
+                IMAP connections: 27 unique IPs: 7
+                TURN relays: 1
+                Shadowsocks connections: 0 unique IPs: 0
+
+                Boot time: 2026-02-16 20:56:19 (up 5m 24s)
+
+                Email servers seen (since last restart):
+                Connection IPs: 1
+                Domain servers: 1
+                IP servers: 0
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده جزئیات به تفکیک پورت</h3>
+            <p>با استفاده از فلگ <code>--details</code> (یا <code>-d</code>) می‌توانید جزئیات اتصالات را به تفکیک هر
+                پورت ببینید.</p>
+            <div class="code-block">
+                maddy online --details
+            </div>
+            <p>خروجی نمونه:</p>
+            <div class="code-block">
+                PORT PROTO TYPE CONNECTIONS UNIQUE IPs
+                993 tcp IMAP TLS 25 7
+                143 tcp IMAP 0 0
+                3478 udp TURN UDP 1 relays -
+                3478 tcp TURN TCP 0 0
+                8388 tcp Shadowsocks 0 0
+                443 tcp ALPN (chatmail) 3 1
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>توضیحات فیلدها</h3>
+            <ul>
+                <li><strong>IMAP:</strong> تعداد اتصالات فعال کاربران به سرور ایمیل (دریافت پیام).</li>
+                <li><strong>TURN relays:</strong> تعداد رله‌های فعال تماس صوتی/تصویری. هر رله یک تماس فعال را نشان
+                    می‌دهد.</li>
+                <li><strong>Shadowsocks:</strong> تعداد اتصالات فعال از طریق پروکسی Shadowsocks.</li>
+                <li><strong>Boot time:</strong> زمان راه‌اندازی سرور و مدت زمان آپتایم.</li>
+                <li><strong>Email servers seen:</strong> تعداد سرورهای ایمیل یکتایی که از زمان آخرین ریستارت پیام ارسال
+                    کرده‌اند. این اطلاعات با هش رمزنگاری‌شده ذخیره می‌شوند و هیچ اطلاعات خصوصی قابل بازیابی نیست.</li>
+            </ul>
+        </div>
+
     </div>
 </body>
 
