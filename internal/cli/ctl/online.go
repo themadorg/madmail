@@ -2,7 +2,6 @@ package ctl
 
 import (
 	"bufio"
-	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,9 +12,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	parser "github.com/themadorg/madmail/framework/cfgparser"
 	maddycli "github.com/themadorg/madmail/internal/cli"
+	mdb "github.com/themadorg/madmail/internal/db"
 	"github.com/themadorg/madmail/internal/servertracker"
 	"github.com/urfave/cli/v2"
 )
@@ -67,6 +66,8 @@ type parseResult struct {
 	Ports      []servicePortInfo
 	RuntimeDir string
 	StateDir   string
+	DBDriver   string
+	DBDsn      string
 }
 
 // parseServicePorts reads the maddy config and extracts all service listening ports.
@@ -85,6 +86,8 @@ func parseServicePorts(cfgPath string) (parseResult, error) {
 	var ports []servicePortInfo
 	runtimeDir := "/run/maddy"
 	stateDir := "/var/lib/maddy"
+	dbDriver := "sqlite3"
+	dbDsn := "imapsql.db"
 
 	// Regex to extract scheme and port from addresses like "tcp://0.0.0.0:143", "tls://0.0.0.0:993", "udp://0.0.0.0:3478"
 	addrRe := regexp.MustCompile(`^(tcp|tls|udp)://[^:]+:(\d+)$`)
@@ -182,6 +185,16 @@ func parseServicePorts(cfgPath string) (parseResult, error) {
 					Proto:   proto,
 				})
 			}
+		case "storage.imapsql":
+			// storage.imapsql local_mailboxes { driver sqlite3; dsn imapsql.db }
+			for _, child := range node.Children {
+				if child.Name == "driver" && len(child.Args) > 0 {
+					dbDriver = child.Args[0]
+				}
+				if child.Name == "dsn" && len(child.Args) > 0 {
+					dbDsn = strings.Join(child.Args, " ")
+				}
+			}
 		}
 	}
 
@@ -212,7 +225,7 @@ func parseServicePorts(cfgPath string) (parseResult, error) {
 		deduped = append(deduped, p)
 	}
 
-	return parseResult{Ports: deduped, RuntimeDir: runtimeDir, StateDir: stateDir}, nil
+	return parseResult{Ports: deduped, RuntimeDir: runtimeDir, StateDir: stateDir, DBDriver: dbDriver, DBDsn: dbDsn}, nil
 }
 
 // connectionInfo stores details of a single connection.
@@ -465,7 +478,7 @@ func statusAction(ctx *cli.Context) error {
 	}
 
 	// Show user count from database
-	userCount, err := getUserCount(parsed.StateDir)
+	userCount, err := getUserCount(parsed.DBDriver, parsed.DBDsn, parsed.StateDir)
 	if err == nil {
 		fmt.Printf("\nRegistered users:   %d\n", userCount)
 	}
@@ -490,24 +503,35 @@ func statusAction(ctx *cli.Context) error {
 	return nil
 }
 
-// getUserCount queries the imapsql database for the number of registered users.
-func getUserCount(stateDir string) (int, error) {
-	if stateDir == "" {
-		stateDir = "/var/lib/maddy"
+// getUserCount queries the database for the number of registered users.
+// Uses the project's GORM layer to support sqlite3, postgres, and mysql.
+func getUserCount(driver, dsn, stateDir string) (int, error) {
+	if driver == "" || dsn == "" {
+		return 0, fmt.Errorf("database not configured")
 	}
-	dbPath := filepath.Join(stateDir, "imapsql.db")
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
-	if err != nil {
-		return 0, err
-	}
-	defer db.Close()
 
-	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	// For sqlite3, resolve relative paths against stateDir
+	if (driver == "sqlite3" || driver == "sqlite") && !filepath.IsAbs(dsn) {
+		if stateDir == "" {
+			stateDir = "/var/lib/maddy"
+		}
+		dsn = filepath.Join(stateDir, dsn)
+	}
+
+	db, err := mdb.New(driver, []string{dsn}, false)
 	if err != nil {
 		return 0, err
 	}
-	return count, nil
+	sqlDB, err := db.DB()
+	if err == nil {
+		defer sqlDB.Close()
+	}
+
+	var count int64
+	if err := db.Table("users").Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return int(count), nil
 }
 
 // extractIP extracts the IP address from an addr:port or [ipv6]:port string.
