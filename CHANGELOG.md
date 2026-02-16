@@ -1,3 +1,22 @@
+## [0.13.1](https://github.com/themadorg/madmail/compare/v0.13.0...v0.13.1) (2026-02-12)
+
+
+### Bug Fixes
+
+* in non-interactive installs, make --ip work and autogenerate TURN secret ([#32](https://github.com/themadorg/madmail/issues/32)) ([93b5f87](https://github.com/themadorg/madmail/commit/93b5f872971828a0787dd1eec287177e2884dd35))
+
+# [0.13.0](https://github.com/themadorg/madmail/compare/v0.12.8...v0.13.0) (2026-02-11)
+
+
+### Bug Fixes
+
+* add version ([89b46f6](https://github.com/themadorg/madmail/commit/89b46f68e0c117bb1245764f293d77aca84cea83))
+
+
+### Features
+
+* DKIM HTTPS publishing and deploy improvements ([c94327d](https://github.com/themadorg/madmail/commit/c94327d25468369e3d5ae5a937a569d1de209c9b))
+
 ## [0.12.8](https://github.com/themadorg/madmail/compare/v0.12.7...v0.12.8) (2026-02-04)
 
 
