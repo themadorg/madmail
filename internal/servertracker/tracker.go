@@ -145,7 +145,7 @@ func (t *Tracker) writeStatusLocked() {
 	}
 
 	path := filepath.Join(dir, statusFileName)
-	_ = os.WriteFile(path, data, 0644)
+	_ = os.WriteFile(path, data, 0640)
 }
 
 // ReadStatusFile reads the tracker status from the status file on disk.
