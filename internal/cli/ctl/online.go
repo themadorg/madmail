@@ -86,8 +86,7 @@ func parseServicePorts(cfgPath string) (parseResult, error) {
 	var ports []servicePortInfo
 	runtimeDir := "/run/maddy"
 	stateDir := "/var/lib/maddy"
-	dbDriver := "sqlite3"
-	dbDsn := "imapsql.db"
+	var dbDriver, dbDsn string
 
 	// Regex to extract scheme and port from addresses like "tcp://0.0.0.0:143", "tls://0.0.0.0:993", "udp://0.0.0.0:3478"
 	addrRe := regexp.MustCompile(`^(tcp|tls|udp)://[^:]+:(\d+)$`)
