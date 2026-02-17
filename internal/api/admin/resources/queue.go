@@ -74,10 +74,3 @@ func QueueHandler(deps QueueDeps) func(string, json.RawMessage) (interface{}, in
 		}
 	}
 }
-			}
-
-		default:
-			return nil, 405, fmt.Errorf("method %s not allowed", method)
-		}
-	}
-}

@@ -122,7 +122,3 @@ func SharesHandler(deps SharesDeps) func(string, json.RawMessage) (interface{}, 
 		}
 	}
 }
-			return nil, 405, fmt.Errorf("method %s not allowed", method)
-		}
-	}
-}
