@@ -1,3 +1,12 @@
+## [0.14.1](https://github.com/themadorg/madmail/compare/v0.14.0...v0.14.1) (2026-02-17)
+
+
+### Bug Fixes
+
+* add Admin API documentation page with endpoint reference ([bceeabe](https://github.com/themadorg/madmail/commit/bceeabefb4857a7e5b946c38b0409a1bbed15b06))
+* refactor dns cache to use shared gorm db and fix ipv4 resolution ([94fa3c2](https://github.com/themadorg/madmail/commit/94fa3c212f5e3d5786ce46c431bfddfab19dbc49))
+* remove security notes section from API docs and add admin API implementation ([0d7a7ba](https://github.com/themadorg/madmail/commit/0d7a7ba0d4d35631de9749e637c107a19f043bfe))
+
 # [0.14.0](https://github.com/themadorg/madmail/compare/v0.13.2...v0.14.0) (2026-02-16)
 
 
