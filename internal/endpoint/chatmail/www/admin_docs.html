@@ -256,6 +256,71 @@
                 شما از دید اسکنرهای اینترنتی مخفی می‌ماند.</p>
         </div>
 
+        <h2>کش DNS و بازنویسی آدرس</h2>
+        <p>سیستم کش DNS داخلی به شما اجازه می‌دهد بدون تغییر DNS سیستم‌عامل، مسیر ارسال ایمیل‌های خروجی را به سرور
+            دلخواه
+            هدایت کنید. قوانین بازنویسی در دیتابیس اصلی برنامه (همان دیتابیس ذخیره‌سازی) ذخیره می‌شوند.
+            تغییرات بلافاصله اعمال می‌شوند و
+            نیازی به ریستارت سرور نیست.</p>
+
+        <div class="cmd-info">
+            <h3>مشاهده تمام بازنویسی‌ها</h3>
+            <p>نمایش لیست تمام قوانین بازنویسی DNS که در دیتابیس ذخیره شده‌اند.</p>
+            <div class="code-block">
+                maddy dns-cache list
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>ایجاد یا ویرایش بازنویسی</h3>
+            <p>تنظیم یک قانون بازنویسی DNS. اگر قبلاً برای این آدرس قانونی وجود داشته باشد، به‌روزرسانی می‌شود.</p>
+            <div class="code-block">
+                maddy dns-cache set LOOKUP_KEY TARGET_HOST [COMMENT]
+            </div>
+            <p><strong>مثال‌ها:</strong></p>
+            <div class="code-block">
+                # هدایت ایمیل‌های دامنه به سرور داخلی
+                maddy dns-cache set nine.testrun.org 10.0.0.5 "Route to staging"
+
+                # بازنویسی آدرس IP
+                maddy dns-cache set 1.1.1.1 2.2.2.2 "Redirect IP"
+
+                # هدایت به سرور جدید هنگام مهاجرت
+                maddy dns-cache set example.com new-mx.example.com "Migration"
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده یک بازنویسی خاص</h3>
+            <p>نمایش جزئیات یک قانون بازنویسی DNS شامل آدرس مبدأ، مقصد، توضیحات و زمان ایجاد.</p>
+            <div class="code-block">
+                maddy dns-cache get nine.testrun.org
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>حذف یک بازنویسی</h3>
+            <p>حذف یک قانون بازنویسی DNS. پس از حذف، ایمیل‌ها از طریق DNS عادی سیستم‌عامل مسیریابی خواهند شد.</p>
+            <div class="code-block">
+                maddy dns-cache remove nine.testrun.org
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>نحوه کارکرد</h3>
+            <ul>
+                <li><strong>اولویت:</strong> ابتدا دیتابیس داخلی بررسی می‌شود. اگر قانونی یافت نشد، DNS سیستم‌عامل
+                    استفاده می‌شود.</li>
+                <li><strong>بدون حساسیت به حروف:</strong> آدرس‌ها بدون توجه به بزرگ یا کوچک بودن حروف مطابقت داده
+                    می‌شوند.</li>
+                <li><strong>پشتیبانی از IP و دامنه:</strong> هم دامنه (مانند example.com) و هم آدرس IP (مانند 1.1.1.1)
+                    قابل بازنویسی هستند.</li>
+                <li><strong>بدون نیاز به ریستارت:</strong> تغییرات بلافاصله روی ایمیل‌های جدید اعمال می‌شوند.</li>
+                <li><strong>بازگشت خودکار:</strong> اگر دیتابیس در دسترس نباشد، سیستم به صورت خودکار به DNS عادی
+                    بازمی‌گردد.</li>
+            </ul>
+        </div>
+
         <h2>آمار سرور</h2>
         <div class="cmd-info">
             <h3>مشاهده آمار کلی</h3>

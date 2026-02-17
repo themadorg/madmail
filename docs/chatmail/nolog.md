@@ -27,6 +27,20 @@ Logging can also be toggled dynamically via the settings database. This allows a
 2.  **Metadata Protection**: This prevents the accumulation of long-term audit trails that could be used to reconstruct user communication patterns.
 3.  **Boot Phase**: Only critical initialization errors that prevent the server from starting are reported to the system journal (stdout/stderr) during the boot phase. Once initialized, the "No Log" policy takes over.
 
+### Debug Mode Override
+The `debug` flag can **only** be set in `maddy.conf` (or via the `--debug` CLI flag). It is **not** stored in the database and cannot be toggled dynamically — a config change and service restart are required.
+
+```hcl
+debug true
+```
+
+When debug mode is enabled:
+- All debug-level and informational log messages are printed regardless of the No Log policy.
+- The database `__LOG_DISABLED__` setting **cannot** suppress debug output.
+- This is by design: debug is a deliberate operator action that requires filesystem access to the config file, so it implies trusted intent.
+
+**Important**: After debugging, set `debug false` (or remove the line) and restart the server to restore the No Log policy.
+
 ## Verification
 To verify that no logs are being generated:
 - Check that `/var/log/maddy/` (or your configured log directory) remains empty.

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	imapbackend "github.com/emersion/go-imap/backend"
+	"gorm.io/gorm"
 )
 
 // Storage interface is a slightly modified go-imap's Backend interface
@@ -63,4 +64,12 @@ type ManageableStorage interface {
 	PurgeAllIMAPMsgs() error
 	PurgeReadIMAPMsgs() error
 	PruneUnreadIMAPMsgs(retention time.Duration) error
+}
+
+// GORMProvider is an optional interface that storage modules can implement
+// to expose their GORM database connection for shared table access.
+// Other modules (e.g. target.remote for DNS cache) can type-assert to this
+// interface to share the same database instead of opening separate DB files.
+type GORMProvider interface {
+	GetGORMDB() *gorm.DB
 }

@@ -62,9 +62,11 @@ func (a *Auth) Init(cfg *config.Map) error {
 		return err
 	}
 
-	// Check if logging is disabled dynamically
+	// Check if logging is disabled dynamically.
+	// However, if debug mode is enabled, keep the log output alive
+	// so the administrator can see debug messages.
 	disabled, _ := a.IsLoggingDisabled()
-	if disabled {
+	if disabled && !log.DefaultLogger.Debug {
 		log.DefaultLogger.Out = log.NopOutput{}
 	}
 
@@ -358,7 +360,11 @@ func (a *Auth) SetLoggingDisabled(disabled bool) error {
 	val := "false"
 	if disabled {
 		val = "true"
-		log.DefaultLogger.Out = log.NopOutput{}
+		// Only suppress output when debug mode is not active.
+		// Debug flag takes priority over the No Log policy.
+		if !log.DefaultLogger.Debug {
+			log.DefaultLogger.Out = log.NopOutput{}
+		}
 	}
 	return mtbl.SetKey("__LOG_DISABLED__", val)
 }

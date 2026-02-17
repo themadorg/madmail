@@ -47,6 +47,7 @@ import (
 	"github.com/themadorg/madmail/framework/exterrors"
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
+	"github.com/themadorg/madmail/internal/dns_cache"
 	"github.com/themadorg/madmail/internal/limits"
 	"github.com/themadorg/madmail/internal/smtpconn/pool"
 	"github.com/themadorg/madmail/internal/target"
@@ -71,6 +72,11 @@ type Target struct {
 	resolver    dns.Resolver
 	dialer      func(ctx context.Context, network, addr string) (net.Conn, error)
 	extResolver *dns.ExtResolver
+
+	// dnsCache provides database-backed DNS overrides.
+	// When set, MX lookups and host resolution check the local DB first
+	// before falling back to the standard OS resolver.
+	dnsCache *dns_cache.Cache
 
 	policies          []module.MXAuthPolicy
 	limits            *limits.Group
@@ -144,6 +150,12 @@ func (rt *Target) Init(cfg *config.Map) error {
 	cfg.Duration("command_timeout", false, false, 5*time.Minute, &rt.commandTimeout)
 	cfg.Duration("submission_timeout", false, false, 5*time.Minute, &rt.submissionTimeout)
 
+	// Optional reference to the storage module for shared GORM database access.
+	// When set, the DNS cache table is stored in the same database as the
+	// rest of the application (quotas, etc.) instead of a separate file.
+	var storageName string
+	cfg.String("storage", false, false, "", &storageName)
+
 	poolCfg := pool.Config{
 		MaxKeys:             5000,
 		MaxConnsPerKey:      5,      // basically, max. amount of idle connections in cache
@@ -183,6 +195,24 @@ func (rt *Target) Init(cfg *config.Map) error {
 		}
 	}
 
+	// Initialize DNS cache using the shared storage database.
+	if storageName != "" {
+		storageInst, err := module.GetInstance(storageName)
+		if err != nil {
+			rt.Log.Error("failed to get storage instance for DNS cache", err)
+		} else if gormProvider, ok := storageInst.(module.GORMProvider); !ok {
+			rt.Log.Error("storage does not implement GORMProvider, DNS cache overrides will not be available", nil)
+		} else {
+			cache, cacheErr := dns_cache.New(gormProvider.GetGORMDB(), rt.Log)
+			if cacheErr != nil {
+				rt.Log.Error("failed to initialize DNS cache", cacheErr)
+			} else {
+				rt.dnsCache = cache
+				rt.Log.Debugf("DNS cache initialized from shared storage")
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -198,6 +228,13 @@ func (rt *Target) Name() string {
 
 func (rt *Target) InstanceName() string {
 	return rt.name
+}
+
+// SetDNSCache sets the database-backed DNS override cache.
+// When set, MX lookups will check the local DB before falling back
+// to the OS DNS resolver.
+func (rt *Target) SetDNSCache(cache *dns_cache.Cache) {
+	rt.dnsCache = cache
 }
 
 type remoteDelivery struct {

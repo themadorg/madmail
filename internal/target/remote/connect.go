@@ -90,7 +90,46 @@ func (rd *remoteDelivery) connect(ctx context.Context, conn mxConn, host string,
 		tlsCfg.ServerName = host
 	}
 
-	if net.ParseIP(host) != nil {
+	// Resolve the MX host through the DNS cache if available.
+	// This allows overriding where we actually connect to, while keeping the
+	// original hostname for TLS SNI verification.
+	connectHost := host
+	if rd.rt.dnsCache != nil {
+		resolved, resolveErr := rd.rt.dnsCache.Resolve(ctx, host)
+		if resolveErr == nil && resolved != "" {
+			if resolved != strings.ToLower(strings.TrimSuffix(host, ".")) {
+				rd.Log.Msg("DNS cache resolved MX host", "original", host, "resolved", resolved)
+			}
+			connectHost = resolved
+		}
+	}
+
+	// When force_ipv4 is enabled and the resolved host is still a name or
+	// an IPv6 address, do an explicit IPv4-only (A record) lookup so the
+	// tcp4 dialer gets an address it can actually connect to.
+	if rd.rt.ipv4 {
+		if ip := net.ParseIP(connectHost); ip == nil {
+			// connectHost is a hostname — resolve A records only
+			addrs, lookupErr := net.DefaultResolver.LookupIP(ctx, "ip4", connectHost)
+			if lookupErr == nil && len(addrs) > 0 {
+				rd.Log.DebugMsg("force_ipv4: resolved to A record", "host", connectHost, "ip", addrs[0].String())
+				connectHost = addrs[0].String()
+			}
+		} else if ip.To4() == nil {
+			// connectHost is an IPv6 address — try to resolve the original
+			// hostname for an A record instead
+			cleanHost := strings.TrimSuffix(host, ".")
+			addrs, lookupErr := net.DefaultResolver.LookupIP(ctx, "ip4", cleanHost)
+			if lookupErr == nil && len(addrs) > 0 {
+				rd.Log.DebugMsg("force_ipv4: re-resolved IPv6 to A record", "host", cleanHost, "ipv6", connectHost, "ipv4", addrs[0].String())
+				connectHost = addrs[0].String()
+			} else {
+				rd.Log.Error("force_ipv4: no A record found for host, IPv6 address will fail", lookupErr, "host", cleanHost, "ipv6", connectHost)
+			}
+		}
+	}
+
+	if net.ParseIP(connectHost) != nil {
 		if tlsCfg == nil {
 			tlsCfg = &tls.Config{}
 		}
@@ -98,13 +137,13 @@ func (rd *remoteDelivery) connect(ctx context.Context, conn mxConn, host string,
 		tlsLevel = module.TLSEncrypted
 	}
 
-	rd.Log.DebugMsg("trying", "remote_server", host, "domain", conn.domain)
+	rd.Log.DebugMsg("trying", "remote_server", connectHost, "domain", conn.domain)
 
 retry:
 	// smtpconn.C default TLS behavior is not useful for us, we want to handle
 	// TLS errors separately hence starttls=false.
 	_, err = conn.Connect(ctx, config.Endpoint{
-		Host: host,
+		Host: connectHost,
 		Port: smtpPort,
 	}, false, nil)
 	if err != nil {
@@ -159,23 +198,31 @@ retry:
 	return tlsLevel, tlsErr, nil
 }
 
-func (rd *remoteDelivery) attemptMX(ctx context.Context, conn *mxConn, record *net.MX) error {
+func (rd *remoteDelivery) attemptMX(ctx context.Context, conn *mxConn, record *net.MX, cacheOverride bool) error {
 	mxLevel := module.MXNone
 
 	connCtx, cancel := context.WithCancel(ctx)
 	// Cancel async policy lookups if rd.connect fails.
 	defer cancel()
 
-	for _, p := range rd.policies {
-		policyLevel, err := p.CheckMX(connCtx, mxLevel, conn.domain, record.Host, conn.dnssecOk)
-		if err != nil {
-			return err
-		}
-		if policyLevel > mxLevel {
-			mxLevel = policyLevel
-		}
+	// Skip MX authentication policies (MTA-STS, DANE, etc.) when the MX
+	// record came from a DNS cache override. The operator explicitly told
+	// us to deliver to this host, so policy checks against the original
+	// domain's published MX would incorrectly reject the override.
+	if !cacheOverride {
+		for _, p := range rd.policies {
+			policyLevel, err := p.CheckMX(connCtx, mxLevel, conn.domain, record.Host, conn.dnssecOk)
+			if err != nil {
+				return err
+			}
+			if policyLevel > mxLevel {
+				mxLevel = policyLevel
+			}
 
-		p.PrepareConn(ctx, record.Host)
+			p.PrepareConn(ctx, record.Host)
+		}
+	} else {
+		rd.Log.Debugf("skipping MX auth policies for DNS cache override target: %s", record.Host)
 	}
 
 	tlsLevel, tlsErr, err := rd.connect(connCtx, *conn, record.Host, rd.rt.tlsConfig)
@@ -189,14 +236,16 @@ func (rd *remoteDelivery) attemptMX(ctx context.Context, conn *mxConn, record *n
 	// chance to troubleshoot them without losing messages.
 
 	tlsState, _ := conn.Client().TLSConnectionState()
-	for _, p := range rd.policies {
-		policyLevel, err := p.CheckConn(connCtx, mxLevel, tlsLevel, conn.domain, record.Host, tlsState)
-		if err != nil {
-			conn.Close()
-			return exterrors.WithFields(err, map[string]interface{}{"tls_err": tlsErr})
-		}
-		if policyLevel > tlsLevel {
-			tlsLevel = policyLevel
+	if !cacheOverride {
+		for _, p := range rd.policies {
+			policyLevel, err := p.CheckConn(connCtx, mxLevel, tlsLevel, conn.domain, record.Host, tlsState)
+			if err != nil {
+				conn.Close()
+				return exterrors.WithFields(err, map[string]interface{}{"tls_err": tlsErr})
+			}
+			if policyLevel > tlsLevel {
+				tlsLevel = policyLevel
+			}
 		}
 	}
 
@@ -322,7 +371,7 @@ func (rd *remoteDelivery) newConn(ctx context.Context, domain string) (*mxConn, 
 	}
 
 	region := trace.StartRegion(ctx, "remote/LookupMX")
-	dnssecOk, records, err := rd.lookupMX(ctx, domain)
+	dnssecOk, records, cacheOverride, err := rd.lookupMX(ctx, domain)
 	region.End()
 	if err != nil {
 		return nil, err
@@ -340,7 +389,7 @@ func (rd *remoteDelivery) newConn(ctx context.Context, domain string) (*mxConn, 
 			}
 		}
 
-		if err := rd.attemptMX(ctx, &conn, record); err != nil {
+		if err := rd.attemptMX(ctx, &conn, record, cacheOverride); err != nil {
 			if len(records) != 0 {
 				rd.Log.Error("cannot use MX", err, "remote_server", record.Host, "domain", domain)
 			}
@@ -368,15 +417,33 @@ func (rd *remoteDelivery) newConn(ctx context.Context, domain string) (*mxConn, 
 	return &conn, nil
 }
 
-func (rd *remoteDelivery) lookupMX(ctx context.Context, domain string) (dnssecOk bool, records []*net.MX, err error) {
+func (rd *remoteDelivery) lookupMX(ctx context.Context, domain string) (dnssecOk bool, records []*net.MX, cacheOverride bool, err error) {
 	if strings.HasPrefix(domain, "[") && strings.HasSuffix(domain, "]") {
 		host := domain[1 : len(domain)-1]
 		if strings.HasPrefix(strings.ToLower(host), "ipv6:") {
 			host = host[5:]
 		}
 		if ip := net.ParseIP(host); ip != nil {
-			return false, []*net.MX{{Host: host, Pref: 0}}, nil
+			// Check DNS cache for IP override (e.g., 1.1.1.1 → 2.2.2.2)
+			if rd.rt.dnsCache != nil {
+				resolved, err := rd.rt.dnsCache.Resolve(ctx, host)
+				if err == nil && resolved != host {
+					rd.Log.Msg("DNS cache override for IP literal", "original", host, "target", resolved)
+					return false, []*net.MX{{Host: resolved, Pref: 0}}, true, nil
+				}
+			}
+			return false, []*net.MX{{Host: host, Pref: 0}}, false, nil
 		}
+	}
+
+	// Check DNS cache for domain override before doing real lookups
+	if rd.rt.dnsCache != nil {
+		cacheRecords, cacheHit, cacheErr := rd.rt.dnsCache.ResolveMX(ctx, domain)
+		if cacheErr == nil && cacheHit && len(cacheRecords) > 0 {
+			rd.Log.Msg("DNS cache override for domain", "domain", domain, "target", cacheRecords[0].Host)
+			return false, cacheRecords, true, nil
+		}
+		// If not a cache hit, fall through to standard lookup
 	}
 
 	if rd.rt.extResolver != nil {
@@ -386,7 +453,7 @@ func (rd *remoteDelivery) lookupMX(ctx context.Context, domain string) (dnssecOk
 	}
 	if err != nil {
 		reason, misc := exterrors.UnwrapDNSErr(err)
-		return false, nil, &exterrors.SMTPError{
+		return false, nil, false, &exterrors.SMTPError{
 			Code:         exterrors.SMTPCode(err, 451, 554),
 			EnhancedCode: exterrors.SMTPEnchCode(err, exterrors.EnhancedCode{0, 4, 4}),
 			Message:      "MX lookup error",
@@ -410,5 +477,5 @@ func (rd *remoteDelivery) lookupMX(ctx context.Context, domain string) (dnssecOk
 		})
 	}
 
-	return dnssecOk, records, err
+	return dnssecOk, records, false, err
 }

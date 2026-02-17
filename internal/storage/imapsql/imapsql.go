@@ -103,6 +103,14 @@ func (store *Storage) InstanceName() string {
 	return store.instName
 }
 
+// GetGORMDB implements module.GORMProvider.
+// It exposes the shared GORM database connection so other modules
+// (e.g. target.remote for DNS cache) can add their tables to the
+// same database.
+func (store *Storage) GetGORMDB() *gorm.DB {
+	return store.GORMDB
+}
+
 func New(_, instName string, _, inlineArgs []string) (module.Module, error) {
 	store := &Storage{
 		instName: instName,

@@ -28,6 +28,12 @@ DeltaChat Contact Sharing Management:
   maddy sharing edit <slug> <url> [name]   - Update an existing link
   maddy sharing reserve <slug>             - Reserve a slug for later use
 
+DNS Cache Override Management:
+  maddy dns-cache list                                    - List all DNS overrides
+  maddy dns-cache set <lookup_key> <target_host> [comment] - Create or update an override
+  maddy dns-cache get <lookup_key>                         - Show a specific override
+  maddy dns-cache remove <lookup_key>                      - Delete an override
+
 HTML & Customization:
   maddy html-export <dest_dir>             - Export all internal HTML/CSS files
   maddy html-serve <www_dir>               - Use external folder for web interface (or use "embedded" to revert)

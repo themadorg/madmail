@@ -59,6 +59,10 @@ func LogOutputOption(args []string) (log.Output, error) {
 			outs = append(outs, log.WriterOutput(os.Stderr, false))
 		case "stderr_ts":
 			outs = append(outs, log.WriterOutput(os.Stderr, true))
+		case "on":
+			// "log on" is the natural counterpart of "log off",
+			// map it to stderr for journalctl/systemd visibility.
+			outs = append(outs, log.WriterOutput(os.Stderr, false))
 		case "syslog":
 			syslogOut, err := log.SyslogOutput()
 			if err != nil {
