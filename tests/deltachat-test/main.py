@@ -46,6 +46,7 @@ from scenarios import (
     test_14_purge_messages,
     test_15_iroh_discovery,
     test_16_webxdc_realtime,
+    test_17_admin_api,
 )
 from utils.lxc import LXCManager
 from stress import run_stress
@@ -91,6 +92,7 @@ def main():
     parser.add_argument("--test-14", action="store_true", help="Run Purge Messages Test")
     parser.add_argument("--test-15", action="store_true", help="Run Iroh Discovery Test")
     parser.add_argument("--test-16", action="store_true", help="Run WebXDC Realtime P2P Test")
+    parser.add_argument("--test-17", action="store_true", help="Run Admin API Test")
     parser.add_argument("--domain", help="Specify domain/IP for tests (updates REMOTE1/REMOTE2)")
     parser.add_argument("--lxc", action="store_true", help="Run tests in local LXC containers")
     parser.add_argument("--keep-lxc", action="store_true", help="Keep LXC containers alive after test")
@@ -108,7 +110,7 @@ def main():
         args.test_1, args.test_2, args.test_3, args.test_4, 
         args.test_5, args.test_6, args.test_7, args.test_8, args.test_9, 
         args.test_10, args.test_11, args.test_12, args.test_13, args.test_14, 
-        args.test_15, args.test_16
+        args.test_15, args.test_16, args.test_17
     ])
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -341,6 +343,13 @@ def main():
             if run_all or args.test_16:
                 test_16_webxdc_realtime.run(dc, remote1)
                 print("✓ TEST #16 PASSED: WebXDC Realtime P2P verified")
+
+            # ==========================================
+            # TEST #17: Admin API
+            # ==========================================
+            if run_all or args.test_17:
+                test_17_admin_api.run(dc, remote1, test_dir)
+                print("✓ TEST #17 PASSED: Admin API verified")
 
             # ==========================================
             # ALL TESTS COMPLETE

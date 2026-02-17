@@ -153,6 +153,9 @@ type InstallConfig struct {
 
 	// Internal state
 	SkipPrompts bool
+
+	// Admin API
+	AdminToken string
 }
 
 // Default configuration values
@@ -950,6 +953,9 @@ func ensureRequiredSecrets(config *InstallConfig) error {
 			config.TURNSecret = base64.RawURLEncoding.EncodeToString(b)
 		}
 	}
+
+	// Admin API token is auto-generated at runtime by the chatmail endpoint.
+	// No need to generate it during install.
 
 	return nil
 }
@@ -1814,6 +1820,12 @@ func printNextSteps(config *InstallConfig) {
 		fmt.Printf("\n7. Chatmail is enabled:\n")
 		fmt.Printf("   - HTTP endpoint: http://%s:%s\n", config.Hostname, config.ChatmailHTTPPort)
 		fmt.Printf("   - HTTPS endpoint: https://%s:%s (if configured)\n", config.Hostname, config.ChatmailHTTPSPort)
+		fmt.Printf("\n🔑 Admin API:\n")
+		fmt.Printf("   The admin API is enabled by default with an auto-generated token.\n")
+		fmt.Printf("   Retrieve the token after first startup:\n")
+		fmt.Printf("     maddy admin-token\n")
+		fmt.Printf("\n   To disable: add 'admin_token disabled' to your chatmail block\n")
+		fmt.Printf("   To set custom: add 'admin_token your-custom-token' to your chatmail block\n")
 	}
 
 	fmt.Printf("\n📖 Documentation: https://maddy.email\n")
