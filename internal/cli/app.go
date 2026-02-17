@@ -34,6 +34,9 @@ DNS Cache Override Management:
   maddy dns-cache get <lookup_key>                         - Show a specific override
   maddy dns-cache remove <lookup_key>                      - Delete an override
 
+Admin API:
+  maddy admin-token                         - Display the admin API token
+
 HTML & Customization:
   maddy html-export <dest_dir>             - Export all internal HTML/CSS files
   maddy html-serve <www_dir>               - Use external folder for web interface (or use "embedded" to revert)

@@ -110,6 +110,19 @@ The suite consists of several scenarios located in `tests/deltachat-test/scenari
 - Coordinates the Iroh handshake via the integrated Iroh Relay.
 - Verifies that high-frequency data packets are delivered with low latency outside the standard IMAP/SMTP flow.
 
+### 17. Admin API (`test_17_admin_api.py`)
+- Extracts the `admin_token` from the remote server's config via SSH.
+- Verifies authentication: missing tokens, wrong tokens, and correct tokens.
+- Tests the `/admin/status` endpoint for user count and uptime data.
+- Tests the `/admin/storage` endpoint for disk usage and state dir info.
+- Toggles registration open/closed via `/admin/registration` and verifies state.
+- Toggles TURN service via `/admin/services/turn` and verifies state.
+- Lists accounts via `/admin/accounts` and verifies count.
+- Gets storage quota stats via `/admin/quota`.
+- Creates a disposable account, verifies it in the listing, deletes it via the API, and confirms removal.
+- Verifies method validation (405 on invalid methods).
+- Tests DNS override CRUD via `/admin/dns` (create, verify, delete, confirm).
+
 ## Prerequisites
 
 - **Python environment**: The tests use `uv` for dependency management.

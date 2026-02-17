@@ -254,6 +254,9 @@ chatmail tcp://0.0.0.0:{{.ChatmailHTTPPort}} {
     public_ip $(public_ip)
     turn_off_tls {{if .TurnOffTLS}}yes{{else}}no{{end}}
     enable_contact_sharing {{if .EnableContactSharing}}yes{{else}}no{{end}}
+    # Admin API: token auto-generated on first startup (see: maddy admin-token)
+    # To disable: admin_token disabled
+    # To set custom: admin_token your-custom-token
 
 {{if .EnableSS}}
     ss_addr "{{.SSAddr}}"
@@ -283,6 +286,9 @@ chatmail tls://0.0.0.0:{{.ChatmailHTTPSPort}} {
     alpn_smtp submission
     alpn_imap imap
     enable_contact_sharing {{if .EnableContactSharing}}yes{{else}}no{{end}}
+    # Admin API: token auto-generated on first startup (see: maddy admin-token)
+    # To disable: admin_token disabled
+    # To set custom: admin_token your-custom-token
 
 {{if .EnableSS}}
     ss_addr "{{.SSAddr}}"
