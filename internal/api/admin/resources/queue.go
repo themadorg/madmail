@@ -12,6 +12,10 @@ type QueueDeps struct {
 	Storage module.ManageableStorage
 }
 
+type purgeAccountRequest struct {
+	Username string `json:"username"`
+}
+
 type purgeResponse struct {
 	Action  string `json:"action"`
 	Message string `json:"message"`
@@ -63,6 +67,13 @@ func QueueHandler(deps QueueDeps) func(string, json.RawMessage) (interface{}, in
 
 			default:
 				return nil, 400, fmt.Errorf("unknown action: %s (expected purge_user|purge_all|purge_read)", req.Action)
+			}
+
+		default:
+			return nil, 405, fmt.Errorf("method %s not allowed", method)
+		}
+	}
+}
 			}
 
 		default:

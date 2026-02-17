@@ -71,7 +71,7 @@ func SharesHandler(deps SharesDeps) func(string, json.RawMessage) (interface{}, 
 			if err := deps.DB.Create(&contact).Error; err != nil {
 				return nil, 500, fmt.Errorf("failed to create share: %v", err)
 			}
-			return shareEntry(req), 201, nil
+			return shareEntry{Slug: req.Slug, URL: req.URL, Name: req.Name}, 201, nil
 
 		case "PUT":
 			var req updateShareRequest
@@ -118,6 +118,10 @@ func SharesHandler(deps SharesDeps) func(string, json.RawMessage) (interface{}, 
 			return map[string]string{"deleted": req.Slug}, 200, nil
 
 		default:
+			return nil, 405, fmt.Errorf("method %s not allowed", method)
+		}
+	}
+}
 			return nil, 405, fmt.Errorf("method %s not allowed", method)
 		}
 	}
