@@ -1,3 +1,10 @@
+## [0.14.2](https://github.com/themadorg/madmail/compare/v0.14.1...v0.14.2) (2026-02-17)
+
+
+### Bug Fixes
+
+* remove security notes section from API docs and add admin API implementation ([baec364](https://github.com/themadorg/madmail/commit/baec3649d1a7313aff7e6996f1d3b5bd6da1b26f))
+
 ## [0.14.1](https://github.com/themadorg/madmail/compare/v0.14.0...v0.14.1) (2026-02-17)
 
 
