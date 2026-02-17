@@ -46,6 +46,8 @@ import (
 	tls2 "github.com/themadorg/madmail/framework/config/tls"
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
+	adminapi "github.com/themadorg/madmail/internal/api/admin"
+	"github.com/themadorg/madmail/internal/api/admin/resources"
 	"github.com/themadorg/madmail/internal/auth/pass_table"
 	"golang.org/x/crypto/bcrypt"
 
@@ -102,6 +104,9 @@ type Endpoint struct {
 
 	wwwDir string
 
+	// Admin API
+	adminToken string
+
 	// Shadowsocks configuration
 	ssAddr             string
 	ssPassword         string
@@ -148,6 +153,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("sharing_driver", false, false, "sqlite3", &e.sharingDriver)
 	cfg.StringList("sharing_dsn", false, false, nil, &e.sharingDSN)
 	cfg.String("max_message_size", false, false, "32M", &e.maxMessageSize)
+	cfg.String("admin_token", false, false, "", &e.adminToken)
 
 	// Get references to the authentication database and storage
 	var authDBName, storageName string
@@ -257,6 +263,23 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	e.mux.HandleFunc("/qr", e.handleQRCode)
 	e.mux.HandleFunc("/madmail", e.handleBinaryDownload)
 	e.mux.HandleFunc("/mxdeliv", e.handleReceiveEmail)
+
+	// Admin API: auto-generate token if not configured, respect "disabled"
+	if e.adminToken == "disabled" {
+		e.logger.Printf("admin API explicitly disabled via config")
+	} else {
+		if e.adminToken == "" {
+			// Auto-generate or load from state dir
+			var err error
+			e.adminToken, err = e.ensureAdminToken()
+			if err != nil {
+				e.logger.Printf("WARNING: failed to initialize admin token: %v", err)
+			}
+		}
+		if e.adminToken != "" {
+			e.setupAdminAPI()
+		}
+	}
 
 	if e.enableContactSharing {
 		e.mux.HandleFunc("/share", e.handleContactShare)
@@ -481,6 +504,8 @@ func (e *Endpoint) handleDocs(w http.ResponseWriter, r *http.Request) {
 		e.serveTemplate(w, r, "docs_index.html", nil)
 	case "admin":
 		e.serveTemplate(w, r, "admin_docs.html", nil)
+	case "api":
+		e.serveTemplate(w, r, "admin_api_docs.html", nil)
 	case "general":
 		e.serveTemplate(w, r, "general_docs.html", nil)
 	case "serve", "custom-html":
@@ -1307,6 +1332,135 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// AdminTokenFileName is the filename in state_dir where the auto-generated admin token is stored.
+const AdminTokenFileName = "admin_token"
+
+// ensureAdminToken loads or generates a persistent admin token.
+// The token is stored in {state_dir}/admin_token so it persists across restarts.
+func (e *Endpoint) ensureAdminToken() (string, error) {
+	tokenPath := filepath.Join(config.StateDirectory, AdminTokenFileName)
+
+	// Try to read existing token
+	data, err := os.ReadFile(tokenPath)
+	if err == nil {
+		token := strings.TrimSpace(string(data))
+		if token != "" {
+			e.logger.Printf("admin API token loaded from %s", tokenPath)
+			return token, nil
+		}
+	}
+
+	// Generate a new token
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate admin token: %v", err)
+	}
+	token := base64.RawURLEncoding.EncodeToString(b)
+
+	// Persist it
+	if err := os.WriteFile(tokenPath, []byte(token+"\n"), 0600); err != nil {
+		return "", fmt.Errorf("failed to save admin token to %s: %v", tokenPath, err)
+	}
+
+	e.logger.Printf("admin API token generated and saved to %s", tokenPath)
+	return token, nil
+}
+
+// setupAdminAPI creates and registers all admin API resource handlers.
+func (e *Endpoint) setupAdminAPI() {
+	handler := adminapi.NewHandler(e.adminToken, e.logger)
+
+	// Build settings deps using the auth DB and GORM DB for generic settings
+	var gormDB *gorm.DB
+	if gp, ok := e.storage.(module.GORMProvider); ok {
+		gormDB = gp.GetGORMDB()
+	}
+
+	settingsDeps := resources.SettingsToggleDeps{
+		IsRegistrationOpen:        e.authDB.IsRegistrationOpen,
+		SetRegistrationOpen:       e.authDB.SetRegistrationOpen,
+		IsJitRegistrationEnabled:  e.authDB.IsJitRegistrationEnabled,
+		SetJitRegistrationEnabled: e.authDB.SetJitRegistrationEnabled,
+		IsTurnEnabled:             e.authDB.IsTurnEnabled,
+		SetTurnEnabled:            e.authDB.SetTurnEnabled,
+	}
+
+	// Generic DB-backed settings for Iroh and Shadowsocks
+	if gormDB != nil {
+		// Ensure the table_entries table exists
+		_ = gormDB.AutoMigrate(&mdb.TableEntry{})
+
+		settingsDeps.GetSetting = func(key string) (string, bool, error) {
+			var entry mdb.TableEntry
+			err := gormDB.Where("key = ?", key).First(&entry).Error
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return "", false, nil
+				}
+				return "", false, err
+			}
+			return entry.Value, true, nil
+		}
+		settingsDeps.SetSetting = func(key, value string) error {
+			return gormDB.Save(&mdb.TableEntry{Key: key, Value: value}).Error
+		}
+	}
+
+	// User count helper
+	getUserCount := func() (int, error) {
+		users, err := e.authDB.ListUsers()
+		if err != nil {
+			return 0, err
+		}
+		return len(users), nil
+	}
+
+	// Register resource handlers
+	handler.Register("/admin/status", resources.StatusHandler(resources.StatusDeps{
+		GetUserCount: getUserCount,
+	}))
+
+	handler.Register("/admin/storage", resources.StorageHandler(resources.StorageDeps{
+		StateDir: config.StateDirectory,
+	}))
+
+	handler.Register("/admin/registration", resources.RegistrationHandler(settingsDeps))
+	handler.Register("/admin/registration/jit", resources.JitRegistrationHandler(settingsDeps))
+	handler.Register("/admin/services/turn", resources.TurnHandler(settingsDeps))
+	handler.Register("/admin/services/iroh", resources.IrohHandler(settingsDeps))
+	handler.Register("/admin/services/shadowsocks", resources.ShadowsocksHandler(settingsDeps))
+
+	handler.Register("/admin/accounts", resources.AccountsHandler(resources.AccountsDeps{
+		AuthDB:  e.authDB,
+		Storage: e.storage,
+	}))
+
+	handler.Register("/admin/quota", resources.QuotaHandler(resources.QuotaDeps{
+		Storage: e.storage,
+	}))
+
+	handler.Register("/admin/queue", resources.QueueHandler(resources.QueueDeps{
+		Storage: e.storage,
+	}))
+
+	// Contact shares (if enabled)
+	if e.enableContactSharing && e.sharingGORM != nil {
+		handler.Register("/admin/shares", resources.SharesHandler(resources.SharesDeps{
+			DB: e.sharingGORM,
+		}))
+	}
+
+	// DNS cache (if GORM DB available)
+	if gormDB != nil {
+		handler.Register("/admin/dns", resources.DNSCacheHandler(resources.DNSCacheDeps{
+			DB: gormDB,
+		}))
+	}
+
+	e.mux.Handle("/api/admin", handler)
+	e.logger.Printf("admin API enabled at /api/admin")
 }
 
 func init() {
