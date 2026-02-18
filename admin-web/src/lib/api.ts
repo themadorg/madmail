@@ -65,6 +65,7 @@ export interface AllSettings {
     submission_access: string;
     imap_access: string;
     turn_access: string;
+    sasl_access: string;
     iroh_access: string;
     http_access: string;
     https_access: string;

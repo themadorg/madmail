@@ -242,7 +242,7 @@ func findConfigPath() string {
 // with the newly written config file.
 func restartService() error {
 	time.AfterFunc(500*time.Millisecond, func() {
-		syscall.Kill(os.Getpid(), syscall.SIGTERM)
+		_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
 	})
 	return nil
 }
@@ -255,16 +255,6 @@ func configOverrideKeys() map[string]bool {
 		keys[m.dbKey] = true
 	}
 	return keys
-}
-
-// hasDBOverrides checks if any port/config settings have been overridden in the DB.
-func (e *Endpoint) hasDBOverrides() bool {
-	for _, mapping := range configOverrides {
-		if _, isSet, err := e.authDB.GetSetting(mapping.dbKey); err == nil && isSet {
-			return true
-		}
-	}
-	return false
 }
 
 // For testing: allow the replacer to work on arbitrary text

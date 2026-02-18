@@ -85,7 +85,9 @@ Example:
 				_ = authCtx
 
 				// Open auth DB
-				ctx.Set("cfg-block", ctx.String("auth-block"))
+				if err := ctx.Set("cfg-block", ctx.String("auth-block")); err != nil {
+					return fmt.Errorf("failed to set cfg-block: %w", err)
+				}
 				authDB, err := openUserDB(ctx)
 				if err != nil {
 					// Auth DB might not be available, continue with storage
@@ -109,7 +111,9 @@ Example:
 				}
 
 				// Open storage DB
-				ctx.Set("cfg-block", ctx.String("storage-block"))
+				if err := ctx.Set("cfg-block", ctx.String("storage-block")); err != nil {
+					return fmt.Errorf("failed to set cfg-block: %w", err)
+				}
 				storageDB, err := openStorage(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to open storage DB: %w", err)

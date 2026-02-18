@@ -25,6 +25,7 @@
     submission_port: "submission",
     imap_port: "imap",
     turn_port: "turn",
+    sasl_port: "sasl",
     iroh_port: "iroh",
     http_port: "http",
     https_port: "https",
@@ -36,6 +37,7 @@
     submission_port: "Submission",
     imap_port: "IMAP",
     turn_port: "TURN",
+    sasl_port: "SASL",
     iroh_port: "Iroh",
     http_port: "HTTP",
     https_port: "HTTPS",
@@ -71,6 +73,32 @@
     confirmingPort = null;
     confirmingLabel = "";
   }
+
+  // Client-affecting port change warning
+  const clientPorts = new Set(["smtp_port", "submission_port", "imap_port"]);
+  let pendingSaveKey = $state<string | null>(null);
+  let pendingSaveValue = $state("");
+
+  function handleSave(key: string, value: string) {
+    if (clientPorts.has(key)) {
+      pendingSaveKey = key;
+      pendingSaveValue = value;
+    } else {
+      store.save(key, value);
+    }
+  }
+
+  async function confirmPortChange() {
+    if (!pendingSaveKey) return;
+    await store.save(pendingSaveKey, pendingSaveValue);
+    pendingSaveKey = null;
+    pendingSaveValue = "";
+  }
+
+  function cancelPortChange() {
+    pendingSaveKey = null;
+    pendingSaveValue = "";
+  }
 </script>
 
 {#if store.settings}
@@ -98,7 +126,7 @@
                 class="w-28 px-2 py-1 bg-surface border border-border rounded text-xs text-text outline-none focus:border-accent"
               />
               <button
-                onclick={() => store.save(key, store.editValue)}
+                onclick={() => handleSave(key, store.editValue)}
                 class="px-2 py-1 bg-accent text-white text-xs rounded hover:bg-accent-dim transition-colors"
                 >{_("action.save")}</button
               >
@@ -244,6 +272,48 @@
             class="px-3 py-1.5 bg-warning text-black text-xs font-medium rounded-lg hover:bg-warning/80 transition-colors disabled:opacity-50"
           >
             {_("port.confirm_yes")}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Warning Modal: Client-Affecting Port Change -->
+  {#if pendingSaveKey}
+    <div
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+    >
+      <div
+        class="bg-surface-2 border border-border rounded-xl p-5 max-w-sm w-full shadow-2xl"
+      >
+        <div class="flex items-center gap-2 mb-3">
+          <div class="p-2 bg-warning/15 rounded-lg">
+            <AlertTriangle size={20} class="text-warning" />
+          </div>
+          <h3 class="text-base font-semibold text-text">
+            {_("port.client_warn_title", {
+              port: portLabels[pendingSaveKey] || pendingSaveKey,
+            })}
+          </h3>
+        </div>
+
+        <p class="text-sm text-text-2 mb-5 leading-relaxed">
+          {_("port.client_warn_body")}
+        </p>
+
+        <div class="flex gap-2 justify-end">
+          <button
+            onclick={cancelPortChange}
+            class="px-3 py-1.5 text-text-2 text-xs border border-border rounded-lg hover:bg-surface-3 transition-colors"
+          >
+            {_("port.confirm_no")}
+          </button>
+          <button
+            onclick={confirmPortChange}
+            disabled={store.busy}
+            class="px-3 py-1.5 bg-warning text-black text-xs font-medium rounded-lg hover:bg-warning/80 transition-colors disabled:opacity-50"
+          >
+            {_("port.client_warn_confirm")}
           </button>
         </div>
       </div>

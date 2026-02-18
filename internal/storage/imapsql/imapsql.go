@@ -390,9 +390,11 @@ func (store *Storage) initQuotaTable() error {
 	if err := store.GORMDB.Where("name = ?", "sent_messages").First(&stat).Error; err == nil {
 		module.SetSentMessages(stat.Count)
 	}
+	stat = mdb.MessageStat{} // reset to avoid GORM reusing the primary key in the next query
 	if err := store.GORMDB.Where("name = ?", "outbound_messages").First(&stat).Error; err == nil {
 		module.SetOutboundMessages(stat.Count)
 	}
+	stat = mdb.MessageStat{} // reset
 	if err := store.GORMDB.Where("name = ?", "received_messages").First(&stat).Error; err == nil {
 		module.SetReceivedMessages(stat.Count)
 	}

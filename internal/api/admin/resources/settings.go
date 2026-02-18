@@ -146,6 +146,7 @@ type AllSettingsResponse struct {
 	SubmissionAccess string `json:"submission_access"`
 	IMAPAccess       string `json:"imap_access"`
 	TurnAccess       string `json:"turn_access"`
+	SaslAccess       string `json:"sasl_access"`
 	IrohAccess       string `json:"iroh_access"`
 	HTTPAccess       string `json:"http_access"`
 	HTTPSAccess      string `json:"https_access"`
@@ -187,6 +188,7 @@ const (
 	KeySubmissionLocalOnly = "__SUBMISSION_LOCAL_ONLY__"
 	KeyIMAPLocalOnly       = "__IMAP_LOCAL_ONLY__"
 	KeyTurnLocalOnly       = "__TURN_LOCAL_ONLY__"
+	KeySaslLocalOnly       = "__SASL_LOCAL_ONLY__"
 	KeyIrohLocalOnly       = "__IROH_LOCAL_ONLY__"
 	KeyHTTPLocalOnly       = "__HTTP_LOCAL_ONLY__"
 	KeyHTTPSLocalOnly      = "__HTTPS_LOCAL_ONLY__"
@@ -522,6 +524,7 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		resp.SubmissionAccess = getAccess(KeySubmissionLocalOnly)
 		resp.IMAPAccess = getAccess(KeyIMAPLocalOnly)
 		resp.TurnAccess = getAccess(KeyTurnLocalOnly)
+		resp.SaslAccess = getAccess(KeySaslLocalOnly)
 		resp.IrohAccess = getAccess(KeyIrohLocalOnly)
 		resp.HTTPAccess = getAccess(KeyHTTPLocalOnly)
 		resp.HTTPSAccess = getAccess(KeyHTTPSLocalOnly)

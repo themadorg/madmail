@@ -12,6 +12,9 @@
     AlertTriangle,
     Pencil,
     RotateCcw,
+    ChevronLeft,
+    ChevronRight,
+    Search,
   } from "lucide-svelte";
 
   let locale = $state(getLocale());
@@ -26,6 +29,7 @@
   let sortBy = $state<"name" | "size" | "date" | "login">("name");
   let sortAsc = $state(true);
   let copied = $state(false);
+  let searchQuery = $state("");
 
   // Quota editing state
   let editingDefaultQuota = $state(false);
@@ -69,7 +73,12 @@
 
   let sortedAccounts = $derived.by(() => {
     if (!store.accounts) return [];
-    const list = [...store.accounts.accounts];
+    let list = [...store.accounts.accounts];
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((a) => a.username.toLowerCase().includes(q));
+    }
     if (sortBy === "size") {
       list.sort((a, b) =>
         sortAsc ? a.used_bytes - b.used_bytes : b.used_bytes - a.used_bytes,
@@ -92,6 +101,25 @@
       );
     }
     return list;
+  });
+
+  // Pagination (frontend-only)
+  let page = $state(1);
+  let pageSize = $state(50);
+  let totalPages = $derived(
+    Math.max(1, Math.ceil(sortedAccounts.length / pageSize)),
+  );
+  let pagedAccounts = $derived.by(() => {
+    const start = (page - 1) * pageSize;
+    return sortedAccounts.slice(start, start + pageSize);
+  });
+
+  // Reset to page 1 when sort or search changes
+  $effect(() => {
+    void sortBy;
+    void sortAsc;
+    void searchQuery;
+    page = 1;
   });
 
   let isRegistrationClosed = $derived(
@@ -238,63 +266,122 @@
     </div>
   {/if}
 
-  <div class="flex gap-2 mb-3 flex-wrap">
-    <button
-      onclick={() => toggleSort("name")}
-      class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
-        {sortBy === 'name'
-        ? 'border-accent/40 text-accent bg-accent/5'
-        : 'border-border text-text-2 hover:border-text-2/40'}"
-    >
-      <ArrowUpDown size={11} />
-      {_("acct.sort_name")}
-      {#if sortBy === "name"}<span class="text-[10px] opacity-60"
-          >{sortAsc ? "↑" : "↓"}</span
-        >{/if}
-    </button>
-    <button
-      onclick={() => toggleSort("size")}
-      class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
-        {sortBy === 'size'
-        ? 'border-accent/40 text-accent bg-accent/5'
-        : 'border-border text-text-2 hover:border-text-2/40'}"
-    >
-      <ArrowUpDown size={11} />
-      {_("acct.sort_size")}
-      {#if sortBy === "size"}<span class="text-[10px] opacity-60"
-          >{sortAsc ? "↑" : "↓"}</span
-        >{/if}
-    </button>
-    <button
-      onclick={() => toggleSort("date")}
-      class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
-        {sortBy === 'date'
-        ? 'border-accent/40 text-accent bg-accent/5'
-        : 'border-border text-text-2 hover:border-text-2/40'}"
-    >
-      <ArrowUpDown size={11} />
-      {_("acct.sort_date")}
-      {#if sortBy === "date"}<span class="text-[10px] opacity-60"
-          >{sortAsc ? "↑" : "↓"}</span
-        >{/if}
-    </button>
-    <button
-      onclick={() => toggleSort("login")}
-      class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
-        {sortBy === 'login'
-        ? 'border-accent/40 text-accent bg-accent/5'
-        : 'border-border text-text-2 hover:border-text-2/40'}"
-    >
-      <ArrowUpDown size={11} />
-      {_("acct.sort_login")}
-      {#if sortBy === "login"}<span class="text-[10px] opacity-60"
-          >{sortAsc ? "↑" : "↓"}</span
-        >{/if}
-    </button>
+  <!-- Search + Sort + Pagination bar -->
+  <div class="relative mb-3">
+    <Search
+      size={13}
+      class="absolute start-2.5 top-1/2 -translate-y-1/2 text-text-2/50 pointer-events-none"
+    />
+    <input
+      type="text"
+      class="w-full ps-8 pe-3 py-1.5 text-xs rounded-lg border border-border bg-surface-2 text-text-1 placeholder:text-text-2/40 focus:outline-none focus:border-accent/50 transition-colors"
+      placeholder={_("acct.search_placeholder")}
+      bind:value={searchQuery}
+    />
+  </div>
+
+  <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+    <div class="flex gap-2 flex-wrap">
+      <button
+        onclick={() => toggleSort("name")}
+        class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
+          {sortBy === 'name'
+          ? 'border-accent/40 text-accent bg-accent/5'
+          : 'border-border text-text-2 hover:border-text-2/40'}"
+      >
+        <ArrowUpDown size={11} />
+        {_("acct.sort_name")}
+        {#if sortBy === "name"}<span class="text-[10px] opacity-60"
+            >{sortAsc ? "↑" : "↓"}</span
+          >{/if}
+      </button>
+      <button
+        onclick={() => toggleSort("size")}
+        class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
+          {sortBy === 'size'
+          ? 'border-accent/40 text-accent bg-accent/5'
+          : 'border-border text-text-2 hover:border-text-2/40'}"
+      >
+        <ArrowUpDown size={11} />
+        {_("acct.sort_size")}
+        {#if sortBy === "size"}<span class="text-[10px] opacity-60"
+            >{sortAsc ? "↑" : "↓"}</span
+          >{/if}
+      </button>
+      <button
+        onclick={() => toggleSort("date")}
+        class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
+          {sortBy === 'date'
+          ? 'border-accent/40 text-accent bg-accent/5'
+          : 'border-border text-text-2 hover:border-text-2/40'}"
+      >
+        <ArrowUpDown size={11} />
+        {_("acct.sort_date")}
+        {#if sortBy === "date"}<span class="text-[10px] opacity-60"
+            >{sortAsc ? "↑" : "↓"}</span
+          >{/if}
+      </button>
+      <button
+        onclick={() => toggleSort("login")}
+        class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
+          {sortBy === 'login'
+          ? 'border-accent/40 text-accent bg-accent/5'
+          : 'border-border text-text-2 hover:border-text-2/40'}"
+      >
+        <ArrowUpDown size={11} />
+        {_("acct.sort_login")}
+        {#if sortBy === "login"}<span class="text-[10px] opacity-60"
+            >{sortAsc ? "↑" : "↓"}</span
+          >{/if}
+      </button>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center gap-1.5">
+      <span class="text-[10px] text-text-2 tabular-nums">
+        {(page - 1) * pageSize + 1}–{Math.min(
+          page * pageSize,
+          sortedAccounts.length,
+        )}/{sortedAccounts.length}
+      </span>
+      <select
+        class="bg-surface-1 border border-border rounded px-1 py-0.5 text-[10px] text-text-1 focus:outline-none focus:border-accent cursor-pointer"
+        value={pageSize}
+        onchange={(e) => {
+          pageSize = Number((e.target as HTMLSelectElement).value);
+          page = 1;
+        }}
+      >
+        <option value={25}>25</option>
+        <option value={50}>50</option>
+        <option value={100}>100</option>
+      </select>
+      <button
+        onclick={() => {
+          page = Math.max(1, page - 1);
+        }}
+        disabled={page <= 1}
+        class="p-0.5 rounded border border-border text-text-2 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+      >
+        <ChevronLeft size={12} />
+      </button>
+      <span class="text-[10px] text-text-2 tabular-nums"
+        >{page}/{totalPages}</span
+      >
+      <button
+        onclick={() => {
+          page = Math.min(totalPages, page + 1);
+        }}
+        disabled={page >= totalPages}
+        class="p-0.5 rounded border border-border text-text-2 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+      >
+        <ChevronRight size={12} />
+      </button>
+    </div>
   </div>
 
   <div class="space-y-1">
-    {#each sortedAccounts as acct (acct.username)}
+    {#each pagedAccounts as acct (acct.username)}
       <div
         class="flex items-center justify-between bg-surface-2 rounded-lg px-3 py-2 border border-border group"
       >

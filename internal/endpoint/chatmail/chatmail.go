@@ -874,6 +874,8 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	module.IncrementReceivedMessages()
+
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"

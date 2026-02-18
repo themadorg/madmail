@@ -71,7 +71,7 @@ func SharesHandler(deps SharesDeps) func(string, json.RawMessage) (interface{}, 
 			if err := deps.DB.Create(&contact).Error; err != nil {
 				return nil, 500, fmt.Errorf("failed to create share: %v", err)
 			}
-			return shareEntry{Slug: req.Slug, URL: req.URL, Name: req.Name}, 201, nil
+			return shareEntry(req), 201, nil
 
 		case "PUT":
 			var req updateShareRequest

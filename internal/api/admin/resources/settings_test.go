@@ -229,7 +229,7 @@ func TestGenericSettingHandler_Reset(t *testing.T) {
 
 	// Set then reset
 	body, _ := json.Marshal(settingValueRequest{Action: "set", Value: "2525"})
-	handler("POST", body)
+	_, _, _ = handler("POST", body)
 
 	body, _ = json.Marshal(settingValueRequest{Action: "reset"})
 	resp, status, err := handler("POST", body)
@@ -298,9 +298,9 @@ func TestAllSettingsHandler(t *testing.T) {
 	handler := AllSettingsHandler(deps)
 
 	// Set some values
-	store.Set(KeySMTPPort, "2525")
-	store.Set(KeyIrohEnabled, "false")
-	store.Set(KeyTurnRealm, "example.com")
+	_ = store.Set(KeySMTPPort, "2525")
+	_ = store.Set(KeyIrohEnabled, "false")
+	_ = store.Set(KeyTurnRealm, "example.com")
 
 	resp, status, err := handler("GET", nil)
 	if err != nil {
@@ -509,7 +509,7 @@ func TestConfigSettingsRoundTrip(t *testing.T) {
 
 			// Reset
 			body, _ = json.Marshal(settingValueRequest{Action: "reset"})
-			handler("POST", body)
+			_, _, _ = handler("POST", body)
 
 			resp, _, _ = handler("GET", nil)
 			r = resp.(settingValueResponse)

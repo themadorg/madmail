@@ -49,11 +49,6 @@ func AccountsHandler(deps AccountsDeps) func(string, json.RawMessage) (interface
 			if err != nil {
 				return nil, 500, fmt.Errorf("failed to list users: %v", err)
 			}
-			// Fetch per-user storage usage in a single query
-			usageMap, _ := deps.Storage.GetAllUsedStorage() // non-fatal if it fails
-			if usageMap == nil {
-				usageMap = make(map[string]int64)
-			}
 			// Fetch per-user account dates in a single query
 			infoMap, _ := deps.Storage.GetAllAccountInfo()
 			if infoMap == nil {

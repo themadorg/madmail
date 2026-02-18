@@ -12,10 +12,6 @@ type QueueDeps struct {
 	Storage module.ManageableStorage
 }
 
-type purgeAccountRequest struct {
-	Username string `json:"username"`
-}
-
 type purgeResponse struct {
 	Action  string `json:"action"`
 	Message string `json:"message"`
