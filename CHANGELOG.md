@@ -1,3 +1,20 @@
+# [0.15.0](https://github.com/themadorg/madmail/compare/v0.14.2...v0.15.0) (2026-02-18)
+
+
+### Bug Fixes
+
+* auto-restart on port access toggle + upgrade reliability ([dddbf22](https://github.com/themadorg/madmail/commit/dddbf22687ffbcd95c6794ecaa5c97ca42bc5d17))
+
+
+### Features
+
+* admin API path config, last login tracking, and account dates ([937bf09](https://github.com/themadorg/madmail/commit/937bf092c831766b0a720fa3b357a9f2726cc59a))
+* admin panel improvements and GitHub Pages deployment ([993386d](https://github.com/themadorg/madmail/commit/993386d6f6fea637012aa42e1fbd6e4ae67b6168))
+* count received messages from external servers ([0527856](https://github.com/themadorg/madmail/commit/0527856ab389f23f1a0e8f38f7657215708b3975))
+* enforce port access control (local-only) for all endpoints ([30bd7ae](https://github.com/themadorg/madmail/commit/30bd7aeac85094afa3cdcff2c696b9596fe482f1))
+* message counters, outbound tracking, and quota management UI ([c9d6f80](https://github.com/themadorg/madmail/commit/c9d6f806df2e89317226e59c4a97e6893d69e1f7))
+* multi-server credentials stored in IndexedDB ([7f4ce3a](https://github.com/themadorg/madmail/commit/7f4ce3acf68d0d8bc88fec07bca0be7248076220))
+
 ## [0.14.2](https://github.com/themadorg/madmail/compare/v0.14.1...v0.14.2) (2026-02-17)
 
 
