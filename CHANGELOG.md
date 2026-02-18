@@ -1,3 +1,10 @@
+## [0.15.1](https://github.com/themadorg/madmail/compare/v0.15.0...v0.15.1) (2026-02-18)
+
+
+### Bug Fixes
+
+* allow GitHub Pages deploy from main branch ([f49d610](https://github.com/themadorg/madmail/commit/f49d610d95c3afdf415000cbbce6d60e07a02a0c))
+
 # [0.15.0](https://github.com/themadorg/madmail/compare/v0.14.2...v0.15.0) (2026-02-18)
 
 
