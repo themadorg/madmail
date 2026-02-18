@@ -393,6 +393,9 @@ func (store *Storage) initQuotaTable() error {
 	if err := store.GORMDB.Where("name = ?", "outbound_messages").First(&stat).Error; err == nil {
 		module.SetOutboundMessages(stat.Count)
 	}
+	if err := store.GORMDB.Where("name = ?", "received_messages").First(&stat).Error; err == nil {
+		module.SetReceivedMessages(stat.Count)
+	}
 
 	// Background goroutine to flush counters to DB every 30s.
 	go store.flushMessageCounters()
@@ -410,6 +413,9 @@ func (store *Storage) flushMessageCounters() {
 		store.GORMDB.Where("name = ?", "outbound_messages").
 			Assign(mdb.MessageStat{Count: module.GetOutboundMessages()}).
 			FirstOrCreate(&mdb.MessageStat{Name: "outbound_messages"})
+		store.GORMDB.Where("name = ?", "received_messages").
+			Assign(mdb.MessageStat{Count: module.GetReceivedMessages()}).
+			FirstOrCreate(&mdb.MessageStat{Name: "received_messages"})
 	}
 }
 

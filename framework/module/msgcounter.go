@@ -41,3 +41,21 @@ func GetOutboundMessages() int64 {
 func SetOutboundMessages(n int64) {
 	outboundMessages.Store(n)
 }
+
+// receivedMessages counts messages received from external servers.
+var receivedMessages atomic.Int64
+
+// IncrementReceivedMessages atomically adds 1 to the received counter.
+func IncrementReceivedMessages() {
+	receivedMessages.Add(1)
+}
+
+// GetReceivedMessages returns the current received count.
+func GetReceivedMessages() int64 {
+	return receivedMessages.Load()
+}
+
+// SetReceivedMessages sets the received counter to a specific value.
+func SetReceivedMessages(n int64) {
+	receivedMessages.Store(n)
+}

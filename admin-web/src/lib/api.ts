@@ -24,6 +24,7 @@ export interface StatusResponse {
     email_servers?: { connection_ips: number; domain_servers: number; ip_servers: number };
     sent_messages: number;
     outbound_messages: number;
+    received_messages: number;
 }
 
 export interface StorageResponse {

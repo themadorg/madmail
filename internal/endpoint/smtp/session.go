@@ -537,6 +537,9 @@ func (s *Session) Data(r io.Reader) error {
 	s.log.Msg("accepted", "msg_id", s.msgMeta.ID)
 	completedSMTPTransactions.WithLabelValues(s.endp.name).Inc()
 	module.IncrementSentMessages()
+	if !s.endp.submission {
+		module.IncrementReceivedMessages()
+	}
 
 	return nil
 }

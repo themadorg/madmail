@@ -27,6 +27,7 @@ type StatusResponse struct {
 	EmailServers     *EmailServers  `json:"email_servers,omitempty"`
 	SentMessages     int64          `json:"sent_messages"`
 	OutboundMessages int64          `json:"outbound_messages"`
+	ReceivedMessages int64          `json:"received_messages"`
 }
 
 type ServiceStatus struct {
@@ -131,6 +132,7 @@ func StatusHandler(deps StatusDeps) func(method string, body json.RawMessage) (i
 		// Message counters
 		resp.SentMessages = module.GetSentMessages()
 		resp.OutboundMessages = module.GetOutboundMessages()
+		resp.ReceivedMessages = module.GetReceivedMessages()
 
 		return resp, 200, nil
 	}

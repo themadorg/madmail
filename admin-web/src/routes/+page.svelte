@@ -11,6 +11,7 @@
     Trash2,
     Mail,
     SendHorizonal,
+    Inbox,
   } from "lucide-svelte";
 
   let locale = $state(getLocale());
@@ -73,6 +74,13 @@
     _("stat.outbound"),
     store.status?.outbound_messages != null
       ? store.status.outbound_messages.toLocaleString()
+      : "—",
+  )}
+  {@render statCard(
+    Inbox,
+    _("stat.received"),
+    store.status?.received_messages != null
+      ? store.status.received_messages.toLocaleString()
       : "—",
   )}
 </div>
