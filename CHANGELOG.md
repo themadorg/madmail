@@ -1,3 +1,10 @@
+## [0.15.3](https://github.com/themadorg/madmail/compare/v0.15.2...v0.15.3) (2026-02-18)
+
+
+### Bug Fixes
+
+* add base path prefix for GitHub Pages deployment ([f9da1d8](https://github.com/themadorg/madmail/commit/f9da1d8408248d71b3e5cdeed9974620a5ea9180))
+
 ## [0.15.2](https://github.com/themadorg/madmail/compare/v0.15.1...v0.15.2) (2026-02-18)
 
 
