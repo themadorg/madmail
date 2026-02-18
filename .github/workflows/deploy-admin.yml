@@ -2,9 +2,7 @@ name: "Deploy Admin Panel"
 
 on:
   push:
-    branches: [main, dev]
-    paths:
-      - 'admin-web/**'
+    branches: [main]
 
 permissions:
   contents: read
