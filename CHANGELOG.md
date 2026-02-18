@@ -1,3 +1,10 @@
+## [0.15.2](https://github.com/themadorg/madmail/compare/v0.15.1...v0.15.2) (2026-02-18)
+
+
+### Bug Fixes
+
+* deploy admin panel on every push to main ([a1a344e](https://github.com/themadorg/madmail/commit/a1a344e11f94d68b056795e762c1cb3192709cac))
+
 ## [0.15.1](https://github.com/themadorg/madmail/compare/v0.15.0...v0.15.1) (2026-02-18)
 
 
