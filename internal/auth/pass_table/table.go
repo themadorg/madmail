@@ -70,6 +70,10 @@ func (a *Auth) Init(cfg *config.Map) error {
 		log.DefaultLogger.Out = log.NopOutput{}
 	}
 
+	// Register this auth DB as the global settings provider so other
+	// modules (smtp, imap, turn) can read port access control settings.
+	module.RegisterSettingsProvider(a.GetSetting)
+
 	return nil
 }
 
@@ -401,6 +405,52 @@ func (a *Auth) SetJitRegistrationEnabled(enabled bool) error {
 		val = "true"
 	}
 	return mtbl.SetKey("__JIT_REGISTRATION_ENABLED__", val)
+}
+
+// GetSetting retrieves a raw string value from the settings table.
+// Returns (value, true, nil) if found, ("", false, nil) if not set.
+func (a *Auth) GetSetting(key string) (string, bool, error) {
+	tbl := a.table
+	if a.settingsTable != nil {
+		tbl = a.settingsTable
+	}
+
+	val, ok, err := tbl.Lookup(context.TODO(), key)
+	if err != nil {
+		return "", false, err
+	}
+	if !ok {
+		return "", false, nil
+	}
+	return val, true, nil
+}
+
+// SetSetting stores a raw string value in the settings table.
+func (a *Auth) SetSetting(key, value string) error {
+	tbl := a.table
+	if a.settingsTable != nil {
+		tbl = a.settingsTable
+	}
+
+	mtbl, ok := tbl.(module.MutableTable)
+	if !ok {
+		return fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
+	}
+	return mtbl.SetKey(key, value)
+}
+
+// DeleteSetting removes a key from the settings table.
+func (a *Auth) DeleteSetting(key string) error {
+	tbl := a.table
+	if a.settingsTable != nil {
+		tbl = a.settingsTable
+	}
+
+	mtbl, ok := tbl.(module.MutableTable)
+	if !ok {
+		return fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
+	}
+	return mtbl.RemoveKey(key)
 }
 
 func init() {

@@ -115,6 +115,44 @@ maddy dns-cache get nine.testrun.org
 maddy dns-cache remove nine.testrun.org
 ```
 
+## Admin API
+
+DNS overrides can also be managed through the Admin API at `POST /api/admin`:
+
+```bash
+# List all overrides
+curl -X POST https://your-server/api/admin \
+  -H 'Content-Type: application/json' \
+  -d '{"method": "GET", "resource": "/admin/dns",
+       "headers": {"Authorization": "Bearer TOKEN"}}'
+
+# Add/update an override
+curl -X POST https://your-server/api/admin \
+  -H 'Content-Type: application/json' \
+  -d '{"method": "POST", "resource": "/admin/dns",
+       "headers": {"Authorization": "Bearer TOKEN"},
+       "body": {"lookup_key": "example.com", "target_host": "10.0.0.5", "comment": "Route to internal"}}'
+
+# Delete an override
+curl -X POST https://your-server/api/admin \
+  -H 'Content-Type: application/json' \
+  -d '{"method": "DELETE", "resource": "/admin/dns",
+       "headers": {"Authorization": "Bearer TOKEN"},
+       "body": {"lookup_key": "example.com"}}'
+```
+
+See [admin_api.md](admin_api.md) for full API documentation.
+
+## Admin Web UI
+
+The Admin panel (`/admin/`) includes a dedicated **DNS** tab for managing overrides through a graphical interface. This provides:
+
+- View all overrides with search/filter
+- Add new overrides via a form
+- Delete overrides with a confirmation modal
+- Light and dark mode support
+
+
 ## Programmatic API
 
 The `dns_cache.Cache` type provides these methods:

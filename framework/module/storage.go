@@ -25,6 +25,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// BlockedUserEntry represents a blocked user returned by ListBlockedUsers.
+type BlockedUserEntry struct {
+	Username  string
+	Reason    string
+	BlockedAt time.Time
+}
+
 // Storage interface is a slightly modified go-imap's Backend interface
 // (authentication is removed).
 //
@@ -61,9 +68,22 @@ type ManageableStorage interface {
 	GetDefaultQuota() int64
 	SetDefaultQuota(max int64) error
 	GetStat() (totalStorage int64, accountsCount int, err error)
+	GetAllUsedStorage() (map[string]int64, error)
 	PurgeAllIMAPMsgs() error
 	PurgeReadIMAPMsgs() error
 	PruneUnreadIMAPMsgs(retention time.Duration) error
+
+	// Blocklist management — prevents blocked usernames from re-registering.
+	BlockUser(username, reason string) error
+	UnblockUser(username string) error
+	IsBlocked(username string) (bool, error)
+	ListBlockedUsers() ([]BlockedUserEntry, error)
+
+	// DeleteAccount performs a full account removal:
+	// 1. Delete IMAP storage and all messages
+	// 2. Delete quota record
+	// 3. Block the username from re-registration
+	DeleteAccount(username, reason string) error
 }
 
 // GORMProvider is an optional interface that storage modules can implement

@@ -204,6 +204,15 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 		addresses = append(addresses, saddr)
 	}
 
+	// Port access control: if TURN is set to local-only,
+	// rewrite 0.0.0.0 to 127.0.0.1 so it's only reachable via Shadowsocks.
+	if module.IsLocalOnly("__TURN_LOCAL_ONLY__") {
+		endp.Log.Printf("local-only mode active, binding to 127.0.0.1 only")
+		for i, addr := range addresses {
+			addresses[i] = addr.WithLocalHost()
+		}
+	}
+
 	for _, addr := range addresses {
 		relayIP := endp.relayIP
 		if relayIP == nil || relayIP.IsUnspecified() {

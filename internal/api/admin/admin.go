@@ -103,6 +103,17 @@ const maxRequestSize = 1 << 20 // 1 MB
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
+	// CORS headers — required for admin dashboard web app
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle CORS preflight
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	// Only accept POST
 	if r.Method != http.MethodPost {
 		writeResponse(w, Response{

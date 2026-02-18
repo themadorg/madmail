@@ -118,11 +118,119 @@ Response:
 - **GET**: Returns whether Shadowsocks is enabled
 - **POST**: `{"action": "enable"}` or `{"action": "disable"}`
 
+### `/admin/services/log` — Logging Toggle
+- **GET**: Returns whether logging is disabled (No Log Policy)
+- **POST**: `{"action": "enable"}` or `{"action": "disable"}`
+
+### `/admin/settings` — Bulk Settings (Read-Only)
+- **GET**: Returns all settings (toggles + ports + config) in one response
+
+### Port Settings
+
+Each port setting endpoint supports:
+- **GET**: Returns the current value and whether it is explicitly set
+- **POST**: `{"action": "set", "value": "2525"}` or `{"action": "reset"}`
+
+| Endpoint | Description |
+|----------|-------------|
+| `/admin/settings/smtp_port` | SMTP server port |
+| `/admin/settings/submission_port` | Submission server port |
+| `/admin/settings/imap_port` | IMAP server port |
+| `/admin/settings/turn_port` | TURN relay port |
+| `/admin/settings/dovecot_port` | Dovecot SASL port |
+| `/admin/settings/iroh_port` | Iroh relay port |
+| `/admin/settings/ss_port` | Shadowsocks proxy port |
+
+### Configuration Settings
+
+Each configuration endpoint supports the same GET/POST (set/reset) pattern:
+
+| Endpoint | Description |
+|----------|-------------|
+| `/admin/settings/smtp_hostname` | SMTP server hostname |
+| `/admin/settings/turn_realm` | TURN server realm |
+| `/admin/settings/turn_secret` | TURN shared secret |
+| `/admin/settings/turn_relay_ip` | TURN relay IP address |
+| `/admin/settings/turn_ttl` | TURN credential TTL (seconds) |
+| `/admin/settings/iroh_relay_url` | Iroh relay URL |
+| `/admin/settings/ss_cipher` | Shadowsocks cipher algorithm |
+| `/admin/settings/ss_password` | Shadowsocks password |
+
+Example — set a port:
+```json
+{"method": "POST", "resource": "/admin/settings/smtp_port",
+ "headers": {"Authorization": "Bearer TOKEN"},
+ "body": {"action": "set", "value": "2525"}}
+```
+
+Example — read a setting:
+```json
+{"method": "GET", "resource": "/admin/settings/turn_secret",
+ "headers": {"Authorization": "Bearer TOKEN"}}
+```
+
+Response:
+```json
+{"status": 200, "body": {"key": "__TURN_SECRET__", "value": "mysecret", "is_set": true}}
+```
+
+Example — reset to default:
+```json
+{"method": "POST", "resource": "/admin/settings/smtp_port",
+ "headers": {"Authorization": "Bearer TOKEN"},
+ "body": {"action": "reset"}}
+```
+
 ### `/admin/accounts` — Account Management
-- **GET**: Returns list of all accounts
-- **DELETE**: `{"username": "user@domain"}` — Deletes the specified account
+- **GET**: Returns list of all accounts with storage usage
+- **DELETE**: `{"username": "user@domain"}` — Fully deletes the account and blocks the username
+
+Deletion removes:
+1. Authentication credentials
+2. IMAP storage and all messages
+3. Quota records
+4. Adds the username to the blocklist (prevents re-registration)
 
 Note: Account creation is intentionally excluded. Use the CLI (`maddy creds create`) or the `/new` registration endpoint.
+
+### `/admin/blocklist` — Blocked Users Management
+- **GET**: Returns list of all blocked usernames
+- **POST**: `{"username": "user@domain", "reason": "optional reason"}` — Block a username
+- **DELETE**: `{"username": "user@domain"}` — Unblock a username
+
+Blocked usernames cannot register via `/new` or be auto-created via JIT login.
+Deleted accounts are automatically added to the blocklist.
+
+Example — list blocked users:
+```json
+{"method": "GET", "resource": "/admin/blocklist",
+ "headers": {"Authorization": "Bearer TOKEN"}}
+```
+
+Response:
+```json
+{"status": 200, "body": {
+    "total": 2,
+    "blocked": [
+        {"username": "spammer@domain", "reason": "deleted via admin panel", "blocked_at": "2026-02-18T15:30:00Z"},
+        {"username": "abuser@domain", "reason": "manually blocked", "blocked_at": "2026-02-18T14:00:00Z"}
+    ]
+}}
+```
+
+Example — manually block a user:
+```json
+{"method": "POST", "resource": "/admin/blocklist",
+ "headers": {"Authorization": "Bearer TOKEN"},
+ "body": {"username": "spammer@domain", "reason": "abuse"}}
+```
+
+Example — unblock a user:
+```json
+{"method": "DELETE", "resource": "/admin/blocklist",
+ "headers": {"Authorization": "Bearer TOKEN"},
+ "body": {"username": "spammer@domain"}}
+```
 
 ### `/admin/quota` — Quota Management
 - **GET**: Returns storage stats (or per-user quota if `{"username": "..."}` provided)
@@ -147,6 +255,23 @@ Only available when the storage module provides a GORM DB.
 - **GET**: List all DNS overrides
 - **POST**: Create/update an override — `{"lookup_key": "example.com", "target_host": "1.2.3.4", "comment": "..."}`
 - **DELETE**: Delete an override — `{"lookup_key": "example.com"}`
+
+See [dns_cache.md](dns_cache.md) for detailed documentation on the DNS override system.
+
+## Web Admin Panel
+
+All Admin API resources are also accessible through a built-in web interface at `/admin/`. The panel uses the same authentication token and provides:
+
+| Tab | Features |
+|-----|----------|
+| **Overview** | Server stats (users, uptime, disk, storage), connection counts (IMAP, TURN, Shadowsocks), disk usage bar, queue purge buttons |
+| **Services** | Toggle switches for Registration, JIT, TURN, Iroh, Shadowsocks, and Logging |
+| **Ports** | View and modify all service port numbers and configuration values |
+| **Accounts** | List all accounts with storage usage, delete accounts (with confirmation modal) |
+| **Blocked** | View blocked usernames, unblock users (with confirmation modal) |
+| **DNS** | View, add, search, and delete DNS overrides (with confirmation modal) |
+
+The panel supports both **light and dark mode** via a toggle in the header, and is available in English, Farsi, Spanish, and Russian.
 
 ## Security Considerations
 

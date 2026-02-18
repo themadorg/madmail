@@ -121,6 +121,19 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 		addresses = append(addresses, saddr)
 	}
 
+	// Port access control: if this endpoint is set to local-only,
+	// rewrite 0.0.0.0 to 127.0.0.1 so it's only reachable via Shadowsocks.
+	localOnlyKey := "__SMTP_LOCAL_ONLY__"
+	if endp.submission {
+		localOnlyKey = "__SUBMISSION_LOCAL_ONLY__"
+	}
+	if module.IsLocalOnly(localOnlyKey) {
+		endp.Log.Printf("local-only mode active, binding to 127.0.0.1 only")
+		for i, addr := range addresses {
+			addresses[i] = addr.WithLocalHost()
+		}
+	}
+
 	if err := endp.setupListeners(addresses); err != nil {
 		for _, l := range endp.listeners {
 			l.Close()

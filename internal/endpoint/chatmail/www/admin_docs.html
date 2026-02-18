@@ -66,6 +66,13 @@
         <p>این راهنما نحوه مدیریت سهمیه (Quota) کاربران و مشاهده آمار سرور را با استفاده از دستورات <code>maddy</code>
             توضیح می‌دهد.</p>
 
+        <div class="info-note"
+            style="background: rgba(0, 210, 255, 0.05); border: 1px solid rgba(0, 210, 255, 0.2); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
+            <strong>💡 نکته:</strong> تمام این عملیات‌ها از طریق <a href="/docs/api"
+                style="color: var(--accent-color);">رابط وب مدیریت</a> در مسیر <code>/admin/</code> نیز قابل انجام هستند
+            — بدون نیاز به خط فرمان.
+        </div>
+
         <h2>مدیریت سهمیه (Quota)</h2>
         <p>شما می‌توانید سهمیه فضای ذخیره‌سازی کاربران را با استفاده از زیر-دستورات <code>maddy imap-acct quota</code>
             مدیریت کنید.</p>
@@ -240,6 +247,50 @@
             <div class="code-block">
                 maddy creds turn status
             </div>
+        </div>
+
+        <h2>مدیریت لاگ (سیاست بدون لاگ)</h2>
+        <p>شما می‌توانید ثبت لاگ سرور را فعال یا غیرفعال کنید. در حالت غیرفعال، هیچ اطلاعاتی در مورد فعالیت‌های کاربران
+            ثبت
+            نمی‌شود.</p>
+
+        <div class="cmd-info">
+            <h3>غیرفعال کردن لاگ</h3>
+            <p>برای رعایت حریم خصوصی کاربران و جلوگیری از ذخیره اطلاعات فعالیت.</p>
+            <div class="code-block">
+                maddy creds log disable
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>فعال کردن لاگ</h3>
+            <div class="code-block">
+                maddy creds log enable
+            </div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده وضعیت فعلی</h3>
+            <div class="code-block">
+                maddy creds log status
+            </div>
+        </div>
+
+        <h2>تنظیمات پورت‌ها و پیکربندی</h2>
+        <p>پورت‌ها و تنظیمات سرویس‌ها (مانند hostname، secret، relay IP و غیره) از طریق Admin API قابل مدیریت هستند.
+            این تنظیمات در دیتابیس ذخیره شده و بر مقادیر فایل پیکربندی اولویت دارند.</p>
+
+        <div class="cmd-info">
+            <h3>لیست تنظیمات قابل مدیریت</h3>
+            <ul>
+                <li><strong>پورت‌ها:</strong> SMTP، Submission، IMAP، TURN، Dovecot، Iroh، Shadowsocks</li>
+                <li><strong>پیکربندی:</strong> SMTP hostname، TURN realm/secret/relay IP/TTL، Iroh relay URL،
+                    Shadowsocks
+                    cipher/password</li>
+            </ul>
+            <p>برای مدیریت این تنظیمات از <a href="/docs/admin-api" style="color: var(--accent-color);">Admin API</a>
+                استفاده کنید. مسیرهای مربوطه در بخش «تنظیمات پورت‌ها» و «تنظیمات پیکربندی» مستندات API توضیح داده
+                شده‌اند.</p>
         </div>
 
         <h2>حالت مخفی (Stealth Mode)</h2>

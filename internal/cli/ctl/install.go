@@ -1944,7 +1944,7 @@ RuntimeDirectory=maddy
 StateDirectory=maddy
 LogsDirectory=maddy
 ReadOnlyPaths=/usr/lib/maddy
-ReadWritePaths={{.StateDir}}
+ReadWritePaths={{.StateDir}} {{.ConfigDir}}
 
 # Strict sandboxing. You have no reason to trust code written by strangers from GitHub.
 PrivateTmp=true
@@ -1991,14 +1991,18 @@ LimitNOFILE=131072
 # processes launched.
 LimitNPROC=512
 
-# Restart server on any problem.
-Restart=on-failure
+# Restart server on any problem (including admin-triggered config reload).
+Restart=always
 # ... Unless it is a configuration problem.
 RestartPreventExitStatus=2
 
 {{if .SkipSync}}
 Environment=MADDY_SQLITE_UNSAFE_SYNC_OFF=1
 {{end}}
+
+# Copy pending config from state dir if written by admin reload API.
+# Runs as root (+) before dropping to maddy user. Uses cp+rm for cross-device support.
+ExecStartPre=-+/bin/sh -c 'test -f {{.StateDir}}/maddy.conf.pending && cp {{.StateDir}}/maddy.conf.pending {{.ConfigDir}}/maddy.conf && rm {{.StateDir}}/maddy.conf.pending || true'
 
 ExecStart={{.BinaryPath}} --config {{.ConfigDir}}/maddy.conf {{if .Debug}}--debug {{end}}run --libexec {{.LibexecDir}}
 
@@ -2028,7 +2032,7 @@ RuntimeDirectory=maddy
 StateDirectory=maddy
 LogsDirectory=maddy
 ReadOnlyPaths=/usr/lib/maddy
-ReadWritePaths={{.StateDir}}
+ReadWritePaths={{.StateDir}} {{.ConfigDir}}
 
 # Strict sandboxing. You have no reason to trust code written by strangers from GitHub.
 PrivateTmp=true
@@ -2075,14 +2079,18 @@ LimitNOFILE=131072
 # processes launched.
 LimitNPROC=512
 
-# Restart server on any problem.
-Restart=on-failure
+# Restart server on any problem (including admin-triggered config reload).
+Restart=always
 # ... Unless it is a configuration problem.
 RestartPreventExitStatus=2
 
 {{if .SkipSync}}
 Environment=MADDY_SQLITE_UNSAFE_SYNC_OFF=1
 {{end}}
+
+# Copy pending config from state dir if written by admin reload API.
+# Runs as root (+) before dropping to maddy user. Uses cp+rm for cross-device support.
+ExecStartPre=-+/bin/sh -c 'test -f {{.StateDir}}/maddy.conf.pending && cp {{.StateDir}}/maddy.conf.pending {{.ConfigDir}}/%i.conf && rm {{.StateDir}}/maddy.conf.pending || true'
 
 ExecStart={{.BinaryPath}} --config {{.ConfigDir}}/%i.conf run --libexec {{.LibexecDir}}
 ExecReload=/bin/kill -USR1 $MAINPID

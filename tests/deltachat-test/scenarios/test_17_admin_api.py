@@ -18,6 +18,11 @@ This test verifies the Admin API (POST /api/admin) functionality:
 14. Contact shares: Verifies /admin/shares CRUD (if contact sharing enabled).
 15. DNS overrides: Verifies /admin/dns CRUD.
 16. Method validation: Verifies 405 for unsupported methods.
+17. Log toggle: Verifies /admin/services/log can be toggled.
+18. Port settings: Verifies set/get/reset for all 7 port settings.
+19. Config settings: Verifies set/get/reset for all 8 config settings.
+20. Bulk settings: Verifies /admin/settings returns all settings at once.
+21. Reload endpoint: Verifies /admin/reload accepts POST and rejects GET.
 """
 
 import json
@@ -170,7 +175,7 @@ def run(dc, remote, test_dir=None):
     # 1. Authentication — Missing token
     # ------------------------------------------------------------------
     total += 1
-    print("\n[1/16] Authentication tests")
+    print("\n[1/21] Authentication tests")
 
     status, data = api_call(base_url, "/admin/status", token=None)
     assert data.get("status") == 401, \
@@ -188,7 +193,7 @@ def run(dc, remote, test_dir=None):
     # 2. Correct token
     # ------------------------------------------------------------------
     total += 1
-    print("\n[2/16] Correct token access")
+    print("\n[2/21] Correct token access")
     status, data = api_call(base_url, "/admin/status", token=token)
     assert data.get("status") == 200, \
         f"Expected 200 for correct token, got {data}"
@@ -199,7 +204,7 @@ def run(dc, remote, test_dir=None):
     # 3. Unknown resource
     # ------------------------------------------------------------------
     total += 1
-    print("\n[3/16] Unknown resource")
+    print("\n[3/21] Unknown resource")
     status, data = api_call(base_url, "/admin/nonexistent", token=token)
     assert data.get("status") == 404, \
         f"Expected 404 for unknown resource, got {data}"
@@ -210,7 +215,7 @@ def run(dc, remote, test_dir=None):
     # 4. /admin/status
     # ------------------------------------------------------------------
     total += 1
-    print("\n[4/16] /admin/status")
+    print("\n[4/21] /admin/status")
     status, data = api_call(base_url, "/admin/status", token=token)
     body = data.get("body", {})
 
@@ -232,7 +237,7 @@ def run(dc, remote, test_dir=None):
     # 5. /admin/storage
     # ------------------------------------------------------------------
     total += 1
-    print("\n[5/16] /admin/storage")
+    print("\n[5/21] /admin/storage")
     status, data = api_call(base_url, "/admin/storage", token=token)
     body = data.get("body", {})
 
@@ -256,7 +261,7 @@ def run(dc, remote, test_dir=None):
     # 6. /admin/registration — Toggle
     # ------------------------------------------------------------------
     total += 1
-    print("\n[6/16] Registration toggle")
+    print("\n[6/21] Registration toggle")
 
     # Get current state
     status, data = api_call(base_url, "/admin/registration", token=token)
@@ -307,7 +312,7 @@ def run(dc, remote, test_dir=None):
     # 7. /admin/registration/jit — JIT Toggle
     # ------------------------------------------------------------------
     total += 1
-    print("\n[7/16] JIT Registration toggle")
+    print("\n[7/21] JIT Registration toggle")
     test_toggle(base_url, token, "/admin/registration/jit", "JIT Registration")
     passed += 1
 
@@ -315,7 +320,7 @@ def run(dc, remote, test_dir=None):
     # 8. /admin/services/turn — TURN Toggle
     # ------------------------------------------------------------------
     total += 1
-    print("\n[8/16] TURN service toggle")
+    print("\n[8/21] TURN service toggle")
     test_toggle(base_url, token, "/admin/services/turn", "TURN")
     passed += 1
 
@@ -323,7 +328,7 @@ def run(dc, remote, test_dir=None):
     # 9. /admin/services/iroh — Iroh Toggle
     # ------------------------------------------------------------------
     total += 1
-    print("\n[9/16] Iroh service toggle")
+    print("\n[9/21] Iroh service toggle")
     test_toggle(base_url, token, "/admin/services/iroh", "Iroh")
     passed += 1
 
@@ -331,7 +336,7 @@ def run(dc, remote, test_dir=None):
     # 10. /admin/services/shadowsocks — Shadowsocks Toggle
     # ------------------------------------------------------------------
     total += 1
-    print("\n[10/16] Shadowsocks service toggle")
+    print("\n[10/21] Shadowsocks service toggle")
     test_toggle(base_url, token, "/admin/services/shadowsocks", "Shadowsocks")
     passed += 1
 
@@ -339,7 +344,7 @@ def run(dc, remote, test_dir=None):
     # 11. /admin/accounts — List accounts
     # ------------------------------------------------------------------
     total += 1
-    print("\n[11/16] Account listing")
+    print("\n[11/21] Account listing")
 
     status, data = api_call(base_url, "/admin/accounts", token=token)
     assert data.get("status") == 200
@@ -355,7 +360,7 @@ def run(dc, remote, test_dir=None):
     # 12. /admin/quota — Storage stats
     # ------------------------------------------------------------------
     total += 1
-    print("\n[12/16] Quota / storage stats")
+    print("\n[12/21] Quota / storage stats")
 
     status, data = api_call(base_url, "/admin/quota", token=token)
     assert data.get("status") == 200
@@ -373,7 +378,7 @@ def run(dc, remote, test_dir=None):
     # 13. /admin/accounts DELETE — Create and delete a test account
     # ------------------------------------------------------------------
     total += 1
-    print("\n[13/16] Account deletion via API")
+    print("\n[13/21] Account deletion via API")
 
     # Create an account via the /new endpoint
     print("  Creating disposable account via /new...")
@@ -418,7 +423,7 @@ def run(dc, remote, test_dir=None):
     # 14. /admin/queue — Purge operations
     # ------------------------------------------------------------------
     total += 1
-    print("\n[14/16] Queue operations")
+    print("\n[14/21] Queue operations")
 
     # purge_read (should succeed even if nothing to purge)
     status, data = api_call(
@@ -454,7 +459,7 @@ def run(dc, remote, test_dir=None):
     # 15. /admin/shares — Contact shares (may not be available)
     # ------------------------------------------------------------------
     total += 1
-    print("\n[15/16] Contact shares")
+    print("\n[15/21] Contact shares")
 
     status, data = api_call(base_url, "/admin/shares", token=token)
     if data.get("status") == 200:
@@ -508,7 +513,7 @@ def run(dc, remote, test_dir=None):
     # 16. /admin/dns — DNS overrides
     # ------------------------------------------------------------------
     total += 1
-    print("\n[16/16] DNS overrides")
+    print("\n[16/21] DNS overrides")
 
     status, data = api_call(base_url, "/admin/dns", token=token)
     if data.get("status") == 200:
@@ -559,6 +564,353 @@ def run(dc, remote, test_dir=None):
         print("  ⏭ DNS overrides not available (GORM DB not exposed)")
     else:
         print(f"  ⚠ Unexpected DNS response: {data}")
+    passed += 1
+
+    # ------------------------------------------------------------------
+    # 17. /admin/services/log — Log Toggle
+    # ------------------------------------------------------------------
+    total += 1
+    print("\n[17/21] Log toggle")
+    test_toggle(base_url, token, "/admin/services/log", "Logging")
+    passed += 1
+
+    # ------------------------------------------------------------------
+    # 18. Port settings — Set / Get / Reset for all ports
+    # ------------------------------------------------------------------
+    total += 1
+    print("\n[18/21] Port settings")
+
+    port_endpoints = [
+        ("/admin/settings/smtp_port", "__SMTP_PORT__", "2525"),
+        ("/admin/settings/submission_port", "__SUBMISSION_PORT__", "1587"),
+        ("/admin/settings/imap_port", "__IMAP_PORT__", "1993"),
+        ("/admin/settings/turn_port", "__TURN_PORT__", "4478"),
+        ("/admin/settings/dovecot_port", "__DOVECOT_PORT__", "12345"),
+        ("/admin/settings/iroh_port", "__IROH_PORT__", "9999"),
+        ("/admin/settings/ss_port", "__SS_PORT__", "9388"),
+    ]
+
+    for resource, expected_key, test_value in port_endpoints:
+        short = resource.split("/")[-1]
+
+        # GET — should not be set initially (or has a default)
+        status, data = api_call(base_url, resource, token=token)
+        assert data.get("status") == 200, f"  ✗ GET {resource} failed: {data}"
+        body = data["body"]
+        assert body["key"] == expected_key, f"  ✗ Expected key {expected_key}, got {body['key']}"
+        print(f"  ✓ GET {short}: key={body['key']}, is_set={body['is_set']}")
+
+        # SET
+        status, data = api_call(
+            base_url, resource, method="POST",
+            body={"action": "set", "value": test_value}, token=token
+        )
+        assert data.get("status") == 200, f"  ✗ SET {resource} failed: {data}"
+        assert data["body"]["value"] == test_value
+        assert data["body"]["is_set"] is True
+        print(f"  ✓ SET {short}={test_value}")
+
+        # GET — verify persistence
+        status, data = api_call(base_url, resource, token=token)
+        assert data["body"]["value"] == test_value, f"  ✗ Value not persisted for {short}"
+        assert data["body"]["is_set"] is True
+        print(f"  ✓ GET {short} confirmed persisted")
+
+        # RESET
+        status, data = api_call(
+            base_url, resource, method="POST",
+            body={"action": "reset"}, token=token
+        )
+        assert data.get("status") == 200, f"  ✗ RESET {resource} failed: {data}"
+        assert data["body"]["is_set"] is False
+        print(f"  ✓ RESET {short}")
+
+    # SET empty value should fail
+    status, data = api_call(
+        base_url, "/admin/settings/smtp_port", method="POST",
+        body={"action": "set", "value": ""}, token=token
+    )
+    assert data.get("status") == 400, f"  ✗ Expected 400 for empty value, got {data}"
+    print("  ✓ Empty value rejected (400)")
+
+    # Wrong method
+    status, data = api_call(
+        base_url, "/admin/settings/smtp_port", method="DELETE", token=token
+    )
+    assert data.get("status") == 405, f"  ✗ Expected 405 for DELETE, got {data}"
+    print("  ✓ Wrong method rejected (405)")
+
+    print("  ✓ All port settings PASSED")
+    passed += 1
+
+    # ------------------------------------------------------------------
+    # 19. Config settings — Set / Get / Reset for all config values
+    # ------------------------------------------------------------------
+    total += 1
+    print("\n[19/21] Config settings")
+
+    config_endpoints = [
+        ("/admin/settings/smtp_hostname", "__SMTP_HOSTNAME__", "mail.test.example.com"),
+        ("/admin/settings/turn_realm", "__TURN_REALM__", "test.realm.org"),
+        ("/admin/settings/turn_secret", "__TURN_SECRET__", "e2e-test-secret-42"),
+        ("/admin/settings/turn_relay_ip", "__TURN_RELAY_IP__", "192.168.99.1"),
+        ("/admin/settings/turn_ttl", "__TURN_TTL__", "7200"),
+        ("/admin/settings/iroh_relay_url", "__IROH_RELAY_URL__", "https://iroh.test.example.com"),
+        ("/admin/settings/ss_cipher", "__SS_CIPHER__", "aes-256-gcm"),
+        ("/admin/settings/ss_password", "__SS_PASSWORD__", "e2e-test-ss-pass"),
+    ]
+
+    for resource, expected_key, test_value in config_endpoints:
+        short = resource.split("/")[-1]
+
+        # SET
+        status, data = api_call(
+            base_url, resource, method="POST",
+            body={"action": "set", "value": test_value}, token=token
+        )
+        assert data.get("status") == 200, f"  ✗ SET {resource} failed: {data}"
+        assert data["body"]["key"] == expected_key
+        assert data["body"]["value"] == test_value
+        assert data["body"]["is_set"] is True
+        print(f"  ✓ SET {short}={test_value}")
+
+        # GET — verify persistence
+        status, data = api_call(base_url, resource, token=token)
+        assert data["body"]["value"] == test_value, f"  ✗ Value not persisted for {short}"
+        print(f"  ✓ GET {short} confirmed")
+
+        # RESET
+        status, data = api_call(
+            base_url, resource, method="POST",
+            body={"action": "reset"}, token=token
+        )
+        assert data.get("status") == 200, f"  ✗ RESET {resource} failed: {data}"
+        assert data["body"]["is_set"] is False
+        print(f"  ✓ RESET {short}")
+
+    print("  ✓ All config settings PASSED")
+    passed += 1
+
+    # ------------------------------------------------------------------
+    # 20. /admin/settings — Bulk settings read
+    # ------------------------------------------------------------------
+    total += 1
+    print("\n[20/21] Bulk settings")
+
+    # First, set a known port so we can verify it appears in bulk
+    api_call(
+        base_url, "/admin/settings/smtp_port", method="POST",
+        body={"action": "set", "value": "7777"}, token=token
+    )
+
+    status, data = api_call(base_url, "/admin/settings", token=token)
+    assert data.get("status") == 200, f"  ✗ Bulk GET failed: {data}"
+    body = data["body"]
+
+    # Check toggle keys are present
+    assert "registration" in body, f"  ✗ Missing 'registration' in bulk: {body}"
+    assert body["registration"] in ("open", "closed")
+    print(f"  ✓ registration: {body['registration']}")
+
+    assert "turn_enabled" in body
+    assert body["turn_enabled"] in ("enabled", "disabled")
+    print(f"  ✓ turn_enabled: {body['turn_enabled']}")
+
+    assert "iroh_enabled" in body
+    print(f"  ✓ iroh_enabled: {body['iroh_enabled']}")
+
+    assert "ss_enabled" in body
+    print(f"  ✓ ss_enabled: {body['ss_enabled']}")
+
+    assert "log_disabled" in body
+    print(f"  ✓ log_disabled: {body['log_disabled']}")
+
+    # Check our set port appears correctly
+    assert "smtp_port" in body
+    smtp_port = body["smtp_port"]
+    assert smtp_port["key"] == "__SMTP_PORT__"
+    assert smtp_port["value"] == "7777"
+    assert smtp_port["is_set"] is True
+    print(f"  ✓ smtp_port in bulk: {smtp_port['value']} (is_set={smtp_port['is_set']})")
+
+    # Check other port/config keys exist (may or may not be set)
+    for field in ["submission_port", "imap_port", "turn_port", "dovecot_port",
+                  "iroh_port", "ss_port", "smtp_hostname", "turn_realm",
+                  "turn_secret", "turn_relay_ip", "turn_ttl", "iroh_relay_url",
+                  "ss_cipher", "ss_password"]:
+        assert field in body, f"  ✗ Missing '{field}' in bulk response"
+    print("  ✓ All setting keys present in bulk response")
+
+    # Wrong method
+    status, data = api_call(
+        base_url, "/admin/settings", method="POST",
+        body={"action": "something"}, token=token
+    )
+    assert data.get("status") == 405, f"  ✗ Expected 405 for POST on /admin/settings, got {data}"
+    print("  ✓ POST on bulk settings rejected (405)")
+
+    # Clean up the test port
+    api_call(
+        base_url, "/admin/settings/smtp_port", method="POST",
+        body={"action": "reset"}, token=token
+    )
+    print("  ✓ Cleaned up test port")
+    passed += 1
+
+    # ------------------------------------------------------------------
+    # 21. /admin/reload — Port hot-reload + actual listener verification
+    # ------------------------------------------------------------------
+    total += 1
+    print("\n[21/21] Reload: port change + listener verification")
+
+    # --- Part A: Verify restart_required flag ---
+    status, data = api_call(
+        base_url, "/admin/settings/submission_port", method="POST",
+        body={"action": "set", "value": "5555"}, token=token
+    )
+    assert data.get("status") == 200
+    body = data["body"]
+    assert body.get("restart_required") is True, \
+        f"  ✗ Expected restart_required=true after SET, got {body}"
+    print("  ✓ restart_required=true after SET")
+
+    # Reset and verify restart_required on reset too
+    status, data = api_call(
+        base_url, "/admin/settings/submission_port", method="POST",
+        body={"action": "reset"}, token=token
+    )
+    assert data.get("status") == 200
+    body = data["body"]
+    assert body.get("restart_required") is True, \
+        f"  ✗ Expected restart_required=true after RESET, got {body}"
+    print("  ✓ restart_required=true after RESET")
+
+    # GET should NOT have restart_required=true
+    status, data = api_call(
+        base_url, "/admin/settings/submission_port", token=token
+    )
+    assert data.get("status") == 200
+    body = data["body"]
+    assert body.get("restart_required") is not True, \
+        f"  ✗ Expected restart_required=false on GET, got {body}"
+    print("  ✓ restart_required=false on GET")
+
+    # --- Part B: Verify reload endpoint method validation ---
+    status, data = api_call(
+        base_url, "/admin/reload", method="GET", token=token
+    )
+    assert data.get("status") == 405, f"  ✗ Expected 405 for GET, got {data}"
+    print("  ✓ GET on /admin/reload rejected (405)")
+
+    # --- Part C: Actually change port and verify listener ---
+    remote = base_url.replace("http://", "").replace("https://", "").split(":")[0]
+    OLD_PORT = "587"
+    NEW_PORT = "1587"
+
+    # Verify old port is currently listening
+    rc, out, err = run_ssh_command(remote, f"ss -tlnp | grep ':{OLD_PORT} '")
+    assert OLD_PORT in out, f"  ✗ Port {OLD_PORT} not listening before change: {out}"
+    print(f"  ✓ Port {OLD_PORT} is currently listening (verified via ss)")
+
+    # Set the submission port to new value
+    status, data = api_call(
+        base_url, "/admin/settings/submission_port", method="POST",
+        body={"action": "set", "value": NEW_PORT}, token=token
+    )
+    assert data.get("status") == 200
+    print(f"  ✓ Set submission_port={NEW_PORT} in DB")
+
+    # Trigger reload — this will restart the service
+    print("  → Triggering reload (service will restart)...")
+    try:
+        status, data = api_call(
+            base_url, "/admin/reload", method="POST", token=token
+        )
+        if data.get("status") == 200:
+            print(f"  ✓ Reload accepted: {data['body'].get('message', 'ok')}")
+        else:
+            print(f"  ⚠ Reload returned status {data.get('status')}: {data.get('body', {}).get('error', 'unknown')}")
+    except Exception as ex:
+        print(f"  ✓ Connection dropped (expected — service restarting): {type(ex).__name__}")
+
+    # Wait for the service to restart and come back up
+    print("  → Waiting for service to restart...")
+    max_wait = 30
+    started = time.time()
+    service_up = False
+    while time.time() - started < max_wait:
+        time.sleep(2)
+        try:
+            # Check if the admin API is responding again
+            status, data = api_call(base_url, "/admin/status", token=token)
+            if data.get("status") == 200:
+                service_up = True
+                break
+        except Exception:
+            pass
+    
+    assert service_up, f"  ✗ Service did not come back up within {max_wait}s"
+    elapsed = time.time() - started
+    print(f"  ✓ Service back up after {elapsed:.1f}s")
+
+    # Verify NEW port is now listening
+    rc, out, err = run_ssh_command(remote, f"ss -tlnp | grep ':{NEW_PORT} '")
+    if NEW_PORT not in out:
+        # Debug: dump full port listing and config for diagnosis
+        _, all_ports, _ = run_ssh_command(remote, "ss -tlnp")
+        _, conf_line, _ = run_ssh_command(remote, "grep submission /etc/maddy/maddy.conf")
+        _, journal, _ = run_ssh_command(remote, "journalctl -u maddy --no-pager --since '30 seconds ago' 2>/dev/null || echo 'no journal'")
+        print(f"  DEBUG: All listening ports:\n{all_ports}")
+        print(f"  DEBUG: Config submission line: {conf_line.strip()}")
+        print(f"  DEBUG: Recent journal:\n{journal}")
+        assert False, f"  ✗ Port {NEW_PORT} NOT listening after reload!"
+    print(f"  ✓ Port {NEW_PORT} IS now listening (verified via ss)")
+
+    # Verify OLD port is no longer listening (for submission — the original 587)
+    rc, out, err = run_ssh_command(remote, f"ss -tlnp | grep ':{OLD_PORT} '")
+    if OLD_PORT not in out:
+        print(f"  ✓ Port {OLD_PORT} is NO longer listening (confirmed port migrated)")
+    else:
+        # Port 587 might still show up if another process uses it
+        print(f"  ⚠ Port {OLD_PORT} still shows in ss (may be another process): {out.strip()}")
+
+    # --- Part D: Restore original port ---
+    print(f"  → Restoring submission_port to {OLD_PORT}...")
+    api_call(
+        base_url, "/admin/settings/submission_port", method="POST",
+        body={"action": "reset"}, token=token
+    )
+
+    # Reload to apply the reset
+    try:
+        api_call(base_url, "/admin/reload", method="POST", token=token)
+    except Exception:
+        pass  # Expected disconnect
+
+    # Wait for service to come back up again
+    started = time.time()
+    service_up = False
+    while time.time() - started < max_wait:
+        time.sleep(2)
+        try:
+            status, data = api_call(base_url, "/admin/status", token=token)
+            if data.get("status") == 200:
+                service_up = True
+                break
+        except Exception:
+            pass
+
+    if service_up:
+        # Verify the old port is back
+        rc, out, err = run_ssh_command(remote, f"ss -tlnp | grep ':{OLD_PORT} '")
+        if OLD_PORT in out:
+            print(f"  ✓ Port {OLD_PORT} restored and listening (rollback verified)")
+        else:
+            print(f"  ⚠ Port {OLD_PORT} not yet listening after rollback (may need more time)")
+    else:
+        print(f"  ⚠ Service didn't come back after rollback within {max_wait}s")
+
+    print("  ✓ Port hot-reload PASSED")
     passed += 1
 
     # ------------------------------------------------------------------

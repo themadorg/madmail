@@ -49,4 +49,8 @@ type PlainUserDB interface {
 	SetTurnEnabled(enabled bool) error
 	IsLoggingDisabled() (bool, error)
 	SetLoggingDisabled(disabled bool) error
+	// Generic settings access for dynamic configuration (ports, hostnames, etc.)
+	GetSetting(key string) (string, bool, error)
+	SetSetting(key, value string) error
+	DeleteSetting(key string) error
 }

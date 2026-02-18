@@ -39,3 +39,12 @@ type DNSOverride struct {
 	CreatedAt  time.Time `gorm:"autoCreateTime"`
 	UpdatedAt  time.Time `gorm:"autoUpdateTime"`
 }
+
+// BlockedUser represents a user that has been blocked from re-registering.
+// When an account is deleted via the admin API/CLI, its username is added
+// here to prevent the same address from being created again (via /new or JIT).
+type BlockedUser struct {
+	Username  string    `gorm:"primaryKey"`
+	Reason    string    `gorm:"column:reason"`
+	BlockedAt time.Time `gorm:"autoCreateTime"`
+}

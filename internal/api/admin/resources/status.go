@@ -1,10 +1,13 @@
 package resources
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"syscall"
@@ -50,6 +53,7 @@ type EmailServers struct {
 // StatusDeps are the dependencies needed by the status resource handler.
 type StatusDeps struct {
 	GetUserCount func() (int, error)
+	GetSetting   func(string) (string, bool, error)
 }
 
 // StatusHandler creates a handler for /admin/status.
@@ -69,7 +73,7 @@ func StatusHandler(deps StatusDeps) func(method string, body json.RawMessage) (i
 			}
 		}
 
-		// Server tracker status
+		// Server tracker status (boot time + email servers)
 		runtimeDir := config.RuntimeDirectory
 		if runtimeDir == "" {
 			runtimeDir = "/run/maddy"
@@ -93,8 +97,118 @@ func StatusHandler(deps StatusDeps) func(method string, body json.RawMessage) (i
 			}
 		}
 
+		// Live connection counts via ss
+		imapPort := "993"
+		turnPort := "3478"
+		ssPort := "8388"
+		if deps.GetSetting != nil {
+			if v, ok, err := deps.GetSetting(KeyIMAPPort); err == nil && ok && v != "" {
+				imapPort = v
+			}
+			if v, ok, err := deps.GetSetting(KeyTurnPort); err == nil && ok && v != "" {
+				turnPort = v
+			}
+			if v, ok, err := deps.GetSetting(KeySsPort); err == nil && ok && v != "" {
+				ssPort = v
+			}
+		}
+
+		// IMAP connections
+		conns, ips := countTCPConnections(imapPort)
+		resp.IMAP = &ServiceStatus{Connections: conns, UniqueIPs: ips}
+
+		// Shadowsocks connections
+		conns, ips = countTCPConnections(ssPort)
+		resp.Shadowsocks = &ServiceStatus{Connections: conns, UniqueIPs: ips}
+
+		// TURN relays
+		relays := countTurnRelays(turnPort)
+		resp.TURN = &TurnStatus{Relays: relays}
+
 		return resp, 200, nil
 	}
+}
+
+// countTCPConnections uses ss to count established TCP connections on a port.
+func countTCPConnections(port string) (connections int, uniqueIPs int) {
+	cmd := exec.Command("ss", "-tnH", "state", "established", "sport", "= :"+port)
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, 0
+	}
+	ips := make(map[string]struct{})
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		connections++
+		fields := strings.Fields(line)
+		if len(fields) >= 4 {
+			ip := extractIPFromAddr(fields[3])
+			if ip != "" {
+				ips[ip] = struct{}{}
+			}
+		}
+	}
+	return connections, len(ips)
+}
+
+// countTurnRelays counts active TURN relay allocations by finding
+// maddy-owned UDP sockets on ephemeral ports.
+func countTurnRelays(knownPort string) int {
+	cmd := exec.Command("ss", "-unap")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	count := 0
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.Contains(line, "\"maddy\"") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		localPort := extractPortFromAddr(fields[3])
+		if localPort == knownPort {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+// extractIPFromAddr extracts IP from addr:port or [ipv6]:port.
+func extractIPFromAddr(addr string) string {
+	if strings.HasPrefix(addr, "[") {
+		idx := strings.LastIndex(addr, "]:")
+		if idx != -1 {
+			return addr[1:idx]
+		}
+		return strings.Trim(addr, "[]")
+	}
+	if strings.Count(addr, ":") > 1 {
+		return addr // IPv6 without brackets
+	}
+	idx := strings.LastIndex(addr, ":")
+	if idx != -1 {
+		return addr[:idx]
+	}
+	return addr
+}
+
+// extractPortFromAddr extracts port from addr:port.
+func extractPortFromAddr(addr string) string {
+	idx := strings.LastIndex(addr, ":")
+	if idx == -1 {
+		return addr
+	}
+	return addr[idx+1:]
 }
 
 // StorageResponse is the response body for /admin/storage.

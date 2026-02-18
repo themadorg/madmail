@@ -106,6 +106,7 @@ type Endpoint struct {
 
 	// Admin API
 	adminToken string
+	adminPath  string
 
 	// Shadowsocks configuration
 	ssAddr             string
@@ -154,6 +155,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.StringList("sharing_dsn", false, false, nil, &e.sharingDSN)
 	cfg.String("max_message_size", false, false, "32M", &e.maxMessageSize)
 	cfg.String("admin_token", false, false, "", &e.adminToken)
+	cfg.String("admin_path", false, false, "/api/admin", &e.adminPath)
 
 	// Get references to the authentication database and storage
 	var authDBName, storageName string
@@ -254,6 +256,9 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 		return fmt.Errorf("%s: storage must implement ManageableStorage interface", modName)
 	}
 
+	// Log any settings overridden by the database
+	e.logDBOverrides()
+
 	e.mux = http.NewServeMux()
 	// Priority 0: Well-known endpoints (DKIM key publishing for federation)
 	e.mux.HandleFunc("/.well-known/_domainkey/", e.handleDKIMKey)
@@ -320,6 +325,26 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 			return fmt.Errorf("%s: malformed endpoint: %v", modName, err)
 		}
 
+		// Port access control: if HTTP or HTTPS is set to local-only,
+		// rewrite 0.0.0.0 to 127.0.0.1.
+		localOnlyKey := resources.KeyHTTPLocalOnly
+		if endp.IsTLS() {
+			localOnlyKey = resources.KeyHTTPSLocalOnly
+		}
+		// Also check via our own authDB as fallback
+		isLocal := module.IsLocalOnly(localOnlyKey)
+		if !isLocal {
+			// Try reading directly from our own authDB (in case global provider wasn't registered in time)
+			if val, ok, err := e.authDB.GetSetting(localOnlyKey); err == nil && ok && val == "true" {
+				isLocal = true
+			}
+		}
+		e.logger.Printf("port access check: key=%s isLocal=%v endpoint=%s", localOnlyKey, isLocal, endp)
+		if isLocal {
+			e.logger.Printf("local-only mode active for %s, binding to 127.0.0.1 only", endp)
+			endp = endp.WithLocalHost()
+		}
+
 		l, err := net.Listen(endp.Network(), endp.Address())
 		if err != nil {
 			return fmt.Errorf("%s: %v", modName, err)
@@ -355,7 +380,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 		e.ssPassword = "chatmail-default-pass"
 	}
 
-	if e.ssAddr != "" {
+	if e.ssAddr != "" && e.isShadowsocksEnabled() {
 		go e.runShadowsocks()
 	}
 
@@ -421,73 +446,83 @@ func (e *Endpoint) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate random username
-	username, err := e.generateRandomString(e.usernameLength)
-	if err != nil {
-		e.logger.Error("failed to generate username", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Generate random password
-	password, err := e.generateRandomPassword(e.passwordLength)
-	if err != nil {
-		e.logger.Error("failed to generate password", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Create full email address
-	email := username + "@" + e.mailDomain
-
-	// Create user in authentication database
-	if authHash, ok := e.authDB.(*pass_table.Auth); ok {
-		// Use bcrypt for password hashing
-		err = authHash.CreateUserHash(email, password, "bcrypt", pass_table.HashOpts{
-			BcryptCost: bcrypt.DefaultCost,
-		})
-	} else {
-		err = e.authDB.CreateUser(email, password)
-	}
-
-	if err != nil {
-		// Check if user already exists and retry
-		if strings.Contains(err.Error(), "already exist") {
-			// Retry with new username
-			e.handleNewAccount(w, r)
+	// Retry loop with bounded attempts to avoid unbounded recursion
+	const maxAttempts = 5
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		// Generate random username
+		username, err := e.generateRandomString(e.usernameLength)
+		if err != nil {
+			e.logger.Error("failed to generate username", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		e.logger.Error("failed to create user in auth DB", err, "email", email)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
 
-	// Create IMAP account in storage
-	err = e.storage.CreateIMAPAcct(email)
-	if err != nil {
-		e.logger.Error("failed to create IMAP account", err, "email", email)
-		// Try to clean up the auth entry
-		if delErr := e.authDB.DeleteUser(email); delErr != nil {
-			e.logger.Error("failed to cleanup auth entry after storage failure", delErr, "email", email)
+		// Generate random password
+		password, err := e.generateRandomPassword(e.passwordLength)
+		if err != nil {
+			e.logger.Error("failed to generate password", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
 		}
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+
+		// Create full email address
+		email := username + "@" + e.mailDomain
+
+		// Check blocklist before creating account
+		if blocked, _ := e.storage.IsBlocked(email); blocked {
+			continue // retry with new username
+		}
+
+		// Create user in authentication database
+		if authHash, ok := e.authDB.(*pass_table.Auth); ok {
+			// Use bcrypt for password hashing
+			err = authHash.CreateUserHash(email, password, "bcrypt", pass_table.HashOpts{
+				BcryptCost: bcrypt.DefaultCost,
+			})
+		} else {
+			err = e.authDB.CreateUser(email, password)
+		}
+
+		if err != nil {
+			// Check if user already exists and retry
+			if strings.Contains(err.Error(), "already exist") {
+				continue // retry with new username
+			}
+			e.logger.Error("failed to create user in auth DB", err, "email", email)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// Create IMAP account in storage
+		err = e.storage.CreateIMAPAcct(email)
+		if err != nil {
+			e.logger.Error("failed to create IMAP account", err, "email", email)
+			// Try to clean up the auth entry
+			if delErr := e.authDB.DeleteUser(email); delErr != nil {
+				e.logger.Error("failed to cleanup auth entry after storage failure", delErr, "email", email)
+			}
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// Return the generated credentials
+		response := AccountResponse{
+			Email:    email,
+			Password: password,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			e.logger.Error("failed to encode response", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		return // success
 	}
 
-	// Return the generated credentials
-	response := AccountResponse{
-		Email:    email,
-		Password: password,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		e.logger.Error("failed to encode response", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	e.logger.Printf("created new account: %s", email)
+	// All attempts exhausted — this should be extremely rare
+	e.logger.Error("failed to create account after max retries", nil)
+	http.Error(w, "Internal server error", http.StatusInternalServerError)
 }
 
 func (e *Endpoint) handleDocs(w http.ResponseWriter, r *http.Request) {
@@ -851,6 +886,16 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 
 var shadowsocksOnce sync.Once
 
+// isShadowsocksEnabled checks the __SS_ENABLED__ setting in the database.
+// Defaults to true if not set.
+func (e *Endpoint) isShadowsocksEnabled() bool {
+	val, ok, err := e.authDB.GetSetting(resources.KeySsEnabled)
+	if err != nil || !ok {
+		return true // default enabled
+	}
+	return val != "false"
+}
+
 func (e *Endpoint) runShadowsocks() {
 	shadowsocksOnce.Do(func() {
 		e.runShadowsocksInternal()
@@ -882,6 +927,10 @@ func (e *Endpoint) runShadowsocksInternal() {
 
 		go func(conn net.Conn) {
 			defer conn.Close()
+			// Check if SS is still enabled (can be toggled via admin API)
+			if !e.isShadowsocksEnabled() {
+				return
+			}
 			cConn := ciph.StreamConn(conn)
 			tgtAddr, err := socks.ReadAddr(cConn)
 			if err != nil {
@@ -924,7 +973,7 @@ func (e *Endpoint) runShadowsocksInternal() {
 }
 
 func (e *Endpoint) getShadowsocksURL() string {
-	if e.ssAddr == "" {
+	if e.ssAddr == "" || !e.isShadowsocksEnabled() {
 		return ""
 	}
 
@@ -1003,20 +1052,65 @@ func (e *Endpoint) handleALPNConn(conn net.Conn, httpConns, smtpConns, imapConns
 		switch alpn {
 		case "smtp":
 			if e.smtpModule != nil {
+				// Enforce local-only: if SMTP is restricted and connection is external, reject
+				if e.isPortLocalOnly(resources.KeySMTPLocalOnly) && !isLoopback(conn.RemoteAddr()) {
+					e.logger.Msg("ALPN: blocking external SMTP (local-only mode)", "remote", conn.RemoteAddr())
+					conn.Close()
+					return
+				}
 				e.logger.Msg("ALPN proxy: routing to internal smtp", "remote", conn.RemoteAddr())
 				smtpConns <- tls.Server(bConn, e.tlsConfig)
 				return
 			}
 		case "imap":
 			if e.imapModule != nil {
+				// Enforce local-only: if IMAP is restricted and connection is external, reject
+				if e.isPortLocalOnly(resources.KeyIMAPLocalOnly) && !isLoopback(conn.RemoteAddr()) {
+					e.logger.Msg("ALPN: blocking external IMAP (local-only mode)", "remote", conn.RemoteAddr())
+					conn.Close()
+					return
+				}
 				e.logger.Msg("ALPN proxy: routing to internal imap", "remote", conn.RemoteAddr())
 				imapConns <- tls.Server(bConn, e.tlsConfig)
 				return
 			}
 		}
 	}
+	// Enforce HTTPS local-only: block external HTTP(S) connections if restricted
+	if e.isPortLocalOnly(resources.KeyHTTPSLocalOnly) && !isLoopback(conn.RemoteAddr()) {
+		e.logger.Msg("ALPN: blocking external HTTPS (local-only mode)", "remote", conn.RemoteAddr())
+		conn.Close()
+		return
+	}
 
 	httpConns <- bConn
+}
+
+// isPortLocalOnly checks if a port is set to local-only mode in the settings DB.
+func (e *Endpoint) isPortLocalOnly(key string) bool {
+	val, ok, err := e.authDB.GetSetting(key)
+	if err != nil || !ok {
+		return false // default: public
+	}
+	return val == "true"
+}
+
+// isLoopback checks if a net.Addr is a loopback address (127.0.0.0/8 or ::1).
+func isLoopback(addr net.Addr) bool {
+	var ip net.IP
+	switch a := addr.(type) {
+	case *net.TCPAddr:
+		ip = a.IP
+	case *net.UDPAddr:
+		ip = a.IP
+	default:
+		host, _, err := net.SplitHostPort(addr.String())
+		if err != nil {
+			return false
+		}
+		ip = net.ParseIP(host)
+	}
+	return ip != nil && ip.IsLoopback()
 }
 
 func (e *Endpoint) sniffALPN(br *bufio.Reader) (string, error) {
@@ -1387,25 +1481,14 @@ func (e *Endpoint) setupAdminAPI() {
 		SetTurnEnabled:            e.authDB.SetTurnEnabled,
 	}
 
-	// Generic DB-backed settings for Iroh and Shadowsocks
-	if gormDB != nil {
-		// Ensure the table_entries table exists
-		_ = gormDB.AutoMigrate(&mdb.TableEntry{})
+	// Generic DB-backed settings using the auth pass_table's settings table
+	settingsDeps.GetSetting = e.authDB.GetSetting
+	settingsDeps.SetSetting = e.authDB.SetSetting
+	settingsDeps.DeleteSetting = e.authDB.DeleteSetting
 
-		settingsDeps.GetSetting = func(key string) (string, bool, error) {
-			var entry mdb.TableEntry
-			err := gormDB.Where("key = ?", key).First(&entry).Error
-			if err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return "", false, nil
-				}
-				return "", false, err
-			}
-			return entry.Value, true, nil
-		}
-		settingsDeps.SetSetting = func(key, value string) error {
-			return gormDB.Save(&mdb.TableEntry{Key: key, Value: value}).Error
-		}
+	// Also ensure the GORM table_entries table exists for legacy compatibility
+	if gormDB != nil {
+		_ = gormDB.AutoMigrate(&mdb.TableEntry{})
 	}
 
 	// User count helper
@@ -1420,21 +1503,59 @@ func (e *Endpoint) setupAdminAPI() {
 	// Register resource handlers
 	handler.Register("/admin/status", resources.StatusHandler(resources.StatusDeps{
 		GetUserCount: getUserCount,
+		GetSetting:   e.authDB.GetSetting,
 	}))
 
 	handler.Register("/admin/storage", resources.StorageHandler(resources.StorageDeps{
 		StateDir: config.StateDirectory,
 	}))
 
+	// Toggle settings
 	handler.Register("/admin/registration", resources.RegistrationHandler(settingsDeps))
 	handler.Register("/admin/registration/jit", resources.JitRegistrationHandler(settingsDeps))
 	handler.Register("/admin/services/turn", resources.TurnHandler(settingsDeps))
 	handler.Register("/admin/services/iroh", resources.IrohHandler(settingsDeps))
 	handler.Register("/admin/services/shadowsocks", resources.ShadowsocksHandler(settingsDeps))
+	handler.Register("/admin/services/log", resources.LogHandler(settingsDeps))
+
+	// Bulk settings endpoint
+	handler.Register("/admin/settings", resources.AllSettingsHandler(settingsDeps))
+
+	// Port settings
+	handler.Register("/admin/settings/smtp_port", resources.GenericSettingHandler(resources.KeySMTPPort, settingsDeps))
+	handler.Register("/admin/settings/submission_port", resources.GenericSettingHandler(resources.KeySubmissionPort, settingsDeps))
+	handler.Register("/admin/settings/imap_port", resources.GenericSettingHandler(resources.KeyIMAPPort, settingsDeps))
+	handler.Register("/admin/settings/turn_port", resources.GenericSettingHandler(resources.KeyTurnPort, settingsDeps))
+	handler.Register("/admin/settings/sasl_port", resources.GenericSettingHandler(resources.KeySaslPort, settingsDeps))
+	handler.Register("/admin/settings/iroh_port", resources.GenericSettingHandler(resources.KeyIrohPort, settingsDeps))
+	handler.Register("/admin/settings/ss_port", resources.GenericSettingHandler(resources.KeySsPort, settingsDeps))
+
+	// Per-port access control (local-only toggles)
+	handler.Register("/admin/settings/smtp_local_only", resources.GenericSettingHandler(resources.KeySMTPLocalOnly, settingsDeps))
+	handler.Register("/admin/settings/submission_local_only", resources.GenericSettingHandler(resources.KeySubmissionLocalOnly, settingsDeps))
+	handler.Register("/admin/settings/imap_local_only", resources.GenericSettingHandler(resources.KeyIMAPLocalOnly, settingsDeps))
+	handler.Register("/admin/settings/turn_local_only", resources.GenericSettingHandler(resources.KeyTurnLocalOnly, settingsDeps))
+	handler.Register("/admin/settings/iroh_local_only", resources.GenericSettingHandler(resources.KeyIrohLocalOnly, settingsDeps))
+	handler.Register("/admin/settings/http_local_only", resources.GenericSettingHandler(resources.KeyHTTPLocalOnly, settingsDeps))
+	handler.Register("/admin/settings/https_local_only", resources.GenericSettingHandler(resources.KeyHTTPSLocalOnly, settingsDeps))
+
+	// Configuration settings
+	handler.Register("/admin/settings/smtp_hostname", resources.GenericSettingHandler(resources.KeySMTPHostname, settingsDeps))
+	handler.Register("/admin/settings/turn_realm", resources.GenericSettingHandler(resources.KeyTurnRealm, settingsDeps))
+	handler.Register("/admin/settings/turn_secret", resources.GenericSettingHandler(resources.KeyTurnSecret, settingsDeps))
+	handler.Register("/admin/settings/turn_relay_ip", resources.GenericSettingHandler(resources.KeyTurnRelayIP, settingsDeps))
+	handler.Register("/admin/settings/turn_ttl", resources.GenericSettingHandler(resources.KeyTurnTTL, settingsDeps))
+	handler.Register("/admin/settings/iroh_relay_url", resources.GenericSettingHandler(resources.KeyIrohRelayURL, settingsDeps))
+	handler.Register("/admin/settings/ss_cipher", resources.GenericSettingHandler(resources.KeySsCipher, settingsDeps))
+	handler.Register("/admin/settings/ss_password", resources.GenericSettingHandler(resources.KeySsPassword, settingsDeps))
+	handler.Register("/admin/settings/http_port", resources.GenericSettingHandler(resources.KeyHTTPPort, settingsDeps))
+	handler.Register("/admin/settings/https_port", resources.GenericSettingHandler(resources.KeyHTTPSPort, settingsDeps))
+	handler.Register("/admin/settings/admin_path", resources.GenericSettingHandler(resources.KeyAdminPath, settingsDeps))
 
 	handler.Register("/admin/accounts", resources.AccountsHandler(resources.AccountsDeps{
-		AuthDB:  e.authDB,
-		Storage: e.storage,
+		AuthDB:     e.authDB,
+		Storage:    e.storage,
+		MailDomain: e.mailDomain,
 	}))
 
 	handler.Register("/admin/quota", resources.QuotaHandler(resources.QuotaDeps{
@@ -1442,6 +1563,10 @@ func (e *Endpoint) setupAdminAPI() {
 	}))
 
 	handler.Register("/admin/queue", resources.QueueHandler(resources.QueueDeps{
+		Storage: e.storage,
+	}))
+
+	handler.Register("/admin/blocklist", resources.BlocklistHandler(resources.BlocklistDeps{
 		Storage: e.storage,
 	}))
 
@@ -1459,8 +1584,20 @@ func (e *Endpoint) setupAdminAPI() {
 		}))
 	}
 
-	e.mux.Handle("/api/admin", handler)
-	e.logger.Printf("admin API enabled at /api/admin")
+	// Reload / restart endpoint — regenerates config from DB overrides and restarts
+	handler.Register("/admin/reload", resources.ReloadHandler(resources.ReloadDeps{
+		ReloadConfig: e.reloadConfig,
+	}))
+
+	// Determine the admin API path: DB override > config file
+	apiPath := e.adminPath
+	if e.authDB != nil {
+		if val, ok, err := e.authDB.GetSetting(resources.KeyAdminPath); err == nil && ok && val != "" {
+			apiPath = val
+		}
+	}
+	e.mux.Handle(apiPath, handler)
+	e.logger.Printf("admin API enabled at %s", apiPath)
 }
 
 func init() {

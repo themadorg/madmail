@@ -375,7 +375,10 @@ func (store *Storage) IsJitRegistrationEnabled() (bool, error) {
 }
 
 func (store *Storage) initQuotaTable() error {
-	return store.GORMDB.AutoMigrate(&mdb.Quota{})
+	if err := store.GORMDB.AutoMigrate(&mdb.Quota{}); err != nil {
+		return err
+	}
+	return store.GORMDB.AutoMigrate(&mdb.BlockedUser{})
 }
 
 func (store *Storage) GetQuota(username string) (used, max int64, isDefault bool, err error) {
@@ -449,6 +452,67 @@ func (store *Storage) SetQuota(username string, max int64) error {
 	}
 
 	return store.GORMDB.Save(&quota).Error
+}
+
+// BlockUser adds a username to the blocklist, preventing re-registration.
+func (store *Storage) BlockUser(username, reason string) error {
+	return store.GORMDB.Save(&mdb.BlockedUser{Username: username, Reason: reason}).Error
+}
+
+// UnblockUser removes a username from the blocklist.
+func (store *Storage) UnblockUser(username string) error {
+	return store.GORMDB.Where("username = ?", username).Delete(&mdb.BlockedUser{}).Error
+}
+
+// IsBlocked checks if a username is in the blocklist.
+func (store *Storage) IsBlocked(username string) (bool, error) {
+	var count int64
+	err := store.GORMDB.Model(&mdb.BlockedUser{}).Where("username = ?", username).Count(&count).Error
+	return count > 0, err
+}
+
+// ListBlockedUsers returns all blocked usernames.
+func (store *Storage) ListBlockedUsers() ([]module.BlockedUserEntry, error) {
+	var blocked []mdb.BlockedUser
+	err := store.GORMDB.Order("blocked_at DESC").Find(&blocked).Error
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]module.BlockedUserEntry, len(blocked))
+	for i, b := range blocked {
+		entries[i] = module.BlockedUserEntry{
+			Username:  b.Username,
+			Reason:    b.Reason,
+			BlockedAt: b.BlockedAt,
+		}
+	}
+	return entries, nil
+}
+
+// DeleteAccount performs a full account removal:
+// 1. Delete IMAP storage (account + mailboxes + messages)
+// 2. Delete quota record from DB
+// 3. Block the username from re-registration
+func (store *Storage) DeleteAccount(username, reason string) error {
+	// Step 1: Delete IMAP storage
+	err := store.DeleteIMAPAcct(username)
+	if err != nil {
+		store.Log.Error("DeleteAccount: failed to delete IMAP account (may not exist)", err, "username", username)
+		// Continue — the user might not have storage but still has credentials
+	}
+
+	// Step 2: Delete quota record
+	store.GORMDB.Where("username = ?", username).Delete(&mdb.Quota{})
+
+	// Step 3: Block the username
+	if reason == "" {
+		reason = "account deleted"
+	}
+	if err := store.BlockUser(username, reason); err != nil {
+		return fmt.Errorf("failed to block user after deletion: %w", err)
+	}
+
+	return nil
 }
 
 func (store *Storage) ResetQuota(username string) error {
@@ -600,6 +664,29 @@ func (store *Storage) GetStat() (totalStorage int64, accountsCount int, err erro
 	return totalStorage, accountsCount, nil
 }
 
+// GetAllUsedStorage returns per-user storage usage in a single query.
+func (store *Storage) GetAllUsedStorage() (map[string]int64, error) {
+	type userStorage struct {
+		Username  string
+		TotalUsed int64
+	}
+	var results []userStorage
+	err := store.GORMDB.Table("msgs").
+		Select("users.username, SUM(msgs.bodylen) as total_used").
+		Joins("JOIN mboxes ON msgs.mboxid = mboxes.id").
+		Joins("JOIN users ON mboxes.uid = users.id").
+		Group("users.username").
+		Scan(&results).Error
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]int64, len(results))
+	for _, r := range results {
+		m[r.Username] = r.TotalUsed
+	}
+	return m, nil
+}
+
 func (store *Storage) cleanupLoop() {
 	ticker := time.NewTicker(1 * time.Hour)
 	for range ticker.C {
@@ -744,6 +831,13 @@ func (store *Storage) GetOrCreateIMAPAcct(username string) (backend.User, error)
 	jitEnabled, err := store.IsJitRegistrationEnabled()
 	if err != nil {
 		return nil, err
+	}
+
+	// Check blocklist — blocked users must NOT be re-created via JIT
+	if jitEnabled {
+		if blocked, _ := store.IsBlocked(accountName); blocked {
+			return nil, backend.ErrInvalidCredentials
+		}
 	}
 
 	var u backend.User

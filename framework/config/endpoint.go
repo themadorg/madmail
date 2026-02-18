@@ -88,6 +88,19 @@ func (e Endpoint) IsTLS() bool {
 	return e.Scheme == "tls"
 }
 
+// WithLocalHost returns a copy of the endpoint with the host set to 127.0.0.1.
+// This is used for port access control: when a port is set to "local only",
+// it should only bind to localhost so only Shadowsocks (which relays to 127.0.0.1)
+// can reach it, not external connections.
+func (e Endpoint) WithLocalHost() Endpoint {
+	if e.Scheme == "unix" {
+		return e // unix sockets are already local
+	}
+	e.Host = "127.0.0.1"
+	e.Original = "" // clear original so String() rebuilds from components
+	return e
+}
+
 // ParseEndpoint parses an endpoint string into a structured format with separate
 // scheme, host, port, and path portions, as well as the original input string.
 func ParseEndpoint(str string) (Endpoint, error) {

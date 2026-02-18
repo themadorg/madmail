@@ -293,11 +293,17 @@
                 <li><a href="#turn">سرویس تماس — <code>/admin/services/turn</code></a></li>
                 <li><a href="#iroh">سرویس Iroh — <code>/admin/services/iroh</code></a></li>
                 <li><a href="#shadowsocks">سرویس Shadowsocks — <code>/admin/services/shadowsocks</code></a></li>
+                <li><a href="#log">مدیریت لاگ — <code>/admin/services/log</code></a></li>
+                <li><a href="#settings">تنظیمات یکجا — <code>/admin/settings</code></a></li>
+                <li><a href="#port-settings">تنظیمات پورت‌ها</a></li>
+                <li><a href="#config-settings">تنظیمات پیکربندی</a></li>
                 <li><a href="#accounts">مدیریت حساب‌ها — <code>/admin/accounts</code></a></li>
+                <li><a href="#blocklist">لیست مسدودی — <code>/admin/blocklist</code></a></li>
                 <li><a href="#quota">مدیریت سهمیه — <code>/admin/quota</code></a></li>
                 <li><a href="#queue">عملیات صف — <code>/admin/queue</code></a></li>
                 <li><a href="#shares">اشتراک‌گذاری مخاطبین — <code>/admin/shares</code></a></li>
                 <li><a href="#dns">بازنویسی DNS — <code>/admin/dns</code></a></li>
+                <li><a href="#web-panel">رابط وب مدیریت</a></li>
                 <li><a href="#errors">کدهای خطا</a></li>
             </ol>
         </div>
@@ -692,6 +698,191 @@ print(api("/admin/status"))</pre>
 
         <hr class="separator">
 
+        <!-- /admin/services/log -->
+        <h2 id="log">مدیریت لاگ</h2>
+
+        <div class="endpoint-card">
+            <h3>
+                <span class="resource-path">/admin/services/log</span>
+                <span class="method-badge method-get">GET</span>
+                <span class="method-badge method-post">POST</span>
+            </h3>
+            <p>فعال/غیرفعال کردن ثبت لاگ سرور (سیاست بدون لاگ).</p>
+
+            <pre class="code-block"><span class="c">// Enable</span>
+{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/log"</span>,
+ <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"enable"</span>}, ...}
+
+<span class="c">// Disable</span>
+{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/log"</span>,
+ <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"disable"</span>}, ...}</pre>
+        </div>
+
+        <hr class="separator">
+
+        <!-- /admin/settings -->
+        <h2 id="settings">تنظیمات یکجا</h2>
+
+        <div class="endpoint-card">
+            <h3>
+                <span class="resource-path">/admin/settings</span>
+                <span class="method-badge method-get">GET</span>
+            </h3>
+            <p>دریافت تمام تنظیمات سرور در یک درخواست واحد. شامل کلیدهای روشن/خاموش، پورت‌ها و تنظیمات پیکربندی.</p>
+
+            <pre class="code-block"><span class="c">// Request</span>
+{<span class="k">"method"</span>: <span class="s">"GET"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings"</span>, ...}
+
+<span class="c">// Response (partial)</span>
+{
+    <span class="k">"status"</span>: <span class="n">200</span>,
+    <span class="k">"body"</span>: {
+        <span class="k">"registration"</span>: <span class="s">"closed"</span>,
+        <span class="k">"turn_enabled"</span>: <span class="s">"enabled"</span>,
+        <span class="k">"iroh_enabled"</span>: <span class="s">"enabled"</span>,
+        <span class="k">"ss_enabled"</span>: <span class="s">"enabled"</span>,
+        <span class="k">"smtp_port"</span>: {<span class="k">"key"</span>: <span class="s">"__SMTP_PORT__"</span>, <span class="k">"value"</span>: <span class="s">"2525"</span>, <span class="k">"is_set"</span>: true},
+        <span class="k">"turn_secret"</span>: {<span class="k">"key"</span>: <span class="s">"__TURN_SECRET__"</span>, <span class="k">"value"</span>: <span class="s">""</span>, <span class="k">"is_set"</span>: false}
+    }
+}</pre>
+        </div>
+
+        <hr class="separator">
+
+        <!-- Port Settings -->
+        <h2 id="port-settings">تنظیمات پورت‌ها</h2>
+
+        <p>هر پورت سرویسی از طریق یک مسیر اختصاصی قابل تنظیم است. مقادیر در دیتابیس ذخیره می‌شوند و بر مقادیر فایل
+            پیکربندی اولویت دارند.</p>
+
+        <div class="endpoint-card">
+            <h3>
+                <span class="method-badge method-get">GET</span>
+                <span class="method-badge method-post">POST</span>
+            </h3>
+
+            <table>
+                <tr>
+                    <th>Endpoint</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/smtp_port</code></td>
+                    <td>SMTP server port</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/submission_port</code></td>
+                    <td>Submission server port</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/imap_port</code></td>
+                    <td>IMAP server port</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/turn_port</code></td>
+                    <td>TURN relay port</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/dovecot_port</code></td>
+                    <td>Dovecot SASL port</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/iroh_port</code></td>
+                    <td>Iroh relay port</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/ss_port</code></td>
+                    <td>Shadowsocks proxy port</td>
+                </tr>
+            </table>
+
+            <strong>Set:</strong>
+            <pre
+                class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings/smtp_port"</span>,
+ <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"set"</span>, <span class="k">"value"</span>: <span class="s">"2525"</span>}, ...}
+
+<span class="c">// Response</span>
+{<span class="k">"key"</span>: <span class="s">"__SMTP_PORT__"</span>, <span class="k">"value"</span>: <span class="s">"2525"</span>, <span class="k">"is_set"</span>: true}</pre>
+
+            <strong>Reset:</strong>
+            <pre class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings/smtp_port"</span>,
+ <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"reset"</span>}, ...}</pre>
+        </div>
+
+        <hr class="separator">
+
+        <!-- Config Settings -->
+        <h2 id="config-settings">تنظیمات پیکربندی</h2>
+
+        <p>تنظیمات پیکربندی سرویس‌ها مانند hostname، secret و URL از طریق همان الگوی set/reset قابل مدیریت هستند.</p>
+
+        <div class="endpoint-card">
+            <h3>
+                <span class="method-badge method-get">GET</span>
+                <span class="method-badge method-post">POST</span>
+            </h3>
+
+            <table>
+                <tr>
+                    <th>Endpoint</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/smtp_hostname</code></td>
+                    <td>SMTP server hostname</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/turn_realm</code></td>
+                    <td>TURN server realm</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/turn_secret</code></td>
+                    <td>TURN shared secret</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/turn_relay_ip</code></td>
+                    <td>TURN relay IP address</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/turn_ttl</code></td>
+                    <td>TURN credential TTL (seconds)</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/iroh_relay_url</code></td>
+                    <td>Iroh relay URL</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/ss_cipher</code></td>
+                    <td>Shadowsocks cipher algorithm</td>
+                </tr>
+                <tr>
+                    <td><code>/admin/settings/ss_password</code></td>
+                    <td>Shadowsocks password</td>
+                </tr>
+            </table>
+
+            <strong>Example — set TURN secret:</strong>
+            <pre
+                class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings/turn_secret"</span>,
+ <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"set"</span>, <span class="k">"value"</span>: <span class="s">"my-shared-secret"</span>}, ...}</pre>
+
+            <strong>Example — read Iroh relay URL:</strong>
+            <pre
+                class="code-block"><span class="c">// Request</span>
+{<span class="k">"method"</span>: <span class="s">"GET"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings/iroh_relay_url"</span>, ...}
+
+<span class="c">// Response</span>
+{<span class="k">"key"</span>: <span class="s">"__IROH_RELAY_URL__"</span>, <span class="k">"value"</span>: <span class="s">"https://iroh.example.com"</span>, <span class="k">"is_set"</span>: true}</pre>
+
+            <div class="info-note">
+                <strong>💡 نکته:</strong> وقتی یک تنظیم <code>is_set: false</code> باشد، به معنی استفاده از مقدار
+                پیش‌فرض فایل پیکربندی است.
+                با <code>action: "reset"</code> می‌توانید هر تنظیمی را به مقدار پیش‌فرض بازگردانید.
+            </div>
+        </div>
+
+        <hr class="separator">
+
         <!-- /admin/accounts -->
         <h2 id="accounts">مدیریت حساب‌ها</h2>
 
@@ -733,7 +924,81 @@ print(api("/admin/status"))</pre>
             <div class="danger-note">
                 <strong>⚠️ هشدار:</strong> حذف حساب غیرقابل بازگشت است. تمام ایمیل‌ها، تنظیمات و اطلاعات کاربر به‌طور
                 کامل
-                حذف خواهند شد.
+                حذف خواهند شد و نام کاربری برای همیشه مسدود می‌شود.
+            </div>
+        </div>
+
+        <hr class="separator">
+
+        <!-- /admin/blocklist -->
+        <h2 id="blocklist">لیست مسدودی</h2>
+
+        <div class="endpoint-card">
+            <h3>
+                <span class="resource-path">/admin/blocklist</span>
+                <span class="method-badge method-get">GET</span>
+                <span class="method-badge method-post">POST</span>
+                <span class="method-badge method-delete">DELETE</span>
+            </h3>
+            <p>مدیریت لیست نام‌های کاربری مسدود. کاربران مسدود نمی‌توانند از طریق <code>/new</code> یا JIT ثبت‌نام کنند.
+                حساب‌های حذف‌شده به‌طور خودکار به این لیست اضافه می‌شوند.</p>
+
+            <strong>لیست کاربران مسدود:</strong>
+            <pre class="code-block"><span class="c">// Request</span>
+{<span class="k">"method"</span>: <span class="s">"GET"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/blocklist"</span>, ...}
+
+<span class="c">// Response</span>
+{
+    <span class="k">"status"</span>: <span class="n">200</span>,
+    <span class="k">"body"</span>: {
+        <span class="k">"total"</span>: <span class="n">2</span>,
+        <span class="k">"blocked"</span>: [
+            {
+                <span class="k">"username"</span>: <span class="s">"spammer@example.com"</span>,
+                <span class="k">"reason"</span>: <span class="s">"deleted via admin panel"</span>,
+                <span class="k">"blocked_at"</span>: <span class="s">"2026-02-18T15:30:00Z"</span>
+            }
+        ]
+    }
+}</pre>
+
+            <strong>مسدود کردن یک کاربر:</strong>
+            <pre
+                class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/blocklist"</span>,
+ <span class="k">"body"</span>: {<span class="k">"username"</span>: <span class="s">"spammer@example.com"</span>, <span class="k">"reason"</span>: <span class="s">"abuse"</span>}, ...}</pre>
+
+            <strong>رفع مسدودی:</strong>
+            <pre
+                class="code-block">{<span class="k">"method"</span>: <span class="s">"DELETE"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/blocklist"</span>,
+ <span class="k">"body"</span>: {<span class="k">"username"</span>: <span class="s">"spammer@example.com"</span>}, ...}</pre>
+
+            <table>
+                <tr>
+                    <th>Field</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>username</code></td>
+                    <td>string</td>
+                    <td>Blocked username (required)</td>
+                </tr>
+                <tr>
+                    <td><code>reason</code></td>
+                    <td>string</td>
+                    <td>Reason for blocking (optional, default: "manually blocked")</td>
+                </tr>
+                <tr>
+                    <td><code>blocked_at</code></td>
+                    <td>string</td>
+                    <td>RFC3339 timestamp (in GET responses only)</td>
+                </tr>
+            </table>
+
+            <div class="info-note">
+                <strong>💡 نکته:</strong> وقتی یک حساب از طریق <code>/admin/accounts</code> حذف می‌شود، نام کاربری
+                به‌طور خودکار به لیست مسدودی اضافه می‌شود.
+                برای اجازه ثبت‌نام مجدد، ابتدا باید کاربر را از لیست مسدودی حذف کنید.
             </div>
         </div>
 
@@ -937,7 +1202,56 @@ print(api("/admin/status"))</pre>
 
         <hr class="separator">
 
+        <!-- WEB ADMIN PANEL -->
+        <h2 id="web-panel">رابط وب مدیریت</h2>
+
+        <div class="endpoint-card">
+            <p>تمام عملیات‌های Admin API از طریق یک رابط وب داخلی در مسیر <code>/admin/</code> نیز قابل دسترسی هستند.
+                این پنل از همان توکن احراز هویت استفاده می‌کند.</p>
+
+            <strong>صفحات مدیریتی:</strong>
+            <table>
+                <tr>
+                    <th>صفحه</th>
+                    <th>امکانات</th>
+                </tr>
+                <tr>
+                    <td><strong>Overview</strong></td>
+                    <td>آمار سرور (کاربران، آپتایم، دیسک، ذخیره‌سازی)، اتصالات فعال (IMAP، TURN، Shadowsocks)، نوار مصرف
+                        دیسک، دکمه‌های پاکسازی صف</td>
+                </tr>
+                <tr>
+                    <td><strong>Services</strong></td>
+                    <td>کلیدهای فعال/غیرفعال برای ثبت‌نام، JIT، TURN، Iroh، Shadowsocks و لاگ</td>
+                </tr>
+                <tr>
+                    <td><strong>Ports</strong></td>
+                    <td>مشاهده و تغییر شماره پورت‌ها و تنظیمات پیکربندی</td>
+                </tr>
+                <tr>
+                    <td><strong>Accounts</strong></td>
+                    <td>لیست حساب‌ها با مصرف فضا، حذف حساب (با پنجره تأیید)</td>
+                </tr>
+                <tr>
+                    <td><strong>Blocked</strong></td>
+                    <td>مشاهده کاربران مسدود شده، رفع مسدودیت (با پنجره تأیید)</td>
+                </tr>
+                <tr>
+                    <td><strong>DNS</strong></td>
+                    <td>مشاهده، افزودن، جستجو و حذف بازنویسی‌های DNS (با پنجره تأیید)</td>
+                </tr>
+            </table>
+
+            <div class="info-note">
+                <strong>💡 نکته:</strong> پنل مدیریت از حالت <strong>روشن و تاریک</strong> پشتیبانی می‌کند (با دکمه
+                تغییر تم در هدر) و به زبان‌های فارسی، انگلیسی، اسپانیایی و روسی موجود است.
+            </div>
+        </div>
+
+        <hr class="separator">
+
         <!-- ERROR CODES -->
+
         <h2 id="errors">کدهای خطا</h2>
 
         <p>کدهای وضعیت داخلی (در فیلد <code>status</code> پاسخ JSON):</p>
