@@ -13,17 +13,20 @@ import (
 	"syscall"
 
 	"github.com/themadorg/madmail/framework/config"
+	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/servertracker"
 )
 
 // StatusResponse is the response body for /admin/status.
 type StatusResponse struct {
-	IMAP         *ServiceStatus `json:"imap,omitempty"`
-	TURN         *TurnStatus    `json:"turn,omitempty"`
-	Shadowsocks  *ServiceStatus `json:"shadowsocks,omitempty"`
-	Users        *UsersStatus   `json:"users"`
-	Uptime       *UptimeStatus  `json:"uptime"`
-	EmailServers *EmailServers  `json:"email_servers,omitempty"`
+	IMAP             *ServiceStatus `json:"imap,omitempty"`
+	TURN             *TurnStatus    `json:"turn,omitempty"`
+	Shadowsocks      *ServiceStatus `json:"shadowsocks,omitempty"`
+	Users            *UsersStatus   `json:"users"`
+	Uptime           *UptimeStatus  `json:"uptime"`
+	EmailServers     *EmailServers  `json:"email_servers,omitempty"`
+	SentMessages     int64          `json:"sent_messages"`
+	OutboundMessages int64          `json:"outbound_messages"`
 }
 
 type ServiceStatus struct {
@@ -124,6 +127,10 @@ func StatusHandler(deps StatusDeps) func(method string, body json.RawMessage) (i
 		// TURN relays
 		relays := countTurnRelays(turnPort)
 		resp.TURN = &TurnStatus{Relays: relays}
+
+		// Message counters
+		resp.SentMessages = module.GetSentMessages()
+		resp.OutboundMessages = module.GetOutboundMessages()
 
 		return resp, 200, nil
 	}

@@ -37,6 +37,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'stat.uptime': 'Uptime',
         'stat.disk': 'Disk',
         'stat.storage': 'Storage',
+        'stat.sent': 'Messages Sent',
+        'stat.outbound': 'Messages Out',
         'stat.imap': 'IMAP',
         'stat.turn_relays': 'TURN Relays',
         'stat.ss_conns': 'SS Conns',
@@ -116,6 +118,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'acct.copy_dclogin': 'Copy dclogin Link',
         'acct.open_dc': 'Open in Delta Chat',
         'acct.dismiss': 'Done',
+        'acct.default_quota': 'default quota',
+        'acct.reset_quota': 'Reset to default',
 
         // DNS tab
         'dns.total': '{count} overrides',
@@ -147,6 +151,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'notify.dns_added': 'DNS override added: {key}',
         'notify.dns_deleted': 'DNS override removed: {key}',
         'notify.restarting': 'Restarting service...',
+        'notify.quota_updated': 'Quota updated',
+        'notify.quota_reset': 'Quota reset to default',
 
         // Misc
         'misc.default': '(default)',
@@ -175,6 +181,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'stat.uptime': 'آپتایم',
         'stat.disk': 'دیسک',
         'stat.storage': 'فضا',
+        'stat.sent': 'پیام ارسالی',
+        'stat.outbound': 'پیام خروجی',
         'stat.imap': 'IMAP',
         'stat.turn_relays': 'رله TURN',
         'stat.ss_conns': 'اتصالات SS',
@@ -247,7 +255,9 @@ const translations: Record<Locale, Record<string, string>> = {
         'acct.dclogin_warning': 'این لینک را ذخیره کنید! فقط یک بار نمایش داده می‌شود.',
         'acct.copy_dclogin': 'کپی لینک dclogin',
         'acct.open_dc': 'باز کردن در دلتاچت',
-        'acct.dismiss': 'انجام شد',
+        'acct.dismiss': 'انجام',
+        'acct.default_quota': 'سهمیه پیش‌فرض',
+        'acct.reset_quota': 'بازگشت به پیش‌فرض',
 
         'dns.total': '{count} بازنویسی',
         'dns.lookup': 'کلید جستجو',
@@ -276,6 +286,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'notify.dns_added': 'بازنویسی DNS اضافه شد: {key}',
         'notify.dns_deleted': 'بازنویسی DNS حذف شد: {key}',
         'notify.restarting': 'در حال ری‌استارت سرویس...',
+        'notify.quota_updated': 'سهمیه به‌روز شد',
+        'notify.quota_reset': 'سهمیه به پیش‌فرض بازگشت',
 
         'misc.default': '(پیش‌فرض)',
         'misc.loading': 'بارگذاری…',
@@ -303,6 +315,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'stat.uptime': 'Tiempo activo',
         'stat.disk': 'Disco',
         'stat.storage': 'Almacenamiento',
+        'stat.sent': 'Mensajes Enviados',
+        'stat.outbound': 'Mensajes Salientes',
         'stat.imap': 'IMAP',
         'stat.turn_relays': 'Relés TURN',
         'stat.ss_conns': 'Conex. SS',
@@ -376,6 +390,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'acct.copy_dclogin': 'Copiar enlace dclogin',
         'acct.open_dc': 'Abrir en Delta Chat',
         'acct.dismiss': 'Listo',
+        'acct.default_quota': 'cuota por defecto',
+        'acct.reset_quota': 'Restablecer a defecto',
 
         'dns.total': '{count} sobrecargas',
         'dns.lookup': 'Clave de búsqueda',
@@ -404,6 +420,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'notify.dns_added': 'Sobrecarga DNS agregada: {key}',
         'notify.dns_deleted': 'Sobrecarga DNS eliminada: {key}',
         'notify.restarting': 'Reiniciando servicio...',
+        'notify.quota_updated': 'Cuota actualizada',
+        'notify.quota_reset': 'Cuota restablecida',
 
         'misc.default': '(predeterminado)',
         'misc.loading': 'Cargando…',
@@ -431,6 +449,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'stat.uptime': 'Аптайм',
         'stat.disk': 'Диск',
         'stat.storage': 'Хранилище',
+        'stat.sent': 'Отправлено',
+        'stat.outbound': 'Исходящие',
         'stat.imap': 'IMAP',
         'stat.turn_relays': 'TURN релеи',
         'stat.ss_conns': 'SS соединения',
@@ -504,6 +524,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'acct.copy_dclogin': 'Копировать ссылку dclogin',
         'acct.open_dc': 'Открыть в Delta Chat',
         'acct.dismiss': 'Готово',
+        'acct.default_quota': 'квота по умолчанию',
+        'acct.reset_quota': 'Сбросить',
 
         'dns.total': '{count} переопределений',
         'dns.lookup': 'Ключ поиска',
@@ -532,6 +554,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'notify.dns_added': 'Переопределение DNS добавлено: {key}',
         'notify.dns_deleted': 'Переопределение DNS удалено: {key}',
         'notify.restarting': 'Перезапуск сервиса...',
+        'notify.quota_updated': 'Квота обновлена',
+        'notify.quota_reset': 'Квота сброшена',
 
         'misc.default': '(по умолчанию)',
         'misc.loading': 'Загрузка…',

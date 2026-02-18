@@ -17,11 +17,13 @@ type AccountsDeps struct {
 }
 
 type accountEntry struct {
-	Username     string `json:"username"`
-	UsedBytes    int64  `json:"used_bytes"`
-	CreatedAt    int64  `json:"created_at"`
-	FirstLoginAt int64  `json:"first_login_at"`
-	LastLoginAt  int64  `json:"last_login_at"`
+	Username       string `json:"username"`
+	UsedBytes      int64  `json:"used_bytes"`
+	MaxBytes       int64  `json:"max_bytes"`
+	IsDefaultQuota bool   `json:"is_default_quota"`
+	CreatedAt      int64  `json:"created_at"`
+	FirstLoginAt   int64  `json:"first_login_at"`
+	LastLoginAt    int64  `json:"last_login_at"`
 }
 
 type accountListResponse struct {
@@ -64,12 +66,15 @@ func AccountsHandler(deps AccountsDeps) func(string, json.RawMessage) (interface
 					continue
 				}
 				info := infoMap[u]
+				used, max, isDefault, _ := deps.Storage.GetQuota(u)
 				accounts = append(accounts, accountEntry{
-					Username:     u,
-					UsedBytes:    usageMap[u],
-					CreatedAt:    info.CreatedAt,
-					FirstLoginAt: info.FirstLoginAt,
-					LastLoginAt:  info.LastLoginAt,
+					Username:       u,
+					UsedBytes:      used,
+					MaxBytes:       max,
+					IsDefaultQuota: isDefault,
+					CreatedAt:      info.CreatedAt,
+					FirstLoginAt:   info.FirstLoginAt,
+					LastLoginAt:    info.LastLoginAt,
 				})
 			}
 			return accountListResponse{

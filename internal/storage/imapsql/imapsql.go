@@ -378,7 +378,39 @@ func (store *Storage) initQuotaTable() error {
 	if err := store.GORMDB.AutoMigrate(&mdb.Quota{}); err != nil {
 		return err
 	}
-	return store.GORMDB.AutoMigrate(&mdb.BlockedUser{})
+	if err := store.GORMDB.AutoMigrate(&mdb.BlockedUser{}); err != nil {
+		return err
+	}
+	if err := store.GORMDB.AutoMigrate(&mdb.MessageStat{}); err != nil {
+		return err
+	}
+
+	// Load persisted message counters into global atomic counters.
+	var stat mdb.MessageStat
+	if err := store.GORMDB.Where("name = ?", "sent_messages").First(&stat).Error; err == nil {
+		module.SetSentMessages(stat.Count)
+	}
+	if err := store.GORMDB.Where("name = ?", "outbound_messages").First(&stat).Error; err == nil {
+		module.SetOutboundMessages(stat.Count)
+	}
+
+	// Background goroutine to flush counters to DB every 30s.
+	go store.flushMessageCounters()
+
+	return nil
+}
+
+func (store *Storage) flushMessageCounters() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		store.GORMDB.Where("name = ?", "sent_messages").
+			Assign(mdb.MessageStat{Count: module.GetSentMessages()}).
+			FirstOrCreate(&mdb.MessageStat{Name: "sent_messages"})
+		store.GORMDB.Where("name = ?", "outbound_messages").
+			Assign(mdb.MessageStat{Count: module.GetOutboundMessages()}).
+			FirstOrCreate(&mdb.MessageStat{Name: "outbound_messages"})
+	}
 }
 
 func (store *Storage) GetQuota(username string) (used, max int64, isDefault bool, err error) {

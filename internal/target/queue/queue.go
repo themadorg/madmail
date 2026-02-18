@@ -394,6 +394,7 @@ func (q *Queue) tryDelivery(meta *QueueMetadata, header textproto.Header, body b
 		rcptErr, ok := partialErr.Errs[rcpt]
 		if !ok {
 			dl.Msg("delivered", "rcpt", rcpt, "attempt", meta.TriesCount[rcpt]+1)
+			module.IncrementOutboundMessages()
 			continue
 		}
 

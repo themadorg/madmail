@@ -10,6 +10,8 @@
     ExternalLink,
     Check,
     AlertTriangle,
+    Pencil,
+    RotateCcw,
   } from "lucide-svelte";
 
   let locale = $state(getLocale());
@@ -24,6 +26,29 @@
   let sortBy = $state<"name" | "size" | "date" | "login">("name");
   let sortAsc = $state(true);
   let copied = $state(false);
+
+  // Quota editing state
+  let editingDefaultQuota = $state(false);
+  let defaultQuotaInput = $state("");
+  let editingUserQuota = $state(""); // username being edited
+  let userQuotaInput = $state("");
+
+  /** Parse human-friendly size like "100MB" or "2GB" to bytes */
+  function parseSize(s: string): number | null {
+    const m = s.trim().match(/^([\d.]+)\s*(b|kb|mb|gb|tb)?$/i);
+    if (!m) return null;
+    const n = parseFloat(m[1]);
+    if (isNaN(n) || n < 0) return null;
+    const unit = (m[2] || "b").toUpperCase();
+    const mult: Record<string, number> = {
+      B: 1,
+      KB: 1024,
+      MB: 1048576,
+      GB: 1073741824,
+      TB: 1099511627776,
+    };
+    return Math.round(n * (mult[unit] ?? 1));
+  }
 
   function fmtDate(ts: number): string {
     if (!ts) return _("acct.never");
@@ -139,9 +164,56 @@
       {#if store.quota}
         <span>
           {store.fmtBytes(store.quota.total_storage_bytes)}
-          {_("acct.used")} · {store.fmtBytes(store.quota.default_quota_bytes)}
-          {_("acct.quota")}
+          {_("acct.used")}
         </span>
+        <span class="text-text-2/40">·</span>
+        {#if editingDefaultQuota}
+          <form
+            class="flex items-center gap-1"
+            onsubmit={(e) => {
+              e.preventDefault();
+              const bytes = parseSize(defaultQuotaInput);
+              if (bytes !== null) {
+                store.setDefaultQuota(bytes);
+                editingDefaultQuota = false;
+              }
+            }}
+          >
+            <input
+              type="text"
+              class="w-20 px-1.5 py-0.5 text-xs rounded border border-accent/40 bg-surface-1 text-text-1 focus:outline-none focus:border-accent"
+              bind:value={defaultQuotaInput}
+              placeholder="e.g. 100MB"
+            />
+            <button
+              type="submit"
+              class="px-1.5 py-0.5 text-[10px] rounded bg-accent text-white hover:bg-accent/80"
+            >
+              {_("action.save")}
+            </button>
+            <button
+              type="button"
+              onclick={() => (editingDefaultQuota = false)}
+              class="px-1.5 py-0.5 text-[10px] rounded border border-border text-text-2 hover:bg-surface-2"
+            >
+              {_("action.cancel")}
+            </button>
+          </form>
+        {:else}
+          <button
+            class="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer"
+            onclick={() => {
+              defaultQuotaInput = store.quota
+                ? (store.quota.default_quota_bytes / 1048576).toFixed(0) + "MB"
+                : "";
+              editingDefaultQuota = true;
+            }}
+          >
+            {store.fmtBytes(store.quota.default_quota_bytes)}
+            {_("acct.default_quota")}
+            <Pencil size={10} class="opacity-40" />
+          </button>
+        {/if}
       {/if}
     </div>
   </div>
@@ -236,9 +308,69 @@
           </div>
         </div>
         <div class="flex items-center gap-2 shrink-0 ms-2">
-          <span class="text-xs text-text-2 tabular-nums"
-            >{store.fmtBytes(acct.used_bytes)}</span
-          >
+          <div class="flex flex-col items-end gap-0.5">
+            <span class="text-xs text-text-2 tabular-nums"
+              >{store.fmtBytes(acct.used_bytes)}</span
+            >
+            {#if editingUserQuota === acct.username}
+              <form
+                class="flex items-center gap-1"
+                onsubmit={(e) => {
+                  e.preventDefault();
+                  const bytes = parseSize(userQuotaInput);
+                  if (bytes !== null) {
+                    store.setUserQuota(acct.username, bytes);
+                    editingUserQuota = "";
+                  }
+                }}
+              >
+                <input
+                  type="text"
+                  class="w-16 px-1 py-0.5 text-[10px] rounded border border-accent/40 bg-surface-1 text-text-1 focus:outline-none"
+                  bind:value={userQuotaInput}
+                  placeholder="e.g. 200MB"
+                />
+                <button
+                  type="submit"
+                  class="px-1 py-0.5 text-[9px] rounded bg-accent text-white hover:bg-accent/80"
+                >
+                  ✓
+                </button>
+                <button
+                  type="button"
+                  onclick={() => (editingUserQuota = "")}
+                  class="px-1 py-0.5 text-[9px] rounded border border-border text-text-2"
+                >
+                  ✕
+                </button>
+              </form>
+            {:else}
+              <button
+                class="flex items-center gap-0.5 text-[10px] transition-colors cursor-pointer
+                  {acct.is_default_quota
+                  ? 'text-text-2/50 hover:text-text-2'
+                  : 'text-accent/70 hover:text-accent'}"
+                onclick={() => {
+                  userQuotaInput = (acct.max_bytes / 1048576).toFixed(0) + "MB";
+                  editingUserQuota = acct.username;
+                }}
+              >
+                {store.fmtBytes(acct.max_bytes)}
+                {acct.is_default_quota ? "" : "★"}
+                <Pencil size={8} class="opacity-30" />
+              </button>
+              {#if !acct.is_default_quota}
+                <button
+                  class="text-[9px] text-text-2/40 hover:text-text-2 flex items-center gap-0.5 transition-colors"
+                  onclick={() => store.resetUserQuota(acct.username)}
+                  title={_("acct.reset_quota")}
+                >
+                  <RotateCcw size={8} />
+                  {_("acct.reset_quota")}
+                </button>
+              {/if}
+            {/if}
+          </div>
           <button
             onclick={() => store.requestDelete(acct.username)}
             class="p-1.5 text-danger/60 border border-transparent rounded hover:border-danger/30 hover:bg-danger/10 sm:opacity-0 sm:group-hover:opacity-100 transition-all"

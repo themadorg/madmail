@@ -22,6 +22,8 @@ export interface StatusResponse {
     users: { registered: number };
     uptime: { boot_time: string; duration: string };
     email_servers?: { connection_ips: number; domain_servers: number; ip_servers: number };
+    sent_messages: number;
+    outbound_messages: number;
 }
 
 export interface StorageResponse {
@@ -78,7 +80,7 @@ export interface AllSettings {
 }
 
 export interface AccountList {
-    accounts: { username: string; used_bytes: number; created_at: number; first_login_at: number; last_login_at: number }[];
+    accounts: { username: string; used_bytes: number; max_bytes: number; is_default_quota: boolean; created_at: number; first_login_at: number; last_login_at: number }[];
     total: number;
 }
 
@@ -162,6 +164,12 @@ export const api = {
     deleteAccount: (c: ApiConfig, username: string) =>
         apiCall(c, '/admin/accounts', 'DELETE', { username }),
     quota: (c: ApiConfig) => apiCall<QuotaStats>(c, '/admin/quota'),
+    setDefaultQuota: (c: ApiConfig, maxBytes: number) =>
+        apiCall(c, '/admin/quota', 'PUT', { max_bytes: maxBytes }),
+    setUserQuota: (c: ApiConfig, username: string, maxBytes: number) =>
+        apiCall(c, '/admin/quota', 'PUT', { username, max_bytes: maxBytes }),
+    resetUserQuota: (c: ApiConfig, username: string) =>
+        apiCall(c, '/admin/quota', 'DELETE', { username }),
     settings: (c: ApiConfig) => apiCall<AllSettings>(c, '/admin/settings'),
 
     // Blocklist

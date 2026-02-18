@@ -49,3 +49,10 @@ type BlockedUser struct {
 	Reason    string    `gorm:"column:reason"`
 	BlockedAt time.Time `gorm:"autoCreateTime"`
 }
+
+// MessageStat stores server-wide message counters.
+// Each row is identified by a stat name (e.g., "sent_messages").
+type MessageStat struct {
+	Name  string `gorm:"primaryKey"`
+	Count int64
+}

@@ -9,6 +9,8 @@
     Network,
     Shield,
     Trash2,
+    Mail,
+    SendHorizonal,
   } from "lucide-svelte";
 
   let locale = $state(getLocale());
@@ -58,6 +60,20 @@
     Server,
     _("stat.storage"),
     store.quota ? store.fmtBytes(store.quota.total_storage_bytes) : "—",
+  )}
+  {@render statCard(
+    Mail,
+    _("stat.sent"),
+    store.status?.sent_messages != null
+      ? store.status.sent_messages.toLocaleString()
+      : "—",
+  )}
+  {@render statCard(
+    SendHorizonal,
+    _("stat.outbound"),
+    store.status?.outbound_messages != null
+      ? store.status.outbound_messages.toLocaleString()
+      : "—",
   )}
 </div>
 

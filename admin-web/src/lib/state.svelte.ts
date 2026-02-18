@@ -295,6 +295,39 @@ class AdminState {
         this.newAccount = null;
     }
 
+    async setDefaultQuota(maxBytes: number) {
+        if (this.busy) return;
+        this.busy = true;
+        try {
+            const res = await api.setDefaultQuota(this.cfg(), maxBytes);
+            if (res.error) { this.notify(res.error, 'err'); return; }
+            this.notify(t('notify.quota_updated'));
+            await this.refresh();
+        } finally { this.busy = false; }
+    }
+
+    async setUserQuota(username: string, maxBytes: number) {
+        if (this.busy) return;
+        this.busy = true;
+        try {
+            const res = await api.setUserQuota(this.cfg(), username, maxBytes);
+            if (res.error) { this.notify(res.error, 'err'); return; }
+            this.notify(t('notify.quota_updated'));
+            await this.refresh();
+        } finally { this.busy = false; }
+    }
+
+    async resetUserQuota(username: string) {
+        if (this.busy) return;
+        this.busy = true;
+        try {
+            const res = await api.resetUserQuota(this.cfg(), username);
+            if (res.error) { this.notify(res.error, 'err'); return; }
+            this.notify(t('notify.quota_reset'));
+            await this.refresh();
+        } finally { this.busy = false; }
+    }
+
     async unblockUser(u: string) {
         if (this.busy) return;
         this.busy = true;
