@@ -1,6 +1,7 @@
 <script lang="ts">
   import "./layout.css";
   import { page } from "$app/stores";
+  import { base } from "$app/paths";
   import { store } from "$lib/state.svelte";
   import { t, getLocale, setLocale, LOCALES, type Locale } from "$lib/i18n";
   import {
@@ -108,8 +109,10 @@
   });
 
   function isActive(href: string, path: string): boolean {
-    if (href === "/") return path === "/";
-    return path.startsWith(href);
+    // Strip base prefix for comparison
+    const p = base ? path.replace(base, '') || '/' : path;
+    if (href === "/") return p === "/";
+    return p.startsWith(href);
   }
 </script>
 
@@ -277,7 +280,7 @@
       <!-- Header -->
       <header class="flex items-center justify-between mb-6">
         <div class="flex items-center gap-2">
-          <a href="/" class="p-1.5 bg-accent/15 rounded-lg">
+          <a href="{base}/" class="p-1.5 bg-accent/15 rounded-lg">
             <Mail size={16} class="text-accent" />
           </a>
           <div>
@@ -337,7 +340,7 @@
       <nav class="flex gap-0.5 mb-5 border-b border-border">
         {#each NAV_ITEMS as item}
           <a
-            href={item.href}
+            href="{base}{item.href}"
             class="px-3 py-2 text-sm transition-colors -mb-px flex items-center gap-1.5
               {isActive(item.href, $page.url.pathname)
               ? 'text-accent border-b-2 border-accent font-medium'
