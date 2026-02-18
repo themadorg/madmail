@@ -4,6 +4,11 @@
   import { store } from "$lib/state.svelte";
   import { t, getLocale, setLocale, LOCALES, type Locale } from "$lib/i18n";
   import {
+    getSavedServers,
+    removeServer,
+    type SavedServer,
+  } from "$lib/servers";
+  import {
     Mail,
     Plug,
     RefreshCw,
@@ -17,6 +22,8 @@
     ShieldBan,
     Sun,
     Moon,
+    Server,
+    Trash2,
   } from "lucide-svelte";
 
   let { children } = $props();
@@ -65,12 +72,38 @@
     { href: "/dns", key: "tab.dns", icon: Globe },
   ];
 
+  // Saved servers from IndexedDB
+  let savedServers = $state<SavedServer[]>([]);
+
+  async function loadSavedServers() {
+    savedServers = await getSavedServers();
+  }
+
+  function selectServer(s: SavedServer) {
+    store.baseUrl = s.url;
+    store.token = s.token;
+    store.connect();
+  }
+
+  async function deleteSavedServer(e: MouseEvent, id: string) {
+    e.stopPropagation();
+    await removeServer(id);
+    await loadSavedServers();
+  }
+
   // Auto-connect on mount
   let autoConnectDone = false;
   $effect(() => {
     if (!autoConnectDone && store.baseUrl && store.token) {
       autoConnectDone = true;
       store.connect();
+    }
+  });
+
+  // Load saved servers when not connected
+  $effect(() => {
+    if (!store.connected) {
+      loadSavedServers();
     }
   });
 
@@ -195,6 +228,43 @@
           <Plug size={14} /> {_("login.connect")}
         {/if}
       </button>
+
+      <!-- Saved Servers -->
+      {#if savedServers.length > 0}
+        <div class="mt-5 pt-4 border-t border-border">
+          <h3
+            class="text-xs text-text-2 font-medium mb-2.5 flex items-center gap-1.5"
+          >
+            <Server size={12} />
+            {_("login.saved_servers")}
+          </h3>
+          <div class="space-y-1.5">
+            {#each savedServers as s (s.id)}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                onclick={() => selectServer(s)}
+                class="w-full group flex items-center gap-2.5 px-3 py-2 bg-surface border border-border rounded-lg hover:border-accent/50 hover:bg-accent/5 transition-all text-start cursor-pointer"
+              >
+                <div class="p-1.5 bg-accent/10 rounded-md shrink-0">
+                  <Server size={13} class="text-accent" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-medium truncate">{s.label}</div>
+                  <div class="text-[11px] text-text-2 truncate">{s.url}</div>
+                </div>
+                <button
+                  onclick={(e: MouseEvent) => deleteSavedServer(e, s.id)}
+                  class="p-1 text-text-2 opacity-0 group-hover:opacity-100 hover:text-danger transition-all rounded"
+                  title="Remove"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
     </div>
   </div>
 {:else}

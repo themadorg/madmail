@@ -22,6 +22,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'login.token_label': 'Admin Token',
         'login.token_placeholder': 'Paste token here',
         'login.connect': 'Connect',
+        'login.saved_servers': 'Saved Servers',
+        'login.no_saved': 'No saved servers yet',
         'login.connecting': 'Connecting…',
 
         // Tabs
@@ -175,6 +177,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'login.token_label': 'توکن مدیریت',
         'login.token_placeholder': 'توکن را اینجا وارد کنید',
         'login.connect': 'اتصال',
+        'login.saved_servers': 'سرورهای ذخیره‌شده',
+        'login.no_saved': 'هنوز سروری ذخیره نشده',
         'login.connecting': 'در حال اتصال…',
 
         'tab.overview': 'نمای کلی',
@@ -316,6 +320,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'login.token_label': 'Token de Admin',
         'login.token_placeholder': 'Pegar token aquí',
         'login.connect': 'Conectar',
+        'login.saved_servers': 'Servidores guardados',
+        'login.no_saved': 'Aún no hay servidores guardados',
         'login.connecting': 'Conectando…',
 
         'tab.overview': 'General',
@@ -457,6 +463,8 @@ const translations: Record<Locale, Record<string, string>> = {
         'login.token_label': 'Токен администратора',
         'login.token_placeholder': 'Вставьте токен сюда',
         'login.connect': 'Подключить',
+        'login.saved_servers': 'Сохраненные серверы',
+        'login.no_saved': 'Нет сохраненных серверов',
         'login.connecting': 'Подключение…',
 
         'tab.overview': 'Обзор',

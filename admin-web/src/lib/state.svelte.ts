@@ -15,6 +15,7 @@ import {
     type CreateAccountResponse,
 } from '$lib/api';
 import { t } from '$lib/i18n';
+import { saveServer } from '$lib/servers';
 
 // --- Initialization ---
 let savedUrl = '';
@@ -94,6 +95,8 @@ class AdminState {
         if (res.error) { this.connectError = res.error; return; }
         localStorage.setItem('madmail_url', this.baseUrl);
         localStorage.setItem('madmail_token', this.token);
+        // Save to IndexedDB for multi-server support
+        saveServer(this.baseUrl, this.token).catch(() => { });
         this.connected = true;
         this.status = res.data!;
         this.refresh();
