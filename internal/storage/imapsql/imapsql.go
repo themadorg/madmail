@@ -545,6 +545,22 @@ func (store *Storage) GetAccountDate(username string) (created int64, err error)
 	return 0, nil
 }
 
+func (store *Storage) GetAllAccountInfo() (map[string]module.AccountInfo, error) {
+	var quotas []mdb.Quota
+	if err := store.GORMDB.Find(&quotas).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]module.AccountInfo, len(quotas))
+	for _, q := range quotas {
+		result[q.Username] = module.AccountInfo{
+			CreatedAt:    q.CreatedAt,
+			FirstLoginAt: q.FirstLoginAt,
+			LastLoginAt:  q.LastLoginAt,
+		}
+	}
+	return result, nil
+}
+
 func (store *Storage) UpdateFirstLogin(username string) error {
 	var quota mdb.Quota
 	err := store.GORMDB.Where("username = ?", username).First(&quota).Error
@@ -555,12 +571,14 @@ func (store *Storage) UpdateFirstLogin(username string) error {
 		return err
 	}
 
+	now := time.Now().Unix()
+	quota.LastLoginAt = now
+
 	if quota.FirstLoginAt == 1 {
-		quota.FirstLoginAt = time.Now().Unix()
-		return store.GORMDB.Save(&quota).Error
+		quota.FirstLoginAt = now
 	}
 
-	return nil
+	return store.GORMDB.Save(&quota).Error
 }
 
 func (store *Storage) MigrateFirstLoginFromCreatedAt() error {

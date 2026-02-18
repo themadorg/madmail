@@ -194,23 +194,22 @@ func (e *Endpoint) reloadConfig() error {
 		}
 	}
 
-	if !modified {
-		e.logger.Printf("reload: no changes to apply, config unchanged")
-		return nil
+	if modified {
+		// Write the modified config to a pending file in the state dir.
+		// The state dir (/var/lib/maddy/) is writable by the maddy user,
+		// while the config dir (/etc/maddy/) is owned by root.
+		// An ExecStartPre script in the systemd unit copies the pending file
+		// to the actual config location on next startup.
+		pendingPath := filepath.Join(config.StateDirectory, "maddy.conf.pending")
+		if err := os.WriteFile(pendingPath, []byte(content), 0640); err != nil {
+			return fmt.Errorf("failed to write pending config to %s: %v", pendingPath, err)
+		}
+		e.logger.Printf("reload: pending config written to %s", pendingPath)
 	}
 
-	// Write the modified config to a pending file in the state dir.
-	// The state dir (/var/lib/maddy/) is writable by the maddy user,
-	// while the config dir (/etc/maddy/) is owned by root.
-	// An ExecStartPre script in the systemd unit copies the pending file
-	// to the actual config location on next startup.
-	pendingPath := filepath.Join(config.StateDirectory, "maddy.conf.pending")
-	if err := os.WriteFile(pendingPath, []byte(content), 0640); err != nil {
-		return fmt.Errorf("failed to write pending config to %s: %v", pendingPath, err)
-	}
-	e.logger.Printf("reload: pending config written to %s", pendingPath)
-
-	// Restart the service — on restart, ExecStartPre will move .pending → maddy.conf
+	// Always restart. Some settings (like port access local-only) don't modify
+	// the config file but still require a restart to re-bind listeners.
+	e.logger.Printf("reload: restarting service")
 	return restartService()
 }
 

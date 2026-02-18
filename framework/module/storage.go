@@ -32,6 +32,13 @@ type BlockedUserEntry struct {
 	BlockedAt time.Time
 }
 
+// AccountInfo holds date metadata for an account.
+type AccountInfo struct {
+	CreatedAt    int64 // Unix timestamp of account creation
+	FirstLoginAt int64 // Unix timestamp of first login (0 = never logged in)
+	LastLoginAt  int64 // Unix timestamp of most recent login (0 = never logged in)
+}
+
 // Storage interface is a slightly modified go-imap's Backend interface
 // (authentication is removed).
 //
@@ -69,6 +76,7 @@ type ManageableStorage interface {
 	SetDefaultQuota(max int64) error
 	GetStat() (totalStorage int64, accountsCount int, err error)
 	GetAllUsedStorage() (map[string]int64, error)
+	GetAllAccountInfo() (map[string]AccountInfo, error)
 	PurgeAllIMAPMsgs() error
 	PurgeReadIMAPMsgs() error
 	PruneUnreadIMAPMsgs(retention time.Duration) error

@@ -1,7 +1,21 @@
 <script lang="ts">
   import { store } from "$lib/state.svelte";
   import { t, getLocale } from "$lib/i18n";
-  import { ToggleLeft, ToggleRight, Pencil, RotateCcw } from "lucide-svelte";
+  import {
+    ToggleLeft,
+    ToggleRight,
+    Pencil,
+    RotateCcw,
+    Dice5,
+  } from "lucide-svelte";
+
+  function randomPath(): string {
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let s = "/";
+    for (let i = 0; i < 16; i++)
+      s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
 
   let locale = $state(getLocale());
   function _(key: string, params?: Record<string, string>): string {
@@ -110,6 +124,15 @@
                   bind:value={store.editValue}
                   class="flex-1 px-2 py-1 bg-surface border border-border rounded text-xs text-text outline-none focus:border-accent"
                 />
+                {#if key === "admin_path"}
+                  <button
+                    onclick={() => (store.editValue = randomPath())}
+                    class="p-1.5 text-text-2 border border-border rounded hover:bg-surface-3 transition-colors"
+                    title="Generate random path"
+                  >
+                    <Dice5 size={12} />
+                  </button>
+                {/if}
               {/if}
               <button
                 onclick={() => store.save(key, store.editValue)}

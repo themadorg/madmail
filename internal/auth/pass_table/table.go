@@ -43,6 +43,10 @@ type Auth struct {
 }
 
 func New(modName, instName string, _, inlineArgs []string) (module.Module, error) {
+	// Register this instance as the settings provider early, so
+	// IsLocalOnly() can trigger our Init() if called before us.
+	module.RegisterSettingsProviderInstance(instName)
+
 	return &Auth{
 		modName:    modName,
 		instName:   instName,

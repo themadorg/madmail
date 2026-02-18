@@ -17,8 +17,11 @@ type AccountsDeps struct {
 }
 
 type accountEntry struct {
-	Username  string `json:"username"`
-	UsedBytes int64  `json:"used_bytes"`
+	Username     string `json:"username"`
+	UsedBytes    int64  `json:"used_bytes"`
+	CreatedAt    int64  `json:"created_at"`
+	FirstLoginAt int64  `json:"first_login_at"`
+	LastLoginAt  int64  `json:"last_login_at"`
 }
 
 type accountListResponse struct {
@@ -49,15 +52,24 @@ func AccountsHandler(deps AccountsDeps) func(string, json.RawMessage) (interface
 			if usageMap == nil {
 				usageMap = make(map[string]int64)
 			}
+			// Fetch per-user account dates in a single query
+			infoMap, _ := deps.Storage.GetAllAccountInfo()
+			if infoMap == nil {
+				infoMap = make(map[string]module.AccountInfo)
+			}
 			accounts := make([]accountEntry, 0, len(users))
 			for _, u := range users {
 				// Skip internal settings keys stored in the same DB
 				if strings.HasPrefix(u, "__") && strings.HasSuffix(u, "__") {
 					continue
 				}
+				info := infoMap[u]
 				accounts = append(accounts, accountEntry{
-					Username:  u,
-					UsedBytes: usageMap[u],
+					Username:     u,
+					UsedBytes:    usageMap[u],
+					CreatedAt:    info.CreatedAt,
+					FirstLoginAt: info.FirstLoginAt,
+					LastLoginAt:  info.LastLoginAt,
 				})
 			}
 			return accountListResponse{

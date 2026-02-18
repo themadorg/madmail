@@ -78,7 +78,7 @@ export interface AllSettings {
 }
 
 export interface AccountList {
-    accounts: { username: string; used_bytes: number }[];
+    accounts: { username: string; used_bytes: number; created_at: number; first_login_at: number; last_login_at: number }[];
     total: number;
 }
 

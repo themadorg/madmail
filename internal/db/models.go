@@ -10,6 +10,7 @@ type Quota struct {
 	MaxStorage   int64
 	CreatedAt    int64
 	FirstLoginAt int64
+	LastLoginAt  int64
 }
 
 // Contact represents the contacts table for contact sharing.

@@ -21,9 +21,26 @@
     locale = getLocale();
   });
 
-  let sortBy = $state<"name" | "size">("name");
+  let sortBy = $state<"name" | "size" | "date" | "login">("name");
   let sortAsc = $state(true);
   let copied = $state(false);
+
+  function fmtDate(ts: number): string {
+    if (!ts) return _("acct.never");
+    const d = new Date(ts * 1000);
+    const now = Date.now();
+    const diff = now - d.getTime();
+    if (diff < 60_000) return "just now";
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+    if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`;
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year:
+        d.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined,
+    });
+  }
 
   let sortedAccounts = $derived.by(() => {
     if (!store.accounts) return [];
@@ -31,6 +48,16 @@
     if (sortBy === "size") {
       list.sort((a, b) =>
         sortAsc ? a.used_bytes - b.used_bytes : b.used_bytes - a.used_bytes,
+      );
+    } else if (sortBy === "date") {
+      list.sort((a, b) =>
+        sortAsc ? a.created_at - b.created_at : b.created_at - a.created_at,
+      );
+    } else if (sortBy === "login") {
+      list.sort((a, b) =>
+        sortAsc
+          ? a.last_login_at - b.last_login_at
+          : b.last_login_at - a.last_login_at,
       );
     } else {
       list.sort((a, b) =>
@@ -46,7 +73,7 @@
     store.settings?.registration === "closed",
   );
 
-  function toggleSort(col: "name" | "size") {
+  function toggleSort(col: "name" | "size" | "date" | "login") {
     if (sortBy === col) {
       sortAsc = !sortAsc;
     } else {
@@ -139,8 +166,7 @@
     </div>
   {/if}
 
-  <!-- Sort controls -->
-  <div class="flex gap-2 mb-3">
+  <div class="flex gap-2 mb-3 flex-wrap">
     <button
       onclick={() => toggleSort("name")}
       class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
@@ -167,6 +193,32 @@
           >{sortAsc ? "↑" : "↓"}</span
         >{/if}
     </button>
+    <button
+      onclick={() => toggleSort("date")}
+      class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
+        {sortBy === 'date'
+        ? 'border-accent/40 text-accent bg-accent/5'
+        : 'border-border text-text-2 hover:border-text-2/40'}"
+    >
+      <ArrowUpDown size={11} />
+      {_("acct.sort_date")}
+      {#if sortBy === "date"}<span class="text-[10px] opacity-60"
+          >{sortAsc ? "↑" : "↓"}</span
+        >{/if}
+    </button>
+    <button
+      onclick={() => toggleSort("login")}
+      class="px-2.5 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1
+        {sortBy === 'login'
+        ? 'border-accent/40 text-accent bg-accent/5'
+        : 'border-border text-text-2 hover:border-text-2/40'}"
+    >
+      <ArrowUpDown size={11} />
+      {_("acct.sort_login")}
+      {#if sortBy === "login"}<span class="text-[10px] opacity-60"
+          >{sortAsc ? "↑" : "↓"}</span
+        >{/if}
+    </button>
   </div>
 
   <div class="space-y-1">
@@ -178,6 +230,10 @@
           <span class="text-xs sm:text-sm font-mono truncate block"
             >{acct.username}</span
           >
+          <div class="flex gap-3 mt-0.5 text-[10px] text-text-2">
+            <span>{_("acct.created")}: {fmtDate(acct.created_at)}</span>
+            <span>{_("acct.last_login")}: {fmtDate(acct.last_login_at)}</span>
+          </div>
         </div>
         <div class="flex items-center gap-2 shrink-0 ms-2">
           <span class="text-xs text-text-2 tabular-nums"

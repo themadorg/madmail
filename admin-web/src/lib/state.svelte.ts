@@ -156,6 +156,31 @@ class AdminState {
             if (res.data?.restart_required) this.pendingRestart = true;
             this.notify(t('notify.updated', { key }));
             this.editingField = '';
+            // If admin_path changed, reload immediately with the new URL
+            if (key === 'admin_path' && value) {
+                // Send reload on the OLD url (still active until restart)
+                await api.reload(this.cfg());
+                // Now update our baseUrl to the new path
+                const url = new URL(this.baseUrl);
+                url.pathname = value;
+                this.baseUrl = url.toString().replace(/\/+$/, '');
+                localStorage.setItem('madmail_url', this.baseUrl);
+                this.pendingRestart = false;
+                this.notify(t('action.restarting'));
+                // Wait for service to come back on the new path
+                setTimeout(async () => {
+                    for (let i = 0; i < 10; i++) {
+                        await new Promise(r => setTimeout(r, 2000));
+                        if ((await api.status(this.cfg())).data) {
+                            this.notify(t('notify.online'));
+                            await this.refresh();
+                            return;
+                        }
+                    }
+                    this.notify(t('notify.restart_pending'), 'err');
+                }, 1000);
+                return;
+            }
             await this.refresh();
         } finally { this.busy = false; }
     }
@@ -168,6 +193,28 @@ class AdminState {
             if (res.error) { this.notify(res.error, 'err'); return; }
             if (res.data?.restart_required) this.pendingRestart = true;
             this.notify(t('notify.reset', { key }));
+            // If admin_path reset, reload immediately with the default URL
+            if (key === 'admin_path') {
+                await api.reload(this.cfg());
+                const url = new URL(this.baseUrl);
+                url.pathname = '/api/admin';
+                this.baseUrl = url.toString().replace(/\/+$/, '');
+                localStorage.setItem('madmail_url', this.baseUrl);
+                this.pendingRestart = false;
+                this.notify(t('action.restarting'));
+                setTimeout(async () => {
+                    for (let i = 0; i < 10; i++) {
+                        await new Promise(r => setTimeout(r, 2000));
+                        if ((await api.status(this.cfg())).data) {
+                            this.notify(t('notify.online'));
+                            await this.refresh();
+                            return;
+                        }
+                    }
+                    this.notify(t('notify.restart_pending'), 'err');
+                }, 1000);
+                return;
+            }
             await this.refresh();
         } finally { this.busy = false; }
     }
@@ -204,19 +251,8 @@ class AdminState {
                 // Make public
                 await api.resetSetting(this.cfg(), settingKey);
             }
-            // Trigger service restart to apply port binding changes
-            this.notify(t('notify.restarting'), 'ok');
-            await api.restart(this.cfg());
-            // Wait for service to restart, then try to reconnect
-            await new Promise(r => setTimeout(r, 3000));
-            try {
-                await this.refresh();
-            } catch {
-                // Service might still be restarting, wait longer
-                await new Promise(r => setTimeout(r, 3000));
-                await this.refresh();
-            }
-            this.pendingRestart = false;
+            this.pendingRestart = true;
+            await this.refresh();
         } finally { this.busy = false; }
     }
 
