@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/themadorg/madmail/internal/auth"
 	maddycli "github.com/themadorg/madmail/internal/cli"
@@ -110,6 +111,9 @@ func performUpgrade(newBinPath string) error {
 	fmt.Println("⏹️ Stopping services...")
 	_ = exec.Command("systemctl", "stop", "maddy.service").Run()
 	_ = exec.Command("systemctl", "stop", "iroh-relay.service").Run()
+
+	// Wait for the service to fully stop to avoid "text file busy"
+	time.Sleep(1 * time.Second)
 
 	// Perform binary replacement using a temporary file to avoid "text file busy"
 	fmt.Println("🔄 Replacing binary...")

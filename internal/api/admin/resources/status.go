@@ -317,3 +317,25 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%dm %ds", minutes, seconds)
 }
+
+// RestartHandler creates a handler for POST /admin/restart.
+// It schedules a service restart via systemctl after a short delay
+// so the HTTP response can be sent back to the client first.
+func RestartHandler() func(method string, body json.RawMessage) (interface{}, int, error) {
+	return func(method string, body json.RawMessage) (interface{}, int, error) {
+		if method != "POST" {
+			return nil, 405, fmt.Errorf("method %s not allowed", method)
+		}
+
+		// Schedule restart after a short delay so the response gets sent first
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			_ = exec.Command("systemctl", "restart", "maddy.service").Run()
+		}()
+
+		return map[string]string{
+			"status":  "restarting",
+			"message": "Service restart initiated. Please wait a few seconds.",
+		}, 200, nil
+	}
+}

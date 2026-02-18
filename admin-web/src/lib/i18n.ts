@@ -141,6 +141,7 @@ const translations: Record<Locale, Record<string, string>> = {
         'notify.account_created': 'Account created: {email}',
         'notify.dns_added': 'DNS override added: {key}',
         'notify.dns_deleted': 'DNS override removed: {key}',
+        'notify.restarting': 'Restarting service...',
 
         // Misc
         'misc.default': '(default)',
@@ -264,6 +265,7 @@ const translations: Record<Locale, Record<string, string>> = {
         'notify.account_created': 'حساب ایجاد شد: {email}',
         'notify.dns_added': 'بازنویسی DNS اضافه شد: {key}',
         'notify.dns_deleted': 'بازنویسی DNS حذف شد: {key}',
+        'notify.restarting': 'در حال ری‌استارت سرویس...',
 
         'misc.default': '(پیش‌فرض)',
         'misc.loading': 'بارگذاری…',
@@ -386,6 +388,7 @@ const translations: Record<Locale, Record<string, string>> = {
         'notify.account_created': 'Cuenta creada: {email}',
         'notify.dns_added': 'Sobrecarga DNS agregada: {key}',
         'notify.dns_deleted': 'Sobrecarga DNS eliminada: {key}',
+        'notify.restarting': 'Reiniciando servicio...',
 
         'misc.default': '(predeterminado)',
         'misc.loading': 'Cargando…',
@@ -508,6 +511,7 @@ const translations: Record<Locale, Record<string, string>> = {
         'notify.account_created': 'Аккаунт создан: {email}',
         'notify.dns_added': 'Переопределение DNS добавлено: {key}',
         'notify.dns_deleted': 'Переопределение DNS удалено: {key}',
+        'notify.restarting': 'Перезапуск сервиса...',
 
         'misc.default': '(по умолчанию)',
         'misc.loading': 'Загрузка…',

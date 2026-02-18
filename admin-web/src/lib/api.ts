@@ -198,5 +198,8 @@ export const api = {
 
     // Reload
     reload: (c: ApiConfig) => apiCall<ReloadResponse>(c, '/admin/reload', 'POST'),
+
+    // Restart service (needed after port access changes)
+    restart: (c: ApiConfig) => apiCall(c, '/admin/restart', 'POST'),
 };
 

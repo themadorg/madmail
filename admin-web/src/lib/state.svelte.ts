@@ -204,8 +204,19 @@ class AdminState {
                 // Make public
                 await api.resetSetting(this.cfg(), settingKey);
             }
-            this.pendingRestart = true;
-            await this.refresh();
+            // Trigger service restart to apply port binding changes
+            this.notify(t('notify.restarting'), 'ok');
+            await api.restart(this.cfg());
+            // Wait for service to restart, then try to reconnect
+            await new Promise(r => setTimeout(r, 3000));
+            try {
+                await this.refresh();
+            } catch {
+                // Service might still be restarting, wait longer
+                await new Promise(r => setTimeout(r, 3000));
+                await this.refresh();
+            }
+            this.pendingRestart = false;
         } finally { this.busy = false; }
     }
 

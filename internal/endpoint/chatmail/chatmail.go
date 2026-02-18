@@ -331,15 +331,13 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 		if endp.IsTLS() {
 			localOnlyKey = resources.KeyHTTPSLocalOnly
 		}
-		// Also check via our own authDB as fallback
 		isLocal := module.IsLocalOnly(localOnlyKey)
 		if !isLocal {
-			// Try reading directly from our own authDB (in case global provider wasn't registered in time)
+			// Fallback: read directly from our authDB reference
 			if val, ok, err := e.authDB.GetSetting(localOnlyKey); err == nil && ok && val == "true" {
 				isLocal = true
 			}
 		}
-		e.logger.Printf("port access check: key=%s isLocal=%v endpoint=%s", localOnlyKey, isLocal, endp)
 		if isLocal {
 			e.logger.Printf("local-only mode active for %s, binding to 127.0.0.1 only", endp)
 			endp = endp.WithLocalHost()
@@ -1505,6 +1503,8 @@ func (e *Endpoint) setupAdminAPI() {
 		GetUserCount: getUserCount,
 		GetSetting:   e.authDB.GetSetting,
 	}))
+
+	handler.Register("/admin/restart", resources.RestartHandler())
 
 	handler.Register("/admin/storage", resources.StorageHandler(resources.StorageDeps{
 		StateDir: config.StateDirectory,
