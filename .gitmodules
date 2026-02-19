@@ -1,3 +1,6 @@
 [submodule "chatmail-core"]
 	path = chatmail-core
 	url = git@github.com:chatmail/core.git
+[submodule "admin-web"]
+	path = admin-web
+	url = git@github.com:themadorg/madmail-admin-web.git
