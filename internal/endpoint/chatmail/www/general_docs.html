@@ -91,6 +91,29 @@
             مصرف و سقف مجاز خود را از طریق هر برنامه ایمیلی که از افزونه QUOTA پشتیبانی می‌کند، مشاهده کنید.
         </p>
 
+        <h2>مدیریت سرور (Admin API)</h2>
+        <p>
+            از نسخه <span class="highlight">v0.15.3</span> به بعد، یک API کنترلی (Admin API) درون خود سرور تعبیه شده است
+            که امکان مدیریت آسان سرور را فراهم می‌کند.
+            مسیر دسترسی به این API و همچنین توکن مدیریتی (Admin Token) قابل تغییر هستند و می‌توانید آن‌ها را به صورت
+            استاتیک در فایل تنظیمات سرور قرار دهید.
+        </p>
+        <p>
+            برای دریافت توکن پیش‌فرض جهت احراز هویت، می‌توانید دستور <code>maddy admin-token</code> را در سرور خود اجرا
+            کنید.
+        </p>
+        <p>
+            در کنار این API، پروژه <span class="highlight">Web Admin</span> نیز برای مدیریت گرافیکی سرور توسعه داده شده
+            است.
+            سورس‌کد این پروژه در <a href="https://github.com/themadorg/madmail-admin-web/" target="_blank" dir="ltr"
+                style="color: var(--accent-color);">github.com/themadorg/madmail-admin-web</a> قرار دارد و به طور خودکار
+            بیلد و در آدرس
+            <a href="https://admin.madmail.chat/" target="_blank" dir="ltr"
+                style="color: var(--accent-color);">https://admin.madmail.chat/</a>
+            مستقر (Deploy) می‌شود. با مراجعه به این لینک و وارد کردن آدرس سرور و توکن خود، به راحتی سرورتان را مدیریت
+            کنید.
+        </p>
+
         <h2>توصیه‌های امنیتی</h2>
         <div class="security-tip">
             <p><strong>امنیت پیام‌ها:</strong> این سرویس به صورت پیش‌فرض بسیار امن است. برای اطمینان از محرمانگی
