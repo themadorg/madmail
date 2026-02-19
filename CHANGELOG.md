@@ -1,6 +1,18 @@
 # [0.16.0](https://github.com/themadorg/madmail/compare/v0.15.3...v0.16.0) (2026-02-19)
 
 
+### Bug Fixes
+
+* **tests:** update remote tests to use new SMTPServerSTARTTLS signature and MailOptions ([bfa4040](https://github.com/themadorg/madmail/commit/bfa4040fefad012c158d7559952fd7c7662af3d2))
+
+
+### Features
+
+* **cli:** enhance admin-token output with API URL and GORM integration ([b83ac47](https://github.com/themadorg/madmail/commit/b83ac4733f46230802993a1c3d9f59c1552bc631))
+
+# [0.16.0](https://github.com/themadorg/madmail/compare/v0.15.3...v0.16.0) (2026-02-19)
+
+
 ### Features
 
 * **cli:** enhance admin-token output with API URL and GORM integration ([b83ac47](https://github.com/themadorg/madmail/commit/b83ac4733f46230802993a1c3d9f59c1552bc631))
