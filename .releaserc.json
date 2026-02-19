@@ -15,7 +15,7 @@
         [
             "@semantic-release/exec",
             {
-                "prepareCmd": "echo ${nextRelease.version} > .version && npm version ${nextRelease.version} --no-git-tag-version"
+                "prepareCmd": "echo ${nextRelease.version} > .version && npm version ${nextRelease.version} --allow-same-version --no-git-tag-version"
             }
         ],
         [
