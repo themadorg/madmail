@@ -787,7 +787,7 @@ func TestRemoteDelivery_Split_BodyErr_NonAtomic(t *testing.T) {
 }
 
 func TestRemoteDelivery_TLSErrFallback(t *testing.T) {
-	be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort, tls.VersionTLS10)
+	_, be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort, func(s *smtp.Server) { s.TLSConfig.MaxVersion = tls.VersionTLS10 })
 	defer srv.Close()
 	defer testutils.CheckSMTPConnLeak(t, srv)
 	zones := map[string]mockdns.Zone{
@@ -824,7 +824,7 @@ func TestRemoteDelivery_RequireTLS_Missing(t *testing.T) {
 	defer tgt.Close()
 
 	_, err := testutils.DoTestDeliveryErrMeta(t, tgt, "test@example.com", []string{"test@example.invalid"}, &module.MsgMetadata{
-		SMTPOpts: module.MsgMIMEOpts{
+		SMTPOpts: smtp.MailOptions{
 			RequireTLS: true,
 		},
 	})
@@ -834,7 +834,7 @@ func TestRemoteDelivery_RequireTLS_Missing(t *testing.T) {
 }
 
 func TestRemoteDelivery_RequireTLS_Present(t *testing.T) {
-	be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort, 0)
+	_, be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort)
 	defer srv.Close()
 	defer testutils.CheckSMTPConnLeak(t, srv)
 	zones := map[string]mockdns.Zone{
@@ -851,7 +851,7 @@ func TestRemoteDelivery_RequireTLS_Present(t *testing.T) {
 	defer tgt.Close()
 
 	testutils.DoTestDeliveryMeta(t, tgt, "test@example.com", []string{"test@example.invalid"}, &module.MsgMetadata{
-		SMTPOpts: module.MsgMIMEOpts{
+		SMTPOpts: smtp.MailOptions{
 			RequireTLS: true,
 		},
 	})
@@ -859,7 +859,7 @@ func TestRemoteDelivery_RequireTLS_Present(t *testing.T) {
 }
 
 func TestRemoteDelivery_RequireTLS_NoErrFallback(t *testing.T) {
-	_, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort, tls.VersionTLS10)
+	_, _, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort, func(s *smtp.Server) { s.TLSConfig.MaxVersion = tls.VersionTLS10 })
 	defer srv.Close()
 	defer testutils.CheckSMTPConnLeak(t, srv)
 	zones := map[string]mockdns.Zone{
@@ -876,7 +876,7 @@ func TestRemoteDelivery_RequireTLS_NoErrFallback(t *testing.T) {
 	defer tgt.Close()
 
 	_, err := testutils.DoTestDeliveryErrMeta(t, tgt, "test@example.com", []string{"test@example.invalid"}, &module.MsgMetadata{
-		SMTPOpts: module.MsgMIMEOpts{
+		SMTPOpts: smtp.MailOptions{
 			RequireTLS: true,
 		},
 	})
@@ -886,7 +886,7 @@ func TestRemoteDelivery_RequireTLS_NoErrFallback(t *testing.T) {
 }
 
 func TestRemoteDelivery_TLS_FallbackNoVerify(t *testing.T) {
-	be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort, 0)
+	_, be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort)
 	defer srv.Close()
 	defer testutils.CheckSMTPConnLeak(t, srv)
 	zones := map[string]mockdns.Zone{
@@ -906,7 +906,7 @@ func TestRemoteDelivery_TLS_FallbackNoVerify(t *testing.T) {
 }
 
 func TestRemoteDelivery_TLS_FallbackPlaintext(t *testing.T) {
-	be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort, tls.VersionTLS10)
+	_, be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort, func(s *smtp.Server) { s.TLSConfig.MaxVersion = tls.VersionTLS10 })
 	defer srv.Close()
 	defer testutils.CheckSMTPConnLeak(t, srv)
 	zones := map[string]mockdns.Zone{
