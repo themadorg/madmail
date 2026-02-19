@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23.5'
+          go-version: '1.24.0'
           cache: true
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
@@ -52,7 +52,7 @@ jobs:
           touch internal/endpoint/iroh/assets/iroh-relay
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.60
+          version: v1.64.8
           args: --timeout=30m
       - name: Build maddy
         run: |
