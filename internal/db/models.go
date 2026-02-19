@@ -27,19 +27,27 @@ type TableEntry struct {
 	Value string `gorm:"not null"`
 }
 
-// DNSOverride represents a local DNS cache override entry.
+// EndpointOverride represents a local endpoint override entry (formerly "DNS override").
 // It maps a lookup key (domain name or IP address) to a target host,
 // allowing outbound mail delivery to be redirected without modifying
 // system DNS. For example:
 //   - LookupKey="nine.testrun.org" TargetHost="1.2.3.4"  → route mail for nine.testrun.org to 1.2.3.4
 //   - LookupKey="1.1.1.1"          TargetHost="2.2.2.2"  → redirect connections from 1.1.1.1 to 2.2.2.2
-type DNSOverride struct {
+type EndpointOverride struct {
 	LookupKey  string    `gorm:"primaryKey;column:lookup_key"` // Domain or IP to match
 	TargetHost string    `gorm:"column:target_host;not null"`  // Destination host/IP to use instead
 	Comment    string    `gorm:"column:comment"`               // Optional human-readable note
 	CreatedAt  time.Time `gorm:"autoCreateTime"`
 	UpdatedAt  time.Time `gorm:"autoUpdateTime"`
 }
+
+// TableName keeps the original table name for backward compatibility with
+// existing databases that already have a "dns_overrides" table.
+func (EndpointOverride) TableName() string { return "dns_overrides" }
+
+// DNSOverride is a type alias kept for backward compatibility.
+// New code should use EndpointOverride.
+type DNSOverride = EndpointOverride
 
 // BlockedUser represents a user that has been blocked from re-registering.
 // When an account is deleted via the admin API/CLI, its username is added

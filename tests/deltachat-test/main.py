@@ -263,7 +263,7 @@ def main():
                 print("\n" + "="*50)
                 print("TEST #7: Federation (Cross-Server Messaging)")
                 print("="*50)
-                acc3 = test_07_federation.run(rpc, dc, acc1, acc2, remote2, timestamp)
+                acc3 = test_07_federation.run(rpc, dc, acc1, acc2, remote1, remote2, timestamp)
                 print("✓ TEST #7 PASSED: Federation test completed successfully")
             
             # ==========================================

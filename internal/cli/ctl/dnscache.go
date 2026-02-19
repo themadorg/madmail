@@ -36,90 +36,91 @@ import (
 
 func init() {
 	maddycli.AddSubcommand(&cli.Command{
-		Name:  "dns-cache",
-		Usage: "DNS override cache management",
-		Description: `These commands allow you to manage the internal DNS override cache.
-The DNS cache intercepts outbound mail delivery DNS resolution and allows
+		Name:    "endpoint-cache",
+		Aliases: []string{"dns-cache"},
+		Usage:   "Endpoint override cache management",
+		Description: `These commands allow you to manage the endpoint override cache.
+The endpoint cache intercepts outbound mail delivery resolution and allows
 you to redirect delivery to specific hosts without modifying system DNS.
 
 Examples:
-	maddy dns-cache list
-	maddy dns-cache set nine.testrun.org 10.0.0.5 "Route to staging"
-	maddy dns-cache set 1.1.1.1 2.2.2.2 "Redirect IP"
-	maddy dns-cache get nine.testrun.org
-	maddy dns-cache remove nine.testrun.org
+	maddy endpoint-cache list
+	maddy endpoint-cache set nine.testrun.org 10.0.0.5 "Route to staging"
+	maddy endpoint-cache set 1.1.1.1 2.2.2.2 "Redirect IP"
+	maddy endpoint-cache get nine.testrun.org
+	maddy endpoint-cache remove nine.testrun.org
 `,
 		Subcommands: []*cli.Command{
 			{
 				Name:  "list",
-				Usage: "List all DNS override entries",
+				Usage: "List all endpoint override entries",
 				Action: func(ctx *cli.Context) error {
-					db, err := openDNSCacheGORM(ctx)
+					db, err := openEndpointCacheGORM(ctx)
 					if err != nil {
 						return err
 					}
-					return dnsCacheList(db)
+					return endpointCacheList(db)
 				},
 			},
 			{
 				Name:      "set",
-				Usage:     "Create or update a DNS override entry",
+				Usage:     "Create or update an endpoint override entry",
 				ArgsUsage: "LOOKUP_KEY TARGET_HOST [COMMENT]",
 				Description: `LOOKUP_KEY is the domain name or IP address to override.
 TARGET_HOST is the destination host/IP to redirect to.
 COMMENT is an optional human-readable note.
 
 Examples:
-  maddy dns-cache set example.com 10.0.0.1 "Route to internal server"
-  maddy dns-cache set 1.1.1.1 2.2.2.2 "Redirect IP literal"
-  maddy dns-cache set nine.testrun.org new-mx.example.com "Migration"`,
+  maddy endpoint-cache set example.com 10.0.0.1 "Route to internal server"
+  maddy endpoint-cache set 1.1.1.1 2.2.2.2 "Redirect IP literal"
+  maddy endpoint-cache set nine.testrun.org new-mx.example.com "Migration"`,
 				Action: func(ctx *cli.Context) error {
 					if ctx.NArg() < 2 {
 						return cli.Exit("Error: LOOKUP_KEY and TARGET_HOST are required", 2)
 					}
-					db, err := openDNSCacheGORM(ctx)
+					db, err := openEndpointCacheGORM(ctx)
 					if err != nil {
 						return err
 					}
-					return dnsCacheSet(db, ctx)
+					return endpointCacheSet(db, ctx)
 				},
 			},
 			{
 				Name:      "get",
-				Usage:     "Show a specific DNS override entry",
+				Usage:     "Show a specific endpoint override entry",
 				ArgsUsage: "LOOKUP_KEY",
 				Action: func(ctx *cli.Context) error {
 					if ctx.NArg() < 1 {
 						return cli.Exit("Error: LOOKUP_KEY is required", 2)
 					}
-					db, err := openDNSCacheGORM(ctx)
+					db, err := openEndpointCacheGORM(ctx)
 					if err != nil {
 						return err
 					}
-					return dnsCacheGet(db, ctx.Args().First())
+					return endpointCacheGet(db, ctx.Args().First())
 				},
 			},
 			{
 				Name:      "remove",
 				Aliases:   []string{"delete"},
-				Usage:     "Remove a DNS override entry",
+				Usage:     "Remove an endpoint override entry",
 				ArgsUsage: "LOOKUP_KEY",
 				Action: func(ctx *cli.Context) error {
 					if ctx.NArg() < 1 {
 						return cli.Exit("Error: LOOKUP_KEY is required", 2)
 					}
-					db, err := openDNSCacheGORM(ctx)
+					db, err := openEndpointCacheGORM(ctx)
 					if err != nil {
 						return err
 					}
-					return dnsCacheRemove(db, ctx.Args().First())
+					return endpointCacheRemove(db, ctx.Args().First())
 				},
 			},
 		},
 	})
 }
 
-func openDNSCacheGORM(ctx *cli.Context) (*gorm.DB, error) {
+func openEndpointCacheGORM(ctx *cli.Context) (*gorm.DB, error) {
 	cfgPath := ctx.String("config")
 	if cfgPath == "" {
 		return nil, cli.Exit("Error: config is required", 2)
@@ -171,21 +172,21 @@ func openDNSCacheGORM(ctx *cli.Context) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to open storage GORM DB: %v", err)
 	}
 
-	if err := db.AutoMigrate(&mdb.DNSOverride{}); err != nil {
-		return nil, fmt.Errorf("failed to migrate DNS override table: %v", err)
+	if err := db.AutoMigrate(&mdb.EndpointOverride{}); err != nil {
+		return nil, fmt.Errorf("failed to migrate endpoint override table: %v", err)
 	}
 
 	return db, nil
 }
 
-func dnsCacheList(db *gorm.DB) error {
-	var overrides []mdb.DNSOverride
+func endpointCacheList(db *gorm.DB) error {
+	var overrides []mdb.EndpointOverride
 	if err := db.Order("created_at DESC").Find(&overrides).Error; err != nil {
 		return err
 	}
 
 	if len(overrides) == 0 {
-		fmt.Fprintln(os.Stderr, "No DNS override entries.")
+		fmt.Fprintln(os.Stderr, "No endpoint override entries.")
 		return nil
 	}
 
@@ -203,12 +204,12 @@ func dnsCacheList(db *gorm.DB) error {
 	return w.Flush()
 }
 
-func dnsCacheSet(db *gorm.DB, ctx *cli.Context) error {
+func endpointCacheSet(db *gorm.DB, ctx *cli.Context) error {
 	lookupKey := ctx.Args().Get(0)
 	targetHost := ctx.Args().Get(1)
 	comment := ctx.Args().Get(2)
 
-	override := mdb.DNSOverride{
+	override := mdb.EndpointOverride{
 		LookupKey:  lookupKey,
 		TargetHost: targetHost,
 		Comment:    comment,
@@ -216,18 +217,18 @@ func dnsCacheSet(db *gorm.DB, ctx *cli.Context) error {
 
 	// Use Save which does upsert (create or update)
 	if err := db.Save(&override).Error; err != nil {
-		return fmt.Errorf("failed to set DNS override: %v", err)
+		return fmt.Errorf("failed to set endpoint override: %v", err)
 	}
-	fmt.Printf("Successfully set DNS override: %s → %s\n", lookupKey, targetHost)
+	fmt.Printf("Successfully set endpoint override: %s → %s\n", lookupKey, targetHost)
 	return nil
 }
 
-func dnsCacheGet(db *gorm.DB, lookupKey string) error {
-	var override mdb.DNSOverride
+func endpointCacheGet(db *gorm.DB, lookupKey string) error {
+	var override mdb.EndpointOverride
 	err := db.Where("lookup_key = ?", lookupKey).First(&override).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return cli.Exit(fmt.Sprintf("Error: no DNS override found for %q", lookupKey), 2)
+			return cli.Exit(fmt.Sprintf("Error: no endpoint override found for %q", lookupKey), 2)
 		}
 		return err
 	}
@@ -241,14 +242,14 @@ func dnsCacheGet(db *gorm.DB, lookupKey string) error {
 	return w.Flush()
 }
 
-func dnsCacheRemove(db *gorm.DB, lookupKey string) error {
-	result := db.Where("lookup_key = ?", lookupKey).Delete(&mdb.DNSOverride{})
+func endpointCacheRemove(db *gorm.DB, lookupKey string) error {
+	result := db.Where("lookup_key = ?", lookupKey).Delete(&mdb.EndpointOverride{})
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return cli.Exit(fmt.Sprintf("Error: no DNS override found for %q", lookupKey), 2)
+		return cli.Exit(fmt.Sprintf("Error: no endpoint override found for %q", lookupKey), 2)
 	}
-	fmt.Printf("Successfully removed DNS override: %s\n", lookupKey)
+	fmt.Printf("Successfully removed endpoint override: %s\n", lookupKey)
 	return nil
 }

@@ -1579,7 +1579,7 @@ func (e *Endpoint) setupAdminAPI() {
 		}))
 	}
 
-	// DNS cache (if GORM DB available)
+	// Endpoint cache (if GORM DB available)
 	if gormDB != nil {
 		handler.Register("/admin/dns", resources.DNSCacheHandler(resources.DNSCacheDeps{
 			DB: gormDB,

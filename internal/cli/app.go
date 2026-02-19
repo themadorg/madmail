@@ -28,11 +28,11 @@ DeltaChat Contact Sharing Management:
   maddy sharing edit <slug> <url> [name]   - Update an existing link
   maddy sharing reserve <slug>             - Reserve a slug for later use
 
-DNS Cache Override Management:
-  maddy dns-cache list                                    - List all DNS overrides
-  maddy dns-cache set <lookup_key> <target_host> [comment] - Create or update an override
-  maddy dns-cache get <lookup_key>                         - Show a specific override
-  maddy dns-cache remove <lookup_key>                      - Delete an override
+Endpoint Override Cache Management:
+  maddy endpoint-cache list                                    - List all endpoint overrides
+  maddy endpoint-cache set <lookup_key> <target_host> [comment] - Create or update an override
+  maddy endpoint-cache get <lookup_key>                         - Show a specific override
+  maddy endpoint-cache remove <lookup_key>                      - Delete an override
 
 Admin API:
   maddy admin-token                         - Display the admin API token

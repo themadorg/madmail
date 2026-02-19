@@ -47,7 +47,7 @@ import (
 	"github.com/themadorg/madmail/framework/exterrors"
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
-	"github.com/themadorg/madmail/internal/dns_cache"
+	"github.com/themadorg/madmail/internal/endpoint_cache"
 	"github.com/themadorg/madmail/internal/limits"
 	"github.com/themadorg/madmail/internal/smtpconn/pool"
 	"github.com/themadorg/madmail/internal/target"
@@ -73,10 +73,10 @@ type Target struct {
 	dialer      func(ctx context.Context, network, addr string) (net.Conn, error)
 	extResolver *dns.ExtResolver
 
-	// dnsCache provides database-backed DNS overrides.
+	// endpointCache provides database-backed endpoint overrides.
 	// When set, MX lookups and host resolution check the local DB first
 	// before falling back to the standard OS resolver.
-	dnsCache *dns_cache.Cache
+	endpointCache *endpoint_cache.Cache
 
 	policies          []module.MXAuthPolicy
 	limits            *limits.Group
@@ -195,20 +195,20 @@ func (rt *Target) Init(cfg *config.Map) error {
 		}
 	}
 
-	// Initialize DNS cache using the shared storage database.
+	// Initialize endpoint cache using the shared storage database.
 	if storageName != "" {
 		storageInst, err := module.GetInstance(storageName)
 		if err != nil {
-			rt.Log.Error("failed to get storage instance for DNS cache", err)
+			rt.Log.Error("failed to get storage instance for endpoint cache", err)
 		} else if gormProvider, ok := storageInst.(module.GORMProvider); !ok {
-			rt.Log.Error("storage does not implement GORMProvider, DNS cache overrides will not be available", nil)
+			rt.Log.Error("storage does not implement GORMProvider, endpoint cache overrides will not be available", nil)
 		} else {
-			cache, cacheErr := dns_cache.New(gormProvider.GetGORMDB(), rt.Log)
+			cache, cacheErr := endpoint_cache.New(gormProvider.GetGORMDB(), rt.Log)
 			if cacheErr != nil {
-				rt.Log.Error("failed to initialize DNS cache", cacheErr)
+				rt.Log.Error("failed to initialize endpoint cache", cacheErr)
 			} else {
-				rt.dnsCache = cache
-				rt.Log.Debugf("DNS cache initialized from shared storage")
+				rt.endpointCache = cache
+				rt.Log.Debugf("endpoint cache initialized from shared storage")
 			}
 		}
 	}
@@ -230,11 +230,11 @@ func (rt *Target) InstanceName() string {
 	return rt.name
 }
 
-// SetDNSCache sets the database-backed DNS override cache.
+// SetEndpointCache sets the database-backed endpoint override cache.
 // When set, MX lookups will check the local DB before falling back
 // to the OS DNS resolver.
-func (rt *Target) SetDNSCache(cache *dns_cache.Cache) {
-	rt.dnsCache = cache
+func (rt *Target) SetEndpointCache(cache *endpoint_cache.Cache) {
+	rt.endpointCache = cache
 }
 
 type remoteDelivery struct {

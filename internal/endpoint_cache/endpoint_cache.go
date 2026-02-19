@@ -16,18 +16,23 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-// Package dns_cache implements a database-backed DNS override cache.
+// Package endpoint_cache implements a database-backed endpoint override cache.
 //
 // When resolving a domain or IP for outbound mail delivery, the cache is
-// consulted first. If a matching DNSOverride row exists in the database,
+// consulted first. If a matching EndpointOverride row exists in the database,
 // its TargetHost is returned without performing any real DNS lookup.
-// Otherwise the system's standard DNS resolver is used.
+//
+// For IP addresses without an override, the IP itself is returned (an IP is
+// already a concrete endpoint — no resolution needed).
+//
+// For domain names without an override, an empty string is returned so that
+// the caller falls through to OS DNS resolution.
 //
 // This allows operators to:
 //   - Route mail destined for a domain to a specific IP (e.g., during migration).
 //   - Override IP-literal destinations (e.g., a@[1.1.1.1] → deliver to 2.2.2.2).
 //   - Test mail flows against staging servers without touching system DNS.
-package dns_cache
+package endpoint_cache
 
 import (
 	"context"
@@ -40,51 +45,63 @@ import (
 	"gorm.io/gorm"
 )
 
-// Cache wraps a GORM database to provide DNS resolution with local overrides.
+// Cache wraps a GORM database to provide endpoint resolution with local overrides.
 type Cache struct {
 	db  *gorm.DB
 	log log.Logger
 }
 
-// New creates a dns_cache.Cache from the given GORM database connection.
-// It automatically runs AutoMigrate for the DNSOverride table.
+// New creates an endpoint_cache.Cache from the given GORM database connection.
+// It automatically runs AutoMigrate for the EndpointOverride table.
 func New(db *gorm.DB, logger log.Logger) (*Cache, error) {
-	if err := db.AutoMigrate(&mdb.DNSOverride{}); err != nil {
+	if err := db.AutoMigrate(&mdb.EndpointOverride{}); err != nil {
 		return nil, err
 	}
 	return &Cache{db: db, log: logger}, nil
 }
 
+// normalizeKey strips brackets, ipv6: prefix, trailing dots, and lower-cases.
+func normalizeKey(key string) string {
+	k := strings.TrimPrefix(key, "[")
+	k = strings.TrimSuffix(k, "]")
+	if strings.HasPrefix(strings.ToLower(k), "ipv6:") {
+		k = k[5:]
+	}
+	k = strings.TrimSuffix(k, ".")
+	k = strings.ToLower(k)
+	return k
+}
+
 // Resolve looks up the target host for the given key (domain name or IP).
 //
-// It ONLY returns a result when there is an explicit override in the database.
-// If no override exists, it returns an empty string so the caller uses the
-// original hostname for connecting (which preserves proper TLS certificate
-// verification and MTA-STS compatibility).
+// Behaviour:
+//   - If an explicit override exists in the database, its TargetHost is returned.
+//   - If key is an IP address (bare or bracketed) with NO override, the IP
+//     itself is returned — an IP is already a concrete endpoint.
+//   - If key is a domain name with NO override, an empty string is returned
+//     so the caller uses the original hostname for DNS resolution (which
+//     preserves proper TLS certificate verification and MTA-STS compatibility).
 func (c *Cache) Resolve(ctx context.Context, key string) (string, error) {
-	// Normalize: strip brackets from IP-literal domains like [1.1.1.1]
-	cleanKey := strings.TrimPrefix(key, "[")
-	cleanKey = strings.TrimSuffix(cleanKey, "]")
-	// Strip ipv6: prefix if present
-	if strings.HasPrefix(strings.ToLower(cleanKey), "ipv6:") {
-		cleanKey = cleanKey[5:]
-	}
-	cleanKey = strings.TrimSuffix(cleanKey, ".")
-	cleanKey = strings.ToLower(cleanKey)
+	cleanKey := normalizeKey(key)
 
 	// Check local database override
-	var override mdb.DNSOverride
+	var override mdb.EndpointOverride
 	err := c.db.Where("lookup_key = ?", cleanKey).First(&override).Error
 	if err == nil {
-		c.log.DebugMsg("DNS cache hit", "key", cleanKey, "target", override.TargetHost)
+		c.log.DebugMsg("endpoint cache hit", "key", cleanKey, "target", override.TargetHost)
 		return override.TargetHost, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		// Actual DB error
-		c.log.Error("DNS cache DB error", err, "key", cleanKey)
+		c.log.Error("endpoint cache DB error", err, "key", cleanKey)
 	}
 
-	// No override — return empty so the caller uses the original hostname
+	// No override — if it's an IP, return the IP itself (no DNS needed).
+	if ip := net.ParseIP(cleanKey); ip != nil {
+		return cleanKey, nil
+	}
+
+	// Domain without override — return empty so caller does normal DNS.
 	return "", nil
 }
 
@@ -94,17 +111,17 @@ func (c *Cache) Resolve(ctx context.Context, key string) (string, error) {
 // cacheHit=true. Otherwise it performs a standard MX lookup via the OS
 // resolver and returns cacheHit=false.
 func (c *Cache) ResolveMX(ctx context.Context, domain string) (records []*net.MX, cacheHit bool, err error) {
-	cleanDomain := strings.TrimSuffix(strings.ToLower(domain), ".")
+	cleanDomain := normalizeKey(domain)
 
 	// Check for override
-	var override mdb.DNSOverride
+	var override mdb.EndpointOverride
 	dbErr := c.db.Where("lookup_key = ?", cleanDomain).First(&override).Error
 	if dbErr == nil {
-		c.log.DebugMsg("DNS cache MX override", "domain", cleanDomain, "target", override.TargetHost)
+		c.log.DebugMsg("endpoint cache MX override", "domain", cleanDomain, "target", override.TargetHost)
 		return []*net.MX{{Host: override.TargetHost, Pref: 0}}, true, nil
 	}
 	if !errors.Is(dbErr, gorm.ErrRecordNotFound) {
-		c.log.Error("DNS cache DB error during MX lookup, falling back to OS resolver", dbErr, "domain", cleanDomain)
+		c.log.Error("endpoint cache DB error during MX lookup, falling back to OS resolver", dbErr, "domain", cleanDomain)
 	}
 
 	// Standard OS MX lookup — not from cache
@@ -114,10 +131,10 @@ func (c *Cache) ResolveMX(ctx context.Context, domain string) (records []*net.MX
 
 // --- CRUD Operations for managing overrides ---
 
-// Set creates or updates a DNS override entry.
+// Set creates or updates an endpoint override entry.
 func (c *Cache) Set(lookupKey, targetHost, comment string) error {
 	lookupKey = strings.TrimSuffix(strings.ToLower(lookupKey), ".")
-	override := mdb.DNSOverride{
+	override := mdb.EndpointOverride{
 		LookupKey:  lookupKey,
 		TargetHost: targetHost,
 		Comment:    comment,
@@ -125,16 +142,16 @@ func (c *Cache) Set(lookupKey, targetHost, comment string) error {
 	return c.db.Save(&override).Error
 }
 
-// Delete removes a DNS override entry.
+// Delete removes an endpoint override entry.
 func (c *Cache) Delete(lookupKey string) error {
 	lookupKey = strings.TrimSuffix(strings.ToLower(lookupKey), ".")
-	return c.db.Where("lookup_key = ?", lookupKey).Delete(&mdb.DNSOverride{}).Error
+	return c.db.Where("lookup_key = ?", lookupKey).Delete(&mdb.EndpointOverride{}).Error
 }
 
-// Get retrieves a single DNS override entry.
-func (c *Cache) Get(lookupKey string) (*mdb.DNSOverride, error) {
+// Get retrieves a single endpoint override entry.
+func (c *Cache) Get(lookupKey string) (*mdb.EndpointOverride, error) {
 	lookupKey = strings.TrimSuffix(strings.ToLower(lookupKey), ".")
-	var override mdb.DNSOverride
+	var override mdb.EndpointOverride
 	err := c.db.Where("lookup_key = ?", lookupKey).First(&override).Error
 	if err != nil {
 		return nil, err
@@ -142,9 +159,9 @@ func (c *Cache) Get(lookupKey string) (*mdb.DNSOverride, error) {
 	return &override, nil
 }
 
-// List returns all DNS override entries.
-func (c *Cache) List() ([]mdb.DNSOverride, error) {
-	var overrides []mdb.DNSOverride
+// List returns all endpoint override entries.
+func (c *Cache) List() ([]mdb.EndpointOverride, error) {
+	var overrides []mdb.EndpointOverride
 	err := c.db.Find(&overrides).Error
 	return overrides, err
 }

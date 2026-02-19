@@ -94,8 +94,8 @@ func (rd *remoteDelivery) connect(ctx context.Context, conn mxConn, host string,
 	// This allows overriding where we actually connect to, while keeping the
 	// original hostname for TLS SNI verification.
 	connectHost := host
-	if rd.rt.dnsCache != nil {
-		resolved, resolveErr := rd.rt.dnsCache.Resolve(ctx, host)
+	if rd.rt.endpointCache != nil {
+		resolved, resolveErr := rd.rt.endpointCache.Resolve(ctx, host)
 		if resolveErr == nil && resolved != "" {
 			if resolved != strings.ToLower(strings.TrimSuffix(host, ".")) {
 				rd.Log.Msg("DNS cache resolved MX host", "original", host, "resolved", resolved)
@@ -425,8 +425,8 @@ func (rd *remoteDelivery) lookupMX(ctx context.Context, domain string) (dnssecOk
 		}
 		if ip := net.ParseIP(host); ip != nil {
 			// Check DNS cache for IP override (e.g., 1.1.1.1 → 2.2.2.2)
-			if rd.rt.dnsCache != nil {
-				resolved, err := rd.rt.dnsCache.Resolve(ctx, host)
+			if rd.rt.endpointCache != nil {
+				resolved, err := rd.rt.endpointCache.Resolve(ctx, host)
 				if err == nil && resolved != host {
 					rd.Log.Msg("DNS cache override for IP literal", "original", host, "target", resolved)
 					return false, []*net.MX{{Host: resolved, Pref: 0}}, true, nil
@@ -436,9 +436,24 @@ func (rd *remoteDelivery) lookupMX(ctx context.Context, domain string) (dnssecOk
 		}
 	}
 
+	// Handle bare IP addresses without brackets (e.g. "10.0.3.162" instead
+	// of "[10.0.3.162]").  MX lookups on raw IPs always fail with NXDOMAIN,
+	// so we short-circuit here and connect directly, same as for bracketed
+	// IP literals above.
+	if ip := net.ParseIP(domain); ip != nil {
+		if rd.rt.endpointCache != nil {
+			resolved, resolveErr := rd.rt.endpointCache.Resolve(ctx, domain)
+			if resolveErr == nil && resolved != domain {
+				rd.Log.Msg("DNS cache override for bare IP", "original", domain, "target", resolved)
+				return false, []*net.MX{{Host: resolved, Pref: 0}}, true, nil
+			}
+		}
+		return false, []*net.MX{{Host: domain, Pref: 0}}, false, nil
+	}
+
 	// Check DNS cache for domain override before doing real lookups
-	if rd.rt.dnsCache != nil {
-		cacheRecords, cacheHit, cacheErr := rd.rt.dnsCache.ResolveMX(ctx, domain)
+	if rd.rt.endpointCache != nil {
+		cacheRecords, cacheHit, cacheErr := rd.rt.endpointCache.ResolveMX(ctx, domain)
 		if cacheErr == nil && cacheHit && len(cacheRecords) > 0 {
 			rd.Log.Msg("DNS cache override for domain", "domain", domain, "target", cacheRecords[0].Host)
 			return false, cacheRecords, true, nil

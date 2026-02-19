@@ -31,6 +31,12 @@ uv run python3 tests/deltachat-test/main.py --all
 
 # Run specific tests
 uv run python3 tests/deltachat-test/main.py --test-1 --test-3
+
+# Run tests inside local LXC containers (recommended for federation testing)
+uv run python3 tests/deltachat-test/main.py --lxc --test-7
+
+# Keep LXC containers alive after test for debugging
+uv run python3 tests/deltachat-test/main.py --lxc --test-7 --keep-lxc
 ```
 
 ## Test Scenarios
@@ -66,9 +72,32 @@ The suite consists of several scenarios located in `tests/deltachat-test/scenari
 - Verifies the integrity of the received file by comparing its **SHA256 hash** with the original.
 
 ### 7. Federation (`test_07_federation.py`)
-- Verifies cross-server messaging between accounts on different Madmail instances.
-- Verifies same-server messaging between two accounts on the same instance.
-- Ensures that PGP encryption and delivery work across server boundaries.
+
+This is a comprehensive federation test with three parts:
+
+**Part A — Cross-Server Federation:**
+- Performs Secure Join between acc1 (server 1) and acc2 (server 2).
+- Sends an encrypted message from acc1 → acc2 across server boundaries.
+- Verifies the reverse direction: acc2 → acc1.
+
+**Part B — Same-Server Messaging:**
+- Creates acc3 on server 2 and Secure Joins with acc2.
+- Sends encrypted messages between acc2 ↔ acc3 (both on the same server).
+
+**Part C — Port-Based Federation Analysis:**
+- Uses `iptables` on both servers to selectively block ports and test which
+  network protocols support cross-server message delivery.
+- Tests three scenarios:
+  1. **HTTPS Only (443):** Block SMTP (25) + HTTP (80) → test if federation works via HTTPS.
+  2. **HTTP Only (80):** Block SMTP (25) + HTTPS (443) → test if federation works via HTTP.
+  3. **SMTP Only (25):** Block HTTP (80) + HTTPS (443) → test if federation works via standard SMTP.
+- Prints a summary table showing which ports support federation.
+- All iptables rules are flushed after testing.
+
+**Delivery Priority:** Madmail attempts delivery in this order:
+1. HTTPS POST to `/mxdeliv` (port 443)
+2. HTTP POST fallback to `/mxdeliv` (port 80)
+3. Standard SMTP delivery (port 25, with MX lookup)
 
 ### 8. No Logging Test (`test_08_no_logging.py`)
 - This test verifies the "privacy-first" nature of the server.
@@ -94,6 +123,10 @@ The suite consists of several scenarios located in `tests/deltachat-test/scenari
 - Verifies the responsiveness of the IMAP IDLE implementation.
 - Tests receiving messages in real-time without polling.
 - Ensures SMTP delivery triggers IDLE notifications correctly.
+
+### 13. Concurrent Profiles (`test_13_concurrent_profiles.py`)
+- Tests multiple user profiles operating concurrently against the same server.
+- Verifies isolation and correctness under parallel access.
 
 ### 14. Message Purging (`test_14_purge_messages.py`)
 - Verifies administrative commands for purging user data.
@@ -123,12 +156,31 @@ The suite consists of several scenarios located in `tests/deltachat-test/scenari
 - Verifies method validation (405 on invalid methods).
 - Tests DNS override CRUD via `/admin/dns` (create, verify, delete, confirm).
 
+## LXC Testing
+
+The `--lxc` flag creates two isolated Debian 12 (Bookworm) LXC containers, installs Madmail on each, and runs the selected tests against them. This is the recommended way to test federation and cross-server features locally.
+
+```bash
+# Full federation test with LXC
+uv run python3 tests/deltachat-test/main.py --lxc --test-7
+
+# Keep containers alive for post-test debugging
+uv run python3 tests/deltachat-test/main.py --lxc --test-7 --keep-lxc
+
+# After --keep-lxc, you can SSH into the containers:
+#   ssh root@<server-ip>    (password: root)
+#   journalctl -u maddy.service -f    # live server logs
+```
+
+**Resource limits:** Each container is limited to 1GB RAM and 1 CPU core by default (configurable via `LXCManager` constructor arguments).
+
 ## Prerequisites
 
 - **Python environment**: The tests use `uv` for dependency management.
 - **Delta Chat RPC Server**: The `deltachat-rpc-server` binary must be installed on the system.
 - **SSH Access**: For tests like "No Logging" and for administrative commands (Purge), the runner needs SSH access to the remote servers.
-- **LXC (Optional)**: If using the `--lxc` flag, the runner will automatically create isolated containers to run the tests.
+- **LXC (Optional)**: If using the `--lxc` flag, `lxc-create`, `lxc-start`, `lxc-ls`, and `lxc-attach` must be available. Requires `sudo` access.
+- **iptables (Optional)**: Required for Part C of the Federation test (port-blocking). Installed automatically inside LXC containers if missing.
 
 ## Results and Debugging
 
@@ -137,3 +189,10 @@ Test results, including client-side logs and collected server-side logs, are sto
 - `client_debug.log`: Detailed logs from the Delta Chat RPC client.
 - `server1_debug.log` / `server2_debug.log`: Records from `journalctl` on the mail servers.
 - `error.txt`: Contains traceback details if a test fails.
+
+### Debugging Tips
+
+- Use `--keep-lxc` to keep containers alive and inspect server state after a failure.
+- Check `journalctl -u maddy.service -f` on the server for real-time debug logs.
+- The `RUST_LOG` environment variable is set to `trace` for the RPC client, providing maximum detail in `client_debug.log`.
+- Server debug logging is enabled via `debug yes` in the generated config file (`/etc/maddy/maddy.conf`).

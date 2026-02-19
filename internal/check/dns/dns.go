@@ -124,6 +124,14 @@ func requireMXRecord(ctx check.StatelessCheckContext, mailFrom string) module.Ch
 		return module.CheckResult{}
 	}
 
+	// Also skip bare IP addresses (without brackets), which appear in
+	// IP-mode deployments (e.g. user@10.0.3.195).  MX lookups on raw
+	// IPs always fail with NXDOMAIN and would quarantine the message.
+	if ip := net.ParseIP(domain); ip != nil {
+		ctx.Logger.Debugf("domain is a bare IP address, skipping")
+		return module.CheckResult{}
+	}
+
 	srcMx, err := ctx.Resolver.LookupMX(ctx, domain)
 	if err != nil {
 		reason, misc := exterrors.UnwrapDNSErr(err)

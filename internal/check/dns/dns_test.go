@@ -106,7 +106,8 @@ func TestRequireMXRecord(t *testing.T) {
 
 	test("foo@example.org", "example.org", nil, true)
 	test("foo@example.com", "", nil, true) // NXDOMAIN
-	test("foo@[1.2.3.4]", "", nil, true)
+	test("foo@[1.2.3.4]", "", nil, false)  // IP literal — skip MX check
+	test("foo@1.2.3.4", "", nil, false)    // bare IP — skip MX check
 	test("[IPv6:beef::1]", "", nil, true)
 	test("[IPv6:beef::1]", "", nil, true)
 	test("foo@example.org", "example.org", []net.MX{{Host: "a.com"}}, false)

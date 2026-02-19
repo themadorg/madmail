@@ -1,24 +1,25 @@
-# DNS Cache & Override System
+# Endpoint Override Cache
 
-Madmail includes a database-backed DNS override cache that intercepts outbound mail delivery resolution. When the server needs to deliver a message to an external domain, it first checks the local override database before performing standard OS DNS lookups.
+Madmail includes a database-backed endpoint override cache that intercepts outbound mail delivery resolution. When the server needs to deliver a message to an external domain or IP, it first checks the local override database before performing standard OS DNS lookups.
 
 ## How It Works
 
 The resolution flow for outbound delivery is:
 
 1. **Check local database** — If a `dns_overrides` entry exists for the domain or IP, use its `target_host` value.
-2. **Use original hostname** — If no override is found, the original hostname is used as-is for DNS resolution and TLS verification.
+2. **IP addresses** — If the key is an IP address with no override, the IP is returned as-is (an IP is already a concrete endpoint — no DNS needed).
+3. **Domain names** — If no override is found for a domain, the original hostname is used as-is for DNS resolution and TLS verification.
 
 This applies at two points in the delivery pipeline:
 
 - **MX lookup** — When resolving which mail server to connect to for a recipient domain.
 - **Host resolution** — When resolving the MX hostname itself to an IP address for the TCP connection.
 
-**Important:** When no override exists, the original hostname is preserved for proper TLS certificate verification and MTA-STS compatibility. Only explicit overrides bypass these security checks.
+**Important:** When no override exists for a domain, the original hostname is preserved for proper TLS certificate verification and MTA-STS compatibility. Only explicit overrides bypass these security checks.
 
 ## Configuration
 
-The DNS cache requires a `storage` directive in your `target.remote` block that points to the storage module. The `dns_overrides` table is stored in the **same database** as the rest of the application (quotas, passwords, settings, etc.):
+The endpoint cache requires a `storage` directive in your `target.remote` block that points to the storage module. The `dns_overrides` table is stored in the **same database** as the rest of the application (quotas, passwords, settings, etc.):
 
 ```
 target.remote outbound_delivery {
@@ -53,6 +54,8 @@ target_host: 2.2.2.2
 comment: Redirect IP literal delivery
 ```
 
+With this override, a message to `a@1.1.1.1` will be delivered to `2.2.2.2` using the same delivery method as it would have used for `1.1.1.1`.
+
 ### Testing and Migration
 
 During server migration, temporarily redirect all outbound mail for a domain to the new server without updating public DNS:
@@ -75,18 +78,18 @@ The feature uses a GORM-managed table `dns_overrides` in the main application da
 | `created_at` | timestamp | Auto-set on creation |
 | `updated_at` | timestamp | Auto-set on update |
 
-The table is automatically created/migrated when the DNS cache is initialized.
+The table is automatically created/migrated when the endpoint cache is initialized.
 
 ## Integration
 
-The DNS cache is wired into the `target.remote` module. It obtains the shared GORM database from the storage module via the `module.GORMProvider` interface:
+The endpoint cache is wired into the `target.remote` module. It obtains the shared GORM database from the storage module via the `module.GORMProvider` interface:
 
 ```go
 // In target.remote Init:
 // cfg.String("storage", ..., &storageName)
 // storageInst := module.GetInstance(storageName)
 // gormProvider := storageInst.(module.GORMProvider)
-// cache := dns_cache.New(gormProvider.GetGORMDB(), logger)
+// cache := endpoint_cache.New(gormProvider.GetGORMDB(), logger)
 ```
 
 ### Key Behaviours
@@ -95,29 +98,32 @@ The DNS cache is wired into the `target.remote` module. It obtains the shared GO
 - **Trailing dots stripped** — `example.com.` matches `example.com`.
 - **Bracket-aware** — `[1.1.1.1]` and `[ipv6:::1]` are normalized before lookup.
 - **TLS preserved** — When an override redirects to an IP, TLS verification is relaxed (InsecureSkipVerify) since IP certificates are uncommon. When no override exists, the original hostname is used for proper TLS cert verification.
-- **No fallback to OS resolver** — `Resolve()` only returns results for explicit database overrides. If no override exists, it returns empty so the standard Go dialer handles DNS resolution with proper hostname-based TLS.
+- **IP passthrough** — `Resolve()` returns IP addresses as-is when no override exists (an IP is already a concrete endpoint). For domains, it returns empty so the standard Go dialer handles DNS resolution.
 
 ## CLI Commands
 
-The `maddy dns-cache` commands read the `storage.imapsql` block from your config to connect to the same database as the running server:
+The `maddy endpoint-cache` commands (also available as `maddy dns-cache` for backward compatibility) read the `storage.imapsql` block from your config to connect to the same database as the running server:
 
 ```bash
 # List all overrides
-maddy dns-cache list
+maddy endpoint-cache list
 
 # Set an override
-maddy dns-cache set nine.testrun.org 10.0.0.5 "Route to staging"
+maddy endpoint-cache set nine.testrun.org 10.0.0.5 "Route to staging"
+
+# Override an IP destination
+maddy endpoint-cache set 1.1.1.1 2.2.2.2 "Redirect IP"
 
 # View an override
-maddy dns-cache get nine.testrun.org
+maddy endpoint-cache get nine.testrun.org
 
 # Remove an override
-maddy dns-cache remove nine.testrun.org
+maddy endpoint-cache remove nine.testrun.org
 ```
 
 ## Admin API
 
-DNS overrides can also be managed through the Admin API at `POST /api/admin`:
+Endpoint overrides can also be managed through the Admin API at `POST /api/admin`:
 
 ```bash
 # List all overrides
@@ -145,7 +151,7 @@ See [admin_api.md](admin_api.md) for full API documentation.
 
 ## Admin Web UI
 
-The Admin panel (`/admin/`) includes a dedicated **DNS** tab for managing overrides through a graphical interface. This provides:
+The Admin panel (`/admin/`) includes a dedicated **Endpoints** tab for managing overrides through a graphical interface. This provides:
 
 - View all overrides with search/filter
 - Add new overrides via a form
@@ -155,18 +161,19 @@ The Admin panel (`/admin/`) includes a dedicated **DNS** tab for managing overri
 
 ## Programmatic API
 
-The `dns_cache.Cache` type provides these methods:
+The `endpoint_cache.Cache` type provides these methods:
 
 ```go
-// Resolution (returns empty string if no override exists)
+// Resolution
 cache.Resolve(ctx, "example.com")         // → "1.2.3.4" or ""
+cache.Resolve(ctx, "1.1.1.1")            // → "1.1.1.1" (IP returns itself)
 cache.ResolveMX(ctx, "example.com")       // → []*net.MX, cacheHit bool
 
 // CRUD
 cache.Set("example.com", "1.2.3.4", "note")
-cache.Get("example.com")                  // → *DNSOverride
+cache.Get("example.com")                  // → *EndpointOverride
 cache.Delete("example.com")
-cache.List()                              // → []DNSOverride
+cache.List()                              // → []EndpointOverride
 ```
 
 ## Notes

@@ -8,49 +8,52 @@ import (
 	"gorm.io/gorm"
 )
 
-// DNSCacheDeps are the dependencies needed by the DNS cache handler.
-type DNSCacheDeps struct {
+// EndpointCacheDeps are the dependencies needed by the endpoint cache handler.
+type EndpointCacheDeps struct {
 	DB *gorm.DB
 }
 
-type dnsEntry struct {
+// DNSCacheDeps is an alias for backward compatibility.
+type DNSCacheDeps = EndpointCacheDeps
+
+type endpointEntry struct {
 	LookupKey  string `json:"lookup_key"`
 	TargetHost string `json:"target_host"`
 	Comment    string `json:"comment,omitempty"`
 }
 
-type dnsListResponse struct {
-	Overrides []dnsEntry `json:"overrides"`
-	Total     int        `json:"total"`
+type endpointListResponse struct {
+	Overrides []endpointEntry `json:"overrides"`
+	Total     int             `json:"total"`
 }
 
-// DNSCacheHandler creates a handler for /admin/dns.
-func DNSCacheHandler(deps DNSCacheDeps) func(string, json.RawMessage) (interface{}, int, error) {
+// EndpointCacheHandler creates a handler for /admin/endpoint-cache (and /admin/dns for backward compat).
+func EndpointCacheHandler(deps EndpointCacheDeps) func(string, json.RawMessage) (interface{}, int, error) {
 	// Ensure the dns_overrides table exists
 	if deps.DB != nil {
-		_ = deps.DB.AutoMigrate(&mdb.DNSOverride{})
+		_ = deps.DB.AutoMigrate(&mdb.EndpointOverride{})
 	}
 
 	return func(method string, body json.RawMessage) (interface{}, int, error) {
 		if deps.DB == nil {
-			return nil, 503, fmt.Errorf("DNS cache database not available")
+			return nil, 503, fmt.Errorf("endpoint cache database not available")
 		}
 
 		switch method {
 		case "GET":
-			var overrides []mdb.DNSOverride
+			var overrides []mdb.EndpointOverride
 			if err := deps.DB.Find(&overrides).Error; err != nil {
-				return nil, 500, fmt.Errorf("failed to list DNS overrides: %v", err)
+				return nil, 500, fmt.Errorf("failed to list endpoint overrides: %v", err)
 			}
-			entries := make([]dnsEntry, len(overrides))
+			entries := make([]endpointEntry, len(overrides))
 			for i, o := range overrides {
-				entries[i] = dnsEntry{
+				entries[i] = endpointEntry{
 					LookupKey:  o.LookupKey,
 					TargetHost: o.TargetHost,
 					Comment:    o.Comment,
 				}
 			}
-			return dnsListResponse{Overrides: entries, Total: len(entries)}, 200, nil
+			return endpointListResponse{Overrides: entries, Total: len(entries)}, 200, nil
 
 		case "POST":
 			var req struct {
@@ -64,15 +67,15 @@ func DNSCacheHandler(deps DNSCacheDeps) func(string, json.RawMessage) (interface
 			if req.LookupKey == "" || req.TargetHost == "" {
 				return nil, 400, fmt.Errorf("lookup_key and target_host are required")
 			}
-			override := mdb.DNSOverride{
+			override := mdb.EndpointOverride{
 				LookupKey:  req.LookupKey,
 				TargetHost: req.TargetHost,
 				Comment:    req.Comment,
 			}
 			if err := deps.DB.Save(&override).Error; err != nil {
-				return nil, 500, fmt.Errorf("failed to save DNS override: %v", err)
+				return nil, 500, fmt.Errorf("failed to save endpoint override: %v", err)
 			}
-			return dnsEntry{
+			return endpointEntry{
 				LookupKey:  req.LookupKey,
 				TargetHost: req.TargetHost,
 				Comment:    req.Comment,
@@ -88,12 +91,12 @@ func DNSCacheHandler(deps DNSCacheDeps) func(string, json.RawMessage) (interface
 			if req.LookupKey == "" {
 				return nil, 400, fmt.Errorf("lookup_key is required")
 			}
-			result := deps.DB.Where("lookup_key = ?", req.LookupKey).Delete(&mdb.DNSOverride{})
+			result := deps.DB.Where("lookup_key = ?", req.LookupKey).Delete(&mdb.EndpointOverride{})
 			if result.Error != nil {
-				return nil, 500, fmt.Errorf("failed to delete DNS override: %v", result.Error)
+				return nil, 500, fmt.Errorf("failed to delete endpoint override: %v", result.Error)
 			}
 			if result.RowsAffected == 0 {
-				return nil, 404, fmt.Errorf("DNS override not found: %s", req.LookupKey)
+				return nil, 404, fmt.Errorf("endpoint override not found: %s", req.LookupKey)
 			}
 			return map[string]string{"deleted": req.LookupKey}, 200, nil
 
@@ -102,3 +105,6 @@ func DNSCacheHandler(deps DNSCacheDeps) func(string, json.RawMessage) (interface
 		}
 	}
 }
+
+// DNSCacheHandler is an alias for backward compatibility.
+var DNSCacheHandler = EndpointCacheHandler

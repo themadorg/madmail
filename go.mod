@@ -1,8 +1,6 @@
 module github.com/themadorg/madmail
 
-go 1.23.1
-
-toolchain go1.23.5
+go 1.24.0
 
 require (
 	blitiri.com.ar/go/spf v1.5.1
@@ -316,7 +314,7 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/oauth2 v0.26.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
 	golang.org/x/tools v0.31.0 // indirect
 	google.golang.org/api v0.223.0 // indirect
