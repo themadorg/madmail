@@ -1,3 +1,10 @@
+# [0.16.0](https://github.com/themadorg/madmail/compare/v0.15.3...v0.16.0) (2026-02-19)
+
+
+### Features
+
+* **cli:** enhance admin-token output with API URL and GORM integration ([b83ac47](https://github.com/themadorg/madmail/commit/b83ac4733f46230802993a1c3d9f59c1552bc631))
+
 ## [0.15.3](https://github.com/themadorg/madmail/compare/v0.15.2...v0.15.3) (2026-02-18)
 
 
