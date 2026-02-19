@@ -22,7 +22,6 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -951,8 +950,6 @@ func TestRemoteDelivery_ConnReuse(t *testing.T) {
 
 func init() {
 	flag.Parse()
-
-	rand.Seed(1)
 
 	if os.Getenv("TEST_SMTP_PORT") != "" {
 		port, err := strconv.Atoi(os.Getenv("TEST_SMTP_PORT"))
