@@ -1,3 +1,10 @@
+# [0.17.0](https://github.com/themadorg/madmail/compare/v0.16.1...v0.17.0) (2026-02-20)
+
+
+### Features
+
+* align shadowsocks URL with frontend and add QR to landing page ([5e81cb3](https://github.com/themadorg/madmail/commit/5e81cb3869e76b92c93799296dcbdac3211d634d))
+
 ## [0.16.1](https://github.com/themadorg/madmail/compare/v0.16.0...v0.16.1) (2026-02-19)
 
 
