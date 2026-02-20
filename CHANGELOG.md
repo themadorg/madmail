@@ -1,3 +1,10 @@
+## [0.16.1](https://github.com/themadorg/madmail/compare/v0.16.0...v0.16.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* add admin api documentation and web admin references ([35bf8a0](https://github.com/themadorg/madmail/commit/35bf8a0855a6b7416a377ecaf3bbf51de2f597ed))
+
 # [0.16.0](https://github.com/themadorg/madmail/compare/v0.15.3...v0.16.0) (2026-02-19)
 
 
