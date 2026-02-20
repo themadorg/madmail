@@ -33,6 +33,7 @@ import (
 	syslog "log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,6 +258,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	}
 
 	// Log any settings overridden by the database
+	e.applyDBOverrides()
 	e.logDBOverrides()
 
 	e.mux = http.NewServeMux()
@@ -639,7 +641,7 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 			PublicIP:               e.publicIP,
 			TurnOffTLS:             e.turnOffTLS,
 			Version:                config.Version,
-			SSURL:                  e.getShadowsocksURL(),
+			SSURL:                  e.getShadowsocksURL(r.Host),
 			STUNAddr:               net.JoinHostPort(strings.Trim(e.webDomain, "[]"), "3478"),
 			DefaultQuota:           e.storage.GetDefaultQuota(),
 			MaxMessageSize:         e.maxMessageSize,
@@ -972,21 +974,50 @@ func (e *Endpoint) runShadowsocksInternal() {
 	}
 }
 
-func (e *Endpoint) getShadowsocksURL() string {
+func (e *Endpoint) getShadowsocksURL(hostHint string) string {
 	if e.ssAddr == "" || !e.isShadowsocksEnabled() {
 		return ""
 	}
 
-	// format: ss://BASE64(method:password)@host:port
-	userInfo := fmt.Sprintf("%s:%s", e.ssCipher, e.ssPassword)
-	auth := base64.RawStdEncoding.EncodeToString([]byte(userInfo))
+	password, cipher, port := e.ssPassword, e.ssCipher, ""
+	_, port, _ = net.SplitHostPort(e.ssAddr)
 
-	host, port, _ := net.SplitHostPort(e.ssAddr)
-	if host == "" || host == "0.0.0.0" {
-		host = strings.Trim(e.webDomain, "[]")
+	// Check for DB overrides to match what the admin panel shows
+	if e.authDB != nil {
+		if v, ok, err := e.authDB.GetSetting(resources.KeySsPassword); err == nil && ok && v != "" {
+			password = v
+		}
+		if v, ok, err := e.authDB.GetSetting(resources.KeySsCipher); err == nil && ok && v != "" {
+			cipher = v
+		}
+		if v, ok, err := e.authDB.GetSetting(resources.KeySsPort); err == nil && ok && v != "" {
+			port = v
+		}
 	}
 
-	return fmt.Sprintf("ss://%s@%s:%s", auth, host, port)
+	// format: ss://BASE64(method:password)@host:port#tag
+	userInfo := fmt.Sprintf("%s:%s", cipher, password)
+	auth := base64.StdEncoding.EncodeToString([]byte(userInfo))
+	auth = strings.TrimRight(auth, "=")
+
+	host, _, _ := net.SplitHostPort(e.ssAddr)
+	if host == "" || host == "0.0.0.0" {
+		host = hostHint
+		if host == "" {
+			host = strings.Trim(e.mailDomain, "[]")
+		} else {
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+		}
+	}
+
+	return fmt.Sprintf("ss://%s@%s:%s#%s", auth, host, port, url.QueryEscape(host))
+}
+
+func (e *Endpoint) getShadowsocksActiveSettings() (password, cipher, port string) {
+	_, port, _ = net.SplitHostPort(e.ssAddr)
+	return e.ssPassword, e.ssCipher, port
 }
 
 func (e *Endpoint) serveALPNMultiplexed(l net.Listener) {
@@ -1400,7 +1431,7 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		PublicIP:               e.publicIP,
 		TurnOffTLS:             e.turnOffTLS,
 		Version:                config.Version,
-		SSURL:                  e.getShadowsocksURL(),
+		SSURL:                  e.getShadowsocksURL(r.Host),
 		DefaultQuota:           e.storage.GetDefaultQuota(),
 		RegistrationOpen:       func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
 		JitRegistrationEnabled: func() bool { enabled, _ := e.authDB.IsJitRegistrationEnabled(); return enabled }(),
@@ -1473,12 +1504,13 @@ func (e *Endpoint) setupAdminAPI() {
 	}
 
 	settingsDeps := resources.SettingsToggleDeps{
-		IsRegistrationOpen:        e.authDB.IsRegistrationOpen,
-		SetRegistrationOpen:       e.authDB.SetRegistrationOpen,
-		IsJitRegistrationEnabled:  e.authDB.IsJitRegistrationEnabled,
-		SetJitRegistrationEnabled: e.authDB.SetJitRegistrationEnabled,
-		IsTurnEnabled:             e.authDB.IsTurnEnabled,
-		SetTurnEnabled:            e.authDB.SetTurnEnabled,
+		IsRegistrationOpen:           e.authDB.IsRegistrationOpen,
+		SetRegistrationOpen:          e.authDB.SetRegistrationOpen,
+		IsJitRegistrationEnabled:     e.authDB.IsJitRegistrationEnabled,
+		SetJitRegistrationEnabled:    e.authDB.SetJitRegistrationEnabled,
+		IsTurnEnabled:                e.authDB.IsTurnEnabled,
+		SetTurnEnabled:               e.authDB.SetTurnEnabled,
+		GetShadowsocksActiveSettings: e.getShadowsocksActiveSettings,
 	}
 
 	// Generic DB-backed settings using the auth pass_table's settings table

@@ -2,6 +2,7 @@ package chatmail
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -293,5 +294,28 @@ func (e *Endpoint) logDBOverrides() {
 			continue
 		}
 		e.logger.Printf("DB override active: %s = %s", key, val)
+	}
+}
+
+// applyDBOverrides updates Endpoint struct fields from database settings.
+// This ensures that DB settings take immediate effect on startup even if
+// the config file hasn't been patched yet.
+func (e *Endpoint) applyDBOverrides() {
+	if e.authDB == nil {
+		return
+	}
+
+	if val, ok, err := e.authDB.GetSetting(resources.KeySsPassword); err == nil && ok && val != "" {
+		e.ssPassword = val
+	}
+	if val, ok, err := e.authDB.GetSetting(resources.KeySsCipher); err == nil && ok && val != "" {
+		e.ssCipher = val
+	}
+	if val, ok, err := e.authDB.GetSetting(resources.KeySsPort); err == nil && ok && val != "" {
+		host, _, _ := net.SplitHostPort(e.ssAddr)
+		if host == "" {
+			host = "0.0.0.0"
+		}
+		e.ssAddr = host + ":" + val
 	}
 }

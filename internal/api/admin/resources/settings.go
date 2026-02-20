@@ -10,16 +10,16 @@ import (
 
 // SettingsToggleDeps provides methods to read/write settings flags.
 type SettingsToggleDeps struct {
-	IsRegistrationOpen        func() (bool, error)
-	SetRegistrationOpen       func(bool) error
-	IsJitRegistrationEnabled  func() (bool, error)
-	SetJitRegistrationEnabled func(bool) error
-	IsTurnEnabled             func() (bool, error)
-	SetTurnEnabled            func(bool) error
-	// Generic DB-backed settings (string key-value)
-	GetSetting    func(key string) (string, bool, error)
-	SetSetting    func(key, value string) error
-	DeleteSetting func(key string) error
+	IsRegistrationOpen           func() (bool, error)
+	SetRegistrationOpen          func(bool) error
+	IsJitRegistrationEnabled     func() (bool, error)
+	SetJitRegistrationEnabled    func(bool) error
+	IsTurnEnabled                func() (bool, error)
+	SetTurnEnabled               func(bool) error
+	DeleteSetting                func(key string) error
+	GetShadowsocksActiveSettings func() (password, cipher, port string)
+	GetSetting                   func(key string) (string, bool, error)
+	SetSetting                   func(key, value string) error
 }
 
 type actionRequest struct {
@@ -152,15 +152,16 @@ type AllSettingsResponse struct {
 	HTTPSAccess      string `json:"https_access"`
 
 	// Hostname / address settings
-	SMTPHostname settingValueResponse `json:"smtp_hostname"`
-	TurnRealm    settingValueResponse `json:"turn_realm"`
-	TurnSecret   settingValueResponse `json:"turn_secret"`
-	TurnRelayIP  settingValueResponse `json:"turn_relay_ip"`
-	TurnTTL      settingValueResponse `json:"turn_ttl"`
-	IrohRelayURL settingValueResponse `json:"iroh_relay_url"`
-	SsCipher     settingValueResponse `json:"ss_cipher"`
-	SsPassword   settingValueResponse `json:"ss_password"`
-	AdminPath    settingValueResponse `json:"admin_path"`
+	SMTPHostname   settingValueResponse `json:"smtp_hostname"`
+	TurnRealm      settingValueResponse `json:"turn_realm"`
+	TurnSecret     settingValueResponse `json:"turn_secret"`
+	TurnRelayIP    settingValueResponse `json:"turn_relay_ip"`
+	TurnTTL        settingValueResponse `json:"turn_ttl"`
+	IrohRelayURL   settingValueResponse `json:"iroh_relay_url"`
+	SsCipher       settingValueResponse `json:"ss_cipher"`
+	SsPassword     settingValueResponse `json:"ss_password"`
+	ShadowsocksURL string               `json:"shadowsocks_url"`
+	AdminPath      settingValueResponse `json:"admin_path"`
 }
 
 // Setting key constants for all configurable values.
@@ -493,24 +494,32 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		resp.LogDisabled = getToggle(KeyLogDisabled)
 
 		// String settings helper
-		getSetting := func(key string) settingValueResponse {
+		getSetting := func(key string, activeVal string) settingValueResponse {
 			val, ok, err := deps.GetSetting(key)
 			if err != nil {
-				return settingValueResponse{Key: key}
+				return settingValueResponse{Key: key, Value: activeVal}
+			}
+			if !ok {
+				return settingValueResponse{Key: key, Value: activeVal, IsSet: false}
 			}
 			return settingValueResponse{Key: key, Value: val, IsSet: ok}
 		}
 
+		ssPass, ssCiph, ssPort := "", "", ""
+		if deps.GetShadowsocksActiveSettings != nil {
+			ssPass, ssCiph, ssPort = deps.GetShadowsocksActiveSettings()
+		}
+
 		// Port settings
-		resp.SMTPPort = getSetting(KeySMTPPort)
-		resp.SubmissionPort = getSetting(KeySubmissionPort)
-		resp.IMAPPort = getSetting(KeyIMAPPort)
-		resp.TurnPort = getSetting(KeyTurnPort)
-		resp.SaslPort = getSetting(KeySaslPort)
-		resp.IrohPort = getSetting(KeyIrohPort)
-		resp.SsPort = getSetting(KeySsPort)
-		resp.HTTPPort = getSetting(KeyHTTPPort)
-		resp.HTTPSPort = getSetting(KeyHTTPSPort)
+		resp.SMTPPort = getSetting(KeySMTPPort, "")
+		resp.SubmissionPort = getSetting(KeySubmissionPort, "")
+		resp.IMAPPort = getSetting(KeyIMAPPort, "")
+		resp.TurnPort = getSetting(KeyTurnPort, "")
+		resp.SaslPort = getSetting(KeySaslPort, "")
+		resp.IrohPort = getSetting(KeyIrohPort, "")
+		resp.SsPort = getSetting(KeySsPort, ssPort)
+		resp.HTTPPort = getSetting(KeyHTTPPort, "")
+		resp.HTTPSPort = getSetting(KeyHTTPSPort, "")
 
 		// Per-port access control
 		getAccess := func(key string) string {
@@ -530,15 +539,15 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		resp.HTTPSAccess = getAccess(KeyHTTPSLocalOnly)
 
 		// Configuration settings
-		resp.SMTPHostname = getSetting(KeySMTPHostname)
-		resp.TurnRealm = getSetting(KeyTurnRealm)
-		resp.TurnSecret = getSetting(KeyTurnSecret)
-		resp.TurnRelayIP = getSetting(KeyTurnRelayIP)
-		resp.TurnTTL = getSetting(KeyTurnTTL)
-		resp.IrohRelayURL = getSetting(KeyIrohRelayURL)
-		resp.SsCipher = getSetting(KeySsCipher)
-		resp.SsPassword = getSetting(KeySsPassword)
-		resp.AdminPath = getSetting(KeyAdminPath)
+		resp.SMTPHostname = getSetting(KeySMTPHostname, "")
+		resp.TurnRealm = getSetting(KeyTurnRealm, "")
+		resp.TurnSecret = getSetting(KeyTurnSecret, "")
+		resp.TurnRelayIP = getSetting(KeyTurnRelayIP, "")
+		resp.TurnTTL = getSetting(KeyTurnTTL, "")
+		resp.IrohRelayURL = getSetting(KeyIrohRelayURL, "")
+		resp.SsCipher = getSetting(KeySsCipher, ssCiph)
+		resp.SsPassword = getSetting(KeySsPassword, ssPass)
+		resp.AdminPath = getSetting(KeyAdminPath, "")
 
 		return resp, 200, nil
 	}

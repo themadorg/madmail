@@ -80,6 +80,9 @@ func buildTestDeps() (SettingsToggleDeps, *mockSettingStore) {
 		GetSetting:    store.Get,
 		SetSetting:    store.Set,
 		DeleteSetting: store.Delete,
+		GetShadowsocksActiveSettings: func() (password, cipher, port string) {
+			return "test-pass", "test-ciph", "8388"
+		},
 	}
 
 	return deps, store
