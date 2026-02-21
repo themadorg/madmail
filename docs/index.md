@@ -6,7 +6,7 @@ Welcome to the Madmail documentation. This page serves as a central hub for all 
 - **[Chatmail Setup Guide](./chatmail-setup.md)** - Comprehensive guide to setting up a Chatmail server using the Maddy fork (manual & Docker).
 - **[Standard Setup Tutorial](./tutorials/setting-up.md)** - Step-by-step practical guide for personal mail server installation.
 - **[Building from Source](./tutorials/building-from-source.md)** - System dependencies and build instructions for manual compilation.
-- **[Docker Deployment](./docker.md)** - Official Docker image usage, ports, and configuration details.
+- **[Docker Deployment](./docker/README.md)** - Official Docker image usage, ports, and configuration examples.
 
 ## 💬 Chatmail Specifics
 - **[Authentication Specification](./chatmail/authentication.md)** - Details on "just-in-time" auto-registration and credential lookup logic.
