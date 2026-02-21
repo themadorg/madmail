@@ -1,3 +1,10 @@
+## [0.17.1](https://github.com/themadorg/madmail/compare/v0.17.0...v0.17.1) (2026-02-21)
+
+
+### Bug Fixes
+
+* **docker:** switch to GHCR, add deployment examples and docs ([fce0579](https://github.com/themadorg/madmail/commit/fce05794813fb0b79ad3128149b9758dae949918))
+
 # [0.17.0](https://github.com/themadorg/madmail/compare/v0.16.1...v0.17.0) (2026-02-20)
 
 
