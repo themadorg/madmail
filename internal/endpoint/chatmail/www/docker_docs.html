@@ -108,21 +108,13 @@
             display: inline-block;
         }
 
-        .code-box {
-            margin-top: 0 !important;
-            border-top-left-radius: 0 !important;
-            max-height: 400px;
-            overflow-y: auto;
-            border: 1px dashed #444 !important;
-        }
-
         .one-liner {
             direction: ltr;
             background: #101010;
-            border: 1px solid var(--accent-color);
+            border: 1px solid rgba(0, 210, 255, 0.3);
             color: #00d2ff;
             padding: 15px;
-            border-radius: 6px;
+            border-radius: 8px;
             font-family: monospace;
             margin: 40px 0 20px;
             position: relative;
@@ -132,8 +124,19 @@
             font-size: 0.85em;
         }
 
+        .one-liner:hover {
+            border-color: var(--accent-color);
+            background: #151515;
+        }
+
+        .code-box {
+            margin-top: 0 !important;
+            border-top-left-radius: 0 !important;
+            border: 1px dashed #444 !important;
+        }
+
         .one-liner::after {
-            content: "دستور تک‌خطی (Docker Run)";
+            content: "Docker Run";
             position: absolute;
             top: -12px;
             left: 15px;
@@ -155,8 +158,6 @@
 
     <div class="doc-container">
         <h1>🐳 راه‌اندازی با داکر</h1>
-        <p>اگر ترجیح می‌دهید سرور <span class="highlight">Madmail</span> خود را با داکر اجرا کنید،
-            تصاویر رسمی از طریق <span class="highlight">GitHub Container Registry (GHCR)</span> در دسترس هستند.</p>
 
         <h2>شروع سریع</h2>
         <div class="code-box">docker pull ghcr.io/themadorg/madmail:latest</div>
@@ -178,12 +179,22 @@
         </table>
 
         <h2>روش ۱: ساده با آی‌پی (SQLite)</h2>
-        <p>مناسب برای: تست سریع، سرورهای تک‌نفره، ترافیک کم</p>
 
         <div class="one-liner">docker run -d --name madmail \
-            -p 25:25 -p 143:143 -p 465:465 -p 587:587 -p 993:993 -p 80:80 -p 443:443 -p 1080:1080 \
-            -v ./maddy.conf:/data/maddy.conf -v ./data:/data -v ./tls:/data/tls \
-            -e MADDY_HOSTNAME=SERVER_IP -e MADDY_DOMAIN="[SERVER_IP]" -e MADDY_PUBLIC_IP=SERVER_IP \
+            -p 25:25 \
+            -p 143:143 \
+            -p 465:465 \
+            -p 587:587 \
+            -p 993:993 \
+            -p 80:80 \
+            -p 443:443 \
+            -p 1080:1080 \
+            -v ./maddy.conf:/data/maddy.conf \
+            -v ./data:/data \
+            -v ./tls:/data/tls \
+            -e MADDY_HOSTNAME=SERVER_IP \
+            -e MADDY_DOMAIN="[SERVER_IP]" \
+            -e MADDY_PUBLIC_IP=SERVER_IP \
             ghcr.io/themadorg/madmail:latest</div>
 
         <p>یک فایل <code>docker-compose.yml</code> و یک فایل <code>maddy.conf</code> نیاز دارید.
@@ -196,14 +207,22 @@
     image: ghcr.io/themadorg/madmail:latest
     restart: always
     ports:
-      - "25:25"      # SMTP
-      - "143:143"    # IMAP
-      - "465:465"    # Submission TLS
-      - "587:587"    # Submission STARTTLS
-      - "993:993"    # IMAPS
-      - "80:80"      # HTTP
-      - "443:443"    # HTTPS
-      - "1080:1080"  # Shadowsocks
+      # SMTP: Incoming/Outgoing email (Standard)
+      - "25:25"
+      # IMAP: Reading email (STARTTLS)
+      - "143:143"
+      # SUBMISSION: Outgoing email (TLS/SSL)
+      - "465:465"
+      # SUBMISSION: Outgoing email (STARTTLS)
+      - "587:587"
+      # IMAPS: Reading email (TLS/SSL)
+      - "993:993"
+      # API: Admin and Registration (HTTP)
+      - "80:80"
+      # API: Admin and Registration (HTTPS)
+      - "443:443"
+      # PROXY: Shadowsocks service
+      - "1080:1080"
     volumes:
       - ./maddy.conf:/data/maddy.conf
       - ./data:/data
@@ -211,7 +230,8 @@
     environment:
       - MADDY_HOSTNAME=SERVER_IP
       - MADDY_DOMAIN=[SERVER_IP]
-      - MADDY_PUBLIC_IP=SERVER_IP</pre>
+      - MADDY_PUBLIC_IP=SERVER_IP
+      - MADDY_SQLITE_UNSAFE_SYNC_OFF=1</pre>
         </div>
 
         <div class="code-container">
@@ -357,17 +377,29 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
         </div>
 
         <h2>روش ۲: با PostgreSQL</h2>
-        <p>مناسب برای: محیط تولید، ترافیک بالا، کاربران همزمان زیاد</p>
         <p>مشکل <code>database is locked</code> در SQLite با استفاده از PostgreSQL برطرف می‌شود.
             همچنین pub/sub برای آپدیت‌های IMAP بلادرنگ فعال می‌شود.</p>
 
         <div class="one-liner">docker network create mad-net && \
-            docker run -d --name db --network mad-net -e POSTGRES_PASSWORD=pass -e POSTGRES_DB=maddy postgres:16-alpine
-            && \
-            docker run -d --name madmail --network mad-net -p 25:25 -p 143:143 -p 465:465 -p 587:587 -p 993:993 -p 80:80
-            -p 443:443 -p 1080:1080 \
-            -v ./maddy.conf:/data/maddy.conf -v ./data:/data -v ./tls:/data/tls \
-            -e MADDY_HOSTNAME=SERVER_IP -e MADDY_DOMAIN="[SERVER_IP]" -e MADDY_PUBLIC_IP=SERVER_IP \
+            docker run -d --name db --network mad-net \
+            -e POSTGRES_PASSWORD=pass \
+            -e POSTGRES_DB=maddy \
+            postgres:16-alpine && \
+            docker run -d --name madmail --network mad-net \
+            -p 25:25 \
+            -p 143:143 \
+            -p 465:465 \
+            -p 587:587 \
+            -p 993:993 \
+            -p 80:80 \
+            -p 443:443 \
+            -p 1080:1080 \
+            -v ./maddy.conf:/data/maddy.conf \
+            -v ./data:/data \
+            -v ./tls:/data/tls \
+            -e MADDY_HOSTNAME=SERVER_IP \
+            -e MADDY_DOMAIN="[SERVER_IP]" \
+            -e MADDY_PUBLIC_IP=SERVER_IP \
             ghcr.io/themadorg/madmail:latest</div>
 
         <div class="code-container">
@@ -377,13 +409,21 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
     image: ghcr.io/themadorg/madmail:latest
     restart: always
     ports:
+      # SMTP: Incoming/Outgoing email (Standard)
       - "25:25"
+      # IMAP: Reading email (STARTTLS)
       - "143:143"
+      # SUBMISSION: Outgoing email (TLS/SSL)
       - "465:465"
+      # SUBMISSION: Outgoing email (STARTTLS)
       - "587:587"
+      # IMAPS: Reading email (TLS/SSL)
       - "993:993"
+      # API: Admin and Registration (HTTP)
       - "80:80"
+      # API: Admin and Registration (HTTPS)
       - "443:443"
+      # PROXY: Shadowsocks service
       - "1080:1080"
     volumes:
       - ./maddy.conf:/data/maddy.conf
@@ -393,24 +433,21 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
       - MADDY_HOSTNAME=SERVER_IP
       - MADDY_DOMAIN=[SERVER_IP]
       - MADDY_PUBLIC_IP=SERVER_IP
-      - POSTGRES_USER=maddy
-      - POSTGRES_PASSWORD=your-strong-password
-      - POSTGRES_DB=maddy
+      - POSTGRES_USER=madmail
+      - POSTGRES_PASSWORD=madmail_pass
+      - POSTGRES_DB=madmail
     depends_on:
       - db
 
   db:
-    image: postgres:16-alpine
+    image: postgres:alpine
     restart: always
     environment:
-      - POSTGRES_USER=maddy
-      - POSTGRES_PASSWORD=your-strong-password
-      - POSTGRES_DB=maddy
+      - POSTGRES_USER=madmail
+      - POSTGRES_PASSWORD=madmail_pass
+      - POSTGRES_DB=madmail
     volumes:
-      - pgdata:/var/lib/postgresql/data
-
-volumes:
-  pgdata:</pre>
+      - ./pgdata:/var/lib/postgresql/data</pre>
         </div>
 
         <div class="code-container">
@@ -551,13 +588,22 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
         </div>
 
         <h2>روش ۳: دامنه با TLS خودکار (Let's Encrypt)</h2>
-        <p>مناسب برای: محیط تولید با دامنه واقعی، مدیریت خودکار گواهینامه</p>
 
         <div class="one-liner">docker run -d --name madmail \
-            -p 25:25 -p 143:143 -p 465:465 -p 587:587 -p 993:993 -p 80:80 -p 443:443 -p 1080:1080 \
-            -v ./maddy.conf:/data/maddy.conf -v ./data:/data \
-            -e MADDY_HOSTNAME=chat.example.org -e MADDY_DOMAIN=chat.example.org \
-            -e MADDY_PUBLIC_IP=SERVER_IP -e MADDY_ACME_EMAIL=admin@example.org \
+            -p 25:25 \
+            -p 143:143 \
+            -p 465:465 \
+            -p 587:587 \
+            -p 993:993 \
+            -p 80:80 \
+            -p 443:443 \
+            -p 1080:1080 \
+            -v ./maddy.conf:/data/maddy.conf \
+            -v ./data:/data \
+            -e MADDY_HOSTNAME=chat.example.org \
+            -e MADDY_DOMAIN=chat.example.org \
+            -e MADDY_PUBLIC_IP=SERVER_IP \
+            -e MADDY_ACME_EMAIL=admin@example.org \
             ghcr.io/themadorg/madmail:latest</div>
 
         <div class="warn-box">
@@ -576,21 +622,29 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
     image: ghcr.io/themadorg/madmail:latest
     restart: always
     ports:
+      # SMTP: Incoming/Outgoing email (Standard)
       - "25:25"
+      # IMAP: Reading email (STARTTLS)
       - "143:143"
+      # SUBMISSION: Outgoing email (TLS/SSL)
       - "465:465"
+      # SUBMISSION: Outgoing email (STARTTLS)
       - "587:587"
+      # IMAPS: Reading email (TLS/SSL)
       - "993:993"
-      - "80:80"       # ACME HTTP-01 challenge
-      - "443:443"     # HTTPS
-      - "1080:1080"   # Shadowsocks
+      # HTTP: ACME HTTP-01 challenge handler + redirect to HTTPS
+      - "80:80"
+      # HTTPS: Admin API, Registration, ALPN-multiplexed SMTP+IMAP
+      - "443:443"
+      # PROXY: Shadowsocks service
+      - "1080:1080"
     volumes:
       - ./maddy.conf:/data/maddy.conf
       - ./data:/data
     environment:
       - MADDY_HOSTNAME=chat.example.org
       - MADDY_DOMAIN=chat.example.org
-      - MADDY_PUBLIC_IP=SERVER_IP
+      - MADDY_PUBLIC_IP=203.0.113.50
       - MADDY_ACME_EMAIL=admin@example.org</pre>
         </div>
 
@@ -826,11 +880,15 @@ chatmail tls://0.0.0.0:443 {
         </table>
 
         <h2>ساخت از سورس</h2>
-        <div class="code-box"># ساخت تصویر به صورت محلی
-            docker build -t madmail:latest .
+        <div class="code-container">
+            <div class="code-header">Build</div>
+            <pre class="code-box">docker build -t madmail:latest .</pre>
+        </div>
 
-            # یا با docker compose (توسعه)
-            docker compose up -d --build</div>
+        <div class="code-container">
+            <div class="code-header">Compose Build</div>
+            <pre class="code-box">docker compose up -d --build</pre>
+        </div>
 
         <p>تصاویر داکر به صورت خودکار در هر push به شاخه <code>main</code> ساخته و به GHCR ارسال می‌شوند.</p>
 

@@ -74,108 +74,110 @@
             border-radius: 4px;
         }
 
-        .mode-card {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 10px;
-            padding: 20px;
-            margin: 15px 0;
-            transition: transform 0.2s;
+        .warn-box strong,
+        .success-box strong {
+            display: block;
+            margin-bottom: 10px;
+            color: var(--accent-color);
         }
 
-        .mode-card:hover {
-            transform: translateX(-5px);
-            border-color: var(--accent-color);
+        .warn-box ol,
+        .warn-box ul,
+        .success-box ul {
+            padding-right: 25px;
+            margin: 0;
         }
 
-        .mode-card h3 {
-            margin-top: 0;
+        .warn-box li,
+        .success-box li {
+            margin-bottom: 8px;
+        }
+
+        .inline-command {
+            display: block;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 5px 10px;
+            border-radius: 4px;
+            margin-top: 5px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            width: fit-content;
         }
 
         .mode-table {
             width: 100%;
-            border-collapse: collapse;
-            margin: 15px 0;
-            direction: ltr;
-            text-align: left;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 25px 0;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            direction: rtl;
         }
 
         .mode-table th,
         .mode-table td {
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            padding: 8px 12px;
+            padding: 12px 15px;
+            text-align: right;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .mode-table th {
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.05);
             color: var(--accent-color);
-        }
-
-        .mode-table td {
-            color: #ccc;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75em;
+            font-size: 0.9em;
             font-weight: bold;
         }
 
-        .badge-recommended {
-            background: rgba(0, 200, 80, 0.2);
-            color: #00c850;
-            border: 1px solid #00c850;
-        }
-
-        .badge-advanced {
-            background: rgba(255, 180, 0, 0.2);
-            color: #ffb400;
-            border: 1px solid #ffb400;
-        }
-
-        .dns-records {
-            direction: ltr;
-            text-align: left;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 15px;
-            border-radius: 6px;
-            margin: 10px 0;
-            font-family: 'Courier New', monospace;
-            font-size: 0.85em;
-            line-height: 1.8;
-            color: #ddd;
-        }
-
-        .port-table td {
-            color: #ccc;
-        }
-
-        .code-container {
-            margin: 20px 0;
-            text-align: left;
-            direction: ltr;
-        }
-
-        .code-header {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--accent-color);
-            padding: 5px 15px;
-            font-size: 0.8em;
-            font-family: monospace;
-            border-top-left-radius: 6px;
-            border-top-right-radius: 6px;
-            border: 1px dashed #444;
+        .mode-table tr:last-child td {
             border-bottom: none;
-            display: inline-block;
+        }
+
+        .mode-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .status-yes {
+            background: rgba(0, 200, 80, 0.15);
+            color: #00c850;
+        }
+
+        .status-no {
+            background: rgba(255, 80, 80, 0.15);
+            color: #ff5050;
+        }
+
+        .status-na {
+            background: rgba(255, 255, 255, 0.1);
+            color: #888;
+        }
+
+        .mode-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+            position: relative;
+        }
+
+        .mode-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--accent-color);
         }
 
         .code-box {
             margin-top: 0 !important;
             border-top-left-radius: 0 !important;
-            max-height: 400px;
-            overflow-y: auto;
             border: 1px dashed #444 !important;
         }
     </style>
@@ -189,35 +191,13 @@
 
     <div class="doc-container">
         <h1>🌐 راه‌اندازی دامنه و TLS</h1>
-        <p>این راهنما نحوه اتصال دامنه واقعی به سرور <span class="highlight">Madmail</span> و پیکربندی گواهینامه TLS را
-            بطور کامل توضیح می‌دهد.</p>
-
-        <h2>مقدمه: چرا دامنه و TLS؟</h2>
-        <p>اگرچه Madmail با آی‌پی و گواهینامه خودامضا (self-signed) هم کار می‌کند، استفاده از دامنه واقعی با TLS معتبر
-            مزایای مهمی دارد:</p>
-        <ul>
-            <li><strong>فدریشن:</strong> سرورهای ایمیل دیگر (Gmail, Outlook, ...) ایمیل از سرورهای بدون TLS معتبر را
-                رد می‌کنند</li>
-            <li><strong>امنیت:</strong> رمزنگاری ارتباطات بین کلاینت و سرور</li>
-            <li><strong>اعتماد:</strong> کاربران با خیال راحت از DeltaChat استفاده می‌کنند</li>
-            <li><strong>Shadowsocks:</strong> پروکسی SS از طریق HTTPS بهتر کار می‌کند</li>
-        </ul>
 
         <h2>مرحله ۱: تنظیم رکوردهای DNS</h2>
         <p>ابتدا باید رکوردهای DNS زیر را در پنل مدیریت دامنه خود تنظیم کنید:</p>
 
         <div class="dns-records">
             <span class="comment"># رکورد A — اشاره دامنه به آی‌پی سرور</span><br>
-            chat.example.org. A 203.0.113.50<br><br>
-            <span class="comment"># رکورد MX — مشخص کردن سرور ایمیل</span><br>
-            chat.example.org. MX 10 chat.example.org.<br><br>
-            <span class="comment"># رکورد SPF — جلوگیری از جعل ایمیل</span><br>
-            chat.example.org. TXT "v=spf1 a mx ~all"<br><br>
-            <span class="comment"># رکورد DMARC — سیاست احراز هویت ایمیل</span><br>
-            _dmarc.chat.example.org. TXT "v=DMARC1; p=quarantine"<br><br>
-            <span class="comment"># رکورد DKIM — بعد از نصب، کلید عمومی DKIM را اضافه کنید</span><br>
-            <span class="comment"># (خروجی دستور: maddy dkim-key chat.example.org)</span><br>
-            default._domainkey.chat.example.org. TXT "v=DKIM1; k=rsa; p=..."
+            chat.example.org. A 203.0.113.50<br>
         </div>
 
         <div class="tip-box">
@@ -229,46 +209,49 @@
         <p>Madmail چهار حالت TLS پشتیبانی می‌کند. جدول زیر تفاوت‌ها را نشان می‌دهد:</p>
 
         <table class="mode-table">
-            <tr>
-                <th>حالت</th>
-                <th>چالش</th>
-                <th>DNS API؟</th>
-                <th>پورت 80؟</th>
-                <th>مناسب برای</th>
-            </tr>
-            <tr>
-                <td><strong>autocert</strong></td>
-                <td>HTTP-01</td>
-                <td>❌ نه</td>
-                <td>✅ بله</td>
-                <td>تولید (پیشنهادی)</td>
-            </tr>
-            <tr>
-                <td><strong>acme</strong></td>
-                <td>DNS-01</td>
-                <td>✅ بله</td>
-                <td>❌ نه</td>
-                <td>پشت فایروال</td>
-            </tr>
-            <tr>
-                <td><strong>file</strong></td>
-                <td>—</td>
-                <td>—</td>
-                <td>—</td>
-                <td>گواهینامه موجود</td>
-            </tr>
-            <tr>
-                <td><strong>self_signed</strong></td>
-                <td>—</td>
-                <td>—</td>
-                <td>—</td>
-                <td>تست / فقط آی‌پی</td>
-            </tr>
+            <thead>
+                <tr>
+                    <th>حالت</th>
+                    <th>چالش</th>
+                    <th>DNS API</th>
+                    <th>پورت 80</th>
+                    <th>هدف</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td dir="ltr"><strong>autocert</strong></td>
+                    <td dir="ltr">HTTP-01</td>
+                    <td><span class="status-badge status-no">خیر</span></td>
+                    <td><span class="status-badge status-yes">نیاز است</span></td>
+                    <td>سرور اصلی (تولید)</td>
+                </tr>
+                <tr>
+                    <td dir="ltr"><strong>acme</strong></td>
+                    <td dir="ltr">DNS-01</td>
+                    <td><span class="status-badge status-yes">بله</span></td>
+                    <td><span class="status-badge status-no">خیر</span></td>
+                    <td>سرور پشت فایروال</td>
+                </tr>
+                <tr>
+                    <td dir="ltr"><strong>file</strong></td>
+                    <td dir="ltr">—</td>
+                    <td><span class="status-badge status-na">—</span></td>
+                    <td><span class="status-badge status-na">—</span></td>
+                    <td>گواهینامه آماده</td>
+                </tr>
+                <tr>
+                    <td dir="ltr"><strong>self_signed</strong></td>
+                    <td dir="ltr">—</td>
+                    <td><span class="status-badge status-na">—</span></td>
+                    <td><span class="status-badge status-na">—</span></td>
+                    <td>تست و توسعه</td>
+                </tr>
+            </tbody>
         </table>
 
         <div class="mode-card">
             <h3>🏆 حالت autocert <span class="badge badge-recommended">پیشنهادی</span></h3>
-            <p>ساده‌ترین روش! فقط نیاز به دامنه و پورت ۸۰ دارد. بدون نیاز به توکن DNS.</p>
             <div class="code-container">
                 <div class="code-header">نصب (Maddy Install)</div>
                 <pre class="code-box">sudo maddy install \
@@ -302,7 +285,6 @@
 
         <div class="mode-card">
             <h3>🔐 حالت acme (DNS-01) <span class="badge badge-advanced">پیشرفته</span></h3>
-            <p>وقتی پورت ۸۰ باز نیست (مثلاً پشت Cloudflare). نیاز به توکن API ارائه‌دهنده DNS دارد.</p>
             <div class="code-container">
                 <div class="code-header">نصب (Maddy Install)</div>
                 <pre class="code-box">sudo maddy install \
@@ -316,12 +298,10 @@
             </div>
             <p>ارائه‌دهندگان DNS پشتیبانی‌شده: <code>cloudflare</code>, <code>gandi</code>,
                 <code>digitalocean</code>, <code>vultr</code>, <code>hetzner</code>, <code>route53</code>
-            </p>
         </div>
 
         <div class="mode-card">
             <h3>📄 حالت file (گواهینامه موجود)</h3>
-            <p>اگر گواهینامه خودتان را دارید (مثلاً از certbot یا یک CA):</p>
             <div class="code-container">
                 <div class="code-header">نصب (Maddy Install)</div>
                 <pre class="code-box">sudo maddy install \
@@ -337,13 +317,12 @@
 
             <div class="tip-box">
                 <strong>تمدید:</strong> یک hook در certbot تنظیم کنید تا بعد از تمدید، maddy ریستارت شود:
-                <div class="code-box" style="margin-top: 5px;">systemctl reload maddy</div>
+                <div class="code-box" style="margin-top: 5px;">systemctl restart maddy</div>
             </div>
         </div>
 
         <div class="mode-card">
             <h3>🧪 حالت self_signed (تست)</h3>
-            <p>گواهینامه خودامضا. مناسب تست و توسعه. کلاینت‌ها هشدار نمایش می‌دهند.</p>
             <div class="code-container">
                 <div class="code-header">نصب (Maddy Install)</div>
                 <pre class="code-box">sudo maddy install \
@@ -368,43 +347,46 @@
 
         <h2>تغییر حالت TLS</h2>
         <h3>از self_signed به autocert</h3>
-        <div class="code-box"># حذف گواهینامه‌های قدیمی
-            sudo rm /var/lib/maddy/certs/fullchain.pem /var/lib/maddy/certs/privkey.pem
-
-            # نصب مجدد با autocert
-            sudo maddy install \
-            --domain chat.example.org \
-            --tls-mode autocert \
-            --acme-email admin@example.org \
-            --enable-chatmail \
-            --non-interactive
-
-            sudo systemctl restart maddy</div>
-
-        <h2>عیب‌یابی</h2>
-        <div class="warn-box">
-            <strong>autocert: گواهینامه دریافت نمی‌شود؟</strong>
-            <ol style="padding-right: 20px; margin: 10px 0;">
-                <li>آیا پورت ۸۰ باز است؟ <code dir="ltr">sudo ss -tlnp | grep :80</code></li>
-                <li>آیا رکورد DNS A درست تنظیم شده؟ <code dir="ltr">dig +short your-domain A</code></li>
-                <li>آیا فایروال مسدود نکرده؟ <code dir="ltr">sudo ufw status</code></li>
-                <li>لاگ‌های maddy را بررسی کنید: <code dir="ltr">sudo journalctl -u maddy -f</code></li>
-            </ol>
+        <div class="code-container">
+            <div class="code-header">حذف گواهینامه‌های قدیمی</div>
+            <pre class="code-box">sudo rm /var/lib/maddy/certs/fullchain.pem /var/lib/maddy/certs/privkey.pem</pre>
         </div>
 
+        <div class="code-container">
+            <div class="code-header">نصب مجدد با autocert</div>
+            <pre class="code-box">sudo maddy install \
+  --domain chat.example.org \
+  --tls-mode autocert \
+  --acme-email admin@example.org \
+  --enable-chatmail \
+  --non-interactive</pre>
+        </div>
+
+        <div class="code-container">
+            <div class="code-header">اجرای نهایی</div>
+            <pre class="code-box">sudo systemctl restart maddy</pre>
+        </div>
+
+        <h2>عیب‌یابی</h2>
+
         <div class="warn-box">
-            <strong>file: خطای Permission denied؟</strong>
-            <div class="code-box" style="margin-top: 5px;">sudo chown root:maddy /path/to/cert.pem /path/to/key.pem
-                sudo chmod 640 /path/to/cert.pem /path/to/key.pem</div>
+            <strong>🔑 file: خطای Permission denied؟</strong>
+            <p>دستورات زیر را برای اصلاح مالکیت و دسترسی فایل‌ها اجرا کنید:</p>
+            <div class="code-container">
+                <div class="code-header">Fix Permissions</div>
+                <pre class="code-box">sudo chown root:maddy /path/to/cert.pem /path/to/key.pem
+sudo chmod 640 /path/to/cert.pem /path/to/key.pem</pre>
+            </div>
         </div>
 
         <div class="success-box">
-            <strong>امنیت:</strong>
-            <ul style="margin: 10px 0; padding-right: 20px;">
+            <strong>🛡️ ملاحظات امنیتی:</strong>
+            <ul>
                 <li>کلیدهای خصوصی با دسترسی <code>600</code> (فقط مالک) ذخیره می‌شوند</li>
                 <li>گواهینامه‌ها با دسترسی <code>640</code> (مالک + گروه) ذخیره می‌شوند</li>
                 <li>پوشه کش autocert با دسترسی <code>700</code> (فقط مالک) ذخیره می‌شود</li>
-                <li>گواهینامه‌های Let's Encrypt اعتبار ۹۰ روزه دارند و ~۳۰ روز قبل از انقضا خودکار تمدید می‌شوند</li>
+                <li>گواهینامه‌های Let's Encrypt اعتبار ۹۰ روزه دارند و حدود ۳۰ روز قبل از انقضا به طور خودکار تمدید
+                    می‌شوند</li>
             </ul>
         </div>
 
