@@ -98,21 +98,6 @@ tls/
 
 On first startup with `auto_create yes`, self-signed certificates will be generated if none exist.
 
-## Management Commands
-
-Use `docker exec` to run management commands on the running container:
-
-```bash
-# Create a user
-docker exec -it madmail-madmail-1 maddy creds create user@example.com
-
-# Create IMAP account
-docker exec -it madmail-madmail-1 maddy imap-acct create user@example.com
-
-# List users
-docker exec -it madmail-madmail-1 maddy creds list
-```
-
 ## Building from Source
 
 ```bash

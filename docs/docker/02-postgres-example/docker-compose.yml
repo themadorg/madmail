@@ -1,6 +1,6 @@
 services:
   madmail:
-    image: madmail:latest
+    image: ghcr.io/themadorg/madmail:latest
     restart: always
     ports:
       # SMTP: Incoming/Outgoing email (Standard)
