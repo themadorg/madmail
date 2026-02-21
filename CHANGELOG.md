@@ -1,3 +1,15 @@
+# [0.19.0](https://github.com/themadorg/madmail/compare/v0.18.0...v0.19.0) (2026-02-21)
+
+
+### Bug Fixes
+
+* **docs:** improve layout and sync docker-compose examples in farsi docs ([b47a2ae](https://github.com/themadorg/madmail/commit/b47a2ae0e27785ee41a5c23d4711f3b1456eea3d))
+
+
+### Features
+
+* **docs:** add Farsi Docker and Domain/TLS documentation pages ([d2e36aa](https://github.com/themadorg/madmail/commit/d2e36aae1108798983c651ac23050de4000fd4c2))
+
 # [0.18.0](https://github.com/themadorg/madmail/compare/v0.17.2...v0.18.0) (2026-02-21)
 
 
