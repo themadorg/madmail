@@ -1,3 +1,10 @@
+## [0.17.2](https://github.com/themadorg/madmail/compare/v0.17.1...v0.17.2) (2026-02-21)
+
+
+### Bug Fixes
+
+* **ci:** ensure docker image uses latest version from semantic-release ([946d012](https://github.com/themadorg/madmail/commit/946d012bc59dcec2ad10e5a0708f7a8af8dde495))
+
 ## [0.17.1](https://github.com/themadorg/madmail/compare/v0.17.0...v0.17.1) (2026-02-21)
 
 
