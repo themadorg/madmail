@@ -547,6 +547,10 @@ func (e *Endpoint) handleDocs(w http.ResponseWriter, r *http.Request) {
 		e.serveTemplate(w, r, "docs_serve.html", nil)
 	case "database":
 		e.serveTemplate(w, r, "database_docs.html", nil)
+	case "docker":
+		e.serveTemplate(w, r, "docker_docs.html", nil)
+	case "relay", "domain", "tls":
+		e.serveTemplate(w, r, "relay_docs.html", nil)
 	default:
 		http.NotFound(w, r)
 	}

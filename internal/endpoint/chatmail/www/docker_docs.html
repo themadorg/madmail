@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>راه‌اندازی با داکر - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <style>
+        .doc-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            direction: rtl;
+        }
+
+        h2 {
+            margin-top: 30px;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        h3 {
+            margin-top: 25px;
+            color: var(--accent-color);
+        }
+
+        .highlight {
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        .code-box {
+            direction: ltr;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            text-align: left;
+            margin: 10px 0;
+            word-break: break-all;
+            white-space: pre-wrap;
+            border: 1px dashed #444;
+            color: #ddd;
+            line-height: 1.6;
+        }
+
+        .tip-box {
+            background: rgba(0, 210, 255, 0.1);
+            border-right: 4px solid #00d2ff;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .warn-box {
+            background: rgba(255, 180, 0, 0.1);
+            border-right: 4px solid #ffb400;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .port-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            direction: ltr;
+            text-align: left;
+        }
+
+        .port-table th,
+        .port-table td {
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 8px 12px;
+        }
+
+        .port-table th {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--accent-color);
+        }
+
+        .port-table td {
+            color: #ccc;
+        }
+    </style>
+</head>
+
+<body>
+    <ul id="menu">
+        <li><a href="/">اصلی</a></li>
+        <li><a href="/docs">مستندات</a></li>
+    </ul>
+
+    <div class="doc-container">
+        <h1>🐳 راه‌اندازی با داکر</h1>
+        <p>اگر ترجیح می‌دهید سرور <span class="highlight">Madmail</span> خود را با داکر اجرا کنید،
+            تصاویر رسمی از طریق <span class="highlight">GitHub Container Registry (GHCR)</span> در دسترس هستند.</p>
+
+        <h2>شروع سریع</h2>
+        <div class="code-box">docker pull ghcr.io/themadorg/madmail:latest</div>
+
+        <h3>تگ‌های تصویر</h3>
+        <table class="port-table">
+            <tr>
+                <th>Tag</th>
+                <th>توضیحات</th>
+            </tr>
+            <tr>
+                <td><code>latest</code></td>
+                <td>آخرین نسخه پایدار از شاخه main</td>
+            </tr>
+            <tr>
+                <td><code>X.Y.Z</code></td>
+                <td>نسخه مشخص (مثلاً 0.18.0)</td>
+            </tr>
+        </table>
+
+        <h2>روش ۱: ساده با آی‌پی (SQLite)</h2>
+        <p>مناسب برای: تست سریع، سرورهای تک‌نفره، ترافیک کم</p>
+        <div class="code-box">cd 01-simple-ip-example
+            # آی‌پی سرور خود را جایگزین SERVER_IP کنید
+            docker compose up -d</div>
+
+        <p>یک فایل <code>docker-compose.yml</code> و یک فایل <code>maddy.conf</code> نیاز دارید.
+            در این حالت گواهینامه TLS خودامضا (self-signed) به صورت خودکار تولید می‌شود.</p>
+
+        <div class="code-box">services:
+            madmail:
+            image: ghcr.io/themadorg/madmail:latest
+            restart: always
+            ports:
+            - "25:25" # SMTP
+            - "143:143" # IMAP
+            - "465:465" # Submission TLS
+            - "587:587" # Submission STARTTLS
+            - "993:993" # IMAPS
+            - "80:80" # HTTP
+            - "443:443" # HTTPS
+            - "1080:1080" # Shadowsocks
+            volumes:
+            - ./maddy.conf:/data/maddy.conf
+            - ./data:/data
+            - ./tls:/data/tls
+            environment:
+            - MADDY_HOSTNAME=SERVER_IP
+            - MADDY_DOMAIN=[SERVER_IP]
+            - MADDY_PUBLIC_IP=SERVER_IP</div>
+
+        <div class="tip-box">
+            <strong>نکته:</strong> وقتی از آی‌پی بجای دامنه استفاده می‌کنید، باید آن را در
+            <code>MADDY_DOMAIN</code> داخل براکت قرار دهید: <code dir="ltr">[203.0.113.50]</code>
+        </div>
+
+        <h2>روش ۲: با PostgreSQL</h2>
+        <p>مناسب برای: محیط تولید، ترافیک بالا، کاربران همزمان زیاد</p>
+        <p>مشکل <code>database is locked</code> در SQLite با استفاده از PostgreSQL برطرف می‌شود.
+            همچنین pub/sub برای آپدیت‌های IMAP بلادرنگ فعال می‌شود.</p>
+
+        <div class="code-box">services:
+            madmail:
+            image: ghcr.io/themadorg/madmail:latest
+            restart: always
+            depends_on:
+            - postgres
+            # ... (مانند روش ۱ با پورت‌ها و volumes)
+            environment:
+            - MADDY_HOSTNAME=SERVER_IP
+            - MADDY_DOMAIN=[SERVER_IP]
+            - MADDY_PUBLIC_IP=SERVER_IP
+
+            postgres:
+            image: postgres:16-alpine
+            restart: always
+            environment:
+            - POSTGRES_USER=maddy
+            - POSTGRES_PASSWORD=your-strong-password
+            - POSTGRES_DB=maddy
+            volumes:
+            - pgdata:/var/lib/postgresql/data
+
+            volumes:
+            pgdata:</div>
+
+        <h2>روش ۳: دامنه با TLS خودکار (Let's Encrypt)</h2>
+        <p>مناسب برای: محیط تولید با دامنه واقعی، مدیریت خودکار گواهینامه</p>
+
+        <div class="warn-box">
+            <strong>⚠️ پیش‌نیازها:</strong>
+            <ul style="margin: 10px 0;">
+                <li>دامنه واقعی با رکورد DNS A به سمت سرور شما</li>
+                <li>پورت <strong>80</strong> باز و از اینترنت قابل دسترس (برای چالش ACME)</li>
+                <li>پورت <strong>443</strong> باز (برای HTTPS)</li>
+            </ul>
+        </div>
+
+        <div class="code-box">services:
+            madmail:
+            image: ghcr.io/themadorg/madmail:latest
+            restart: always
+            ports:
+            - "25:25"
+            - "143:143"
+            - "465:465"
+            - "587:587"
+            - "993:993"
+            - "80:80" # ACME HTTP-01 challenge
+            - "443:443" # HTTPS
+            - "1080:1080" # Shadowsocks
+            volumes:
+            - ./maddy.conf:/data/maddy.conf
+            - ./data:/data
+            environment:
+            - MADDY_HOSTNAME=chat.example.org
+            - MADDY_DOMAIN=chat.example.org
+            - MADDY_PUBLIC_IP=203.0.113.50
+            - MADDY_ACME_EMAIL=admin@example.org</div>
+
+        <p>در فایل <code>maddy.conf</code> بجای <code>tls file ...</code> از بلاک زیر استفاده کنید:</p>
+        <div class="code-box">tls {
+            loader autocert {
+            hostname {env:MADDY_HOSTNAME}
+            email {env:MADDY_ACME_EMAIL}
+            cache_dir /data/autocert
+            agreed
+            }
+            }</div>
+
+        <div class="tip-box">
+            <strong>طرز کار:</strong>
+            <ol style="margin: 10px 0; padding-right: 20px;">
+                <li>Madmail یک سرور HTTP روی پورت ۸۰ برای چالش ACME راه‌اندازی می‌کند</li>
+                <li>Let's Encrypt در اولین اتصال TLS، گواهینامه صادر می‌کند</li>
+                <li>گواهینامه‌ها در <code>/data/autocert/</code> ذخیره و خودکار تمدید می‌شوند</li>
+                <li>درخواست‌های HTTP غیر ACME به HTTPS ریدایرکت می‌شوند (302)</li>
+            </ol>
+        </div>
+
+        <div class="tip-box">
+            <strong>جایگزین:</strong> اگر گواهینامه خودتان را دارید (مثلاً از certbot):
+            <div class="code-box" style="margin-top: 10px;">tls file /data/tls/fullchain.pem /data/tls/privkey.pem</div>
+            <p style="margin-top: 5px;">و در docker-compose فایل‌های TLS را mount کنید: <code
+                    dir="ltr">./tls:/data/tls</code></p>
+        </div>
+
+        <h2>پورت‌ها</h2>
+        <table class="port-table">
+            <tr>
+                <th>Port</th>
+                <th>Protocol</th>
+                <th>توضیحات</th>
+            </tr>
+            <tr>
+                <td>25</td>
+                <td>SMTP</td>
+                <td>ارسال و دریافت ایمیل</td>
+            </tr>
+            <tr>
+                <td>143</td>
+                <td>IMAP</td>
+                <td>خواندن ایمیل (STARTTLS)</td>
+            </tr>
+            <tr>
+                <td>465</td>
+                <td>Submission</td>
+                <td>ارسال ایمیل (TLS/SSL)</td>
+            </tr>
+            <tr>
+                <td>587</td>
+                <td>Submission</td>
+                <td>ارسال ایمیل (STARTTLS)</td>
+            </tr>
+            <tr>
+                <td>993</td>
+                <td>IMAPS</td>
+                <td>خواندن ایمیل (TLS/SSL)</td>
+            </tr>
+            <tr>
+                <td>80</td>
+                <td>HTTP</td>
+                <td>ثبت‌نام + چالش ACME</td>
+            </tr>
+            <tr>
+                <td>443</td>
+                <td>HTTPS</td>
+                <td>Admin API و ثبت‌نام</td>
+            </tr>
+            <tr>
+                <td>1080</td>
+                <td>TCP</td>
+                <td>پروکسی Shadowsocks</td>
+            </tr>
+        </table>
+
+        <h2>حجم‌ها (Volumes)</h2>
+        <table class="port-table">
+            <tr>
+                <th>Path</th>
+                <th>توضیحات</th>
+            </tr>
+            <tr>
+                <td><code>/data</code></td>
+                <td>دیتابیس، کلیدهای DKIM، صف پیام‌ها</td>
+            </tr>
+            <tr>
+                <td><code>/data/maddy.conf</code></td>
+                <td>فایل تنظیمات اصلی</td>
+            </tr>
+            <tr>
+                <td><code>/data/tls/</code></td>
+                <td>گواهینامه‌های TLS (در حالت file)</td>
+            </tr>
+            <tr>
+                <td><code>/data/autocert/</code></td>
+                <td>کش گواهینامه‌ها (در حالت autocert)</td>
+            </tr>
+        </table>
+
+        <h2>ساخت از سورس</h2>
+        <div class="code-box"># ساخت تصویر به صورت محلی
+            docker build -t madmail:latest .
+
+            # یا با docker compose (توسعه)
+            docker compose up -d --build</div>
+
+        <p>تصاویر داکر به صورت خودکار در هر push به شاخه <code>main</code> ساخته و به GHCR ارسال می‌شوند.</p>
+
+    </div>
+</body>
+
+</html>
