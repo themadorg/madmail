@@ -1,3 +1,10 @@
+# [0.18.0](https://github.com/themadorg/madmail/compare/v0.17.2...v0.18.0) (2026-02-21)
+
+
+### Features
+
+* **tls:** add autocert mode for automatic Let's Encrypt via HTTP-01 ([97fd818](https://github.com/themadorg/madmail/commit/97fd8180436c72f50111b7ca22060b731c7d3971))
+
 ## [0.17.2](https://github.com/themadorg/madmail/compare/v0.17.1...v0.17.2) (2026-02-21)
 
 
