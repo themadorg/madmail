@@ -148,8 +148,35 @@
             color: #ddd;
         }
 
-        .dns-records .comment {
-            color: #888;
+        .port-table td {
+            color: #ccc;
+        }
+
+        .code-container {
+            margin: 20px 0;
+            text-align: left;
+            direction: ltr;
+        }
+
+        .code-header {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--accent-color);
+            padding: 5px 15px;
+            font-size: 0.8em;
+            font-family: monospace;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            border: 1px dashed #444;
+            border-bottom: none;
+            display: inline-block;
+        }
+
+        .code-box {
+            margin-top: 0 !important;
+            border-top-left-radius: 0 !important;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px dashed #444 !important;
         }
     </style>
 </head>
@@ -242,12 +269,15 @@
         <div class="mode-card">
             <h3>🏆 حالت autocert <span class="badge badge-recommended">پیشنهادی</span></h3>
             <p>ساده‌ترین روش! فقط نیاز به دامنه و پورت ۸۰ دارد. بدون نیاز به توکن DNS.</p>
-            <div class="code-box">sudo maddy install \
-                --domain chat.example.org \
-                --tls-mode autocert \
-                --acme-email admin@example.org \
-                --enable-chatmail \
-                --non-interactive</div>
+            <div class="code-container">
+                <div class="code-header">نصب (Maddy Install)</div>
+                <pre class="code-box">sudo maddy install \
+  --domain chat.example.org \
+  --tls-mode autocert \
+  --acme-email admin@example.org \
+  --enable-chatmail \
+  --non-interactive</pre>
+            </div>
             <p>طرز کار:</p>
             <ol style="padding-right: 20px;">
                 <li>Madmail یک سرور HTTP روی پورت ۸۰ برای چالش ACME راه‌اندازی می‌کند</li>
@@ -256,28 +286,34 @@
                 <li>گواهینامه‌ها در <code>/var/lib/maddy/autocert/</code> ذخیره می‌شوند</li>
             </ol>
 
-            <p>در فایل تنظیمات:</p>
-            <div class="code-box">tls {
-                loader autocert {
-                hostname chat.example.org
-                email admin@example.org
-                cache_dir /var/lib/maddy/autocert
-                agreed
-                }
-                }</div>
+            <p>در فایل تنظیمات (maddy.conf):</p>
+            <div class="code-container">
+                <div class="code-header">maddy.conf</div>
+                <pre class="code-box">tls {
+    loader autocert {
+        hostname chat.example.org
+        email admin@example.org
+        cache_dir /var/lib/maddy/autocert
+        agreed
+    }
+}</pre>
+            </div>
         </div>
 
         <div class="mode-card">
             <h3>🔐 حالت acme (DNS-01) <span class="badge badge-advanced">پیشرفته</span></h3>
             <p>وقتی پورت ۸۰ باز نیست (مثلاً پشت Cloudflare). نیاز به توکن API ارائه‌دهنده DNS دارد.</p>
-            <div class="code-box">sudo maddy install \
-                --domain chat.example.org \
-                --tls-mode acme \
-                --acme-email admin@example.org \
-                --acme-dns-provider cloudflare \
-                --acme-dns-token "your-api-token" \
-                --enable-chatmail \
-                --non-interactive</div>
+            <div class="code-container">
+                <div class="code-header">نصب (Maddy Install)</div>
+                <pre class="code-box">sudo maddy install \
+  --domain chat.example.org \
+  --tls-mode acme \
+  --acme-email admin@example.org \
+  --acme-dns-provider cloudflare \
+  --acme-dns-token "YOUR_CLOUDFLARE_TOKEN" \
+  --enable-chatmail \
+  --non-interactive</pre>
+            </div>
             <p>ارائه‌دهندگان DNS پشتیبانی‌شده: <code>cloudflare</code>, <code>gandi</code>,
                 <code>digitalocean</code>, <code>vultr</code>, <code>hetzner</code>, <code>route53</code>
             </p>
@@ -286,12 +322,15 @@
         <div class="mode-card">
             <h3>📄 حالت file (گواهینامه موجود)</h3>
             <p>اگر گواهینامه خودتان را دارید (مثلاً از certbot یا یک CA):</p>
-            <div class="code-box">sudo maddy install \
-                --domain chat.example.org \
-                --tls-mode file \
-                --cert-path /etc/letsencrypt/live/chat.example.org/fullchain.pem \
-                --key-path /etc/letsencrypt/live/chat.example.org/privkey.pem \
-                --enable-chatmail</div>
+            <div class="code-container">
+                <div class="code-header">نصب (Maddy Install)</div>
+                <pre class="code-box">sudo maddy install \
+  --domain chat.example.org \
+  --tls-mode file \
+  --cert-path /etc/letsencrypt/live/chat.example.org/fullchain.pem \
+  --key-path /etc/letsencrypt/live/chat.example.org/privkey.pem \
+  --enable-chatmail</pre>
+            </div>
 
             <p>فرمت فایل تنظیمات:</p>
             <div class="code-box">tls file /path/to/fullchain.pem /path/to/privkey.pem</div>
@@ -305,10 +344,13 @@
         <div class="mode-card">
             <h3>🧪 حالت self_signed (تست)</h3>
             <p>گواهینامه خودامضا. مناسب تست و توسعه. کلاینت‌ها هشدار نمایش می‌دهند.</p>
-            <div class="code-box">sudo maddy install \
-                --simple --ip 203.0.113.50 \
-                --tls-mode self_signed \
-                --turn-off-tls</div>
+            <div class="code-container">
+                <div class="code-header">نصب (Maddy Install)</div>
+                <pre class="code-box">sudo maddy install \
+  --simple --ip YOUR_SERVER_IP \
+  --tls-mode self_signed \
+  --turn-off-tls</pre>
+            </div>
             <p>گواهینامه‌ها در <code>/var/lib/maddy/certs/</code> ذخیره و در ری‌استارت بعدی مجدد استفاده می‌شوند.</p>
         </div>
 
