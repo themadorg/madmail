@@ -87,6 +87,17 @@ type InstallConfig struct {
 	TLSKeyPath    string
 	GenerateCerts bool
 
+	// TLS mode: "autocert" (HTTP-01), "acme" (DNS-01), "file" (user certs), "self_signed" (auto-gen)
+	TLSMode string
+
+	// ACME (Let's Encrypt) configuration
+	ACMEEmail       string
+	ACMEChallenge   string // "dns-01" for now
+	ACMEDNSProvider string // e.g., "cloudflare", "gandi", etc.
+	ACMEDNSToken    string // API token for the DNS provider
+	ACMEStorePath   string // Where to store ACME certificates
+	ACMEAgreed      bool   // Whether the user agreed to the ToS
+
 	// Network configuration
 	SMTPPort       string
 	SubmissionPort string
@@ -167,9 +178,12 @@ func defaultConfig() *InstallConfig {
 		StateDir:                 "/var/lib/maddy",
 		Generated:                time.Now().Format("2006-01-02 15:04:05"),
 		SimpleInstall:            false,
-		TLSCertPath:              "/etc/maddy/certs/fullchain.pem",
-		TLSKeyPath:               "/etc/maddy/certs/privkey.pem",
+		TLSCertPath:              "/var/lib/maddy/certs/fullchain.pem",
+		TLSKeyPath:               "/var/lib/maddy/certs/privkey.pem",
 		GenerateCerts:            false,
+		TLSMode:                  "", // auto-detect
+		ACMEChallenge:            "dns-01",
+		ACMEAgreed:               true,
 		SMTPPort:                 "25",
 		SubmissionPort:           "587",
 		SubmissionTLS:            "465",
@@ -314,6 +328,22 @@ Examples:
 				&cli.BoolFlag{
 					Name:  "generate-certs",
 					Usage: "Generate self-signed TLS certificates if they don't exist",
+				},
+				&cli.StringFlag{
+					Name:  "tls-mode",
+					Usage: "TLS mode: 'file' (user-provided certs), 'acme' (Let's Encrypt), 'self_signed' (auto-generated). Auto-detected if not specified.",
+				},
+				&cli.StringFlag{
+					Name:  "acme-email",
+					Usage: "Email address for Let's Encrypt ACME registration",
+				},
+				&cli.StringFlag{
+					Name:  "acme-dns-provider",
+					Usage: "DNS provider for ACME dns-01 challenge (e.g., cloudflare, gandi, digitalocean)",
+				},
+				&cli.StringFlag{
+					Name:  "acme-dns-token",
+					Usage: "API token for the ACME DNS provider",
 				},
 				&cli.BoolFlag{
 					Name:  "cloudflare",
@@ -504,6 +534,18 @@ func installCommand(ctx *cli.Context) error {
 	if ctx.IsSet("generate-certs") {
 		config.GenerateCerts = ctx.Bool("generate-certs")
 	}
+	if ctx.IsSet("tls-mode") {
+		config.TLSMode = ctx.String("tls-mode")
+	}
+	if ctx.IsSet("acme-email") {
+		config.ACMEEmail = ctx.String("acme-email")
+	}
+	if ctx.IsSet("acme-dns-provider") {
+		config.ACMEDNSProvider = ctx.String("acme-dns-provider")
+	}
+	if ctx.IsSet("acme-dns-token") {
+		config.ACMEDNSToken = ctx.String("acme-dns-token")
+	}
 	if ctx.IsSet("enable-chatmail") {
 		config.EnableChatmail = ctx.Bool("enable-chatmail")
 	}
@@ -526,7 +568,10 @@ func installCommand(ctx *cli.Context) error {
 		config.SimpleInstall = true
 		config.EnableChatmail = true
 		config.EnableContactSharing = true
-		config.GenerateCerts = true
+		if config.TLSMode == "" {
+			// Simple mode: auto-detect TLS mode
+			config.GenerateCerts = true // will be overridden by resolveTLSMode
+		}
 		if ctx.Bool("turn-off-tls") {
 			config.TurnOffTLS = true
 		}
@@ -628,6 +673,9 @@ func installCommand(ctx *cli.Context) error {
 	if err := ensureRequiredSecrets(config); err != nil {
 		return err
 	}
+
+	// Resolve TLS mode based on configuration
+	resolveTLSMode(config)
 
 	logger.Printf("Configuration: %+v", config)
 
@@ -800,13 +848,65 @@ func runInteractiveConfig(config *InstallConfig) error {
 
 	// TLS certificates
 	fmt.Println("\n🔒 TLS Certificate Configuration")
-	config.TLSCertPath = promptString("TLS certificate path", config.TLSCertPath)
-	config.TLSKeyPath = promptString("TLS private key path", config.TLSKeyPath)
+	fmt.Println("   Maddy supports these TLS modes:")
+	fmt.Println("   1. autocert    - Automatic Let's Encrypt via HTTP-01 (recommended, needs port 80)")
+	fmt.Println("   2. acme        - Let's Encrypt via DNS-01 (needs DNS provider API token)")
+	fmt.Println("   3. file        - Use your own certificate files")
+	fmt.Println("   4. self_signed - Auto-generate self-signed certificates (testing/IP-based)")
 
-	// Check if certificates exist
-	if _, err := os.Stat(config.TLSCertPath); os.IsNotExist(err) {
-		fmt.Printf("   ⚠️  TLS certificates not found at %s\n", config.TLSCertPath)
-		config.GenerateCerts = clitools2.Confirmation("Generate self-signed certificates?", true)
+	if config.TLSMode == "" {
+		// Auto-detect a reasonable default
+		defaultMode := "self_signed"
+		if isValidDNSDomain(config.PrimaryDomain) {
+			defaultMode = "autocert"
+		}
+		// Check if user already has cert files
+		if _, err := os.Stat(config.TLSCertPath); err == nil {
+			defaultMode = "file"
+		}
+		config.TLSMode = promptString("TLS mode (autocert/acme/file/self_signed)", defaultMode)
+	}
+
+	switch config.TLSMode {
+	case "autocert":
+		if config.ACMEEmail == "" {
+			config.ACMEEmail = promptString("Email (for Let's Encrypt registration)", fmt.Sprintf("admin@%s", config.PrimaryDomain))
+		}
+		if config.ACMEStorePath == "" {
+			config.ACMEStorePath = filepath.Join(config.StateDir, "autocert")
+		}
+		config.ACMEAgreed = true
+		config.GenerateCerts = false
+	case "acme":
+		if config.ACMEEmail == "" {
+			config.ACMEEmail = promptString("ACME email (for Let's Encrypt registration)", fmt.Sprintf("admin@%s", config.PrimaryDomain))
+		}
+		if config.ACMEDNSProvider == "" {
+			config.ACMEDNSProvider = promptString("DNS provider (cloudflare/gandi/digitalocean/vultr/hetzner/namecheap/route53)", "cloudflare")
+		}
+		if config.ACMEDNSToken == "" {
+			config.ACMEDNSToken = promptString("DNS provider API token", "")
+		}
+		if config.ACMEStorePath == "" {
+			config.ACMEStorePath = filepath.Join(config.StateDir, "acme")
+		}
+		config.ACMEAgreed = true
+		config.GenerateCerts = false
+	case "file":
+		config.TLSCertPath = promptString("TLS certificate path", config.TLSCertPath)
+		config.TLSKeyPath = promptString("TLS private key path", config.TLSKeyPath)
+		if _, err := os.Stat(config.TLSCertPath); os.IsNotExist(err) {
+			fmt.Printf("   ⚠️  TLS certificate not found at %s\n", config.TLSCertPath)
+			fmt.Printf("       Please place your certificates before starting maddy.\n")
+		}
+		config.GenerateCerts = false
+	case "self_signed":
+		config.GenerateCerts = true
+		config.TurnOffTLS = clitools2.Confirmation("Disable TLS verification for clients? (recommended for self-signed)", config.TurnOffTLS)
+	default:
+		fmt.Printf("   ⚠️  Unknown TLS mode '%s', falling back to self_signed\n", config.TLSMode)
+		config.TLSMode = "self_signed"
+		config.GenerateCerts = true
 	}
 
 	// Network ports
@@ -928,6 +1028,107 @@ func promptInt(prompt string, defaultValue int) int {
 		}
 		fmt.Printf("Invalid number, please try again.\n")
 	}
+}
+
+// isValidDNSDomain checks if the given string is a valid DNS domain name (not an IP address).
+// IP addresses (both v4 and v6) and IP-literal domains (e.g., "[1.2.3.4]") are not valid DNS domains.
+func isValidDNSDomain(domain string) bool {
+	// Remove IP-literal brackets
+	clean := strings.Trim(domain, "[]")
+
+	// Check if it's an IP address
+	if net.ParseIP(clean) != nil {
+		return false
+	}
+
+	// Must contain at least one dot and no spaces
+	if !strings.Contains(clean, ".") || strings.ContainsAny(clean, " \t") {
+		return false
+	}
+
+	// Check for localhost or other non-public domains
+	if clean == "localhost" || strings.HasSuffix(clean, ".local") || clean == "example.org" {
+		return false
+	}
+
+	return true
+}
+
+// resolveTLSMode determines the TLS mode to use based on the configuration.
+// Priority:
+// 1. If TLSMode is explicitly set by the user, use it.
+// 2. If cert files already exist on disk, use "file" mode.
+// 3. If the domain is a valid DNS domain, use "autocert" mode (HTTP-01).
+// 4. Fall back to "self_signed" mode.
+func resolveTLSMode(config *InstallConfig) {
+	if config.TLSMode != "" {
+		// Already explicitly set
+		switch config.TLSMode {
+		case "autocert":
+			config.GenerateCerts = false
+			if config.ACMEStorePath == "" {
+				config.ACMEStorePath = filepath.Join(config.StateDir, "autocert")
+			}
+			if config.ACMEEmail == "" {
+				config.ACMEEmail = fmt.Sprintf("admin@%s", strings.Trim(config.PrimaryDomain, "[]"))
+			}
+			logger.Printf("TLS mode: autocert (Let's Encrypt HTTP-01) for domain %s", config.PrimaryDomain)
+		case "acme":
+			config.GenerateCerts = false
+			if config.ACMEStorePath == "" {
+				config.ACMEStorePath = filepath.Join(config.StateDir, "acme")
+			}
+			if config.ACMEEmail == "" {
+				config.ACMEEmail = fmt.Sprintf("admin@%s", strings.Trim(config.PrimaryDomain, "[]"))
+			}
+			logger.Printf("TLS mode: ACME (Let's Encrypt DNS-01) for domain %s", config.PrimaryDomain)
+		case "file":
+			config.GenerateCerts = false
+			logger.Printf("TLS mode: user-provided certificate files")
+		case "self_signed":
+			config.GenerateCerts = true
+			logger.Printf("TLS mode: self-signed certificates")
+		}
+		return
+	}
+
+	// Auto-detect TLS mode
+
+	// 1. Check if user already has cert files existing on disk
+	certExists := false
+	keyExists := false
+	if _, err := os.Stat(config.TLSCertPath); err == nil {
+		certExists = true
+	}
+	if _, err := os.Stat(config.TLSKeyPath); err == nil {
+		keyExists = true
+	}
+
+	if certExists && keyExists {
+		config.TLSMode = "file"
+		config.GenerateCerts = false
+		logger.Printf("TLS mode auto-detected: file (existing certs found at %s)", config.TLSCertPath)
+		return
+	}
+
+	// 2. If the domain is a valid DNS domain, use autocert (HTTP-01)
+	if isValidDNSDomain(config.PrimaryDomain) {
+		config.TLSMode = "autocert"
+		config.GenerateCerts = false
+		if config.ACMEStorePath == "" {
+			config.ACMEStorePath = filepath.Join(config.StateDir, "autocert")
+		}
+		if config.ACMEEmail == "" {
+			config.ACMEEmail = fmt.Sprintf("admin@%s", config.PrimaryDomain)
+		}
+		logger.Printf("TLS mode auto-detected: autocert (Let's Encrypt HTTP-01) for domain %s", config.PrimaryDomain)
+		return
+	}
+
+	// 3. Fall back to self-signed
+	config.TLSMode = "self_signed"
+	config.GenerateCerts = true
+	logger.Printf("TLS mode auto-detected: self-signed certificates")
 }
 
 // ensureRequiredSecrets generates any required but missing secrets
@@ -1776,20 +1977,38 @@ func printNextSteps(config *InstallConfig) {
 		}
 	}
 
-	fmt.Printf("\n2. Set up TLS certificates:\n")
-	if config.GenerateCerts {
+	fmt.Printf("\n2. TLS certificates (%s mode):\n", config.TLSMode)
+	switch config.TLSMode {
+	case "autocert":
+		fmt.Printf("   ✓ Let's Encrypt (HTTP-01) is configured for automatic certificate management.\n")
+		fmt.Printf("     - Domain: %s\n", config.PrimaryDomain)
+		fmt.Printf("     - Email: %s\n", config.ACMEEmail)
+		fmt.Printf("     - Certificate cache: %s\n", config.ACMEStorePath)
+		fmt.Printf("     - ⚠️  Port 80 must be open and reachable for ACME verification.\n")
+		fmt.Printf("     - Certificates will be obtained and renewed automatically on startup.\n")
+	case "acme":
+		fmt.Printf("   ✓ Let's Encrypt (DNS-01) is configured for automatic certificate management.\n")
+		fmt.Printf("     - Domain: %s\n", config.PrimaryDomain)
+		fmt.Printf("     - Email: %s\n", config.ACMEEmail)
+		fmt.Printf("     - DNS provider: %s\n", config.ACMEDNSProvider)
+		fmt.Printf("     - Certificate store: %s\n", config.ACMEStorePath)
+		fmt.Printf("     - Certificates will be obtained and renewed automatically on startup.\n")
+	case "self_signed":
 		fmt.Printf("   ✓ Self-signed certificates have been generated:\n")
 		fmt.Printf("     - Certificate: %s\n", config.TLSCertPath)
 		fmt.Printf("     - Private key: %s\n", config.TLSKeyPath)
-		fmt.Printf("   ⚠️  Note: Browsers will show a warning because these are self-signed.\n")
-		fmt.Printf("       For production, consider using Let's Encrypt (Certbot).\n")
-	} else {
-		fmt.Printf("   - Place certificate at: %s\n", config.TLSCertPath)
-		fmt.Printf("   - Place private key at: %s\n", config.TLSKeyPath)
+		fmt.Printf("   ⚠️  Note: Clients may show warnings because these are self-signed.\n")
+		fmt.Printf("       For production with a real domain, re-run install with --tls-mode autocert.\n")
+		fmt.Printf("   - Make certificates readable by maddy user:\n")
+		fmt.Printf("     sudo chown root:%s %s %s\n", config.MaddyGroup, config.TLSCertPath, config.TLSKeyPath)
+		fmt.Printf("     sudo chmod 640 %s %s\n", config.TLSCertPath, config.TLSKeyPath)
+	case "file":
+		fmt.Printf("   - Certificate: %s\n", config.TLSCertPath)
+		fmt.Printf("   - Private key: %s\n", config.TLSKeyPath)
+		fmt.Printf("   - Make certificates readable by maddy user:\n")
+		fmt.Printf("     sudo chown root:%s %s %s\n", config.MaddyGroup, config.TLSCertPath, config.TLSKeyPath)
+		fmt.Printf("     sudo chmod 640 %s %s\n", config.TLSCertPath, config.TLSKeyPath)
 	}
-	fmt.Printf("   - Make certificates readable by maddy user:\n")
-	fmt.Printf("     sudo chown root:%s %s %s\n", config.MaddyGroup, config.TLSCertPath, config.TLSKeyPath)
-	fmt.Printf("     sudo chmod 640 %s %s\n", config.TLSCertPath, config.TLSKeyPath)
 
 	fmt.Printf("\n3. Create first user account:\n")
 	fmt.Printf("   sudo %s --config %s/maddy.conf creds create postmaster@%s\n",

@@ -17,7 +17,7 @@ docker pull ghcr.io/themadorg/madmail:latest
 
 ## Examples
 
-Two ready-to-use deployment examples are provided:
+Three ready-to-use deployment examples are provided:
 
 ### 01 — Simple IP-based (SQLite)
 
@@ -33,7 +33,7 @@ docker compose up -d
 - [`docker-compose.yml`](01-simple-ip-example/docker-compose.yml) — Single container, SQLite storage
 - [`maddy.conf`](01-simple-ip-example/maddy.conf) — Full configuration with comments
 
-**Features:** Auto-generated TLS certs, DKIM keys, Shadowsocks proxy, Admin API.
+**Features:** Auto-generated self-signed TLS certs, DKIM keys, Shadowsocks proxy, Admin API.
 
 ---
 
@@ -52,6 +52,26 @@ docker compose up -d
 - [`maddy.conf`](02-postgres-example/maddy.conf) — Configured for Postgres driver
 
 **Features:** No `database is locked` issues, PostgreSQL pub/sub for real-time IMAP updates.
+
+---
+
+### 03 — Domain with Auto-TLS (Let's Encrypt)
+
+> Best for: production with a real domain, automatic certificate management
+
+```bash
+cd 03-domain-auto-tls
+# Edit docker-compose.yml: set your domain, IP, and ACME email
+docker compose up -d
+```
+
+**Files:**
+- [`docker-compose.yml`](03-domain-auto-tls/docker-compose.yml) — Single container, autocert TLS
+- [`maddy.conf`](03-domain-auto-tls/maddy.conf) — Configured for Let's Encrypt HTTP-01
+
+**Features:** Automatic Let's Encrypt certificates (no DNS provider API needed), HTTP→HTTPS redirect, auto-renewal. Port 80 must be open for ACME challenges.
+
+> **Tip:** If you already have certificates (e.g., from certbot), see the comments in `maddy.conf` for how to use `tls file` instead of `autocert`.
 
 ---
 

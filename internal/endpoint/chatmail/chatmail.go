@@ -164,7 +164,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("storage", false, true, "", &storageName)
 
 	// TLS configuration block
-	cfg.Custom("tls", false, false, nil, tls2.TLSDirective, &e.tlsConfig)
+	cfg.Custom("tls", true, false, nil, tls2.TLSDirective, &e.tlsConfig)
 
 	if _, err := cfg.Process(); err != nil {
 		return err

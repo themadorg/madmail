@@ -16,7 +16,38 @@ $(public_ip) = {{.PublicIP}}
 state_dir {{.StateDir}}
 runtime_dir {{.RuntimeDir}}
 
+{{if eq .TLSMode "autocert"}}
+# TLS: Let's Encrypt via HTTP-01 challenge (automatic, no DNS provider needed)
+# Requires port 80 to be open for ACME challenge verification
+tls {
+    loader autocert {
+        hostname {{.PrimaryDomain}}
+        email {{.ACMEEmail}}
+        cache_dir {{.ACMEStorePath}}
+        agreed
+    }
+}
+{{else if eq .TLSMode "acme"}}
+# TLS: Let's Encrypt via DNS-01 challenge (requires DNS provider API token)
+tls {
+    loader acme {
+        hostname {{.PrimaryDomain}}
+        email {{.ACMEEmail}}
+        agreed
+        challenge {{.ACMEChallenge}}
+        store_path {{.ACMEStorePath}}
+        dns {{.ACMEDNSProvider}} {
+            api_token "{{.ACMEDNSToken}}"
+        }
+    }
+}
+{{else if eq .TLSMode "self_signed"}}
+# TLS: Self-signed certificates (generated during install, persisted on disk)
 tls file {{.TLSCertPath}} {{.TLSKeyPath}}
+{{else}}
+# TLS: User-provided certificate files
+tls file {{.TLSCertPath}} {{.TLSKeyPath}}
+{{end}}
 
 {{if .Debug}}debug yes
 log stderr
@@ -241,6 +272,7 @@ turn udp://0.0.0.0:{{.TURNPort}} tcp://0.0.0.0:{{.TURNPort}} {
 # ----------------------------------------------------------------------------
 # Chatmail HTTP/HTTPS endpoint for user registration
 
+{{if ne .TLSMode "autocert"}}
 # HTTP endpoint (port {{.ChatmailHTTPPort}})
 chatmail tcp://0.0.0.0:{{.ChatmailHTTPPort}} {
     debug {{if .Debug}}yes{{else}}false{{end}}
@@ -269,6 +301,10 @@ chatmail tcp://0.0.0.0:{{.ChatmailHTTPPort}} {
     # ss_cipher aes-128-gcm
 {{end}}
 }
+{{else}}
+# HTTP endpoint on port 80 is handled by autocert for ACME HTTP-01 challenge.
+# Non-ACME requests are redirected to HTTPS automatically.
+{{end}}
 
 # HTTPS endpoint (port {{.ChatmailHTTPSPort}}) - uncomment to enable
 chatmail tls://0.0.0.0:{{.ChatmailHTTPSPort}} {
@@ -280,7 +316,8 @@ chatmail tls://0.0.0.0:{{.ChatmailHTTPSPort}} {
     storage local_mailboxes
     # Optional: customize username length (default: 8)
     password_length {{.ChatmailPasswordLen}}
-    tls file {{.TLSCertPath}} {{.TLSKeyPath}}
+{{if and (ne .TLSMode "acme") (ne .TLSMode "autocert")}}    tls file {{.TLSCertPath}} {{.TLSKeyPath}}
+{{end}}
     public_ip $(public_ip)
     turn_off_tls {{if .TurnOffTLS}}yes{{else}}no{{end}}
     alpn_smtp submission

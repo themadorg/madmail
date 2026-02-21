@@ -1,0 +1,29 @@
+services:
+  madmail:
+    image: ghcr.io/themadorg/madmail:latest
+    restart: always
+    ports:
+      # SMTP: Incoming/Outgoing email (Standard)
+      - "25:25"
+      # IMAP: Reading email (STARTTLS)
+      - "143:143"
+      # SUBMISSION: Outgoing email (TLS/SSL)
+      - "465:465"
+      # SUBMISSION: Outgoing email (STARTTLS)
+      - "587:587"
+      # IMAPS: Reading email (TLS/SSL)
+      - "993:993"
+      # HTTP: ACME HTTP-01 challenge handler + redirect to HTTPS
+      - "80:80"
+      # HTTPS: Admin API, Registration, ALPN-multiplexed SMTP+IMAP
+      - "443:443"
+      # PROXY: Shadowsocks service
+      - "1080:1080"
+    volumes:
+      - ./maddy.conf:/data/maddy.conf
+      - ./data:/data
+    environment:
+      - MADDY_HOSTNAME=chat.example.org
+      - MADDY_DOMAIN=chat.example.org
+      - MADDY_PUBLIC_IP=203.0.113.50
+      - MADDY_ACME_EMAIL=admin@example.org

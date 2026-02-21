@@ -70,6 +70,7 @@ func TLSDirective(m *config.Map, node config.Node) (interface{}, error) {
 
 	return &tls.Config{
 		Certificates:     defaultCfg.Certificates,
+		GetCertificate:   defaultCfg.GetCertificate,
 		MinVersion:       defaultCfg.MinVersion,
 		MaxVersion:       defaultCfg.MaxVersion,
 		CipherSuites:     defaultCfg.CipherSuites,
