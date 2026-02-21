@@ -1,0 +1,30 @@
+services:
+  madmail:
+    image: madmail:latest
+    restart: always
+    ports:
+      # SMTP: Incoming/Outgoing email (Standard)
+      - "25:25"
+      # IMAP: Reading email (STARTTLS)
+      - "143:143"
+      # SUBMISSION: Outgoing email (TLS/SSL)
+      - "465:465"
+      # SUBMISSION: Outgoing email (STARTTLS)
+      - "587:587"
+      # IMAPS: Reading email (TLS/SSL)
+      - "993:993"
+      # API: Admin and Registration (HTTP)
+      - "80:80"
+      # API: Admin and Registration (HTTPS)
+      - "443:443"
+      # PROXY: Shadowsocks service
+      - "1080:1080"
+    volumes:
+      - ./maddy.conf:/data/maddy.conf
+      - ./data:/data
+      - ./tls:/data/tls
+    environment:
+      - MADDY_HOSTNAME=SERVER_IP
+      - MADDY_DOMAIN=[SERVER_IP]
+      - MADDY_PUBLIC_IP=SERVER_IP
+      - MADDY_SQLITE_UNSAFE_SYNC_OFF=1

@@ -1,4 +1,24 @@
-testdata/
-cmd/maddy/maddy
+# Build artifacts
+build/
 maddy
-tests/maddy.cover
+maddyctl
+
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+
+# Git
+.git/
+.gitmodules
+
+# Tests and examples
+testdata/
+tests/
+tmp/
+
+# Editor and OS
+.idea/
+.vscode/
+.DS_Store
+*.swp

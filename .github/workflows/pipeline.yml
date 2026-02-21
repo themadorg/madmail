@@ -60,7 +60,7 @@ jobs:
           ./build.sh --destdir destdir/ install
 
   build-summary:
-    needs: [lint-and-build]
+    needs: [lint-and-build, docker-build-push]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -78,7 +78,49 @@ jobs:
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Lint & Build | ${{ needs.lint-and-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build | ${{ needs.docker-build-push.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
           echo "- [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
           echo "- [Repository](${{ github.server_url }}/${{ github.repository }})" >> $GITHUB_STEP_SUMMARY
+
+  docker-build-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    needs: [lint-and-build]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read app version
+        id: version
+        run: echo "VERSION=$(cat .version)" >> $GITHUB_OUTPUT
+
+      - name: Docker meta (Madmail)
+        id: meta-madmail
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.version.outputs.VERSION }}
+
+      - name: Build and Push Madmail Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta-madmail.outputs.tags }}
+          labels: ${{ steps.meta-madmail.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
