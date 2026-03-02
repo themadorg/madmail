@@ -6,17 +6,18 @@ Goal: Explain likely causes of OOM on a 1GB host under 1000+ concurrent users an
 
 ## Resolution Log
 
-- [~] F1 Full-body buffering in hot paths
-  - partial: `4b82540` (`/mxdeliv` now streams to file-backed buffer and enforces max size)
-  - partial: `8dd4ea6` (`pgp_verify.IsAcceptedMessage` no longer does unconditional full-body buffering)
-  - partial: `0ac4ea7` (IMAP APPEND verification now spools literals to disk before checks)
-  - partial: `4f66fde` (PGP payload validation switched to streaming parser path)
+- [x] F1 Full-body buffering in hot paths
+  - resolved: `4b82540` (`/mxdeliv` now streams to file-backed buffer and enforces max size)
+  - resolved: `8dd4ea6` (`pgp_verify.IsAcceptedMessage` no longer does unconditional full-body buffering)
+  - resolved: `0ac4ea7` (IMAP APPEND verification now spools literals to disk before checks)
+  - resolved: `4f66fde` (PGP payload validation switched to streaming parser path)
 - [x] F2 Uncapped database pools
   - resolved: `0af52fb` (added explicit pool caps for backend and gorm SQL pools)
 - [x] F3 `sqlite3_cache_size` parsed but not applied
   - resolved: `4922623` (applies `PRAGMA cache_size` during sqlite init and tests it)
-- [~] F4 Per-connection IMAP UID map amplification
+- [x] F4 Per-connection IMAP UID map amplification
   - partial: `7990a49` (added `imap.max_conns` listener cap to bound concurrent session memory)
+  - resolved: `ece3f9c` (selected IMAP sessions now share immutable UID-map snapshots with sync-time rebind)
 - [x] F5 Unbounded `servertracker` cardinality growth
   - resolved: `0de5b0e` (bounded unique tracker maps with configurable max entries + tests)
 - [x] F6 Per-request chatmail template parsing
@@ -213,9 +214,19 @@ These are starting points, not final truth:
 
 ## Validation Plan
 
-1. Add heap and goroutine profiling during load test (1000 concurrent mixed idle + send).
-2. Capture RSS over time and peak allocation by code path.
-3. Re-test after each remediation step to isolate impact.
+1. Baseline (current branch): run `go run ./cmd/madmail-stressor -target <smtp_addr> -mail-from <addr> -rcpt-to <addr> -ramp 32,64,128,256 -duration 30s -report-json tmp/stage-baseline.json -report-md tmp/stage-baseline.md`.
+2. Peak-load run: repeat with `-ramp 256,384,512,768,1024` and stop at first stage with sustained failures or timeout growth.
+3. Deterministic regression run: use `-messages-per-worker 200 -ramp 64,128,256` to compare commit-to-commit behavior with fixed attempt counts.
+4. In parallel with each run, collect process telemetry every second:
+   - `RSS`, `VmHWM` from `/proc/<pid>/status`
+   - goroutines from `curl http://127.0.0.1:<metrics_port>/metrics | grep go_goroutines`
+   - DB pool stats from logs/metrics (backend + gorm)
+5. Success criteria for 1GB host:
+   - no OOM/restart
+   - stable RSS plateau (no monotonic growth across 15m run)
+   - no runaway goroutines
+   - >99% SMTP success at target concurrency stage
+6. Keep a per-commit table (`commit`, `max stable workers`, `peak RSS MB`, `p95 latency ms`, `error mix`) and fail the rollout if any metric regresses >10% versus previous accepted baseline.
 
 Key metrics to watch:
 

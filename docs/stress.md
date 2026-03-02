@@ -27,6 +27,37 @@ Parameters:
 - `--stress-workers`: number of worker processes.
 - `--stress-duration`: send window in seconds.
 
+## Go Stressor (recommended for protocol load)
+
+For repeatable high-concurrency SMTP load without Python process overhead, use
+the native Go stress tool:
+
+```bash
+go run ./cmd/madmail-stressor \
+  -target 127.0.0.1:25 \
+  -mail-from loadtest@example.net \
+  -rcpt-to sink@example.net \
+  -ramp 32,64,128,256 \
+  -duration 30s \
+  -body-bytes 256 \
+  -report-json tmp/stressor-report.json \
+  -report-md tmp/stressor-report.md
+```
+
+Useful flags:
+- `-ramp`: sequential worker stages for capacity discovery.
+- `-duration`: run length for each stage.
+- `-messages-per-worker`: fixed attempts per worker per stage (deterministic runs).
+- `-connect-timeout` and `-io-timeout`: fail fast under overload.
+- `-max-latency-samples`: bound in-memory latency samples.
+
+The tool reports:
+- attempts/successes/failures
+- success rate
+- throughput (messages/sec)
+- latency (avg/p50/p95/p99/min/max)
+- aggregated error classes (e.g. timeout, smtp_4xx, smtp_5xx)
+
 Results are written under `tmp/test_run_YYYYMMDD_HHMMSS/`:
 - `stress_report.json`
 - `stress_report.md` (stakeholder-friendly)
