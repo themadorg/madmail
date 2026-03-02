@@ -24,6 +24,8 @@ Goal: Explain likely causes of OOM on a 1GB host under 1000+ concurrent users an
   - resolved: `d2b25a7` (chatmail now caches parsed templates and reuses them)
 - [x] F7 Unbounded chatmail proxy fan-out goroutines
   - resolved: `9c963e7` (added ALPN and shadowsocks concurrent-connection guards + tests)
+- [x] V1 Validation tooling and benchmark plan
+  - resolved: `49d70ec` (added `cmd/madmail-stressor` and a staged 1GB-host validation plan)
 
 ## Executive Summary
 
