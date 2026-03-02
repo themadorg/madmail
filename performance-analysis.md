@@ -21,7 +21,8 @@ Goal: Explain likely causes of OOM on a 1GB host under 1000+ concurrent users an
   - resolved: `0de5b0e` (bounded unique tracker maps with configurable max entries + tests)
 - [x] F6 Per-request chatmail template parsing
   - resolved: `d2b25a7` (chatmail now caches parsed templates and reuses them)
-- [ ] F7 Unbounded chatmail proxy fan-out goroutines (commit: pending)
+- [x] F7 Unbounded chatmail proxy fan-out goroutines
+  - resolved: `9c963e7` (added ALPN and shadowsocks concurrent-connection guards + tests)
 
 ## Executive Summary
 

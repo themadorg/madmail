@@ -125,7 +125,7 @@ func IsValidEncryptedMessage(contentType string, body io.Reader) (bool, error) {
 	// Parse content type first - this is the primary indicator
 	mediatype, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return false, err
+		return false, nil
 	}
 
 	// Must be multipart/encrypted for PGP encrypted messages

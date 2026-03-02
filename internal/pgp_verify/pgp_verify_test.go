@@ -209,6 +209,20 @@ func TestIsAcceptedMessageSkipsBodyReadForNonCandidate(t *testing.T) {
 	}
 }
 
+func TestIsAcceptedMessageSkipsBodyReadForMissingContentType(t *testing.T) {
+	t.Parallel()
+
+	header := textproto.Header{}
+
+	accepted, err := IsAcceptedMessage(header, failReader{})
+	if err != nil {
+		t.Fatalf("IsAcceptedMessage returned error: %v", err)
+	}
+	if accepted {
+		t.Fatal("expected message to be rejected")
+	}
+}
+
 func TestIsAcceptedMessageSecureJoin(t *testing.T) {
 	t.Parallel()
 
