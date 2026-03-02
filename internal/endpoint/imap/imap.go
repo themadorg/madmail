@@ -54,6 +54,7 @@ import (
 	"github.com/themadorg/madmail/internal/pgp_verify"
 	"github.com/themadorg/madmail/internal/proxy_protocol"
 	"github.com/themadorg/madmail/internal/updatepipe"
+	"golang.org/x/net/netutil"
 )
 
 type Endpoint struct {
@@ -78,6 +79,7 @@ type Endpoint struct {
 	turnTTL       int
 	turnPreferTLS bool
 	irohRelayURL  string
+	maxConns      int
 
 	Log log.Logger
 }
@@ -126,6 +128,7 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 	cfg.Int("turn_ttl", false, false, 86400, &endp.turnTTL)
 	cfg.Bool("turn_prefer_tls", true, true, &endp.turnPreferTLS)
 	cfg.String("iroh_relay_url", false, false, "", &endp.irohRelayURL)
+	cfg.Int("max_conns", false, false, 512, &endp.maxConns)
 
 	if _, err := cfg.Process(); err != nil {
 		return err
@@ -205,6 +208,7 @@ func (endp *Endpoint) setupListeners(addresses []config.Endpoint) error {
 		if endp.proxyProtocol != nil {
 			l = proxy_protocol.NewListener(l, endp.proxyProtocol, endp.Log)
 		}
+		l = limitListener(l, endp.maxConns)
 
 		endp.listeners = append(endp.listeners, l)
 
@@ -226,6 +230,13 @@ func (endp *Endpoint) setupListeners(addresses []config.Endpoint) error {
 	}
 
 	return nil
+}
+
+func limitListener(l net.Listener, maxConns int) net.Listener {
+	if maxConns <= 0 {
+		return l
+	}
+	return netutil.LimitListener(l, maxConns)
 }
 
 func (endp *Endpoint) Name() string {
