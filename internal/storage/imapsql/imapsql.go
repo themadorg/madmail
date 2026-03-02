@@ -103,6 +103,29 @@ func (store *Storage) InstanceName() string {
 	return store.instName
 }
 
+func applySQLPoolLimits(db *sql.DB, maxOpenConns, maxIdleConns int, maxLifetime, maxIdleTime time.Duration) {
+	if db == nil {
+		return
+	}
+
+	if maxOpenConns > 0 {
+		db.SetMaxOpenConns(maxOpenConns)
+		if maxIdleConns > maxOpenConns {
+			maxIdleConns = maxOpenConns
+		}
+	}
+
+	if maxIdleConns >= 0 {
+		db.SetMaxIdleConns(maxIdleConns)
+	}
+	if maxLifetime >= 0 {
+		db.SetConnMaxLifetime(maxLifetime)
+	}
+	if maxIdleTime >= 0 {
+		db.SetConnMaxIdleTime(maxIdleTime)
+	}
+}
+
 // GetGORMDB implements module.GORMProvider.
 // It exposes the shared GORM database connection so other modules
 // (e.g. target.remote for DNS cache) can add their tables to the
@@ -138,6 +161,15 @@ func (store *Storage) Init(cfg *config.Map) error {
 		deliveryNormalize string
 
 		blobStore module.BlobStore
+
+		dbMaxOpenConns      int
+		dbMaxIdleConns      int
+		dbConnMaxLifetime   time.Duration
+		dbConnMaxIdleTime   time.Duration
+		gormMaxOpenConns    int
+		gormMaxIdleConns    int
+		gormConnMaxLifetime time.Duration
+		gormConnMaxIdleTime time.Duration
 	)
 
 	opts := imapsql.Opts{}
@@ -164,6 +196,14 @@ func (store *Storage) Init(cfg *config.Map) error {
 	cfg.Bool("debug", true, false, &store.Log.Debug)
 	cfg.Int("sqlite3_cache_size", false, false, 0, &opts.CacheSize)
 	cfg.Int("sqlite3_busy_timeout", false, false, 5000, &opts.BusyTimeout)
+	cfg.Int("db_max_open_conns", false, false, 8, &dbMaxOpenConns)
+	cfg.Int("db_max_idle_conns", false, false, 8, &dbMaxIdleConns)
+	cfg.Duration("db_conn_max_lifetime", false, false, 30*time.Minute, &dbConnMaxLifetime)
+	cfg.Duration("db_conn_max_idle_time", false, false, 5*time.Minute, &dbConnMaxIdleTime)
+	cfg.Int("gorm_max_open_conns", false, false, 4, &gormMaxOpenConns)
+	cfg.Int("gorm_max_idle_conns", false, false, 4, &gormMaxIdleConns)
+	cfg.Duration("gorm_conn_max_lifetime", false, false, 30*time.Minute, &gormConnMaxLifetime)
+	cfg.Duration("gorm_conn_max_idle_time", false, false, 5*time.Minute, &gormConnMaxIdleTime)
 	cfg.Bool("disable_recent", false, true, &opts.DisableRecent)
 	cfg.String("junk_mailbox", false, false, "Junk", &store.junkMbox)
 	cfg.Custom("imap_filter", false, false, func() (interface{}, error) {
@@ -282,6 +322,18 @@ func (store *Storage) Init(cfg *config.Map) error {
 		}
 		dsnStr = dsnStr + sep + "_journal_mode=WAL&_synchronous=OFF"
 	}
+	if (driver == "sqlite3" || driver == "sqlite") && strings.Contains(dsnStr, ":memory:") {
+		// Keep a single connection for in-memory SQLite. Multiple connections
+		// can lead to separate isolated databases and unstable test behavior.
+		dbMaxOpenConns = 1
+		gormMaxOpenConns = 1
+		if dbMaxIdleConns > 1 {
+			dbMaxIdleConns = 1
+		}
+		if gormMaxIdleConns > 1 {
+			gormMaxIdleConns = 1
+		}
+	}
 
 	if len(compression) != 0 {
 		switch compression[0] {
@@ -309,6 +361,7 @@ func (store *Storage) Init(cfg *config.Map) error {
 	if err != nil {
 		return fmt.Errorf("imapsql: %s", err)
 	}
+	applySQLPoolLimits(store.Back.DB, dbMaxOpenConns, dbMaxIdleConns, dbConnMaxLifetime, dbConnMaxIdleTime)
 
 	store.Log.Debugln("go-imap-sql version", imapsql.VersionStr)
 
@@ -319,6 +372,11 @@ func (store *Storage) Init(cfg *config.Map) error {
 	if err != nil {
 		return fmt.Errorf("imapsql: gorm init failed: %w", err)
 	}
+	gormSQLDB, err := store.GORMDB.DB()
+	if err != nil {
+		return fmt.Errorf("imapsql: gorm sql db init failed: %w", err)
+	}
+	applySQLPoolLimits(gormSQLDB, gormMaxOpenConns, gormMaxIdleConns, gormConnMaxLifetime, gormConnMaxIdleTime)
 
 	if err := store.initQuotaTable(); err != nil {
 		return fmt.Errorf("imapsql: quota table init failed: %w", err)

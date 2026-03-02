@@ -6,7 +6,8 @@ Goal: Explain likely causes of OOM on a 1GB host under 1000+ concurrent users an
 
 ## Resolution Log
 
-- [ ] F1 Full-body buffering in hot paths (commit: pending)
+- [~] F1 Full-body buffering in hot paths
+  - partial: `4b82540` (`/mxdeliv` now streams to file-backed buffer and enforces max size)
 - [ ] F2 Uncapped database pools (commit: pending)
 - [ ] F3 `sqlite3_cache_size` parsed but not applied (commit: pending)
 - [ ] F4 Per-connection IMAP UID map amplification (commit: pending)
