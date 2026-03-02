@@ -13,7 +13,8 @@ Goal: Explain likely causes of OOM on a 1GB host under 1000+ concurrent users an
   - resolved: `0af52fb` (added explicit pool caps for backend and gorm SQL pools)
 - [x] F3 `sqlite3_cache_size` parsed but not applied
   - resolved: `4922623` (applies `PRAGMA cache_size` during sqlite init and tests it)
-- [ ] F4 Per-connection IMAP UID map amplification (commit: pending)
+- [~] F4 Per-connection IMAP UID map amplification
+  - partial: `7990a49` (added `imap.max_conns` listener cap to bound concurrent session memory)
 
 ## Executive Summary
 

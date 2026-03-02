@@ -19,7 +19,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package imap
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha1"
@@ -29,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -712,13 +712,48 @@ type encryptionWrapperUser struct {
 	imapbackend.User
 }
 
-func (u *encryptionWrapperUser) CreateMessage(mbox string, flags []string, date time.Time, body imap.Literal, mboxObj imapbackend.Mailbox) error {
-	res, err := io.ReadAll(body)
+type fileLiteral struct {
+	*os.File
+	size int
+}
+
+func (l fileLiteral) Len() int {
+	return l.size
+}
+
+func spoolLiteralToTempFile(body imap.Literal) (*os.File, int64, error) {
+	tmpFile, err := os.CreateTemp("", "madmail-imap-append-*")
 	if err != nil {
-		return fmt.Errorf("failed to read message for PGP verification: %w", err)
+		return nil, 0, fmt.Errorf("failed to create temp file for message verification: %w", err)
 	}
 
-	msg, err := message.Read(bytes.NewReader(res))
+	written, err := io.Copy(tmpFile, body)
+	if err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+		return nil, 0, fmt.Errorf("failed to spool message for verification: %w", err)
+	}
+
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+		return nil, 0, fmt.Errorf("failed to rewind spooled message: %w", err)
+	}
+
+	return tmpFile, written, nil
+}
+
+func (u *encryptionWrapperUser) CreateMessage(mbox string, flags []string, date time.Time, body imap.Literal, mboxObj imapbackend.Mailbox) error {
+	tmpFile, written, err := spoolLiteralToTempFile(body)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+	}()
+
+	msg, err := message.Read(tmpFile)
 	if err != nil {
 		return fmt.Errorf("failed to parse message for PGP verification: %w", err)
 	}
@@ -732,7 +767,16 @@ func (u *encryptionWrapperUser) CreateMessage(mbox string, flags []string, date 
 		return errors.New("Encryption Needed: Invalid Unencrypted Mail")
 	}
 
-	return u.User.CreateMessage(mbox, flags, date, bytes.NewReader(res), mboxObj)
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to rewind message after verification: %w", err)
+	}
+
+	maxInt := int64(^uint(0) >> 1)
+	if written > maxInt {
+		return fmt.Errorf("message too large for IMAP literal: %d bytes", written)
+	}
+
+	return u.User.CreateMessage(mbox, flags, date, fileLiteral{File: tmpFile, size: int(written)}, mboxObj)
 }
 
 func (u *encryptionWrapperUser) GetMailbox(name string, subscribed bool, conn imapbackend.Conn) (*imap.MailboxStatus, imapbackend.Mailbox, error) {
