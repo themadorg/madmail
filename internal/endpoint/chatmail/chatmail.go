@@ -20,7 +20,6 @@ package chatmail
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/rand"
 	"crypto/tls"
 	"embed"
@@ -69,7 +68,9 @@ type Endpoint struct {
 	name   string
 	logger log.Logger
 
-	maxMessageSize string
+	maxMessageSize  string
+	maxMessageBytes int64
+	msgBufferDir    string
 
 	// Domain configuration
 	mailDomain string // Domain for email addresses (e.g., something.com)
@@ -168,6 +169,16 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 
 	if _, err := cfg.Process(); err != nil {
 		return err
+	}
+
+	maxMessageBytes, err := config.ParseDataSize(e.maxMessageSize)
+	if err != nil {
+		return fmt.Errorf("%s: invalid max_message_size: %w", modName, err)
+	}
+	e.maxMessageBytes = int64(maxMessageBytes)
+	e.msgBufferDir = filepath.Join(config.StateDirectory, "buffer")
+	if err := os.MkdirAll(e.msgBufferDir, 0o700); err != nil {
+		return fmt.Errorf("%s: failed to initialize message buffer dir: %w", modName, err)
 	}
 
 	e.ssAllowedPorts = make(map[string]bool)
@@ -808,13 +819,6 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bodyData, err := io.ReadAll(r.Body)
-	if err != nil {
-		e.logger.Error("failed to read body", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
 	dt, ok := e.storage.(module.DeliveryTarget)
 	if !ok {
 		e.logger.Error("storage does not implement DeliveryTarget", nil)
@@ -857,18 +861,23 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	br := bufio.NewReader(bytes.NewReader(bodyData))
-	header, err := textproto.ReadHeader(br)
+	header, bodyBuf, err := e.readIncomingHTTPMessage(w, r)
 	if err != nil {
-		e.logger.Error("failed to parse header", err)
+		if isMaxBytesError(err) {
+			http.Error(w, "Message too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		e.logger.Error("failed to read incoming HTTP message", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
+	defer func() {
+		if err := bodyBuf.Remove(); err != nil {
+			e.logger.Error("failed to remove buffered body", err)
+		}
+	}()
 
-	remainingBody, _ := io.ReadAll(br)
-	b := buffer.MemoryBuffer{Slice: remainingBody}
-
-	if err := delivery.Body(r.Context(), header, b); err != nil {
+	if err := delivery.Body(r.Context(), header, bodyBuf); err != nil {
 		e.logger.Error("failed to deliver body", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -888,6 +897,31 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	e.logger.Msg("received email via "+scheme, "from", mailFrom, "to", mailTo)
 	w.WriteHeader(http.StatusOK)
+}
+
+func (e *Endpoint) readIncomingHTTPMessage(w http.ResponseWriter, r *http.Request) (textproto.Header, buffer.Buffer, error) {
+	body := r.Body
+	if e.maxMessageBytes > 0 {
+		body = http.MaxBytesReader(w, r.Body, e.maxMessageBytes)
+	}
+	br := bufio.NewReader(body)
+
+	header, err := textproto.ReadHeader(br)
+	if err != nil {
+		return textproto.Header{}, nil, err
+	}
+
+	bodyBuf, err := buffer.BufferInFile(br, e.msgBufferDir)
+	if err != nil {
+		return textproto.Header{}, nil, err
+	}
+
+	return header, bodyBuf, nil
+}
+
+func isMaxBytesError(err error) bool {
+	var maxBytesErr *http.MaxBytesError
+	return errors.As(err, &maxBytesErr)
 }
 
 var shadowsocksOnce sync.Once

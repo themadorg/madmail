@@ -67,19 +67,28 @@ func BufferInFile(r io.Reader, dir string) (Buffer, error) {
 	nameBytes := make([]byte, 32)
 	_, err := rand.Read(nameBytes)
 	if err != nil {
-		return nil, fmt.Errorf("buffer: failed to generate randomness for file name: %v", err)
+		return nil, fmt.Errorf("buffer: failed to generate randomness for file name: %w", err)
 	}
 	path := filepath.Join(dir, hex.EncodeToString(nameBytes))
 	f, err := os.Create(path)
 	if err != nil {
-		return nil, fmt.Errorf("buffer: failed to create file: %v", err)
+		return nil, fmt.Errorf("buffer: failed to create file: %w", err)
 	}
+	defer func() {
+		if f != nil {
+			_ = f.Close()
+		}
+	}()
+
 	if _, err = io.Copy(f, r); err != nil {
-		return nil, fmt.Errorf("buffer: failed to write file: %v", err)
+		_ = os.Remove(path)
+		return nil, fmt.Errorf("buffer: failed to write file: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return nil, fmt.Errorf("buffer: failed to close file: %v", err)
+		_ = os.Remove(path)
+		return nil, fmt.Errorf("buffer: failed to close file: %w", err)
 	}
+	f = nil
 
 	return FileBuffer{Path: path}, nil
 }
