@@ -19,7 +19,9 @@ Goal: Explain likely causes of OOM on a 1GB host under 1000+ concurrent users an
   - partial: `7990a49` (added `imap.max_conns` listener cap to bound concurrent session memory)
 - [x] F5 Unbounded `servertracker` cardinality growth
   - resolved: `0de5b0e` (bounded unique tracker maps with configurable max entries + tests)
-- [ ] F6 Per-request chatmail template parsing (commit: pending)
+- [x] F6 Per-request chatmail template parsing
+  - resolved: `d2b25a7` (chatmail now caches parsed templates and reuses them)
+- [ ] F7 Unbounded chatmail proxy fan-out goroutines (commit: pending)
 
 ## Executive Summary
 

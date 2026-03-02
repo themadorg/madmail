@@ -116,6 +116,8 @@ type Endpoint struct {
 	ssAddr             string
 	ssPassword         string
 	ssCipher           string
+	ssMaxConns         int
+	alpnMaxConns       int
 	ssAllowedPortsList []string
 	ssAllowedPorts     map[string]bool
 }
@@ -153,6 +155,8 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("ss_addr", false, false, "", &e.ssAddr)
 	cfg.String("ss_password", false, false, "", &e.ssPassword)
 	cfg.String("ss_cipher", false, false, "aes-128-gcm", &e.ssCipher)
+	cfg.Int("ss_max_conns", false, false, 256, &e.ssMaxConns)
+	cfg.Int("alpn_max_conns", false, false, 1024, &e.alpnMaxConns)
 	allowedPortsList := []string{"3478", "5349"} // Default TURN ports
 	cfg.StringList("ss_allowed_ports", false, false, nil, &e.ssAllowedPortsList)
 	cfg.String("sharing_driver", false, false, "sqlite3", &e.sharingDriver)
@@ -955,6 +959,10 @@ func (e *Endpoint) runShadowsocksInternal() {
 	defer l.Close()
 
 	e.logger.Printf("Shadowsocks: listening on %s (cipher: %s)", e.ssAddr, e.ssCipher)
+	var sem chan struct{}
+	if e.ssMaxConns > 0 {
+		sem = make(chan struct{}, e.ssMaxConns)
+	}
 
 	for {
 		conn, err := l.Accept()
@@ -962,8 +970,14 @@ func (e *Endpoint) runShadowsocksInternal() {
 			e.logger.Error("Shadowsocks: accept failed", err)
 			continue
 		}
+		if !acquireConnSlot(sem) {
+			e.logger.Msg("Shadowsocks: max concurrent connections reached, dropping", "remote", conn.RemoteAddr())
+			_ = conn.Close()
+			continue
+		}
 
 		go func(conn net.Conn) {
+			defer releaseConnSlot(sem)
 			defer conn.Close()
 			// Check if SS is still enabled (can be toggled via admin API)
 			if !e.isShadowsocksEnabled() {
@@ -1094,6 +1108,11 @@ func (e *Endpoint) serveALPNMultiplexed(l net.Listener) {
 		}
 	}()
 
+	var sem chan struct{}
+	if e.alpnMaxConns > 0 {
+		sem = make(chan struct{}, e.alpnMaxConns)
+	}
+
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -1105,8 +1124,16 @@ func (e *Endpoint) serveALPNMultiplexed(l net.Listener) {
 			close(imapChan)
 			return
 		}
+		if !acquireConnSlot(sem) {
+			e.logger.Msg("ALPN: max concurrent connections reached, dropping", "remote", conn.RemoteAddr())
+			_ = conn.Close()
+			continue
+		}
 
-		go e.handleALPNConn(conn, httpL.conns, smtpChan, imapChan)
+		go func(conn net.Conn) {
+			defer releaseConnSlot(sem)
+			e.handleALPNConn(conn, httpL.conns, smtpChan, imapChan)
+		}(conn)
 	}
 }
 
@@ -1517,6 +1544,28 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func acquireConnSlot(sem chan struct{}) bool {
+	if sem == nil {
+		return true
+	}
+	select {
+	case sem <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func releaseConnSlot(sem chan struct{}) {
+	if sem == nil {
+		return
+	}
+	select {
+	case <-sem:
+	default:
+	}
 }
 
 // AdminTokenFileName is the filename in state_dir where the auto-generated admin token is stored.
