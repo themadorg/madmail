@@ -19,14 +19,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package pgp_verify
 
 import (
+	"bufio"
 	"bytes"
-	"encoding/base64"
+	"encoding/binary"
+	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
 	"strings"
 
 	"github.com/emersion/go-message/textproto"
+	"golang.org/x/crypto/openpgp/armor"
 )
 
 func IsAcceptedMessage(header textproto.Header, body io.Reader) (bool, error) {
@@ -117,6 +120,8 @@ func IsSecureJoinMessage(header textproto.Header, body io.Reader) bool {
 }
 
 func IsValidEncryptedMessage(contentType string, body io.Reader) (bool, error) {
+	const maxControlPartSize = 4096
+
 	// Parse content type first - this is the primary indicator
 	mediatype, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
@@ -148,9 +153,12 @@ func IsValidEncryptedMessage(contentType string, body io.Reader) (bool, error) {
 				return false, nil
 			}
 
-			partBody, err := io.ReadAll(part)
+			partBody, err := io.ReadAll(io.LimitReader(part, maxControlPartSize+1))
 			if err != nil {
 				return false, err
+			}
+			if len(partBody) > maxControlPartSize {
+				return false, nil
 			}
 
 			bodyStr := strings.TrimSpace(string(partBody))
@@ -164,12 +172,11 @@ func IsValidEncryptedMessage(contentType string, body io.Reader) (bool, error) {
 				return false, nil
 			}
 
-			partBody, err := io.ReadAll(part)
+			isValidPayload, err := isValidEncryptedPayload(part)
 			if err != nil {
 				return false, err
 			}
-
-			if !isValidEncryptedPayload(partBody) {
+			if !isValidPayload {
 				return false, nil
 			}
 		} else {
@@ -183,58 +190,39 @@ func IsValidEncryptedMessage(contentType string, body io.Reader) (bool, error) {
 	return partsCount == 2, nil
 }
 
-func isValidEncryptedPayload(payload []byte) bool {
-	p := bytes.TrimSpace(payload)
-	const header = "-----BEGIN PGP MESSAGE-----"
-	const footer = "-----END PGP MESSAGE-----"
+func isValidEncryptedPayload(payload io.Reader) (bool, error) {
+	const armoredHeader = "-----BEGIN PGP MESSAGE-----"
 
-	if bytes.HasPrefix(p, []byte(header)) && bytes.HasSuffix(p, []byte(footer)) {
-		// Armor case
-		payloadStr := string(p)
-		// Find where the base64 data starts (after the armor header and optional headers)
-		// Usually there is a blank line after the headers.
-		parts := strings.SplitN(payloadStr, "\n\n", 2)
-		if len(parts) < 2 {
-			// Try with \r\n\r\n
-			parts = strings.SplitN(payloadStr, "\r\n\r\n", 2)
-			if len(parts) < 2 {
-				return false
-			}
+	br := bufio.NewReader(payload)
+	for {
+		b, err := br.ReadByte()
+		if err == io.EOF {
+			return false, nil
 		}
-
-		b64WithFooter := parts[1]
-		footerIdx := strings.LastIndex(b64WithFooter, footer)
-		if footerIdx < 0 {
-			return false
-		}
-
-		b64Content := b64WithFooter[:footerIdx]
-
-		// Remove CRC24 checksum line (starts with = on its own line)
-		// The CRC format is: \n=XXXX or \r\n=XXXX where XXXX is 4 base64 chars
-		// Following Python filtermail: payload.rpartition("=")[0] but we need to be smarter
-		// to avoid cutting off base64 padding
-		if crcIdx := strings.LastIndex(b64Content, "\n="); crcIdx >= 0 {
-			// Found CRC line, remove it
-			b64Content = b64Content[:crcIdx]
-		} else if crcIdx := strings.LastIndex(b64Content, "\r\n="); crcIdx >= 0 {
-			b64Content = b64Content[:crcIdx]
-		}
-
-		b64Encoded := strings.ReplaceAll(b64Content, "\n", "")
-		b64Encoded = strings.ReplaceAll(b64Encoded, "\r", "")
-		b64Encoded = strings.ReplaceAll(b64Encoded, " ", "")
-
-		b64Decoded, err := base64.StdEncoding.DecodeString(b64Encoded)
 		if err != nil {
-			return false
+			return false, err
 		}
-
-		return isEncryptedOpenPGPPayload(b64Decoded)
+		switch b {
+		case ' ', '\t', '\r', '\n':
+			continue
+		default:
+			if err := br.UnreadByte(); err != nil {
+				return false, err
+			}
+			goto checkFormat
+		}
 	}
 
-	// Binary case (or invalid armor which will be rejected by isEncryptedOpenPGPPayload)
-	return isEncryptedOpenPGPPayload(p)
+checkFormat:
+	if peek, err := br.Peek(len(armoredHeader)); err == nil && bytes.Equal(peek, []byte(armoredHeader)) {
+		block, err := armor.Decode(br)
+		if err != nil || block == nil || block.Type != "PGP MESSAGE" {
+			return false, nil
+		}
+		return isEncryptedOpenPGPPayloadReader(block.Body)
+	}
+
+	return isEncryptedOpenPGPPayloadReader(br)
 }
 
 // isEncryptedOpenPGPPayload checks the OpenPGP payload structure.
@@ -242,71 +230,83 @@ func isValidEncryptedPayload(payload []byte) bool {
 // OpenPGP payload must consist only of PKESK and SKESK packets
 // terminated by a single SEIPD packet.
 func isEncryptedOpenPGPPayload(payload []byte) bool {
-	i := 0
-	if len(payload) == 0 {
-		return false
-	}
+	ok, err := isEncryptedOpenPGPPayloadReader(bytes.NewReader(payload))
+	return err == nil && ok
+}
 
-	for i < len(payload) {
+func isEncryptedOpenPGPPayloadReader(payload io.Reader) (bool, error) {
+	br := bufio.NewReader(payload)
+	seenSEIPD := false
+
+	for {
+		packetHeader, err := br.ReadByte()
+		if err == io.EOF {
+			return seenSEIPD, nil
+		}
+		if err != nil {
+			return false, err
+		}
+
 		// Only OpenPGP new format is allowed (0xC0 = both high bits set)
-		if payload[i]&0xC0 != 0xC0 {
-			return false
+		if packetHeader&0xC0 != 0xC0 {
+			return false, nil
 		}
 
-		packetTypeID := payload[i] & 0x3F
-		i++
-		if i >= len(payload) {
-			return false
+		packetTypeID := packetHeader & 0x3F
+		if packetTypeID != 1 && packetTypeID != 3 && packetTypeID != 18 {
+			return false, nil
+		}
+		if seenSEIPD {
+			return false, nil
 		}
 
-		// Handle partial body lengths first (in a loop, like Python does)
-		for payload[i] >= 224 && payload[i] < 255 {
-			// Partial body length
-			partialLen := 1 << (payload[i] & 0x1F)
-			i += 1 + partialLen
-			if i >= len(payload) {
-				return false
+		bodyLen, err := readOpenPGPPacketLength(br)
+		if err != nil {
+			if errors.Is(err, errPartialBodyLength) {
+				return false, nil
 			}
+			return false, err
 		}
 
-		// Now read the final length
-		var bodyLen int
-		if payload[i] < 192 {
-			// One-octet length
-			bodyLen = int(payload[i])
-			i++
-		} else if payload[i] < 224 {
-			// Two-octet length
-			if i+1 >= len(payload) {
-				return false
+		if _, err := io.CopyN(io.Discard, br, int64(bodyLen)); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return false, nil
 			}
-			bodyLen = ((int(payload[i]) - 192) << 8) + int(payload[i+1]) + 192
-			i += 2
-		} else if payload[i] == 255 {
-			// Five-octet length
-			if i+4 >= len(payload) {
-				return false
-			}
-			bodyLen = (int(payload[i+1]) << 24) | (int(payload[i+2]) << 16) | (int(payload[i+3]) << 8) | int(payload[i+4])
-			i += 5
-		} else {
-			// Impossible, partial body length was processed above
-			return false
+			return false, err
 		}
 
-		i += bodyLen
-
-		if i == len(payload) {
-			// Last packet should be SEIPD (Symmetrically Encrypted and Integrity Protected Data Packet)
-			// This is the only place where this function may return true
-			return packetTypeID == 18
-		} else if packetTypeID != 1 && packetTypeID != 3 {
-			// All packets except the last one must be either
-			// Public-Key Encrypted Session Key Packet (PKESK = 1)
-			// or Symmetric-Key Encrypted Session Key Packet (SKESK = 3)
-			return false
+		if packetTypeID == 18 {
+			seenSEIPD = true
 		}
 	}
+}
 
-	return false
+var errPartialBodyLength = errors.New("openpgp partial body length is unsupported")
+
+func readOpenPGPPacketLength(br *bufio.Reader) (uint32, error) {
+	first, err := br.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+
+	switch {
+	case first < 192:
+		return uint32(first), nil
+	case first >= 192 && first <= 223:
+		second, err := br.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		return uint32(first-192)<<8 + uint32(second) + 192, nil
+	case first == 255:
+		var v [4]byte
+		if _, err := io.ReadFull(br, v[:]); err != nil {
+			return 0, err
+		}
+		return binary.BigEndian.Uint32(v[:]), nil
+	default:
+		// 224-254 are partial body lengths. We don't support them because
+		// they are uncommon in this use-case and complicate strict validation.
+		return 0, errPartialBodyLength
+	}
 }

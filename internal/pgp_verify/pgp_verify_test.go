@@ -19,8 +19,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package pgp_verify
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"mime/multipart"
+	nettextproto "net/textproto"
 	"strings"
 	"testing"
 
@@ -237,5 +240,76 @@ func TestIsAcceptedMessagePropagatesReaderErrorForEncryptedCandidate(t *testing.
 	_, err := IsAcceptedMessage(header, io.LimitReader(failReader{}, 1))
 	if err == nil {
 		t.Fatal("expected reader error for encrypted candidate")
+	}
+}
+
+func TestIsEncryptedOpenPGPPayloadReader(t *testing.T) {
+	t.Parallel()
+
+	validPayload := []byte{
+		0xC1, 0x01, 0x00, // PKESK packet (type=1), len=1
+		0xD2, 0x01, 0x00, // SEIPD packet (type=18), len=1
+	}
+
+	ok, err := isEncryptedOpenPGPPayloadReader(bytes.NewReader(validPayload))
+	if err != nil {
+		t.Fatalf("unexpected error for valid payload: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected valid payload to pass")
+	}
+
+	invalidTrailing := append(append([]byte(nil), validPayload...), 0x00)
+	ok, err = isEncryptedOpenPGPPayloadReader(bytes.NewReader(invalidTrailing))
+	if err != nil {
+		t.Fatalf("unexpected error for invalid trailing payload: %v", err)
+	}
+	if ok {
+		t.Fatal("expected trailing data payload to fail")
+	}
+}
+
+func TestIsValidEncryptedMessageBinaryPayload(t *testing.T) {
+	t.Parallel()
+
+	validPayload := []byte{
+		0xC1, 0x01, 0x00, // PKESK packet (type=1), len=1
+		0xD2, 0x01, 0x00, // SEIPD packet (type=18), len=1
+	}
+
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+
+	part1Header := nettextproto.MIMEHeader{}
+	part1Header.Set("Content-Type", "application/pgp-encrypted")
+	part1, err := w.CreatePart(part1Header)
+	if err != nil {
+		t.Fatalf("failed to create first part: %v", err)
+	}
+	if _, err := part1.Write([]byte("Version: 1")); err != nil {
+		t.Fatalf("failed to write first part: %v", err)
+	}
+
+	part2Header := nettextproto.MIMEHeader{}
+	part2Header.Set("Content-Type", "application/octet-stream")
+	part2, err := w.CreatePart(part2Header)
+	if err != nil {
+		t.Fatalf("failed to create second part: %v", err)
+	}
+	if _, err := part2.Write(validPayload); err != nil {
+		t.Fatalf("failed to write second part: %v", err)
+	}
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	contentType := "multipart/encrypted; boundary=\"" + w.Boundary() + "\""
+	ok, err := IsValidEncryptedMessage(contentType, bytes.NewReader(body.Bytes()))
+	if err != nil {
+		t.Fatalf("IsValidEncryptedMessage returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected multipart encrypted message to be valid")
 	}
 }
