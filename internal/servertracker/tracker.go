@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,18 +40,33 @@ type Status struct {
 
 // Tracker holds salted hashes of unique server identifiers.
 type Tracker struct {
-	mu        sync.RWMutex
-	salt      []byte
-	bootTime  time.Time
-	connIPs   map[string]struct{} // hashed connecting server IPs
-	domains   map[string]struct{} // hashed domain-based senders (e.g. example.com)
-	ipServers map[string]struct{} // hashed IP-based senders (e.g. [1.2.3.4])
+	mu         sync.RWMutex
+	salt       []byte
+	bootTime   time.Time
+	maxEntries int
+	connIPs    map[string]struct{} // hashed connecting server IPs
+	domains    map[string]struct{} // hashed domain-based senders (e.g. example.com)
+	ipServers  map[string]struct{} // hashed IP-based senders (e.g. [1.2.3.4])
 }
 
 var (
 	global     *Tracker
 	globalOnce sync.Once
 )
+
+const defaultMaxTrackerEntries = 50000
+
+func trackerMaxEntries() int {
+	raw := strings.TrimSpace(os.Getenv("MADDY_SERVERTRACKER_MAX_ENTRIES"))
+	if raw == "" {
+		return defaultMaxTrackerEntries
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v <= 0 {
+		return defaultMaxTrackerEntries
+	}
+	return v
+}
 
 // Global returns the singleton tracker. It is created on first call
 // with a fresh random salt. Boot time is recorded at creation.
@@ -61,11 +77,12 @@ func Global() *Tracker {
 			salt = make([]byte, 32)
 		}
 		global = &Tracker{
-			salt:      salt,
-			bootTime:  time.Now(),
-			connIPs:   make(map[string]struct{}),
-			domains:   make(map[string]struct{}),
-			ipServers: make(map[string]struct{}),
+			salt:       salt,
+			bootTime:   time.Now(),
+			maxEntries: trackerMaxEntries(),
+			connIPs:    make(map[string]struct{}),
+			domains:    make(map[string]struct{}),
+			ipServers:  make(map[string]struct{}),
 		}
 		// Write initial status file (boot time + zeros)
 		global.mu.Lock()
@@ -98,14 +115,14 @@ func (t *Tracker) RecordServer(connIP, senderDomain string) {
 	defer t.mu.Unlock()
 
 	if connIP != "" {
-		t.connIPs[t.hash(connIP)] = struct{}{}
+		addBounded(t.connIPs, t.hash(connIP), t.maxEntries)
 	}
 
 	if senderDomain != "" {
 		if isIPAddress(senderDomain) {
-			t.ipServers[t.hash(senderDomain)] = struct{}{}
+			addBounded(t.ipServers, t.hash(senderDomain), t.maxEntries)
 		} else {
-			t.domains[t.hash(senderDomain)] = struct{}{}
+			addBounded(t.domains, t.hash(senderDomain), t.maxEntries)
 		}
 	}
 
@@ -122,6 +139,16 @@ func (t *Tracker) GetStatus() Status {
 		UniqueDomains:   len(t.domains),
 		UniqueIPServers: len(t.ipServers),
 	}
+}
+
+func addBounded(set map[string]struct{}, key string, maxEntries int) {
+	if _, ok := set[key]; ok {
+		return
+	}
+	if maxEntries > 0 && len(set) >= maxEntries {
+		return
+	}
+	set[key] = struct{}{}
 }
 
 // writeStatusLocked writes the current counts to the status file.
