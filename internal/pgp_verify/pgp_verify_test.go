@@ -19,11 +19,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package pgp_verify
 
 import (
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/emersion/go-message/textproto"
 )
+
+type failReader struct{}
+
+func (failReader) Read(_ []byte) (int, error) {
+	return 0, errors.New("body read should not happen")
+}
 
 func TestIsSecureJoinMessage_Valid(t *testing.T) {
 	tests := []struct {
@@ -89,7 +97,7 @@ func TestIsSecureJoinMessage_Valid(t *testing.T) {
 			expectedResult: false,
 		},
 		{
-			name:          "Invalid - not multipart/mixed (multipart/alternative)",
+			name:          "Valid - multipart/alternative is accepted",
 			secureJoinHdr: "vc-request",
 			contentType:   "multipart/alternative; boundary=\"boundary123\"",
 			body: "--boundary123\r\n" +
@@ -97,17 +105,17 @@ func TestIsSecureJoinMessage_Valid(t *testing.T) {
 				"\r\n" +
 				"secure-join: vc-request\r\n" +
 				"--boundary123--\r\n",
+			expectedResult: true,
+		},
+		{
+			name:           "Invalid - not multipart",
+			secureJoinHdr:  "vc-request",
+			contentType:    "text/plain",
+			body:           "secure-join: vc-request",
 			expectedResult: false,
 		},
 		{
-			name:          "Invalid - not multipart",
-			secureJoinHdr: "vc-request",
-			contentType:   "text/plain",
-			body:          "secure-join: vc-request",
-			expectedResult: false,
-		},
-		{
-			name:          "Invalid - multiple parts",
+			name:          "Valid - multiple parts are tolerated",
 			secureJoinHdr: "vc-request",
 			contentType:   "multipart/mixed; boundary=\"boundary123\"",
 			body: "--boundary123\r\n" +
@@ -119,7 +127,7 @@ func TestIsSecureJoinMessage_Valid(t *testing.T) {
 				"\r\n" +
 				"extra part\r\n" +
 				"--boundary123--\r\n",
-			expectedResult: false,
+			expectedResult: true,
 		},
 		{
 			name:          "Invalid - wrong part content type",
@@ -180,5 +188,54 @@ func TestIsSecureJoinMessage_Valid(t *testing.T) {
 				t.Errorf("Expected %v, got %v", tt.expectedResult, result)
 			}
 		})
+	}
+}
+
+func TestIsAcceptedMessageSkipsBodyReadForNonCandidate(t *testing.T) {
+	t.Parallel()
+
+	header := textproto.Header{}
+	header.Set("Content-Type", "text/plain")
+
+	accepted, err := IsAcceptedMessage(header, failReader{})
+	if err != nil {
+		t.Fatalf("IsAcceptedMessage returned error: %v", err)
+	}
+	if accepted {
+		t.Fatal("expected message to be rejected")
+	}
+}
+
+func TestIsAcceptedMessageSecureJoin(t *testing.T) {
+	t.Parallel()
+
+	header := textproto.Header{}
+	header.Set("Secure-Join", "vc-request")
+	header.Set("Content-Type", "multipart/mixed; boundary=\"boundary123\"")
+
+	body := "--boundary123\r\n" +
+		"Content-Type: text/plain\r\n" +
+		"\r\n" +
+		"secure-join: vc-request\r\n" +
+		"--boundary123--\r\n"
+
+	accepted, err := IsAcceptedMessage(header, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("IsAcceptedMessage returned error: %v", err)
+	}
+	if !accepted {
+		t.Fatal("expected secure-join message to be accepted")
+	}
+}
+
+func TestIsAcceptedMessagePropagatesReaderErrorForEncryptedCandidate(t *testing.T) {
+	t.Parallel()
+
+	header := textproto.Header{}
+	header.Set("Content-Type", "multipart/encrypted; boundary=\"b\"")
+
+	_, err := IsAcceptedMessage(header, io.LimitReader(failReader{}, 1))
+	if err == nil {
+		t.Fatal("expected reader error for encrypted candidate")
 	}
 }

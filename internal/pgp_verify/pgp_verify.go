@@ -32,14 +32,8 @@ import (
 func IsAcceptedMessage(header textproto.Header, body io.Reader) (bool, error) {
 	contentType := header.Get("Content-Type")
 
-	// Buffer the body so we can read it multiple times
-	bodyData, err := io.ReadAll(body)
-	if err != nil {
-		return false, err
-	}
-
 	// Check if it's a valid PGP encrypted message
-	isEncrypted, err := IsValidEncryptedMessage(contentType, bytes.NewReader(bodyData))
+	isEncrypted, err := IsValidEncryptedMessage(contentType, body)
 	if err != nil {
 		return false, err
 	}
@@ -47,8 +41,10 @@ func IsAcceptedMessage(header textproto.Header, body io.Reader) (bool, error) {
 		return true, nil
 	}
 
-	// 4. Check for Secure Join based on body content (re-use buffered body)
-	if IsSecureJoinMessage(header, bytes.NewReader(bodyData)) {
+	// Check for Secure Join based on body content. This is safe because
+	// IsValidEncryptedMessage returns without consuming body for non-encrypted
+	// content types.
+	if IsSecureJoinMessage(header, body) {
 		return true, nil
 	}
 

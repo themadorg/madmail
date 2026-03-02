@@ -10,7 +10,8 @@ Goal: Explain likely causes of OOM on a 1GB host under 1000+ concurrent users an
   - partial: `4b82540` (`/mxdeliv` now streams to file-backed buffer and enforces max size)
 - [x] F2 Uncapped database pools
   - resolved: `0af52fb` (added explicit pool caps for backend and gorm SQL pools)
-- [ ] F3 `sqlite3_cache_size` parsed but not applied (commit: pending)
+- [x] F3 `sqlite3_cache_size` parsed but not applied
+  - resolved: `4922623` (applies `PRAGMA cache_size` during sqlite init and tests it)
 - [ ] F4 Per-connection IMAP UID map amplification (commit: pending)
 
 ## Executive Summary
