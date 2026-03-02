@@ -36,11 +36,17 @@ func (b *Backend) addSqlite3Params(dsn string) string {
 }
 
 func (b *Backend) configureEngine() error {
-	if b.db.driver == "sqlite3" {
+	if b.db.driver == "sqlite3" || b.db.driver == "sqlite" {
 		// For testing purposes, it is important that only one memory DB will
 		// be used (otherwise each connection will get its own DB)
-		if b.db.dsn == ":memory:" {
+		if strings.Contains(b.db.dsn, ":memory:") {
 			b.db.DB.SetMaxOpenConns(1)
+		}
+
+		if b.Opts.CacheSize != 0 {
+			if _, err := b.db.Exec(`PRAGMA cache_size=` + strconv.Itoa(b.Opts.CacheSize)); err != nil {
+				return err
+			}
 		}
 
 		if b.extStore == nil {
