@@ -17,7 +17,9 @@ Goal: Explain likely causes of OOM on a 1GB host under 1000+ concurrent users an
   - resolved: `4922623` (applies `PRAGMA cache_size` during sqlite init and tests it)
 - [~] F4 Per-connection IMAP UID map amplification
   - partial: `7990a49` (added `imap.max_conns` listener cap to bound concurrent session memory)
-- [ ] F5 Unbounded `servertracker` cardinality growth (commit: pending)
+- [x] F5 Unbounded `servertracker` cardinality growth
+  - resolved: `0de5b0e` (bounded unique tracker maps with configurable max entries + tests)
+- [ ] F6 Per-request chatmail template parsing (commit: pending)
 
 ## Executive Summary
 

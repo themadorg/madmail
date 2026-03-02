@@ -83,6 +83,8 @@ type Endpoint struct {
 	listenersWg sync.WaitGroup
 	serv        http.Server
 	mux         *http.ServeMux
+	tmplMu      sync.RWMutex
+	tmplCache   map[string]*template.Template
 
 	// TLS configuration
 	tlsConfig *tls.Config
@@ -273,6 +275,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	e.logDBOverrides()
 
 	e.mux = http.NewServeMux()
+	e.tmplCache = make(map[string]*template.Template)
 	// Priority 0: Well-known endpoints (DKIM key publishing for federation)
 	e.mux.HandleFunc("/.well-known/_domainkey/", e.handleDKIMKey)
 
@@ -622,12 +625,7 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 
 	// For HTML files, process them as templates
 	if strings.HasSuffix(path, ".html") {
-		tmpl, err := template.New(path).Funcs(template.FuncMap{
-			"upper":       strings.ToUpper,
-			"safeURL":     func(s string) template.URL { return template.URL(s) },
-			"cleanDomain": func(s string) string { return strings.Trim(s, "[]") },
-			"formatBytes": formatBytes,
-		}).Parse(string(fileData))
+		tmpl, err := e.getTemplate(path, fileData)
 		if err != nil {
 			e.logger.Error("failed to parse template", err, "file", path)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -1437,12 +1435,7 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		return
 	}
 
-	tmpl, err := template.New(name).Funcs(template.FuncMap{
-		"upper":       strings.ToUpper,
-		"safeURL":     func(s string) template.URL { return template.URL(s) },
-		"cleanDomain": func(s string) string { return strings.Trim(s, "[]") },
-		"formatBytes": formatBytes,
-	}).Parse(string(fileData))
+	tmpl, err := e.getTemplate(name, fileData)
 	if err != nil {
 		e.logger.Error("failed to parse template", err, "file", name)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -1482,6 +1475,35 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+}
+
+func (e *Endpoint) getTemplate(name string, fileData []byte) (*template.Template, error) {
+	e.tmplMu.RLock()
+	cached := e.tmplCache[name]
+	e.tmplMu.RUnlock()
+	if cached != nil {
+		return cached, nil
+	}
+
+	tmpl, err := template.New(name).Funcs(template.FuncMap{
+		"upper":       strings.ToUpper,
+		"safeURL":     func(s string) template.URL { return template.URL(s) },
+		"cleanDomain": func(s string) string { return strings.Trim(s, "[]") },
+		"formatBytes": formatBytes,
+	}).Parse(string(fileData))
+	if err != nil {
+		return nil, err
+	}
+
+	e.tmplMu.Lock()
+	if existing := e.tmplCache[name]; existing != nil {
+		e.tmplMu.Unlock()
+		return existing, nil
+	}
+	e.tmplCache[name] = tmpl
+	e.tmplMu.Unlock()
+
+	return tmpl, nil
 }
 
 func formatBytes(b int64) string {
