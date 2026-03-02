@@ -76,10 +76,12 @@ func (m *Manager) Mailbox(key interface{}, mbox Mailbox, uids []uint32, recents 
 	if sharedHndl == nil {
 		sharedHndl = &sharedHandle{
 			key:     key,
+			uidMap:  cloneUIDMap(uids),
 			handles: map[*MailboxHandle]struct{}{},
 		}
 		m.logf("go-imap-mess: Mailbox creating new sharedHandle for key=%v", key)
 	}
+	uids = sharedHndl.uidMapSnapshot()
 
 	handle := &MailboxHandle{
 		m:            m,
@@ -138,6 +140,10 @@ func (m *Manager) newMessages(key interface{}, uid imap.SeqSet) (storeRecent boo
 		return false
 	}
 
+	handle.uidMapLock.Lock()
+	handle.uidMap = appendUIDMapSnapshot(handle.uidMap, uid)
+	handle.uidMapLock.Unlock()
+
 	handle.handlesLock.RLock()
 	defer handle.handlesLock.RUnlock()
 
@@ -181,6 +187,12 @@ func (m *Manager) NewMessage(key interface{}, uid uint32) (storeRecent bool) {
 		m.logf("go-imap-mess: NewMessage key=%v has NO handles registered, returning storeRecent=true", key)
 		return true
 	}
+
+	uidSet := imap.SeqSet{}
+	uidSet.AddNum(uid)
+	handle.uidMapLock.Lock()
+	handle.uidMap = appendUIDMapSnapshot(handle.uidMap, uidSet)
+	handle.uidMapLock.Unlock()
 
 	handle.handlesLock.RLock()
 	defer handle.handlesLock.RUnlock()
@@ -256,6 +268,10 @@ func (m *Manager) removedSet(key interface{}, seq imap.SeqSet) {
 	if handle == nil {
 		return
 	}
+
+	handle.uidMapLock.Lock()
+	handle.uidMap = removeUIDMapSnapshot(handle.uidMap, seq)
+	handle.uidMapLock.Unlock()
 
 	handle.handlesLock.RLock()
 	defer handle.handlesLock.RUnlock()

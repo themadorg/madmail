@@ -19,6 +19,9 @@ type sharedHandle struct {
 
 	handlesLock sync.RWMutex
 	handles     map[*MailboxHandle]struct{}
+
+	uidMapLock sync.RWMutex
+	uidMap     []uint32
 }
 
 type MailboxHandle struct {
@@ -39,6 +42,62 @@ type MailboxHandle struct {
 }
 
 var ErrNoMessages = errors.New("No messages matched")
+
+func (h *sharedHandle) uidMapSnapshot() []uint32 {
+	h.uidMapLock.RLock()
+	defer h.uidMapLock.RUnlock()
+	return h.uidMap
+}
+
+func (h *sharedHandle) setUidMapSnapshot(uidMap []uint32) {
+	h.uidMapLock.Lock()
+	h.uidMap = uidMap
+	h.uidMapLock.Unlock()
+}
+
+func cloneUIDMap(uidMap []uint32) []uint32 {
+	if len(uidMap) == 0 {
+		return nil
+	}
+
+	cloned := make([]uint32, len(uidMap))
+	copy(cloned, uidMap)
+	return cloned
+}
+
+func appendUIDMapSnapshot(uidMap []uint32, seqSet imap.SeqSet) []uint32 {
+	added := 0
+	for _, seq := range seqSet.Set {
+		added += int(seq.Stop - seq.Start + 1)
+	}
+	if added == 0 {
+		return uidMap
+	}
+
+	next := make([]uint32, len(uidMap), len(uidMap)+added)
+	copy(next, uidMap)
+	for _, seq := range seqSet.Set {
+		for uid := seq.Start; uid <= seq.Stop; uid++ {
+			next = append(next, uid)
+		}
+	}
+	return next
+}
+
+func removeUIDMapSnapshot(uidMap []uint32, seqSet imap.SeqSet) []uint32 {
+	if len(uidMap) == 0 || len(seqSet.Set) == 0 {
+		return uidMap
+	}
+
+	next := make([]uint32, 0, len(uidMap))
+	for _, uid := range uidMap {
+		if seqSet.Contains(uid) {
+			continue
+		}
+		next = append(next, uid)
+	}
+	return next
+}
 
 // ResolveSeq converts the passed UIDs or sequence numbers set into UIDs set
 // that is appropriate for mailbox operations in this connection.
@@ -178,38 +237,39 @@ func (handle *MailboxHandle) Sync(expunge bool) {
 	// Copy pendingFlags
 	flagsUpdates := handle.pendingFlags
 	handle.pendingFlags = make([]flagsUpdate, 0, 1)
+	oldUIDMap := handle.uidMap
 
 	// Copy pendingExpunge and compute expunged sequence numbers
 	var expunged []uint32
 	if expunge && !handle.pendingExpunge.Empty() {
 		expunged = make([]uint32, 0, 16)
-		newMap := handle.uidMap[:0]
-		for i, uid := range handle.uidMap {
+		for i, uid := range oldUIDMap {
 			if handle.pendingExpunge.Contains(uid) {
 				expunged = append(expunged, uint32(i+1))
 				continue
 			}
-			newMap = append(newMap, uid)
 		}
-		handle.uidMap = newMap
-		handle.pendingExpunge.Clear()
 	}
 
-	// Copy pendingCreated and update uidMap
+	// Copy pendingCreated and refresh to latest shared mailbox snapshot.
 	var newMsgCount uint32
 	var hasNewRecent bool
 	var recentCount uint32
-	if !handle.pendingCreated.Empty() {
-		for _, seq := range handle.pendingCreated.Set {
-			for i := seq.Start; i <= seq.Stop; i++ {
-				handle.uidMap = append(handle.uidMap, i)
-			}
-		}
-		handle.pendingCreated.Clear()
-		newMsgCount = uint32(len(handle.uidMap))
+	hadPendingCreated := !handle.pendingCreated.Empty()
+	if hadPendingCreated {
 		hasNewRecent = handle.hasNewRecent
 		recentCount = handle.recentCount
-		handle.hasNewRecent = false
+	}
+	handle.pendingCreated.Clear()
+	handle.pendingExpunge.Clear()
+	handle.hasNewRecent = false
+	currentUIDMap := oldUIDMap
+	if handle.shared != nil {
+		currentUIDMap = handle.shared.uidMapSnapshot()
+		handle.uidMap = currentUIDMap
+	}
+	if hadPendingCreated {
+		newMsgCount = uint32(len(currentUIDMap))
 	}
 
 	// Release the lock before sending updates (network I/O can be slow)
@@ -220,9 +280,7 @@ func (handle *MailboxHandle) Sync(expunge bool) {
 
 	// Send flag updates
 	for _, upd := range flagsUpdates {
-		handle.lock.RLock()
-		seq, ok := uidToSeq(handle.uidMap, imap.Seq{Start: upd.uid, Stop: upd.uid})
-		handle.lock.RUnlock()
+		seq, ok := uidToSeq(currentUIDMap, imap.Seq{Start: upd.uid, Stop: upd.uid})
 		if !ok {
 			continue
 		}
@@ -355,6 +413,12 @@ func (handle *MailboxHandle) Removed(uid uint32) {
 		return
 	}
 
+	seq := imap.SeqSet{}
+	seq.AddNum(uid)
+	handle.shared.uidMapLock.Lock()
+	handle.shared.uidMap = removeUIDMapSnapshot(handle.shared.uidMap, seq)
+	handle.shared.uidMapLock.Unlock()
+
 	handle.shared.handlesLock.RLock()
 	defer handle.shared.handlesLock.RUnlock()
 
@@ -378,6 +442,10 @@ func (handle *MailboxHandle) RemovedSet(seq imap.SeqSet) {
 	if handle.conn == nil {
 		return
 	}
+
+	handle.shared.uidMapLock.Lock()
+	handle.shared.uidMap = removeUIDMapSnapshot(handle.shared.uidMap, seq)
+	handle.shared.uidMapLock.Unlock()
 
 	handle.shared.handlesLock.RLock()
 	defer handle.shared.handlesLock.RUnlock()
