@@ -185,3 +185,100 @@ func TestRegistrationClosed(tt *testing.T) {
 		conn.ExpectPattern("501 *") // User does not exist
 	})
 }
+
+func TestLoginDomainValidation(tt *testing.T) {
+	tt.Parallel()
+
+	t := tests.NewT(tt)
+	t.DNS(nil)
+	t.Port("imap")
+	t.Config(`
+		storage.imapsql local_mail {
+			driver sqlite3
+			dsn imapsql.db
+			auto_create yes
+		}
+
+		auth.pass_table local_auth {
+			table sql_table {
+				driver sqlite3
+				dsn {env:TEST_STATE_DIR}/auth3.db
+				table_name credentials
+			}
+			auto_create yes
+			jit_domain [1.1.1.1]
+		}
+
+		imap tcp://127.0.0.1:{env:TEST_PORT_imap} {
+			tls off
+			auth &local_auth
+			storage &local_mail
+		}
+	`)
+	t.Run(2)
+	defer t.Close()
+
+	// 1. Valid login with bracketed IP - should succeed (JIT creates user)
+	t.Subtest("Valid Login With Bracket IP", func(t *tests.T) {
+		conn := t.Conn("imap")
+		defer conn.Close()
+		conn.ExpectPattern(`\* OK *`)
+
+		conn.Writeln(". LOGIN newuser1@[1.1.1.1] password1")
+		conn.ExpectPattern(". OK *")
+		conn.Writeln(". LOGOUT")
+		conn.ExpectPattern(`\* BYE *`)
+	})
+
+	// 2. Valid login with bare IP - should succeed (normalization wraps it)
+	t.Subtest("Valid Login With Bare IP", func(t *tests.T) {
+		conn := t.Conn("imap")
+		defer conn.Close()
+		conn.ExpectPattern(`\* OK *`)
+
+		conn.Writeln(". LOGIN newuser2@1.1.1.1 password2")
+		conn.ExpectPattern(". OK *")
+		conn.Writeln(". LOGOUT")
+		conn.ExpectPattern(`\* BYE *`)
+	})
+
+	// 3. URL-encoded brackets - should be REJECTED
+	t.Subtest("Reject URL-Encoded Brackets", func(t *tests.T) {
+		conn := t.Conn("imap")
+		defer conn.Close()
+		conn.ExpectPattern(`\* OK *`)
+
+		conn.Writeln(". LOGIN xyzzy@%5b1.1.1.1%5d password3")
+		conn.ExpectPattern(". NO *")
+	})
+
+	// 4. Wrong domain - should be REJECTED
+	t.Subtest("Reject Wrong Domain", func(t *tests.T) {
+		conn := t.Conn("imap")
+		defer conn.Close()
+		conn.ExpectPattern(`\* OK *`)
+
+		conn.Writeln(". LOGIN xyzzy@abcd password4")
+		conn.ExpectPattern(". NO *")
+	})
+
+	// 5. Multiple @ signs - should be REJECTED
+	t.Subtest("Reject Multiple At Signs", func(t *tests.T) {
+		conn := t.Conn("imap")
+		defer conn.Close()
+		conn.ExpectPattern(`\* OK *`)
+
+		conn.Writeln(". LOGIN x@y@z password5")
+		conn.ExpectPattern(". NO *")
+	})
+
+	// 6. Different IP address - should be REJECTED
+	t.Subtest("Reject Different IP", func(t *tests.T) {
+		conn := t.Conn("imap")
+		defer conn.Close()
+		conn.ExpectPattern(`\* OK *`)
+
+		conn.Writeln(". LOGIN user@[10.0.0.1] password6")
+		conn.ExpectPattern(". NO *")
+	})
+}

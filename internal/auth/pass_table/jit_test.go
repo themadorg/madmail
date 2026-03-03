@@ -338,3 +338,142 @@ func TestAuthPlain_WithJIT(t *testing.T) {
 		}
 	})
 }
+
+func TestAuthPlain_WithJITDomain(t *testing.T) {
+	t.Run("accepts user with correct IP-bracket domain", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		a.jitDomain = "[1.1.1.1]"
+		_ = a.settingsTable.(*mockMutableTable).SetKey("__JIT_REGISTRATION_ENABLED__", "true")
+
+		username := "xyzzy@[1.1.1.1]"
+		password := "testpassword"
+
+		err := a.AuthPlain(username, password)
+		if err != nil {
+			t.Fatalf("AuthPlain should accept correct domain, got: %v", err)
+		}
+
+		// Verify user was created
+		key, _ := precis.UsernameCaseMapped.CompareKey(auth.NormalizeUsername(username))
+		_, ok := a.table.(*mockMutableTable).data[key]
+		if !ok {
+			t.Error("User was not created with correct domain")
+		}
+	})
+
+	t.Run("accepts bare IP (normalized to bracket)", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		a.jitDomain = "[1.1.1.1]"
+		_ = a.settingsTable.(*mockMutableTable).SetKey("__JIT_REGISTRATION_ENABLED__", "true")
+
+		username := "xyzzy@1.1.1.1"
+		password := "testpassword"
+
+		err := a.AuthPlain(username, password)
+		if err != nil {
+			t.Fatalf("AuthPlain should accept bare IP (normalized), got: %v", err)
+		}
+	})
+
+	t.Run("rejects URL-encoded brackets", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		a.jitDomain = "[1.1.1.1]"
+		_ = a.settingsTable.(*mockMutableTable).SetKey("__JIT_REGISTRATION_ENABLED__", "true")
+
+		username := "xyzzy@%5b1.1.1.1%5d"
+		password := "testpassword"
+
+		err := a.AuthPlain(username, password)
+		if err == nil {
+			t.Error("AuthPlain should reject URL-encoded brackets")
+		}
+	})
+
+	t.Run("rejects wrong domain", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		a.jitDomain = "[1.1.1.1]"
+		_ = a.settingsTable.(*mockMutableTable).SetKey("__JIT_REGISTRATION_ENABLED__", "true")
+
+		username := "xyzzy@abcd"
+		password := "testpassword"
+
+		err := a.AuthPlain(username, password)
+		if err == nil {
+			t.Error("AuthPlain should reject wrong domain")
+		}
+	})
+
+	t.Run("rejects multiple @ signs", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		a.jitDomain = "[1.1.1.1]"
+		_ = a.settingsTable.(*mockMutableTable).SetKey("__JIT_REGISTRATION_ENABLED__", "true")
+
+		username := "x@y@z"
+		password := "testpassword"
+
+		err := a.AuthPlain(username, password)
+		if err == nil {
+			t.Error("AuthPlain should reject multiple @ signs")
+		}
+	})
+
+	t.Run("no validation when jitDomain is empty (backward compatible)", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		a.jitDomain = "" // no domain restriction
+		_ = a.settingsTable.(*mockMutableTable).SetKey("__JIT_REGISTRATION_ENABLED__", "true")
+
+		username := "anything@whatever"
+		password := "testpassword"
+
+		err := a.AuthPlain(username, password)
+		if err != nil {
+			t.Fatalf("AuthPlain should accept any domain when jitDomain is empty, got: %v", err)
+		}
+	})
+
+	t.Run("accepts correct regular domain", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		a.jitDomain = "example.org"
+		_ = a.settingsTable.(*mockMutableTable).SetKey("__JIT_REGISTRATION_ENABLED__", "true")
+
+		username := "user@example.org"
+		password := "testpassword"
+
+		err := a.AuthPlain(username, password)
+		if err != nil {
+			t.Fatalf("AuthPlain should accept correct regular domain, got: %v", err)
+		}
+	})
+
+	t.Run("rejects wrong regular domain", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		a.jitDomain = "example.org"
+		_ = a.settingsTable.(*mockMutableTable).SetKey("__JIT_REGISTRATION_ENABLED__", "true")
+
+		username := "user@evil.com"
+		password := "testpassword"
+
+		err := a.AuthPlain(username, password)
+		if err == nil {
+			t.Error("AuthPlain should reject wrong regular domain")
+		}
+	})
+
+	t.Run("existing user can login regardless of jitDomain", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		a.jitDomain = "[1.1.1.1]"
+		addSHA256()
+
+		// Create the user first
+		username := "existing@abcd"
+		password := "password"
+		key, _ := precis.UsernameCaseMapped.CompareKey(auth.NormalizeUsername(username))
+		_ = a.table.(*mockMutableTable).SetKey(key, "sha256:U0FMVA==:8PDRAgaUqaLSk34WpYniXjaBgGM93Lc6iF4pw2slthw=")
+
+		// Even though domain doesn't match, existing user should be able to login
+		err := a.AuthPlain(username, password)
+		if err != nil {
+			t.Fatalf("Existing user should login regardless of jitDomain, got: %v", err)
+		}
+	})
+}

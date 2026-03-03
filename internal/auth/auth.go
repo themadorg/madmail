@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package auth
 
 import (
+	"fmt"
 	"net"
 	"strings"
 )
@@ -37,6 +38,53 @@ func NormalizeUsername(username string) string {
 		return parts[0] + "@" + WrapIP(parts[1])
 	}
 	return WrapIP(username)
+}
+
+// ValidateLoginDomain checks that a username is in the format localpart@domain
+// where domain exactly matches the expected domain (case-insensitive).
+// This prevents JIT account creation for arbitrary usernames like:
+//   - x@y@z (multiple @ signs)
+//   - user@%5b1.2.3.4%5d (URL-encoded brackets)
+//   - user@wrongdomain
+//   - user@abcd (random domain)
+//
+// The expectedDomain should already be in the canonical form, e.g. "[1.1.1.1]".
+// The username is normalized before comparison (bare IPs get brackets added).
+func ValidateLoginDomain(username, expectedDomain string) error {
+	if expectedDomain == "" {
+		return nil // no domain restriction configured
+	}
+
+	// Reject URL-encoded characters in the username.
+	// These are never valid in IMAP LOGIN usernames and indicate
+	// an attempt to bypass domain validation.
+	if strings.Contains(username, "%") {
+		return fmt.Errorf("invalid username: contains URL-encoded characters")
+	}
+
+	// Split on @ — must have exactly one @
+	parts := strings.Split(username, "@")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid username format: expected localpart@domain")
+	}
+
+	localpart := parts[0]
+	domain := parts[1]
+
+	// Localpart must not be empty
+	if localpart == "" {
+		return fmt.Errorf("invalid username: empty localpart")
+	}
+
+	// Normalize the domain (wrap bare IPs in brackets)
+	domain = WrapIP(domain)
+
+	// Compare domain against expected (case-insensitive)
+	if !strings.EqualFold(domain, expectedDomain) {
+		return fmt.Errorf("invalid login domain: expected @%s", expectedDomain)
+	}
+
+	return nil
 }
 
 func CheckDomainAuth(username string, perDomain bool, allowedDomains []string) (loginName string, allowed bool) {

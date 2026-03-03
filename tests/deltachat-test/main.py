@@ -48,6 +48,7 @@ from scenarios import (
     test_16_webxdc_realtime,
     test_17_admin_api,
     test_18_stealth_mode,
+    test_19_login_validation,
 )
 from utils.lxc import LXCManager
 from stress import run_stress
@@ -95,6 +96,7 @@ def main():
     parser.add_argument("--test-16", action="store_true", help="Run WebXDC Realtime P2P Test")
     parser.add_argument("--test-17", action="store_true", help="Run Admin API Test")
     parser.add_argument("--test-18", action="store_true", help="Run Stealth / Camouflage Mode Test")
+    parser.add_argument("--test-19", action="store_true", help="Run Login Domain Validation Test")
     parser.add_argument("--domain", help="Specify domain/IP for tests (updates REMOTE1/REMOTE2)")
     parser.add_argument("--lxc", action="store_true", help="Run tests in local LXC containers")
     parser.add_argument("--keep-lxc", action="store_true", help="Keep LXC containers alive after test")
@@ -113,6 +115,7 @@ def main():
         args.test_5, args.test_6, args.test_7, args.test_8, args.test_9,
         args.test_10, args.test_11, args.test_12, args.test_13, args.test_14,
         args.test_15, args.test_16, args.test_17, args.test_18,
+        args.test_19,
     ])
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -362,6 +365,16 @@ def main():
                 print("="*50)
                 test_18_stealth_mode.run(test_dir=test_dir)
                 print("✓ TEST #18 PASSED: Stealth / Camouflage Mode verified")
+
+            # ==========================================
+            # TEST #19: Login Domain Validation
+            # ==========================================
+            if run_all or args.test_19:
+                print("\n" + "="*50)
+                print("TEST #19: Login Domain Validation")
+                print("="*50)
+                test_19_login_validation.run(dc, (remote1, remote2))
+                print("✓ TEST #19 PASSED: Login domain validation verified")
 
             # ==========================================
             # ALL TESTS COMPLETE

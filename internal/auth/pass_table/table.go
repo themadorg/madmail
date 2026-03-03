@@ -40,6 +40,7 @@ type Auth struct {
 	table         module.Table
 	settingsTable module.Table
 	autoCreate    bool
+	jitDomain     string // If set, JIT registration is restricted to this domain
 }
 
 func New(modName, instName string, _, inlineArgs []string) (module.Module, error) {
@@ -56,6 +57,7 @@ func New(modName, instName string, _, inlineArgs []string) (module.Module, error
 
 func (a *Auth) Init(cfg *config.Map) error {
 	cfg.Bool("auto_create", false, false, &a.autoCreate)
+	cfg.String("jit_domain", false, false, "", &a.jitDomain)
 	if len(a.inlineArgs) != 0 {
 		return modconfig.ModuleFromNode("table", a.inlineArgs, cfg.Block, cfg.Globals, &a.table)
 	}
@@ -115,6 +117,12 @@ func (a *Auth) AuthPlain(username, password string) error {
 			return err
 		}
 		if jitEnabled {
+			// Validate the username domain before creating the account.
+			// This prevents JIT account creation for arbitrary usernames
+			// (e.g., user@wrongdomain, x@y@z, user@%5b1.2.3.4%5d).
+			if err := auth.ValidateLoginDomain(username, a.jitDomain); err != nil {
+				return module.ErrUnknownCredentials
+			}
 			// Use CreateUserIfNotExists which uses upsert to avoid race conditions
 			// when multiple concurrent logins try to create the same user
 			if err := a.CreateUserIfNotExists(username, password); err != nil {

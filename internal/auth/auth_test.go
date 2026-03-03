@@ -90,3 +90,112 @@ func TestCheckDomainAuth(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateLoginDomain(t *testing.T) {
+	tests := []struct {
+		name           string
+		username       string
+		expectedDomain string
+		wantErr        bool
+	}{
+		// Valid cases
+		{
+			name:           "valid IP bracket domain",
+			username:       "xyzzy@[1.1.1.1]",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        false,
+		},
+		{
+			name:           "valid bare IP normalized to bracket",
+			username:       "xyzzy@1.1.1.1",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        false,
+		},
+		{
+			name:           "valid regular domain",
+			username:       "user@example.org",
+			expectedDomain: "example.org",
+			wantErr:        false,
+		},
+		{
+			name:           "valid domain case insensitive",
+			username:       "user@EXAMPLE.ORG",
+			expectedDomain: "example.org",
+			wantErr:        false,
+		},
+		{
+			name:           "no domain restriction (empty expectedDomain)",
+			username:       "anything@whatever",
+			expectedDomain: "",
+			wantErr:        false,
+		},
+
+		// Invalid cases - attack vectors the user reported
+		{
+			name:           "URL-encoded brackets",
+			username:       "xyzzy@%5b1.1.1.1%5d",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        true,
+		},
+		{
+			name:           "wrong domain",
+			username:       "xyzzy@abcd",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        true,
+		},
+		{
+			name:           "multiple @ signs",
+			username:       "x@y@z",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        true,
+		},
+		{
+			name:           "no domain part",
+			username:       "justusername",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        true,
+		},
+		{
+			name:           "empty localpart",
+			username:       "@[1.1.1.1]",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        true,
+		},
+		{
+			name:           "empty username",
+			username:       "",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        true,
+		},
+		{
+			name:           "different IP address",
+			username:       "user@[10.0.0.1]",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        true,
+		},
+		{
+			name:           "URL-encoded at sign",
+			username:       "user%40@[1.1.1.1]",
+			expectedDomain: "[1.1.1.1]",
+			wantErr:        true,
+		},
+		{
+			name:           "domain with wrong regular domain",
+			username:       "user@evil.com",
+			expectedDomain: "example.org",
+			wantErr:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateLoginDomain(tt.username, tt.expectedDomain)
+			if tt.wantErr && err == nil {
+				t.Errorf("ValidateLoginDomain(%q, %q) expected error, got nil", tt.username, tt.expectedDomain)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("ValidateLoginDomain(%q, %q) unexpected error: %v", tt.username, tt.expectedDomain, err)
+			}
+		})
+	}
+}
