@@ -1,3 +1,10 @@
+# [0.23.0](https://github.com/themadorg/madmail/compare/v0.22.1...v0.23.0) (2026-03-04)
+
+
+### Features
+
+* **api:** add filesystem message blob purge to queue handler ([7f5a651](https://github.com/themadorg/madmail/commit/7f5a65156126e5139c60c7b7fb9bb817be36b9fb))
+
 ## [0.22.1](https://github.com/themadorg/madmail/compare/v0.22.0...v0.22.1) (2026-03-04)
 
 
