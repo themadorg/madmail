@@ -1,3 +1,10 @@
+## [0.22.1](https://github.com/themadorg/madmail/compare/v0.22.0...v0.22.1) (2026-03-04)
+
+
+### Bug Fixes
+
+* **ci:** add admin-web embed placeholder for CI builds ([2fc7df8](https://github.com/themadorg/madmail/commit/2fc7df836b074bbdd8a70df3db04533f1a597993))
+
 # [0.22.0](https://github.com/themadorg/madmail/compare/v0.21.0...v0.22.0) (2026-03-04)
 
 
