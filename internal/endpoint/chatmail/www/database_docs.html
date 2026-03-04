@@ -6,66 +6,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مستندات پایگاه داده - {{.WebDomain | cleanDomain}}</title>
     <link rel="stylesheet" href="/main.css">
-    <style>
-        .doc-container {
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            background: var(--card-bg);
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            direction: rtl;
-        }
-
-        h2 {
-            margin-top: 30px;
-            border-bottom: 2px solid var(--accent-color);
-            padding-bottom: 10px;
-            display: inline-block;
-        }
-
-        .highlight {
-            color: var(--accent-color);
-            font-weight: bold;
-        }
-
-        pre {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 15px;
-            border-radius: 8px;
-            overflow-x: auto;
-            direction: ltr;
-            text-align: left;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        code {
-            font-family: 'Courier New', Courier, monospace;
-            color: #ff9e64;
-        }
-
-        .db-tip {
-            background: rgba(255, 158, 100, 0.1);
-            border-right: 4px solid #ff9e64;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 4px;
-        }
-    </style>
+    <script src="/main.js"></script>
 </head>
 
 <body>
-    <ul id="menu">
-        <li><a href="/">اصلی</a></li>
-        <li><a href="/docs">مستندات</a></li>
-    </ul>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">اصلی</a></li>
+            <li><a href="/docs">مستندات</a></li>
+        </ul>
+    </header>
 
-    <div class="doc-container">
+    <div class="card card--wide">
         <h1>پیکربندی پایگاه داده (Database Configuration)</h1>
-        <p>سرویس <span class="highlight">Madmail</span> اکنون از <span class="highlight">GORM</span> پشتیبانی می‌کند که
+        <p>سرویس <strong>Madmail</strong> اکنون از <strong>GORM</strong> پشتیبانی می‌کند که
             امکان استفاده از پایگاه داده‌های مختلف و مهاجرت خودکار (Auto Migration) را فراهم می‌سازد.</p>
 
-        <div class="db-tip">
+        <div class="alert alert--warning">
             <p><strong>نکته مهم:</strong> به طور پیش‌فرض از SQLite استفاده می‌شود، اما برای مقیاس‌پذیری بالا، استفاده از
                 PostgreSQL توصیه می‌گردد.</p>
         </div>

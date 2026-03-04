@@ -57,6 +57,12 @@ __pycache__
 *.pyo
 tmp/
 
+#binaryies
+madmail
+
+#claude
+.claude/
+
 node_modules/
 dev/
 internal/endpoint/iroh/assets/iroh-relay

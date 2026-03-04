@@ -2,72 +2,50 @@
 <html dir="rtl" lang="fa">
 
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>اطلاعات — {{.MailDomain}}</title>
-  <link rel="stylesheet" href="./main.css">
-  <style>
-    body {
-      font-family: Tahoma, Arial, sans-serif;
-      text-align: center;
-    }
-
-    #menu {
-      justify-content: center;
-      display: flex;
-      list-style: none;
-      padding: 0;
-      margin-bottom: 40px;
-    }
-
-    #menu li {
-      margin: 0 10px;
-    }
-
-    h2 {
-      margin-bottom: 10px;
-    }
-  </style>
-  <script src="./main.js"></script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>اطلاعات — {{.MailDomain}}</title>
+    <link rel="stylesheet" href="./main.css">
+    <script src="./main.js"></script>
 </head>
 
 <body>
-  <ul id="menu">
-    <li><a href="/">اصلی</a></li>
-    <li><a href="/share">اشتراک‌گذاری</a></li>
-    <li><a href="/info.html">راهنما</a></li>
-    <li><a href="/security.html">امنیت</a></li>
-    <li><a href="/deploy.html">راه‌اندازی</a></li>
-  </ul>
-  <h2>درباره این سرور</h2>
-  <p>این یک گره (Node) از شبکه دلتاچت است. هدف آن فراهم کردن ارتباط سریع و خصوصی برای کاربران است.</p>
-  <div style="text-align: right; display: inline-block; max-width: 400px; margin-top: 20px;">
-    <ul>
-      <li>پیام‌ها بعد از ۲۰ روز به طور خودکار از سرور پاک می‌شوند.</li>
-      <li>حجم ذخیره‌سازی هر اکانت محدود به {{.DefaultQuota | formatBytes}} است.</li>
-      <li>ارسال پیام فقط به صورت رمزنگاری شده امکان‌پذیر است.</li>
-    </ul>
-  </div>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">اصلی</a></li>
+            <li><a href="/share">اشتراک‌گذاری</a></li>
+            <li><a href="/info.html">راهنما</a></li>
+            <li><a href="/security.html">امنیت</a></li>
+            <li><a href="/deploy.html">راه‌اندازی</a></li>
+        </ul>
+    </header>
 
-  {{if .SSURL}}
-  <div class="ss-prominent-box">
-    <strong>🚀 لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-    <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر سرور
-      دیگر madmail پروکسی خودش را خواهد داشت</p>
-
-    <div class="ss-copy-container">
-      <p>لینک پروکسی Shadowsocks:</p>
-      <div class="ss-copy-text" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+    <div class="text-center">
+        <h2>درباره این سرور</h2>
+        <p>این یک گره (Node) از شبکه دلتاچت است. هدف آن فراهم کردن ارتباط سریع و خصوصی برای کاربران است.</p>
     </div>
 
-    <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+    <div class="card card--centered text-right">
+        <ul>
+            <li>پیام‌ها بعد از ۲۰ روز به طور خودکار از سرور پاک می‌شوند.</li>
+            <li>حجم ذخیره‌سازی هر اکانت محدود به {{.DefaultQuota | formatBytes}} است.</li>
+            <li>ارسال پیام فقط به صورت رمزنگاری شده امکان‌پذیر است.</li>
+        </ul>
+    </div>
 
-    <p
-      style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
-      * این پروکسی مختص همین سرور Madmail است.
-    </p>
-  </div>
-  {{end}}
+    {{if .SSURL}}
+    <div class="proxy-box">
+        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
+        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر سرور
+            دیگر madmail پروکسی خودش را خواهد داشت</p>
+        <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
+    </div>
+    {{end}}
 </body>
 
 </html>

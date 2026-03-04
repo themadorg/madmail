@@ -6,138 +6,77 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>راه‌اندازی سرور — {{.MailDomain}}</title>
     <link rel="stylesheet" href="./main.css">
-    <style>
-        body {
-            font-family: Tahoma, Arial, sans-serif;
-            text-align: center;
-        }
-
-        #menu {
-            justify-content: center;
-            display: flex;
-            list-style: none;
-            padding: 0;
-            margin-bottom: 40px;
-        }
-
-        #menu li {
-            margin: 0 10px;
-        }
-
-        h2 {
-            margin-bottom: 20px;
-        }
-
-        .code-box {
-            direction: ltr;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 10px;
-            border-radius: 4px;
-            font-family: monospace;
-            text-align: left;
-            margin: 10px 0;
-            word-break: break-all;
-            white-space: pre-wrap;
-            border: 1px dashed #444;
-        }
-
-        .container {
-            text-align: right;
-            display: inline-block;
-            max-width: 700px;
-            width: 90%;
-            margin: 20px auto;
-            line-height: 1.8;
-        }
-    </style>
     <script src="./main.js"></script>
 </head>
 
 <body>
-    <ul id="menu">
-        <li><a href="/">اصلی</a></li>
-        <li><a href="/share">اشتراک‌گذاری</a></li>
-        <li><a href="/info.html">راهنما</a></li>
-        <li><a href="/security.html">امنیت</a></li>
-        <li><a href="/deploy.html">راه‌اندازی</a></li>
-    </ul>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">اصلی</a></li>
+            <li><a href="/share">اشتراک‌گذاری</a></li>
+            <li><a href="/info.html">راهنما</a></li>
+            <li><a href="/security.html">امنیت</a></li>
+            <li><a href="/deploy.html">راه‌اندازی</a></li>
+        </ul>
+    </header>
 
-    <div class="container">
+    <div class="card card--wide">
         <h2>چگونه یک سرور مشابه داشته باشیم؟</h2>
         <p>برنامه <strong>Madmail</strong> (همین نرم‌افزار) به گونه‌ای طراحی شده است که روی تمامی توزیع‌های دبیان
             (Debian)، اوبونتو (Ubuntu) و سیستم‌های مشابه به راحتی کار کند.</p>
 
-
-        <p style="margin-top: 20px;">با توجه به وضعیت اینترنت، هر سرور Madmail می‌تواند به عنوان یک منبع عمل کرده و
+        <p class="mt-md">با توجه به وضعیت اینترنت، هر سرور Madmail می‌تواند به عنوان یک منبع عمل کرده و
             باینری برنامه را به دیگران ارائه دهد.</p>
 
         <p>برای دریافت اخبار و آموزش‌های جدید، به کانال تلگرام ما بپیوندید:</p>
-        <a href="https://t.me/the_madmail" target="_blank"
-            style="color: #00d2ff; text-decoration: none;">https://t.me/the_madmail</a>
+        <a href="https://t.me/the_madmail" target="_blank">https://t.me/the_madmail</a>
 
-        <h3 style="margin-top: 30px;">دستور نصب (نخستین بار):</h3>
+        <h3 class="mt-lg">دستور نصب (نخستین بار):</h3>
         <p>دستور زیر برای نصب ساده طراحی شده که فقط به یک IP و پورت‌های باز نیاز دارد:</p>
-        <p dir="ltr"
-            style="padding: 10px; color: #ddd; word-break: break-all; text-align: left; background: rgba(255, 255, 255, 0.05); border-radius: 4px;">
-            wget http://{{.PublicIP}}/madmail && chmod +x madmail && sudo ./madmail install --simple && sudo systemctl
-            start maddy
-        </p>
+        <div class="code-block">wget http://{{.PublicIP}}/madmail && chmod +x madmail && sudo ./madmail install --simple && sudo systemctl start maddy</div>
+
         <p>هنگام اجرای دستور بالا، سوالاتی از شما پرسیده می‌شود. به عنوان مثال در این سرور، من آی‌پی (IP) سرور را برای
             هر دو گزینه وارد کردم:</p>
-        <div dir="ltr"
-            style="background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.9em; text-align: left; color: #aaa; margin: 10px 0;">
-            Primary domain (e.g., example.org) [example.org]: {{.PublicIP}}<br>
-            Public IP address (for DNS and registration) [127.0.0.1]: {{.PublicIP}}
-        </div>
-        <p style="font-size: 0.9em; color: #bbb;">نکته: برای نصب‌های پیچیده‌تر و شخصی‌سازی کامل، می‌توانید دستور را بدون
-            گزینه ساده اجرا کنید: <code style="direction: ltr; display: inline-block;">sudo ./madmail install</code></p>
+        <div class="code-block">Primary domain (e.g., example.org) [example.org]: {{.PublicIP}}
+Public IP address (for DNS and registration) [127.0.0.1]: {{.PublicIP}}</div>
 
-        <h3 style="margin-top: 30px;">دستور آپدیت:</h3>
+        <p class="text-sm text-muted">نکته: برای نصب‌های پیچیده‌تر و شخصی‌سازی کامل، می‌توانید دستور را بدون
+            گزینه ساده اجرا کنید: <code>sudo ./madmail install</code></p>
+
+        <h3 class="mt-lg">دستور آپدیت:</h3>
         <p>برای بروزرسانی سرور موجود از این دستور استفاده کنید:</p>
-        <p dir="ltr"
-            style="padding: 10px; color: #ddd; word-break: break-all; text-align: left; background: rgba(255, 255, 255, 0.05); border-radius: 4px;">
-            sudo systemctl stop maddy.service && rm -f madmail && wget http://{{.PublicIP}}/madmail && chmod +x madmail
-            && sudo ./madmail install --simple && sudo systemctl start maddy
-        </p>
+        <div class="code-block">sudo systemctl stop maddy.service && rm -f madmail && wget http://{{.PublicIP}}/madmail && chmod +x madmail && sudo ./madmail install --simple && sudo systemctl start maddy</div>
 
-        <div
-            style="margin-top: 30px; border: 1px solid #ff4444; padding: 15px; border-radius: 8px; background: rgba(255, 68, 68, 0.05);">
-            <strong style="color: #ff4444;">نکات بسیار مهم:</strong>
+        <div class="alert alert--danger mt-lg">
+            <strong>نکات بسیار مهم:</strong>
             <ul>
                 <li>در دستورات بالا، از IP همین سرور استفاده شده است. شما می‌توانید از IP هر سرور Madmail دیگری نیز برای
                     دریافت فایل استفاده کنید.</li>
                 <li>مطمئن شوید پورت‌های <strong>HTTP (80)</strong>، <strong>SMTP (25)</strong> و <strong>IMAP
                         (143/993)</strong> روی فایروال سرور شما باز هستند.</li>
-                <li>پس از نصب، فایل تنظیمات در مسیر <code
-                        style="direction: ltr; display: inline-block;">/etc/maddy/maddy.conf</code> قرار دارد. شما
+                <li>پس از نصب، فایل تنظیمات در مسیر <code>/etc/maddy/maddy.conf</code> قرار دارد. شما
                     می‌توانید برای تغییر تنظیمات (مانند بستن ثبت‌نام) این فایل را ویرایش کنید.</li>
             </ul>
         </div>
     </div>
 
     {{if .SSURL}}
-    <div class="ss-prominent-box">
-        <strong>🚀 لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
+    <div class="proxy-box">
+        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
         <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
             سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
-
-        <div class="ss-copy-container">
-            <p>لینک پروکسی Shadowsocks:</p>
-            <div class="ss-copy-text" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
-        </div>
-
-        <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
-
-        <p
-            style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
-            * این پروکسی مختص همین سرور Madmail است.
-        </p>
+        <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
     </div>
     {{end}}
 
-    <footer style="margin-top: 50px; padding: 20px; font-size: 0.8em; color: #888;">
-        نسخه {{.Version}} | <a href="/docs/serve" style="color: #666; text-decoration: none;">شخصی‌سازی ظاهر</a>
-    </footer>
+    <div class="footer text-center">
+        نسخه {{.Version}} | <a href="/docs/serve">شخصی‌سازی ظاهر</a>
+    </div>
 </body>
 
 </html>
