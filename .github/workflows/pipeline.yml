@@ -50,6 +50,10 @@ jobs:
         run: |
           mkdir -p internal/endpoint/iroh/assets
           touch internal/endpoint/iroh/assets/iroh-relay
+      - name: Create admin-web placeholder for embedding
+        run: |
+          mkdir -p internal/adminweb/build
+          touch internal/adminweb/build/placeholder
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
@@ -72,6 +76,10 @@ jobs:
         run: |
           mkdir -p internal/endpoint/iroh/assets
           touch internal/endpoint/iroh/assets/iroh-relay
+      - name: Create admin-web placeholder for embedding
+        run: |
+          mkdir -p internal/adminweb/build
+          touch internal/adminweb/build/placeholder
       - name: Build legacy static binary
         run: |
           make build_legacy
