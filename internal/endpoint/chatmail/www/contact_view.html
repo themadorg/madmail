@@ -6,84 +6,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{if .Custom.Name}}پیام به {{.Custom.Name}}{{else}}مخاطب دلتاچت{{end}} - {{.WebDomain | cleanDomain}}</title>
     <link rel="stylesheet" href="/main.css">
-    <style>
-        body {
-            font-family: Tahoma, Arial, sans-serif;
-        }
-
-        .contact-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(15px);
-            padding: 50px;
-            border-radius: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            text-align: center;
-            max-width: 600px;
-            margin: 60px auto;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .contact-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: var(--primary-gradient);
-        }
-
-        .avatar {
-            width: 100px;
-            height: 100px;
-            background: var(--primary-gradient);
-            border-radius: 50%;
-            margin: 0 auto 25px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2.5rem;
-            font-weight: 800;
-            color: white;
-            box-shadow: 0 10px 20px rgba(58, 123, 213, 0.3);
-        }
-
-        .warning-box {
-            background: rgba(255, 171, 0, 0.1);
-            border: 1px solid rgba(255, 171, 0, 0.3);
-            border-radius: 12px;
-            padding: 20px;
-            margin: 30px 0;
-            text-align: right;
-            color: #ffab00;
-            font-size: 0.95rem;
-        }
-
-        .warning-title {
-            font-weight: 700;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-        }
-
-        .warning-title::after {
-            content: '⚠️';
-            margin-right: 10px;
-        }
-    </style>
     <script src="./main.js"></script>
 </head>
 
 <body>
-    <ul id="menu">
-        <li><a href="/">اصلی</a></li>
-        <li><a href="/share">اشتراک‌گذاری</a></li>
-        <li><a href="/info.html">راهنما</a></li>
-        <li><a href="/security.html">امنیت</a></li>
-        <li><a href="/deploy.html">راه‌اندازی</a></li>
-    </ul>
-    <div class="contact-card">
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">اصلی</a></li>
+            <li><a href="/share">اشتراک‌گذاری</a></li>
+            <li><a href="/info.html">راهنما</a></li>
+            <li><a href="/security.html">امنیت</a></li>
+            <li><a href="/deploy.html">راه‌اندازی</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--centered">
         <div class="avatar">
             {{if .Custom.Name}}
             {{slice .Custom.Name 0 1 | printf "%s" | upper}}
@@ -98,71 +38,38 @@
             مخاطب دلتاچت
             {{end}}
         </h2>
-        <p style="color: var(--text-secondary);">آماده دریافت پیام در دلتاچت</p>
-        <div style="margin: 30px 0;">
-            <p style="font-size: 0.95rem; margin-bottom: 20px;">برای شروع گفتگو، روی دکمه زیر بزنید یا لینک را کپی کرده
-                و در برنامه وارد کنید.</p>
-            <a href="{{.Custom.URL | safeURL}}" class="cta-button"
-                style="padding: 18px 40px; font-size: 1.2rem; font-family: inherit; display: inline-block; width: 100%; box-sizing: border-box; text-decoration: none;">
-                ارسال پیام در دلتاچت
-            </a>
+        <p class="text-muted">آماده دریافت پیام در دلتاچت</p>
+
+        <div class="mt-md mb-md">
+            <p class="text-sm mb-md">برای شروع گفتگو، روی دکمه زیر بزنید یا لینک را کپی کرده و در برنامه وارد کنید.</p>
+            <a href="{{.Custom.URL | safeURL}}" class="btn btn--primary btn--full">ارسال پیام در دلتاچت</a>
         </div>
-        <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px; margin: 20px 0;">
-            <code id="inviteLink"
-                style="font-size: 0.8rem; word-break: break-all; color: var(--accent-color); display: block; margin-bottom: 10px; direction: ltr;">
-                {{.Custom.URL}}
-            </code>
-            <button onclick="copyInvite()" class="copy-btn" id="copyBtn">کپی لینک دعوت</button>
-        </div>
-        <div class="warning-box">
-            <div class="warning-title">تایید هویت و امنیت</div>
+
+        <div class="code-block mt-md" id="inviteLink" dir="ltr">{{.Custom.URL}}</div>
+        <button onclick="copyToClipboard(document.getElementById('inviteLink').innerText.trim())" class="btn btn--secondary mt-sm">کپی لینک دعوت</button>
+
+        <div class="alert alert--warning mt-md">
+            <strong>تایید هویت و امنیت</strong>
             <p>ممکن است این لینک متعلق به فرد دیگری باشد یا آدرس آن تغییر کرده باشد.</p>
-            <p style="margin-top: 10px; font-weight: 600;">لطفاً پس از متصل شدن، حتماً از فرد مقابل تایید بگیرید که همان
-                شخصی است که انتظار دارید.</p>
+            <p class="mt-sm"><strong>لطفاً پس از متصل شدن، حتماً از فرد مقابل تایید بگیرید که همان
+                شخصی است که انتظار دارید.</strong></p>
         </div>
     </div>
 
     {{if .SSURL}}
-    <div class="ss-prominent-box">
-        <strong>🚀 لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
+    <div class="proxy-box">
+        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
         <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
             سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
-
-        <div class="ss-copy-container">
-            <p>لینک پروکسی Shadowsocks:</p>
-            <div class="ss-copy-text" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
-        </div>
-
-        <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
-
-        <p
-            style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
-            * این پروکسی مختص همین سرور Madmail است.
-        </p>
+        <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
     </div>
     {{end}}
 
-    <div style="text-align: center; margin-bottom: 40px;">
-        <a href="/share" style="font-size: 0.9rem; color: var(--text-secondary); text-decoration: none;">
-            ایجاد صفحه اشتراک‌گذاری برای خودتان
-        </a>
+    <div class="text-center mb-md">
+        <a href="/share" class="text-sm text-muted">ایجاد صفحه اشتراک‌گذاری برای خودتان</a>
     </div>
-
-    <script>
-        function copyInvite() {
-            const link = document.getElementById('inviteLink').innerText.trim();
-            copyToClipboard(link);
-            const btn = document.getElementById('copyBtn');
-            const originalText = btn.innerText;
-            btn.innerText = 'کپی شد!';
-            btn.style.background = 'var(--success-color)';
-
-            setTimeout(() => {
-                btn.innerText = originalText;
-                btn.style.background = '';
-            }, 2000);
-        }
-    </script>
 </body>
 
 </html>

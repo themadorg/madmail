@@ -6,127 +6,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>امنیت — {{.MailDomain}}</title>
     <link rel="stylesheet" href="./main.css">
-    <style>
-        body {
-            font-family: Tahoma, Arial, sans-serif;
-            text-align: center;
-        }
-
-        #menu {
-            justify-content: center;
-            display: flex;
-            list-style: none;
-            padding: 0;
-            margin-bottom: 40px;
-        }
-
-        #menu li {
-            margin: 0 10px;
-        }
-
-        h2 {
-            margin-bottom: 20px;
-        }
-
-        .security-box {
-            text-align: right;
-            display: inline-block;
-            max-width: 650px;
-            width: 90%;
-            margin: 20px auto;
-            line-height: 1.8;
-            background: rgba(255, 68, 68, 0.05);
-            padding: 25px;
-            border-radius: 12px;
-            border: 1px solid rgba(255, 68, 68, 0.2);
-        }
-
-        .warning-text {
-            color: #ff4444;
-            font-weight: bold;
-        }
-
-        ul {
-            padding-right: 20px;
-        }
-
-        li {
-            margin-bottom: 15px;
-        }
-
-        .highlight {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: monospace;
-            direction: ltr;
-            display: inline-block;
-        }
-    </style>
     <script src="./main.js"></script>
 </head>
 
 <body>
-    <ul id="menu">
-        <li><a href="/">اصلی</a></li>
-        <li><a href="/share">اشتراک‌گذاری</a></li>
-        <li><a href="/info.html">راهنما</a></li>
-        <li><a href="/security.html">امنیت</a></li>
-        <li><a href="/deploy.html">راه‌اندازی</a></li>
-    </ul>
-    <h2>امنیت و حریم خصوصی</h2>
-    <div class="security-box">
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">اصلی</a></li>
+            <li><a href="/share">اشتراک‌گذاری</a></li>
+            <li><a href="/info.html">راهنما</a></li>
+            <li><a href="/security.html">امنیت</a></li>
+            <li><a href="/deploy.html">راه‌اندازی</a></li>
+        </ul>
+    </header>
+
+    <div class="text-center">
+        <h2>امنیت و حریم خصوصی</h2>
+    </div>
+
+    <div class="card card--wide">
         <p>کاربران عزیز توجه داشته باشید که دلتاچت می‌تواند هم برای ارتباط <strong>امن و رمزنگاری‌شده</strong>و هم برای
             ارتباط <strong>غیر امن (ایمیل سنتی)</strong>استفاده شود.</p>
-        <p class="warning-text">برای حفظ امنیت کامل، حتما موارد زیر را رعایت کنید:</p>
+        <p class="text-danger"><strong>برای حفظ امنیت کامل، حتما موارد زیر را رعایت کنید:</strong></p>
         <ul>
-            <li><strong>توقف استفاده از ایمیل کلاسیک:</strong>در تنظیمات دلتاچت، بخش <span
-                    class="highlight">Advanced</span>، گزینه «ایمیل سنتی» را روی <strong>«نه»</strong>قرار دهید.</li>
+            <li><strong>توقف استفاده از ایمیل کلاسیک:</strong>در تنظیمات دلتاچت، بخش <code>Advanced</code>، گزینه «ایمیل سنتی» را روی <strong>«نه»</strong>قرار دهید.</li>
             <li><strong>تشخیص پیام‌های ناامن:</strong> پیام‌هایی که با آیکون <strong>پاکت‌نامه</strong> یا <strong>آیکون
                     خاکستری</strong> ظاهر می‌شوند، در واقع ناامن هستند. آیکون خاکستری نشان‌دهنده غیرفعال بودن رمزنگاری
                 است.</li>
             <li><strong>شروع چت فقط با لینک:</strong>به هیچ عنوان مستقیما به ID (آدرس ایمیل) پیام ندهید. ارتباط باید
-                حتما از طریق اشتراک‌گذاری لینک به فرمت <span class="highlight">https: //i.delta.chat/#..</span> شروع
-                شود.
-
+                حتما از طریق اشتراک‌گذاری لینک به فرمت <code>https://i.delta.chat/#..</code> شروع شود.
                 هرگونه ID خارج از این فرمت ناامن است.</li>
-            <li><strong>تفاوت سرورها:</strong>سرورهای <span class="highlight">chatmail</span>(مانند <span
-                    class="highlight">tiiz.ir</span>) تبادل ایمیل رمزنشده را کلا رد می‌کنند. اما <span
-                    class="highlight">madmail</span>در نسخه‌های قدیمی ممکن است اجازه ارسال غیرامن را بدهد که توسط صاحب
+            <li><strong>تفاوت سرورها:</strong>سرورهای <code>chatmail</code>(مانند <code>tiiz.ir</code>) تبادل ایمیل رمزنشده را کلا رد می‌کنند. اما <code>madmail</code>در نسخه‌های قدیمی ممکن است اجازه ارسال غیرامن را بدهد که توسط صاحب
                 سرور یا دیتاسنتر قابل مشاهده است.</li>
         </ul>
-        <div style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
-            <p>💡 <strong>نکته برای مدیران:</strong>اگر از نسخه‌های قدیمی Madmail استفاده می‌کنید، حتما سرور خود را
+
+        <div class="alert alert--info mt-lg">
+            <p><strong>نکته برای مدیران:</strong>اگر از نسخه‌های قدیمی Madmail استفاده می‌کنید، حتما سرور خود را
                 به‌روزرسانی کنید تا امنیت کاربران حفظ شود.</p>
         </div>
     </div>
+
     {{if .SSURL}}
-    <div class="ss-prominent-box">
-        <strong>🚀 لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
+    <div class="proxy-box">
+        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
         <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
             سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
-
-        <div class="ss-copy-container">
-            <p>لینک پروکسی Shadowsocks:</p>
-            <div class="ss-copy-text" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
-        </div>
-
-        <p style="font-size: 0.85em; color: #bbb;">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
-
-        <p
-            style="font-size: 0.75em; color: #888; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
-            * این پروکسی مختص همین سرور Madmail است.
-        </p>
+        <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
+        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
     </div>
     {{end}}
 
-    <footer style="margin-top: 50px; padding: 20px; font-size: 0.8em; color: #888;">نسخه {
-        {
-        .Version
-        }
-        }
-
-    </footer>
+    <div class="footer text-center">نسخه {{.Version}}</div>
 </body>
 
 </html>

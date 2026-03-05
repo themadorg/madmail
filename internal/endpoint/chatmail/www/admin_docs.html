@@ -6,62 +6,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مستندات مدیر سیستم - {{.WebDomain | cleanDomain}}</title>
     <link rel="stylesheet" href="/main.css">
-    <style>
-        .doc-container {
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            background: var(--card-bg);
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            direction: rtl;
-        }
-
-        .code-block {
-            background: #000;
-            padding: 15px;
-            border-radius: 8px;
-            color: #00d2ff;
-            font-family: monospace;
-            margin: 15px 0;
-            overflow-x: auto;
-            direction: ltr;
-        }
-
-        h2 {
-            margin-top: 30px;
-            border-bottom: 2px solid var(--accent-color);
-            padding-bottom: 10px;
-            display: inline-block;
-        }
-
-        .cmd-info {
-            margin-bottom: 30px;
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-        }
-
-        .cmd-info h3 {
-            margin-top: 0;
-            color: var(--accent-color);
-        }
-
-        .cmd-info p {
-            margin: 5px 0;
-            font-size: 0.95em;
-            color: #ccc;
-        }
-    </style>
+    <script src="/main.js"></script>
 </head>
 
 <body>
-    <ul id="menu">
-        <li><a href="/">اصلی</a></li>
-        <li><a href="/docs">مستندات</a></li>
-    </ul>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">اصلی</a></li>
+            <li><a href="/docs">مستندات</a></li>
+        </ul>
+    </header>
 
-    <div class="doc-container">
+    <div class="card card--wide">
         <h1>مستندات مدیر سیستم</h1>
         <p>این راهنما نحوه مدیریت سهمیه (Quota) کاربران و مشاهده آمار سرور را با استفاده از دستورات <code>maddy</code>
             توضیح می‌دهد.</p>
@@ -80,44 +39,34 @@
         <div class="cmd-info">
             <h3>مشایع سهمیه کاربر</h3>
             <p>نمایش میزان فضای مصرف شده و سقف مجاز برای یک کاربر خاص.</p>
-            <div class="code-block">
-                maddy imap-acct quota get username@example.com
-            </div>
+            <div class="code-block">maddy imap-acct quota get username@example.com</div>
         </div>
 
         <div class="cmd-info">
             <h3>تنظیم سهمیه کاربر</h3>
             <p>تنظیم یک سقف فضای اختصاصی برای یک کاربر (مثلاً 1GB، 500MB یا 10KB).</p>
-            <div class="code-block">
-                maddy imap-acct quota set username@example.com 1GB
-            </div>
+            <div class="code-block">maddy imap-acct quota set username@example.com 1GB</div>
         </div>
 
         <div class="cmd-info">
             <h3>بازنشانی سهمیه کاربر</h3>
             <p>حذف سقف اختصاصی کاربر و بازگرداندن آن به مقدار پیش‌فرض سیستم. با این کار تاریخ ایجاد حساب کاربر حفظ
                 می‌شود.</p>
-            <div class="code-block">
-                maddy imap-acct quota reset username@example.com
-            </div>
+            <div class="code-block">maddy imap-acct quota reset username@example.com</div>
         </div>
 
         <div class="cmd-info">
             <h3>تنظیم سهمیه پیش‌فرض کل سیستم</h3>
             <p>تنظیم سقف فضای ذخیره‌سازی برای تمام کاربرانی که سهمیه اختصاصی ندارند. این مقدار در دیتابیس ذخیره شده و بر
                 تنظیمات فایل maddy.conf اولویت دارد.</p>
-            <div class="code-block">
-                maddy imap-acct quota set-default 2GB
-            </div>
+            <div class="code-block">maddy imap-acct quota set-default 2GB</div>
         </div>
 
         <div class="cmd-info">
             <h3>لیست تمام سهمیه‌ها</h3>
             <p>نمایش لیست تمام کاربران به همراه فضای مصرفی و سقف مجاز. در این لیست مشخص می‌شود که سهمیه هر کاربر اختصاصی
                 است یا از مقدار پیش‌فرض سیستم ارث‌بری شده است.</p>
-            <div class="code-block">
-                maddy imap-acct quota list
-            </div>
+            <div class="code-block">maddy imap-acct quota list</div>
         </div>
 
         <h2>نگهداری و پاکسازی</h2>
@@ -127,18 +76,14 @@
             <h3>پاکسازی صف ارسال (Queue)</h3>
             <p>حذف تمام پیام‌های در حال انتظار در صف ارسال که مربوط به یک کاربر خاص (فرستنده یا گیرنده) هستند. این دستور
                 برای رفع گرفتگی صف ناشی از اسپم یا پیام‌های حجیم مفید است.</p>
-            <div class="code-block">
-                maddy queue purge username@example.com
-            </div>
+            <div class="code-block">maddy queue purge username@example.com</div>
         </div>
 
         <div class="cmd-info">
             <h3>پاکسازی پیام‌های IMAP برای یک کاربر</h3>
             <p>حذف تمام ایمیل‌های یک کاربر از تمام صندوق‌های پستی (Inbox، Sent و غیره) بدون حذف شدن خود حساب کاربری یا
                 تنظیمات سهمیه او. این کار برای آزاد کردن سریع فضای هارد سرور کاربرد دارد.</p>
-            <div class="code-block">
-                maddy imap-acct purge-msgs username@example.com
-            </div>
+            <div class="code-block">maddy imap-acct purge-msgs username@example.com</div>
         </div>
 
         <div class="cmd-info">
@@ -175,23 +120,17 @@
 
         <div class="cmd-info">
             <h3>باز کردن ثبت‌نام</h3>
-            <div class="code-block">
-                maddy creds registration open
-            </div>
+            <div class="code-block">maddy creds registration open</div>
         </div>
 
         <div class="cmd-info">
             <h3>بستن ثبت‌نام</h3>
-            <div class="code-block">
-                maddy creds registration close
-            </div>
+            <div class="code-block">maddy creds registration close</div>
         </div>
 
         <div class="cmd-info">
             <h3>مشاهده وضعیت فعلی</h3>
-            <div class="code-block">
-                maddy creds registration status
-            </div>
+            <div class="code-block">maddy creds registration status</div>
         </div>
 
         <h2>مدیریت ثبت‌نام آنی (JIT Registration)</h2>
@@ -200,53 +139,39 @@
 
         <div class="cmd-info">
             <h3>فعال کردن ثبت‌نام آنی</h3>
-            <p>با فعال بودن این گزینه، اکانت‌ها هنگام اولین لاگین یا دریافت اولین ایمیل به صورت خودکار ساخته می‌شوند.
-            </p>
-            <div class="code-block">
-                maddy creds jit enable
-            </div>
+            <p>با فعال بودن این گزینه، اکانت‌ها هنگام اولین لاگین یا دریافت اولین ایمیل به صورت خودکار ساخته می‌شوند.</p>
+            <div class="code-block">maddy creds jit enable</div>
         </div>
 
         <div class="cmd-info">
             <h3>غیرفعال کردن ثبت‌نام آنی</h3>
             <p>با غیرفعال کردن این گزینه، حساب‌ها فقط از طریق API (رابط وب) ساخته می‌شوند و لاگین با مشخصات ثبت‌نشده رد
                 می‌شود.</p>
-            <div class="code-block">
-                maddy creds jit disable
-            </div>
+            <div class="code-block">maddy creds jit disable</div>
         </div>
 
         <div class="cmd-info">
             <h3>مشاهده وضعیت JIT</h3>
-            <div class="code-block">
-                maddy creds jit status
-            </div>
+            <div class="code-block">maddy creds jit status</div>
         </div>
 
         <h2>مدیریت سرور تماس (TURN/STUN)</h2>
         <p>شما می‌توانید سرور تماس (TURN) را برای تمام کاربران فعال یا غیرفعال کنید. در صورت غیرفعال بودن، اطلاعات مربوط
-            به
-            تماس در صفحه راهنما نمایش داده نمی‌شود.</p>
+            به تماس در صفحه راهنما نمایش داده نمی‌شود.</p>
 
         <div class="cmd-info">
             <h3>روشن کردن سرور تماس</h3>
-            <div class="code-block">
-                maddy creds turn on
-            </div>
+            <div class="code-block">maddy creds turn on</div>
         </div>
 
         <div class="cmd-info">
             <h3>خاموش کردن سرور تماس</h3>
-            <div class="code-block">
-                maddy creds turn off
-            </div>
+            <div class="code-block">maddy creds turn off</div>
         </div>
 
         <div class="cmd-info">
             <h3>مشاهده وضعیت فعلی</h3>
-            <div class="code-block">
-                maddy creds turn status
-            </div>
+            <div class="code-block">maddy creds turn status</div>
         </div>
 
         <h2>مدیریت لاگ (سیاست بدون لاگ)</h2>
@@ -392,9 +317,7 @@ chatmail tls://0.0.0.0:443 {
         <div class="cmd-info">
             <h3>مشاهده آمار کلی</h3>
             <p>نمایش مجموع فضای ذخیره‌سازی مصرف شده در سرور و تعداد کل حساب‌های کاربری فعال.</p>
-            <div class="code-block">
-                maddy imap-acct stat
-            </div>
+            <div class="code-block">maddy imap-acct stat</div>
         </div>
 
         <h2>مانیتورینگ اتصالات آنلاین</h2>
