@@ -866,7 +866,6 @@ func (e *Endpoint) handleDeltaDownload(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, patchPath)
 }
 
-
 func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 	e.logger.Msg("HTTP delivery request received", "remote", r.RemoteAddr, "path", r.URL.Path)
 	if r.Method != http.MethodPost {
