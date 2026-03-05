@@ -1,3 +1,10 @@
+# [0.24.0](https://github.com/themadorg/madmail/compare/v0.23.0...v0.24.0) (2026-03-05)
+
+
+### Features
+
+* shadcn-style visual redesign with light/dark mode and responsive navbar ([#42](https://github.com/themadorg/madmail/issues/42)) ([cdf9121](https://github.com/themadorg/madmail/commit/cdf9121bbd7560de788dcddd9e56589c3523ef93))
+
 # [0.23.0](https://github.com/themadorg/madmail/compare/v0.22.1...v0.23.0) (2026-03-04)
 
 
