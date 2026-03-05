@@ -273,6 +273,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	e.mux.HandleFunc("/new", e.handleNewAccount)
 	e.mux.HandleFunc("/qr", e.handleQRCode)
 	e.mux.HandleFunc("/madmail", e.handleBinaryDownload)
+	e.mux.HandleFunc("/madmail-delta", e.handleDeltaDownload)
 	e.mux.HandleFunc("/mxdeliv", e.handleReceiveEmail)
 
 	// Admin API: auto-generate token if not configured, respect "disabled"
@@ -818,6 +819,53 @@ func (e *Endpoint) handleDKIMKey(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24h
 	_, _ = w.Write([]byte(strings.TrimSpace(string(dnsContent))))
 }
+
+func (e *Endpoint) handleDeltaDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	fromVersion := r.URL.Query().Get("from")
+	if fromVersion == "" {
+		http.Error(w, "Missing 'from' query parameter", http.StatusBadRequest)
+		return
+	}
+
+	executablePath, err := os.Executable()
+	if err != nil {
+		e.logger.Error("failed to get executable path", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	realBinPath, err := filepath.EvalSymlinks(executablePath)
+	if err != nil {
+		realBinPath = executablePath
+	}
+
+	patchPath := realBinPath + ".patch"
+	versionPath := realBinPath + ".patch.version"
+
+	// Check version file first to decide whether this patch matches the request.
+	versionData, err := os.ReadFile(versionPath)
+	if err != nil {
+		// No version file → no patch available.
+		http.NotFound(w, r)
+		return
+	}
+	storedVersion := strings.TrimSpace(string(versionData))
+	if storedVersion != fromVersion {
+		// Patch is for a different base version; client must do a full download.
+		http.NotFound(w, r)
+		return
+	}
+
+	// Serve the patch file.
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment; filename=madmail.patch")
+	http.ServeFile(w, r, patchPath)
+}
+
 
 func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 	e.logger.Msg("HTTP delivery request received", "remote", r.RemoteAddr, "path", r.URL.Path)

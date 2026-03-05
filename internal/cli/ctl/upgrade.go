@@ -52,7 +52,17 @@ func upgradeCommand(ctx *cli.Context) error {
 }
 
 func handleUpdateURL(url string) error {
-	// Create temporary file
+	// Try delta update first when we have a real version number.
+	if frameworkconfig.Version != "go-build" {
+		deltaURL := buildDeltaURL(url, frameworkconfig.Version)
+		if err := tryDeltaUpdate(deltaURL); err == nil {
+			return nil
+		} else {
+			fmt.Printf("⚠️  Delta update failed (%v), falling back to full download.\n", err)
+		}
+	}
+
+	// Full download fallback.
 	tmpFile, err := os.CreateTemp("", "maddy-update-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
@@ -61,7 +71,7 @@ func handleUpdateURL(url string) error {
 	defer tmpFile.Close()
 
 	fmt.Printf("📥 Downloading %s...\n", url)
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) //nolint:noctx
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}
@@ -77,6 +87,72 @@ func handleUpdateURL(url string) error {
 	tmpFile.Close()
 
 	return performUpgrade(tmpFile.Name())
+}
+
+// buildDeltaURL converts http://server/madmail → http://server/madmail-delta?from=<version>.
+func buildDeltaURL(fullURL, fromVersion string) string {
+	// Strip query/fragment if present, then append -delta endpoint.
+	base := fullURL
+	if idx := strings.IndexAny(base, "?#"); idx != -1 {
+		base = base[:idx]
+	}
+	return base + "-delta?from=" + fromVersion
+}
+
+// tryDeltaUpdate downloads a bsdiff patch from deltaURL, applies it to the
+// current binary and calls performUpgrade on the result.
+func tryDeltaUpdate(deltaURL string) error {
+	fmt.Printf("🔍 Trying delta update from %s...\n", deltaURL)
+
+	resp, err := http.Get(deltaURL) //nolint:noctx
+	if err != nil {
+		return fmt.Errorf("delta request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned %s", resp.Status)
+	}
+
+	// Save patch to a temp file.
+	patchFile, err := os.CreateTemp("", "maddy-patch-*")
+	if err != nil {
+		return fmt.Errorf("create patch temp file: %w", err)
+	}
+	patchPath := patchFile.Name()
+	defer os.Remove(patchPath)
+
+	if _, err := io.Copy(patchFile, resp.Body); err != nil {
+		patchFile.Close()
+		return fmt.Errorf("save patch: %w", err)
+	}
+	patchFile.Close()
+
+	// Determine current (old) binary path.
+	currentBin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get current executable: %w", err)
+	}
+	realBinPath, err := filepath.EvalSymlinks(currentBin)
+	if err != nil {
+		realBinPath = currentBin
+	}
+
+	// Apply patch to produce new binary in a temp file.
+	newBinFile, err := os.CreateTemp("", "maddy-patched-*")
+	if err != nil {
+		return fmt.Errorf("create patched temp file: %w", err)
+	}
+	newBinPath := newBinFile.Name()
+	newBinFile.Close()
+	defer os.Remove(newBinPath)
+
+	fmt.Println("🔧 Applying delta patch...")
+	if err := clitools.ApplyDeltaPatch(realBinPath, patchPath, newBinPath); err != nil {
+		return fmt.Errorf("apply delta patch: %w", err)
+	}
+
+	return performUpgrade(newBinPath)
 }
 
 func performUpgrade(newBinPath string) error {
