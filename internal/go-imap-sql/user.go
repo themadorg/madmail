@@ -117,16 +117,6 @@ func (u *User) GetMailbox(name string, readOnly bool, conn backend.Conn) (*imap.
 	mbox.readOnly = readOnly
 
 	if conn == nil {
-		/*
-			uids, recent, err := mbox.readUids()
-			if err != nil {
-				u.parent.logUserErr(u, err, "GetMailbox", name)
-				return nil, nil, wrapErrf(err, "GetMailbox %s", name)
-			}
-
-			mbox.handle = u.parent.mngr.ManagementHandle(mbox.id, uids, recent)
-		*/
-
 		// For non-interactive sessions (conn == nil) uids are not used so it's not necessary to retrieve them
 		// from db for every single message that is stored.
 		//
