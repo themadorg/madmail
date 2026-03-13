@@ -37,7 +37,7 @@ const (
 	HashBcrypt = "bcrypt"
 	HashArgon2 = "argon2"
 
-	DefaultHash = HashBcrypt
+	DefaultHash = HashSHA256
 
 	Argon2Salt = 16
 	Argon2Size = 64
@@ -177,4 +177,8 @@ func verifyBcrypt(pass, hashSalt string) error {
 func addSHA256() {
 	HashCompute[HashSHA256] = computeSHA256
 	HashVerify[HashSHA256] = verifySHA256
+}
+
+func init() {
+	addSHA256()
 }

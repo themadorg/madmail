@@ -28,7 +28,6 @@ import (
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth"
-	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/text/secure/precis"
 )
 
@@ -144,7 +143,18 @@ func (a *Auth) AuthPlain(username, password string) error {
 	if hashVerify == nil {
 		return fmt.Errorf("%s: auth plain %s: unknown hash: %s", a.modName, key, parts[0])
 	}
-	return hashVerify(password, parts[1])
+	if err := hashVerify(password, parts[1]); err != nil {
+		return err
+	}
+
+	// Opportunistic migration: re-hash with the current default
+	// algorithm so legacy bcrypt entries are upgraded over time.
+	if parts[0] != DefaultHash {
+		go func() {
+			_ = a.SetUserPassword(username, password)
+		}()
+	}
+	return nil
 }
 
 func (a *Auth) ListUsers() ([]string, error) {
@@ -161,9 +171,7 @@ func (a *Auth) ListUsers() ([]string, error) {
 }
 
 func (a *Auth) CreateUser(username, password string) error {
-	return a.CreateUserHash(username, password, HashBcrypt, HashOpts{
-		BcryptCost: bcrypt.DefaultCost,
-	})
+	return a.CreateUserHash(username, password, DefaultHash, HashOpts{})
 }
 
 // CreateUserIfNotExists creates a user if they don't already exist.
@@ -185,7 +193,7 @@ func (a *Auth) CreateUserIfNotExists(username, password string) error {
 	}
 
 	// Compute the password hash first (this is CPU-intensive but doesn't hold any locks)
-	hash, err := HashCompute[HashBcrypt](HashOpts{BcryptCost: bcrypt.DefaultCost}, password)
+	hash, err := HashCompute[DefaultHash](HashOpts{}, password)
 	if err != nil {
 		return fmt.Errorf("%s: create user %s: hash generation: %w", a.modName, key, err)
 	}
@@ -193,7 +201,7 @@ func (a *Auth) CreateUserIfNotExists(username, password string) error {
 	// Use SetKey which now uses upsert (INSERT OR REPLACE) to atomically
 	// create or update the user. This avoids the race condition where
 	// multiple concurrent requests try to create the same user.
-	if err := tbl.SetKey(key, HashBcrypt+":"+hash); err != nil {
+	if err := tbl.SetKey(key, DefaultHash+":"+hash); err != nil {
 		return fmt.Errorf("%s: create user %s: %w", a.modName, key, err)
 	}
 	return nil
@@ -247,14 +255,12 @@ func (a *Auth) SetUserPassword(username, password string) error {
 	}
 
 	// TODO: Allow to customize hash function.
-	hash, err := HashCompute[HashBcrypt](HashOpts{
-		BcryptCost: bcrypt.DefaultCost,
-	}, password)
+	hash, err := HashCompute[DefaultHash](HashOpts{}, password)
 	if err != nil {
 		return fmt.Errorf("%s: set password %s: hash generation: %w", a.modName, key, err)
 	}
 
-	if err := tbl.SetKey(key, "bcrypt:"+hash); err != nil {
+	if err := tbl.SetKey(key, DefaultHash+":"+hash); err != nil {
 		return fmt.Errorf("%s: set password %s: %w", a.modName, key, err)
 	}
 	return nil

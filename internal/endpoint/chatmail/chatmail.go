@@ -50,7 +50,6 @@ import (
 	adminapi "github.com/themadorg/madmail/internal/api/admin"
 	"github.com/themadorg/madmail/internal/api/admin/resources"
 	"github.com/themadorg/madmail/internal/auth/pass_table"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/shadowsocks/go-shadowsocks2/core"
 	"github.com/shadowsocks/go-shadowsocks2/socks"
@@ -502,10 +501,8 @@ func (e *Endpoint) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 
 		// Create user in authentication database
 		if authHash, ok := e.authDB.(*pass_table.Auth); ok {
-			// Use bcrypt for password hashing
-			err = authHash.CreateUserHash(email, password, "bcrypt", pass_table.HashOpts{
-				BcryptCost: bcrypt.DefaultCost,
-			})
+			// Use SHA256 for password hashing (fast, sufficient for server-generated passwords)
+			err = authHash.CreateUserHash(email, password, pass_table.DefaultHash, pass_table.HashOpts{})
 		} else {
 			err = e.authDB.CreateUser(email, password)
 		}
