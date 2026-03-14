@@ -16,6 +16,7 @@ Welcome to the Madmail documentation. This page serves as a central hub for all 
 - **[PGP-Only Email Policy](./chatmail/only_pgp_mails.md)** - In-depth look at PGP/MIME verification and message rejection criteria.
 - **[Settings Database](./chatmail/settings_db.md)** - Dynamic configuration storage for flags like registration and logging.
 - **[VoIP & TURN Integration](./chatmail/turn.md)** - Technical details on integrated TURN server and IMAP metadata discovery.
+- **[Federation](./chatmail/federation.md)** - Wire format, endpoints, delivery flow, and relay architecture for inter-server communication.
 - **[Deployment & Lifecycle](./chatmail/deployment_and_lifecycle.md)** - Installation modes (Stealth), dynamic config reloading, and secure service restarts.
 
 ## 🛠 Operation & Configuration
