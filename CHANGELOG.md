@@ -1,3 +1,15 @@
+# [0.27.0](https://github.com/themadorg/madmail/compare/v0.26.0...v0.27.0) (2026-03-16)
+
+
+### Features
+
+* merge fast-auth (PR [#44](https://github.com/themadorg/madmail/issues/44)) — SHA256 login optimization ([b48a824](https://github.com/themadorg/madmail/commit/b48a82413359e0c20e14ba1302071f3d1a0853f4))
+
+
+### Performance Improvements
+
+* speed up logins by using SHA256 instead of unncessary bcrypt ([67cda80](https://github.com/themadorg/madmail/commit/67cda80a58ff96716d6a9e2dd526c7df2f7fd786))
+
 # [0.26.0](https://github.com/themadorg/madmail/compare/v0.25.0...v0.26.0) (2026-03-16)
 
 
