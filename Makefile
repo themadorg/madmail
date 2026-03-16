@@ -1,4 +1,4 @@
-.PHONY: all build install clean test vet lint tidy coverage deploy push publish sign log1 log2
+.PHONY: all build install clean test vet lint tidy coverage deploy push publish sign log1 log2 dev-web
 
 # Default target
 all: build
@@ -106,6 +106,12 @@ log1:
 
 log2: 
 	ssh root@$(REMOTE2) "journalctl -u maddy.service -f"
+
+
+# Dev server for previewing chatmail web templates (edit & reload)
+DEV_WEB_PORT ?= 3000
+dev-web:
+	@cd internal/endpoint/chatmail/www && go run devserver.go -port $(DEV_WEB_PORT)
 
 clean:
 	rm -rf build coverage.out coverage.html

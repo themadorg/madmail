@@ -233,7 +233,7 @@ type Backend struct {
 	sqliteOptimizeLoopStop chan struct{}
 }
 
-var defaultPassHashAlgo = "bcrypt"
+var defaultPassHashAlgo = "sha256"
 
 // New creates new Backend instance using provided configuration.
 //

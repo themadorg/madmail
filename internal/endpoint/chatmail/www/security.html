@@ -49,17 +49,6 @@
         </div>
     </div>
 
-    {{if .SSURL}}
-    <div class="proxy-box">
-        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
-            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
-        <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
-        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
-        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
-    </div>
-    {{end}}
-
     <div class="footer text-center">نسخه {{.Version}}</div>
 </body>
 

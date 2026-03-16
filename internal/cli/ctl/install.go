@@ -1443,10 +1443,18 @@ func setupCertificates(config *InstallConfig, dryRun bool) error {
 		BasicConstraintsValid: true,
 	}
 
-	// Add DNS names
+	// Add DNS names and IP SANs
 	template.DNSNames = append(template.DNSNames, config.PrimaryDomain)
 	if config.Hostname != config.PrimaryDomain {
 		template.DNSNames = append(template.DNSNames, config.Hostname)
+	}
+	// When domain/hostname is an IP address (possibly bracketed), add IP SANs
+	// so that TLS verification succeeds for IP-based connections (e.g. gRPC, QUIC).
+	for _, name := range []string{config.PrimaryDomain, config.Hostname, config.PublicIP} {
+		cleaned := strings.Trim(name, "[]")
+		if ip := net.ParseIP(cleaned); ip != nil {
+			template.IPAddresses = append(template.IPAddresses, ip)
+		}
 	}
 
 	// Create self-signed certificate

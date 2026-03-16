@@ -57,7 +57,7 @@
         </div>
     </div>
 
-    <div class="card mt-lg text-right">
+    <div class="card mt-lg text-right" id="manual-card-default">
         <strong>راهنمای افزودن دستی (اگر دکمه کار نکرد):</strong>
         <ol>
             <li>در دلتاچت "ایجاد پروفایل جدید" (Create new profile) را انتخاب کنید.</li>
@@ -67,7 +67,21 @@
         <div class="code-block" id="manual-link" onclick="copyText(this)"></div>
     </div>
 
-    <div class="card text-right">
+    <div class="card mt-lg text-right hidden" id="manual-card-ios">
+        <strong>راهنمای ساخت اکانت در آیفون:</strong>
+        <p class="mt-sm">ابتدا لینک زیر را کپی کنید، سپس در دلتاچت مراحل زیر را دنبال کنید:</p>
+        <div class="code-block" id="manual-link-ios" onclick="copyText(this)"></div>
+        <ol class="mt-md">
+            <li>Use Other Server</li>
+            <li>Scan Invitation Code</li>
+            <li>سه نقطه بالا سمت راست ⋯</li>
+            <li>Paste from Clipboard</li>
+            <li>نام و عکس پروفایل (دلخواه) را وارد کنید</li>
+            <li>Agree & Create Profile</li>
+        </ol>
+    </div>
+
+    <div class="card text-right" id="ios-card">
         <strong>نکته مخصوص کاربران iOS (آیفون):</strong>
         <p class="text-sm mt-sm">کاربران آیفون باید لینک استاندارد بالا را کپی کرده و در هنگام
             ساخت اکانت جدید به شکل زیر عمل کنند:</p>
@@ -76,16 +90,7 @@
             محدودیت‌های سیستم‌عامل، روش کپی و جایگذاری (Paste) پیشنهاد می‌شود.</p>
     </div>
 
-    {{if .SSURL}}
-    <div class="proxy-box">
-        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
-            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
-        <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
-        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
-        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
-    </div>
-    {{end}}
+
 
     <div class="card card--centered mt-lg">
         <h3>اشتراک‌گذاری آی‌دی</h3>
@@ -105,6 +110,7 @@
         let currentLink = "";
         const registrationOpen = "{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true";
         const jitEnabled = "{{if .JitRegistrationEnabled}}true{{else}}false{{end}}" === "true";
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
         function generateRandomString(length) {
             const charset = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -134,8 +140,11 @@
             currentLink = createDcloginLink(email, password);
 
             document.getElementById('manual-link').innerText = currentLink;
-            document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
-            document.getElementById('qr-container').classList.remove('hidden');
+            document.getElementById('manual-link-ios').innerText = currentLink;
+            if (!isIOS) {
+                document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
+                document.getElementById('qr-container').classList.remove('hidden');
+            }
             document.getElementById('account-result').classList.remove('hidden');
             updateButtonStates();
         }
@@ -164,8 +173,11 @@
                 currentLink = createDcloginLink(email, password);
 
                 document.getElementById('manual-link').innerText = currentLink;
-                document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
-                document.getElementById('qr-container').classList.remove('hidden');
+                document.getElementById('manual-link-ios').innerText = currentLink;
+                if (!isIOS) {
+                    document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
+                    document.getElementById('qr-container').classList.remove('hidden');
+                }
                 document.getElementById('account-result').classList.remove('hidden');
                 document.getElementById('loading-indicator').classList.add('hidden');
                 document.getElementById('generate-btn').disabled = false;
@@ -244,6 +256,13 @@
         }
 
         window.onload = function () {
+            if (isIOS) {
+                document.getElementById('open-deltachat-btn').style.display = 'none';
+                document.getElementById('manual-card-default').style.display = 'none';
+                document.getElementById('manual-card-ios').classList.remove('hidden');
+                var iosCard = document.getElementById('ios-card');
+                if (iosCard) iosCard.style.display = 'none';
+            }
             updateButtonStates();
             if (registrationOpen && jitEnabled) {
                 generateAccount();

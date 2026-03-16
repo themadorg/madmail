@@ -128,20 +128,22 @@ def run(dc, domain):
     received_data = None
     start_time = time.time()
     timeout = 60
+    last_resend = time.time()
     
     # We need to listen to events for acc2
     while time.time() - start_time < timeout:
-        event = acc2.wait_for_event(EventType.WEBXDC_REALTIME_DATA, timeout=5)
-        if event:
+        event = acc2.wait_for_event()
+        if event and event.kind == EventType.WEBXDC_REALTIME_DATA:
             if event.msg_id == msg_acc2.id:
                 received_data = bytes(event.data)
                 print(f"Acc2 received {len(received_data)} bytes of real-time data.")
                 if received_data == test_data:
                     break
         
-        # Keep connection alive if needed
-        msg_acc1.send_webxdc_realtime_data(test_data)
-        time.sleep(2)
+        # Keep connection alive by resending periodically
+        if time.time() - last_resend > 2:
+            msg_acc1.send_webxdc_realtime_data(test_data)
+            last_resend = time.time()
         
     if received_data == test_data:
         print("✓ WebXDC Realtime P2P connection SUCCESSFUL!")
