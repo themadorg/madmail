@@ -1,3 +1,10 @@
+# [0.26.0](https://github.com/themadorg/madmail/compare/v0.25.0...v0.26.0) (2026-03-16)
+
+
+### Features
+
+* **proxy:** comprehensive proxy transport management ([c68a531](https://github.com/themadorg/madmail/commit/c68a5319515257183faffa32e868189357e496ac))
+
 # [0.25.0](https://github.com/themadorg/madmail/compare/v0.24.1...v0.25.0) (2026-03-12)
 
 
