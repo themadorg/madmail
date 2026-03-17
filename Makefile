@@ -146,6 +146,8 @@ profile: profile-push
 	@sleep 2
 	@$(MAKE) profile-cmping CMPING_COUNT=$$(echo '$(PROFILE_WINDOW) / $(CMPING_INTERVAL)' | bc | cut -d. -f1)
 	@echo "✅ Profiling session complete. pprof UI at http://localhost:8081"
+	@echo "   Press Ctrl+C to stop the pprof web server."
+	@wait
 
 # Run pprof against remote server
 PPROF_PORT ?= 6666

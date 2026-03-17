@@ -43,13 +43,7 @@ Usage example:
 			},
 		},
 		Action: func(c *cli.Context) error {
-			stateDir := c.String("state-dir")
-			if stateDir == "" {
-				stateDir = frameworkconfig.StateDirectory
-			}
-			if stateDir == "" {
-				stateDir = "/var/lib/" + frameworkconfig.BinaryName()
-			}
+			stateDir := getStateDir(c)
 
 			// Check the config file for an explicit admin_token
 			confToken := getTokenFromConfig(frameworkconfig.ConfigFile())
@@ -83,8 +77,8 @@ Usage example:
 			}
 
 			// Pretty mode: show labeled credentials
-			dbPath := filepath.Join(stateDir, "credentials.db")
-			apiURL := buildAdminURL(dbPath)
+			cfg := getDBConfig(c)
+			apiURL := buildAdminURL(cfg)
 			fmt.Println()
 			fmt.Printf("  Admin API URL:   %s\n", apiURL)
 			fmt.Printf("  Admin Token:     %s\n", token)
@@ -102,7 +96,7 @@ func isTerminal(f *os.File) bool {
 
 // buildAdminURL constructs the admin API URL by reading host from
 // maddy.conf and overriding with DB-stored settings via GORM.
-func buildAdminURL(dbPath string) string {
+func buildAdminURL(cfg dbConfig) string {
 	// 1. Read hostname from maddy.conf $(hostname) = ...
 	host := getHostnameFromConfig(frameworkconfig.ConfigFile())
 	if host == "" {
@@ -114,7 +108,7 @@ func buildAdminURL(dbPath string) string {
 	adminPath := "/api/admin"
 
 	// 2. Read DB overrides using GORM (same pattern as the rest of the codebase)
-	settings := readSettingsFromDB(dbPath)
+	settings := readSettingsFromDB(cfg)
 	if v, ok := settings["__SMTP_HOSTNAME__"]; ok && v != "" {
 		host = v
 	}
@@ -135,24 +129,16 @@ func buildAdminURL(dbPath string) string {
 	return fmt.Sprintf("https://%s:%s%s", host, port, adminPath)
 }
 
-// readSettingsFromDB opens the credentials.db via GORM and reads all
+// readSettingsFromDB opens the credentials DB via GORM and reads all
 // settings keys (those starting with "__") from the passwords table.
-func readSettingsFromDB(dbPath string) map[string]string {
+func readSettingsFromDB(cfg dbConfig) map[string]string {
 	result := make(map[string]string)
 
-	if _, err := os.Stat(dbPath); err != nil {
-		return result
-	}
-
-	database, err := db.New("sqlite3", []string{dbPath}, false)
+	database, err := openDB(cfg)
 	if err != nil {
 		return result
 	}
-	defer func() {
-		if sqlDB, err := database.DB(); err == nil {
-			sqlDB.Close()
-		}
-	}()
+	defer closeDB(database)
 
 	// Query settings keys from the passwords table
 	var entries []db.TableEntry

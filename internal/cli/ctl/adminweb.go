@@ -2,12 +2,9 @@ package ctl
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
-	frameworkconfig "github.com/themadorg/madmail/framework/config"
-	maddycli "github.com/themadorg/madmail/internal/cli"
 	"github.com/themadorg/madmail/internal/db"
+	maddycli "github.com/themadorg/madmail/internal/cli"
 	"github.com/urfave/cli/v2"
 )
 
@@ -92,20 +89,9 @@ const (
 	dbKeyAdminWebPath    = "__ADMIN_WEB_PATH__"
 )
 
-func getDBPath(c *cli.Context) string {
-	stateDir := c.String("state-dir")
-	if stateDir == "" {
-		stateDir = frameworkconfig.StateDirectory
-	}
-	if stateDir == "" {
-		stateDir = "/var/lib/" + frameworkconfig.BinaryName()
-	}
-	return filepath.Join(stateDir, "credentials.db")
-}
-
 func adminWebStatus(c *cli.Context) error {
-	dbPath := getDBPath(c)
-	settings := readSettingsFromDB(dbPath)
+	cfg := getDBConfig(c)
+	settings := readSettingsFromDB(cfg)
 
 	enabled := "enabled"
 	if v, ok := settings[dbKeyAdminWebEnabled]; ok && v == "false" {
@@ -125,8 +111,8 @@ func adminWebStatus(c *cli.Context) error {
 }
 
 func adminWebEnable(c *cli.Context) error {
-	dbPath := getDBPath(c)
-	if err := setSetting(dbPath, dbKeyAdminWebEnabled, "true"); err != nil {
+	cfg := getDBConfig(c)
+	if err := setSetting(cfg, dbKeyAdminWebEnabled, "true"); err != nil {
 		return fmt.Errorf("failed to enable admin web: %v", err)
 	}
 	fmt.Println("✅ Admin web dashboard enabled (effective immediately)")
@@ -134,8 +120,8 @@ func adminWebEnable(c *cli.Context) error {
 }
 
 func adminWebDisable(c *cli.Context) error {
-	dbPath := getDBPath(c)
-	if err := setSetting(dbPath, dbKeyAdminWebEnabled, "false"); err != nil {
+	cfg := getDBConfig(c)
+	if err := setSetting(cfg, dbKeyAdminWebEnabled, "false"); err != nil {
 		return fmt.Errorf("failed to disable admin web: %v", err)
 	}
 	fmt.Println("🚫 Admin web dashboard disabled (effective immediately)")
@@ -143,10 +129,10 @@ func adminWebDisable(c *cli.Context) error {
 }
 
 func adminWebPath(c *cli.Context) error {
-	dbPath := getDBPath(c)
+	cfg := getDBConfig(c)
 
 	if c.Bool("reset") {
-		if err := deleteSetting(dbPath, dbKeyAdminWebPath); err != nil {
+		if err := deleteSetting(cfg, dbKeyAdminWebPath); err != nil {
 			return fmt.Errorf("failed to reset admin web path: %v", err)
 		}
 		fmt.Println("🔄 Admin web path reset to config default (restart required)")
@@ -156,7 +142,7 @@ func adminWebPath(c *cli.Context) error {
 	newPath := c.Args().First()
 	if newPath == "" {
 		// Show current path
-		settings := readSettingsFromDB(dbPath)
+		settings := readSettingsFromDB(cfg)
 		if v, ok := settings[dbKeyAdminWebPath]; ok && v != "" {
 			fmt.Printf("Current admin web path: %s (DB override)\n", v)
 		} else {
@@ -165,7 +151,7 @@ func adminWebPath(c *cli.Context) error {
 		return nil
 	}
 
-	if err := setSetting(dbPath, dbKeyAdminWebPath, newPath); err != nil {
+	if err := setSetting(cfg, dbKeyAdminWebPath, newPath); err != nil {
 		return fmt.Errorf("failed to set admin web path: %v", err)
 	}
 	fmt.Printf("✅ Admin web path set to %s (restart required)\n", newPath)
@@ -173,20 +159,12 @@ func adminWebPath(c *cli.Context) error {
 }
 
 // setSetting writes a key-value pair to the credentials database.
-func setSetting(dbPath, key, value string) error {
-	if _, err := os.Stat(dbPath); err != nil {
-		return fmt.Errorf("database not found: %s", dbPath)
-	}
-
-	database, err := db.New("sqlite3", []string{dbPath}, false)
+func setSetting(cfg dbConfig, key, value string) error {
+	database, err := openDB(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %v", err)
 	}
-	defer func() {
-		if sqlDB, err := database.DB(); err == nil {
-			sqlDB.Close()
-		}
-	}()
+	defer closeDB(database)
 
 	entry := db.TableEntry{Key: key, Value: value}
 	result := database.Table("passwords").Where("\"key\" = ?", key).Assign(entry).FirstOrCreate(&entry)
@@ -194,20 +172,12 @@ func setSetting(dbPath, key, value string) error {
 }
 
 // deleteSetting removes a setting key from the credentials database.
-func deleteSetting(dbPath, key string) error {
-	if _, err := os.Stat(dbPath); err != nil {
-		return fmt.Errorf("database not found: %s", dbPath)
-	}
-
-	database, err := db.New("sqlite3", []string{dbPath}, false)
+func deleteSetting(cfg dbConfig, key string) error {
+	database, err := openDB(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %v", err)
 	}
-	defer func() {
-		if sqlDB, err := database.DB(); err == nil {
-			sqlDB.Close()
-		}
-	}()
+	defer closeDB(database)
 
 	result := database.Table("passwords").Where("\"key\" = ?", key).Delete(&db.TableEntry{})
 	return result.Error
