@@ -1,3 +1,10 @@
+## [0.28.1](https://github.com/themadorg/madmail/compare/v0.28.0...v0.28.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* **ci:** remove invalid 'rules' key from formatters.exclusions ([466cfda](https://github.com/themadorg/madmail/commit/466cfda57595d33d88814dd5368f3663f8bb31b0))
+
 # [0.28.0](https://github.com/themadorg/madmail/compare/v0.27.1...v0.28.0) (2026-03-17)
 
 
