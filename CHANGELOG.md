@@ -1,3 +1,10 @@
+## [0.28.2](https://github.com/themadorg/madmail/compare/v0.28.1...v0.28.2) (2026-03-17)
+
+
+### Bug Fixes
+
+* **ci:** resolve all golangci-lint v2.9.0 errors ([bd6e2f1](https://github.com/themadorg/madmail/commit/bd6e2f128d1e2e69416e7977e20f74604508320c))
+
 ## [0.28.1](https://github.com/themadorg/madmail/compare/v0.28.0...v0.28.1) (2026-03-17)
 
 
