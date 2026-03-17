@@ -12,7 +12,6 @@ import (
 
 	"syscall"
 
-	"github.com/themadorg/madmail/framework/config"
 	frameworkconfig "github.com/themadorg/madmail/framework/config"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/servertracker"
@@ -264,7 +263,7 @@ func StorageHandler(deps StorageDeps) func(method string, body json.RawMessage) 
 		// Disk usage via statfs on the state directory
 		stateDir := deps.StateDir
 		if stateDir == "" {
-			stateDir = config.StateDirectory
+			stateDir = frameworkconfig.StateDirectory
 		}
 
 		var stat syscall.Statfs_t

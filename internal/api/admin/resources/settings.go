@@ -167,9 +167,9 @@ type AllSettingsResponse struct {
 	ShadowsocksURL string               `json:"shadowsocks_url"`
 
 	// Proxy toggle settings
-	SsWsEnabled       string `json:"ss_ws_enabled"`        // "enabled" or "disabled"
-	SsGrpcEnabled     string `json:"ss_grpc_enabled"`      // "enabled" or "disabled"
-	HTTPProxyEnabled  string `json:"http_proxy_enabled"`   // "enabled" or "disabled"
+	SsWsEnabled      string `json:"ss_ws_enabled"`      // "enabled" or "disabled"
+	SsGrpcEnabled    string `json:"ss_grpc_enabled"`    // "enabled" or "disabled"
+	HTTPProxyEnabled string `json:"http_proxy_enabled"` // "enabled" or "disabled"
 
 	// HTTP Proxy settings
 	HTTPProxyPort     settingValueResponse `json:"http_proxy_port"`
@@ -177,8 +177,8 @@ type AllSettingsResponse struct {
 	HTTPProxyUsername settingValueResponse `json:"http_proxy_username"`
 	HTTPProxyPassword settingValueResponse `json:"http_proxy_password"`
 
-	AdminPath      settingValueResponse `json:"admin_path"`
-	AdminWebPath   settingValueResponse `json:"admin_web_path"`
+	AdminPath    settingValueResponse `json:"admin_path"`
+	AdminWebPath settingValueResponse `json:"admin_web_path"`
 }
 
 // Setting key constants for all configurable values.
@@ -219,19 +219,19 @@ const (
 	KeyHTTPSLocalOnly      = "__HTTPS_LOCAL_ONLY__"
 
 	// Configuration settings
-	KeySMTPHostname       = "__SMTP_HOSTNAME__"
-	KeyTurnRealm          = "__TURN_REALM__"
-	KeyTurnSecret         = "__TURN_SECRET__"
-	KeyTurnRelayIP        = "__TURN_RELAY_IP__"
-	KeyTurnTTL            = "__TURN_TTL__"
-	KeyIrohRelayURL       = "__IROH_RELAY_URL__"
-	KeySsCipher           = "__SS_CIPHER__"
-	KeySsPassword         = "__SS_PASSWORD__"
-	KeyHTTPProxyPath      = "__HTTP_PROXY_PATH__"
-	KeyHTTPProxyUsername  = "__HTTP_PROXY_USERNAME__"
-	KeyHTTPProxyPassword  = "__HTTP_PROXY_PASSWORD__"
-	KeyAdminPath          = "__ADMIN_PATH__"
-	KeyAdminWebPath       = "__ADMIN_WEB_PATH__"
+	KeySMTPHostname      = "__SMTP_HOSTNAME__"
+	KeyTurnRealm         = "__TURN_REALM__"
+	KeyTurnSecret        = "__TURN_SECRET__"
+	KeyTurnRelayIP       = "__TURN_RELAY_IP__"
+	KeyTurnTTL           = "__TURN_TTL__"
+	KeyIrohRelayURL      = "__IROH_RELAY_URL__"
+	KeySsCipher          = "__SS_CIPHER__"
+	KeySsPassword        = "__SS_PASSWORD__"
+	KeyHTTPProxyPath     = "__HTTP_PROXY_PATH__"
+	KeyHTTPProxyUsername = "__HTTP_PROXY_USERNAME__"
+	KeyHTTPProxyPassword = "__HTTP_PROXY_PASSWORD__"
+	KeyAdminPath         = "__ADMIN_PATH__"
+	KeyAdminWebPath      = "__ADMIN_WEB_PATH__"
 )
 
 // RegistrationHandler creates a handler for /admin/registration.

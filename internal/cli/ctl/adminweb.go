@@ -3,8 +3,8 @@ package ctl
 import (
 	"fmt"
 
-	"github.com/themadorg/madmail/internal/db"
 	maddycli "github.com/themadorg/madmail/internal/cli"
+	"github.com/themadorg/madmail/internal/db"
 	"github.com/urfave/cli/v2"
 )
 

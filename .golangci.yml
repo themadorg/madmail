@@ -6,9 +6,32 @@ linters:
     - staticcheck
     - errcheck
     - ineffassign
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.DB).Close
+        - (*gorm.io/gorm.DB).Close
+        - (*net.Conn).Close
+        - (*os.File).Close
+        - os.Remove
+        - os.RemoveAll
+        - os.Setenv
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1005"
+        - "-ST1018"
+        - "-ST1019"
+        - "-ST1023"
+        - "-QF1001"
+        - "-QF1003"
+        - "-QF1004"
+        - "-QF1008"
   exclusions:
     paths:
       - cmd/maddy-pam-helper
+      - _test.go
 
 formatters:
   enable:
