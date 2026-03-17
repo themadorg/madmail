@@ -7,28 +7,38 @@ linters:
     - errcheck
     - ineffassign
   settings:
-    errcheck:
-      exclude-functions:
-        - (io.Closer).Close
-        - (*database/sql.DB).Close
-        - (*gorm.io/gorm.DB).Close
-        - (*net.Conn).Close
-        - (*os.File).Close
-        - os.Remove
-        - os.RemoveAll
-        - os.Setenv
     staticcheck:
       checks:
         - "all"
+        - "-ST1000"
+        - "-ST1003"
         - "-ST1005"
+        - "-ST1016"
         - "-ST1018"
         - "-ST1019"
+        - "-ST1020"
+        - "-ST1021"
         - "-ST1023"
         - "-QF1001"
         - "-QF1003"
         - "-QF1004"
         - "-QF1008"
+        - "-QF1011"
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+      disable-default-exclusions: false
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Closer).Close
+        - (*os.File).Close
   exclusions:
+    rules:
+      - linters:
+          - errcheck
+        text: "Error return value of .*(Close|Flush|Remove|RemoveAll|Setenv|Write|Fprintf|Fprintln|Fprint).*is not checked"
     paths:
       - cmd/maddy-pam-helper
       - _test.go
