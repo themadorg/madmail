@@ -1,3 +1,10 @@
+## [0.28.3](https://github.com/themadorg/madmail/compare/v0.28.2...v0.28.3) (2026-03-17)
+
+
+### Bug Fixes
+
+* **ci:** suppress remaining pre-existing staticcheck naming rules ([f4a65ba](https://github.com/themadorg/madmail/commit/f4a65ba0fb8f07870ffcd05dc6ac476874012636))
+
 ## [0.28.2](https://github.com/themadorg/madmail/compare/v0.28.1...v0.28.2) (2026-03-17)
 
 
