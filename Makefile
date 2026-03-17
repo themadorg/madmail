@@ -1,4 +1,4 @@
-.PHONY: all build install clean test vet lint tidy coverage deploy push publish sign log1 log2 dev-web
+.PHONY: all build install clean test vet lint tidy coverage deploy push publish sign log1 log2 dev-web profile profile-build profile-push profile-do profile-cmping profile-cmping-multi
 
 # Default target
 all: build
@@ -9,6 +9,7 @@ export
 
 # Variables
 BINARY=build/maddy
+BINARY_PROFILE=build/maddy-profile
 BINARY_AMD64=build/maddy-amd64
 BINARY_AMD64_LEGACY=build/maddy-amd64-legacy
 BINARY_ARM64=build/maddy-arm64
@@ -112,6 +113,68 @@ log2:
 DEV_WEB_PORT ?= 3000
 dev-web:
 	@cd internal/endpoint/chatmail/www && go run devserver.go -port $(DEV_WEB_PORT)
+
+# ── Profiling ─────────────────────────────────────────────────────────
+# Build with debug symbols + pprof endpoint (no stripping, full DWARF info)
+profile-build:
+	@echo "🔬 Building profiling binary..."
+	go build -gcflags="all=-N -l" \
+		-ldflags="-X \"github.com/themadorg/madmail/framework/config.Version=$$(cat .version)+$$(git rev-parse --short HEAD)-profile\"" \
+		-o $(BINARY_PROFILE) ./cmd/maddy-profile
+	@echo "✅ Profiling binary: $(BINARY_PROFILE)"
+
+# Deploy the profiling binary to servers (sign → upload → upgrade)
+profile-push: profile-build sign-profile
+	$(call deploy_remote_profile,$(REMOTE1))
+
+sign-profile:
+	@echo "🔏 Signing profiling binary..."
+	@uv run internal/cli/clitools/sign.py $(BINARY_PROFILE) $(PRIV_KEY_FILE)
+
+define deploy_remote_profile
+	scp $(BINARY_PROFILE) root@$(1):~/maddy-new
+	@echo "🔬 Upgrading remote instance ($(1)) with profiling binary"
+	ssh root@$(1) "sudo /usr/local/bin/maddy upgrade ~/maddy-new && rm ~/maddy-new"
+endef
+
+# ── Profile: all-in-one (build → push → pprof + cmping in parallel) ───
+PROFILE_WINDOW ?= 60
+profile: profile-push
+	@echo "🚀 Starting profiling session ($(PROFILE_WINDOW)s window)..."
+	@echo "   pprof capture + cmping load running in parallel"
+	@go tool pprof -http=:8081 http://$(PROFILE_TARGET):$(PPROF_PORT)/debug/pprof/profile?seconds=$(PROFILE_WINDOW) &
+	@sleep 2
+	@$(MAKE) profile-cmping CMPING_COUNT=$$(echo '$(PROFILE_WINDOW) / $(CMPING_INTERVAL)' | bc | cut -d. -f1)
+	@echo "✅ Profiling session complete. pprof UI at http://localhost:8081"
+
+# Run pprof against remote server
+PPROF_PORT ?= 6666
+PPROF_SECONDS ?= 60
+PROFILE_TARGET ?= $(REMOTE1)
+profile-do:
+	@echo "🔬 Profiling $(PROFILE_TARGET):$(PPROF_PORT) for $(PPROF_SECONDS)s..."
+	go tool pprof -http=:8081 http://$(PROFILE_TARGET):$(PPROF_PORT)/debug/pprof/profile?seconds=$(PPROF_SECONDS)
+
+# Hammer the server: 1 sender → 10 receivers, N messages, fast interval
+CMPING_RECIPIENTS ?= 10
+CMPING_COUNT ?= 200
+CMPING_INTERVAL ?= 0.3
+profile-cmping:
+	@echo "🔨 cmping: $(CMPING_COUNT) msgs → $(CMPING_RECIPIENTS) receivers @ $(CMPING_INTERVAL)s interval"
+	uv run python3 cmping/cmping.py $(PROFILE_TARGET) -g $(CMPING_RECIPIENTS) -c $(CMPING_COUNT) -i $(CMPING_INTERVAL)
+
+# Parallel cmping: N isolated subprocesses (each with separate XDG_CACHE_HOME)
+CMPING_PROCS ?= 10
+profile-cmping-multi:
+	@echo "🔨 Launching $(CMPING_PROCS) parallel cmping processes ($(CMPING_COUNT) msgs, $(CMPING_RECIPIENTS) receivers each)..."
+	@rm -rf /tmp/cmping-profile
+	@for i in $$(seq 1 $(CMPING_PROCS)); do \
+		echo "  → Starting cmping subprocess $$i/$(CMPING_PROCS) (cache: /tmp/cmping-profile/$$i)"; \
+		XDG_CACHE_HOME=/tmp/cmping-profile/$$i uv run python3 cmping/cmping.py $(PROFILE_TARGET) -g $(CMPING_RECIPIENTS) -c $(CMPING_COUNT) -i $(CMPING_INTERVAL) & \
+	done; \
+	echo "🔬 All $(CMPING_PROCS) subprocesses launched. Waiting..."; \
+	wait; \
+	echo "✅ All cmping subprocesses finished."
 
 clean:
 	rm -rf build coverage.out coverage.html
