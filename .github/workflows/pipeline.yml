@@ -35,6 +35,64 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
 
+  generate-delta-patch:
+    name: Generate Delta Patch
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [semantic-release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.5'
+          cache: true
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev bsdiff
+      - name: Build current binaries
+        run: |
+          GOARCH=amd64 sh build.sh build
+          GOARCH=arm64 CGO_ENABLED=0 sh build.sh build
+      - name: Generate delta patch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            echo "Previous tag: $PREV_TAG"
+            mkdir -p prev-bin
+            gh release download "$PREV_TAG" -p "madmail-amd64" --dir prev-bin/ || true
+            if [ -f prev-bin/madmail-amd64 ]; then
+              chmod +x prev-bin/madmail-amd64
+              bsdiff prev-bin/madmail-amd64 build/madmail-amd64 build/madmail-amd64.patch
+              echo "${PREV_TAG#v}" > build/madmail-amd64.patch.version
+              echo "✅ AMD64 delta patch generated ($(du -sh build/madmail-amd64.patch | cut -f1))"
+            fi
+            gh release download "$PREV_TAG" -p "madmail-arm64" --dir prev-bin/ || true
+            if [ -f prev-bin/madmail-arm64 ]; then
+              chmod +x prev-bin/madmail-arm64
+              bsdiff prev-bin/madmail-arm64 build/madmail-arm64 build/madmail-arm64.patch
+              echo "${PREV_TAG#v}" > build/madmail-arm64.patch.version
+              echo "✅ ARM64 delta patch generated ($(du -sh build/madmail-arm64.patch | cut -f1))"
+            fi
+          else
+            echo "No previous tag found, skipping delta patch generation."
+          fi
+      - name: Upload delta patch assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURRENT_TAG=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || echo "")
+          if [ -n "$CURRENT_TAG" ]; then
+            for f in build/madmail-amd64.patch build/madmail-amd64.patch.version \
+                     build/madmail-arm64.patch build/madmail-arm64.patch.version; do
+              if [ -f "$f" ]; then
+                gh release upload "$CURRENT_TAG" "$f" --clobber || true
+              fi
+            done
+          fi
+
   lint-and-build:
     name: Lint and Build
     runs-on: ubuntu-24.04

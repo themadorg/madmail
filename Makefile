@@ -93,6 +93,19 @@ push: build sign
 publish: build_all
 	@bash publish.sh $(ARGS)
 
+generate_delta: build_all
+	@echo "🔍 Generating delta patch (requires PREV_BINARY_AMD64 to be set)..."
+	@if [ -n "$(PREV_BINARY_AMD64)" ] && [ -f "$(PREV_BINARY_AMD64)" ]; then \
+	    bsdiff $(PREV_BINARY_AMD64) $(BINARY_AMD64) $(BINARY_AMD64).patch; \
+	    echo "✅ Delta patch written to $(BINARY_AMD64).patch"; \
+	else \
+	    echo "⚠️  Set PREV_BINARY_AMD64=<path-to-old-binary> to generate a delta patch."; \
+	fi
+	@if [ -n "$(PREV_BINARY_ARM64)" ] && [ -f "$(PREV_BINARY_ARM64)" ]; then \
+	    bsdiff $(PREV_BINARY_ARM64) $(BINARY_ARM64) $(BINARY_ARM64).patch; \
+	    echo "✅ Delta patch written to $(BINARY_ARM64).patch"; \
+	fi
+
 sign_all: build_all
 	@echo "🔏 Signing binaries..."
 	@if [ -f $(BINARY_AMD64) ] && [ -n "$(PRIV_KEY)" ]; then uv run internal/cli/clitools/sign.py $(BINARY_AMD64) $(PRIV_KEY); fi
