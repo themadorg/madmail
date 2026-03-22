@@ -129,10 +129,12 @@ type Queue struct {
 
 	// Retry delay is calculated using the following formula:
 	// initialRetryTime * retryTimeScale ^ (TriesCount - 1)
+	// The delay is capped so the next attempt falls within maxQueueLifetime.
 
 	initialRetryTime time.Duration
 	retryTimeScale   float64
 	maxTries         int
+	maxQueueLifetime time.Duration
 
 	// If any delivery is scheduled in less than postInitDelay
 	// after Init, its delay will be increased by postInitDelay.
@@ -191,8 +193,8 @@ type queueSlot struct {
 func NewQueue(_, instName string, _, inlineArgs []string) (module.Module, error) {
 	q := &Queue{
 		name:             instName,
-		initialRetryTime: 15 * time.Minute,
-		retryTimeScale:   1.25,
+		initialRetryTime: 30 * time.Second,
+		retryTimeScale:   1.5,
 		postInitDelay:    10 * time.Second,
 		Log:              log.Logger{Name: "queue"},
 	}
@@ -211,6 +213,7 @@ func (q *Queue) Init(cfg *config.Map) error {
 	var maxParallelism int
 	cfg.Bool("debug", true, false, &q.Log.Debug)
 	cfg.Int("max_tries", false, false, 20, &q.maxTries)
+	cfg.Duration("max_queue_lifetime", false, false, 10*time.Minute, &q.maxQueueLifetime)
 	cfg.Int("max_parallelism", false, false, 16, &maxParallelism)
 	cfg.String("location", false, false, q.location, &q.location)
 	cfg.Custom("target", false, true, nil, modconfig.DeliveryDirective, &q.Target)
@@ -403,7 +406,7 @@ func (q *Queue) tryDelivery(meta *QueueMetadata, header textproto.Header, body b
 		meta.RcptErrs[rcpt] = toSMTPErr(rcptErr)
 
 		temporary := exterrors.IsTemporaryOrUnspec(rcptErr)
-		if !temporary || meta.TriesCount[rcpt]+1 >= q.maxTries {
+		if !temporary || time.Since(meta.FirstAttempt) >= q.maxQueueLifetime {
 			delete(meta.TriesCount, rcpt)
 			dl.Msg("not delivered, permanent error", "rcpt", rcpt)
 			failedRcpts = append(failedRcpts, rcpt)
@@ -437,12 +440,37 @@ func (q *Queue) tryDelivery(meta *QueueMetadata, header textproto.Header, body b
 		dl.Error("meta-data update", err)
 	}
 
-	nextTryTime := time.Now()
-	// Delay between retries grows exponentally, the formula is:
+	// Delay between retries is capped so the next attempt falls within maxQueueLifetime.
+	// For connection failures (code 451, enhanced code 4.0.0), use a fixed retry interval.
+	// For SMTP temporary errors, use exponential backoff:
 	// initialRetryTime * retryTimeScale ^ (smallestTriesCount - 1)
-	dl.Debugf("delay: %v * %v ^ (%v - 1)", q.initialRetryTime, q.retryTimeScale, smallestTriesCount)
-	scaleFactor := time.Duration(math.Pow(q.retryTimeScale, float64(smallestTriesCount-1)))
-	nextTryTime = nextTryTime.Add(q.initialRetryTime * scaleFactor)
+	connectionFailure := false
+	for _, rcpt := range newRcpts {
+		if smtpErr := meta.RcptErrs[rcpt]; smtpErr != nil &&
+			smtpErr.Code == 451 && smtpErr.EnhancedCode == (smtp.EnhancedCode{4, 0, 0}) {
+			connectionFailure = true
+			break
+		}
+	}
+	var delay time.Duration
+	if connectionFailure {
+		delay = q.initialRetryTime
+	} else {
+		dl.Debugf("delay: %v * %v ^ (%v - 1)", q.initialRetryTime, q.retryTimeScale, smallestTriesCount)
+		scaleFactor := math.Pow(q.retryTimeScale, float64(smallestTriesCount-1))
+		delay = time.Duration(float64(q.initialRetryTime) * scaleFactor)
+	}
+	remaining := q.maxQueueLifetime - time.Since(meta.FirstAttempt)
+	if remaining <= 0 {
+		dl.Msg("queue lifetime exceeded, giving up", "rcpts", meta.To)
+		q.emitDSN(meta, header, meta.To)
+		q.removeFromDisk(meta.MsgMeta)
+		return
+	}
+	if delay > remaining {
+		delay = remaining
+	}
+	nextTryTime := time.Now().Add(delay)
 	dl.Msg("will retry",
 		"attempts_count", meta.TriesCount,
 		"next_try_delay", time.Until(nextTryTime),
@@ -686,15 +714,39 @@ func (q *Queue) readDiskQueue() error {
 			continue
 		}
 
+		// Check if the message has exceeded its queue lifetime while we were down.
+		remaining := q.maxQueueLifetime - time.Since(meta.FirstAttempt)
+		if remaining <= 0 {
+			q.Log.Printf("queue lifetime exceeded for msg ID = %s, removing", id)
+			q.removeFromDisk(meta.MsgMeta)
+			continue
+		}
+
 		smallestTriesCount := 999999
 		for _, count := range meta.TriesCount {
 			if smallestTriesCount > count {
 				smallestTriesCount = count
 			}
 		}
+		connectionFailure := false
+		for _, smtpErr := range meta.RcptErrs {
+			if smtpErr != nil && smtpErr.Code == 451 && smtpErr.EnhancedCode == (smtp.EnhancedCode{4, 0, 0}) {
+				connectionFailure = true
+				break
+			}
+		}
+		var delay time.Duration
+		if connectionFailure {
+			delay = q.initialRetryTime
+		} else {
+			scaleFactor := math.Pow(q.retryTimeScale, float64(smallestTriesCount-1))
+			delay = time.Duration(float64(q.initialRetryTime) * scaleFactor)
+		}
 		nextTryTime := meta.LastAttempt
-		scaleFactor := time.Duration(math.Pow(q.retryTimeScale, float64(smallestTriesCount-1)))
-		nextTryTime = nextTryTime.Add(q.initialRetryTime * scaleFactor)
+		if delay > remaining {
+			delay = remaining
+		}
+		nextTryTime = nextTryTime.Add(delay)
 
 		if time.Until(nextTryTime) < q.postInitDelay {
 			nextTryTime = time.Now().Add(q.postInitDelay)
