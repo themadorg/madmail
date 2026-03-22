@@ -62,7 +62,7 @@ func newTestQueueDir(t *testing.T, target module.DeliveryTarget, dir string) *Qu
 	q.initialRetryTime = 0
 	q.retryTimeScale = 1
 	q.postInitDelay = 0
-	q.maxTries = 5
+	q.maxQueueLifetime = 10 * time.Minute
 	q.location = dir
 	q.Target = target
 
