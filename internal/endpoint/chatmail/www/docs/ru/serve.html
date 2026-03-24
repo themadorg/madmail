@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Руководство по Custom HTML - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Меню">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Главная</a></li>
+            <li><a href="/docs/" data-i18n="nav_docs">Документация</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide">
+        <h1>Руководство по настройке внешнего вида сервера (Custom HTML)</h1>
+        <p class="mt-md">Вы можете изменить внешний вид всех веб-страниц вашего сервера без изменения исходного кода или перекомпиляции.</p>
+
+        <h3 class="mt-lg">Шаг 1 — Извлечение оригинальных файлов</h3>
+        <p>Сначала извлеките файлы по умолчанию в папку. Мы рекомендуем использовать <code>/var/lib/maddy/www</code>.</p>
+        <div class="code-block">sudo maddy extract-www /var/lib/maddy/www</div>
+
+        <h3 class="mt-lg">Шаг 2 — Установка прав доступа</h3>
+        <p>Чтобы сервер мог читать файлы, измените владельца папки на пользователя <code>maddy</code>.</p>
+        <div class="code-block">sudo chown -R maddy:maddy /var/lib/maddy/www</div>
+
+        <h3 class="mt-lg">Шаг 3 — Включение в конфигурации сервера</h3>
+        <p>Обновите файл конфигурации сервера (maddy.conf), чтобы использовать новую папку.</p>
+        <div class="code-block">sudo sed -i '/chatmail.*{/a\    www_dir /var/lib/maddy/www' /etc/maddy/maddy.conf</div>
+
+        <h3 class="mt-lg">Шаг 4 — Применение изменений</h3>
+        <p>Наконец, перезапустите службу, чтобы изменения вступили в силу.</p>
+        <div class="code-block">sudo systemctl restart maddy</div>
+
+        <div class="alert alert--warning mt-lg">
+            <strong>Важно:</strong> После выполнения вышеуказанных шагов вы можете открывать файлы внутри <code>/var/lib/maddy/www</code> с помощью редактора (например, nano) и изменять их. Изменения вступают в силу немедленно (после обновления страницы).
+        </div>
+
+        <h3 class="mt-lg">Заметка о мгновенной регистрации (JIT)</h3>
+        <p>Если вы настраиваете главную страницу (index.html), обратите внимание, что логика регистрации меняется в зависимости от статуса JIT:</p>
+        <ul>
+            <li>Если <strong>JIT включен</strong>, учетные данные пользователя генерируются случайным образом в браузере.</li>
+            <li>Если <strong>JIT выключен</strong> (но регистрация открыта), браузер использует API <code>/new</code> для создания аккаунтов.</li>
+        </ul>
+        <p class="text-sm text-muted mt-sm">Мы рекомендуем изучить JavaScript-код функции <code>generateAccount</code> в файле по умолчанию.</p>
+
+        <h3 class="mt-lg">Сброс к настройкам по умолчанию</h3>
+        <p>Если вы хотите снова использовать встроенные файлы программы:</p>
+        <div class="code-block">sudo sed -i '/www_dir/d' /etc/maddy/maddy.conf
+sudo systemctl restart maddy</div>
+    </div>
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+        };
+    </script>
+</body>
+
+</html>

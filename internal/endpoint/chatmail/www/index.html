@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html dir="rtl" lang="fa">
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
-    <title>سرور چت {{.MailDomain | cleanDomain}}</title>
+    <title data-i18n="index_title">Chat Server</title>
     <link rel="stylesheet" href="./main.css">
+    <script src="./translations.js"></script>
     <script src="./main.js"></script>
     <link rel="icon" href="/logo.svg">
 </head>
@@ -13,26 +14,26 @@
 <body>
 
     <header class="navbar">
-        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu" data-i18n="nav_menu_label">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/">اصلی</a></li>
-            <li><a href="/share">اشتراک‌گذاری</a></li>
-            <li><a href="/info.html">راهنما</a></li>
-            <li><a href="/security.html">امنیت</a></li>
-            <li><a href="/deploy.html">راه‌اندازی</a></li>
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+            <li><a href="/deploy.html" data-i18n="nav_deploy">Deploy</a></li>
         </ul>
     </header>
 
     <div class="text-center">
-        <h2>سرور چت {{.MailDomain | cleanDomain}}</h2>
-        <p>این یک سرور اختصاصی برای استفاده در <strong>دلتاچت</strong> است.</p>
+        <h2><span data-i18n="index_title">Chat Server</span> {{.MailDomain | cleanDomain}}</h2>
+        <p data-i18n-html="index_subtitle">This is a dedicated server for use with <strong>DeltaChat</strong>.</p>
     </div>
 
     {{if .RegistrationOpen}}
     <div class="text-center">
-        <button class="btn btn--primary mt-md" onclick="generateAccount()" id="generate-btn">ساخت اکانت جدید</button>
+        <button class="btn btn--primary mt-md" onclick="generateAccount()" id="generate-btn" data-i18n="index_generate">Create New Account</button>
 
         <div id="qr-container" class="hidden mt-md">
             <div class="qr-wrap">
@@ -40,69 +41,63 @@
             </div>
         </div>
 
-        <div id="loading-indicator" class="hidden mt-md text-muted">
-            در حال ایجاد اکانت...
+        <div id="loading-indicator" class="hidden mt-md text-muted" data-i18n="index_loading">
+            Creating account...
         </div>
         <div id="error-message" class="alert alert--danger hidden"></div>
         <div id="deltachat-error" class="alert alert--warning hidden">
-            <strong>دلتاچت نصب نشده است</strong>
-            <p class="mt-sm text-sm">لطفاً ابتدا اپلیکیشن دلتاچت را نصب کنید و سپس از دکمه "کپی لینک" استفاده کنید.</p>
+            <strong data-i18n="index_dc_not_installed_title">DeltaChat is not installed</strong>
+            <p class="mt-sm text-sm" data-i18n="index_dc_not_installed_text">Please install the DeltaChat app first, then use the "Copy Link" button.</p>
         </div>
 
         <div id="account-result" class="hidden">
             <div class="flex flex-center flex-wrap gap-sm mt-md">
-                <button class="btn btn--primary" onclick="openDeltaChat()" id="open-deltachat-btn" disabled>ورود به دلتاچت</button>
-                <button class="btn btn--secondary" onclick="copyLink()" id="copy-link-btn" disabled>کپی لینک</button>
+                <button class="btn btn--primary" onclick="openDeltaChat()" id="open-deltachat-btn" disabled data-i18n="index_open_dc">Open DeltaChat</button>
+                <button class="btn btn--secondary" onclick="copyLink()" id="copy-link-btn" disabled data-i18n="index_copy_link">Copy Link</button>
             </div>
         </div>
     </div>
 
-    <div class="card mt-lg text-right" id="manual-card-default">
-        <strong>راهنمای افزودن دستی (اگر دکمه کار نکرد):</strong>
+    <div class="card mt-lg text-start" id="manual-card-default">
+        <strong data-i18n="index_manual_title">Manual setup (if the button didn't work):</strong>
         <ol>
-            <li>در دلتاچت "ایجاد پروفایل جدید" (Create new profile) را انتخاب کنید.</li>
-            <li>سپس "استفاده از سرور دیگر" (Use Other server) را بزنید.</li>
-            <li>عبارت زیر را کپی کرده و در بخش اسکن کد، گزینه "جایگذاری از حافظه" (Paste from clipboard) را بزنید:</li>
+            <li data-i18n="index_manual_step1">In DeltaChat, select "Create new profile".</li>
+            <li data-i18n="index_manual_step2">Then tap "Use Other Server".</li>
+            <li data-i18n="index_manual_step3">Copy the text below and in the scan code section, tap "Paste from clipboard":</li>
         </ol>
         <div class="code-block" id="manual-link" onclick="copyText(this)"></div>
     </div>
 
-    <div class="card mt-lg text-right hidden" id="manual-card-ios">
-        <strong>راهنمای ساخت اکانت در آیفون:</strong>
-        <p class="mt-sm">ابتدا لینک زیر را کپی کنید، سپس در دلتاچت مراحل زیر را دنبال کنید:</p>
+    <div class="card mt-lg text-start hidden" id="manual-card-ios">
+        <strong data-i18n="index_ios_title">iPhone account creation guide:</strong>
+        <p class="mt-sm" data-i18n="index_ios_intro">First copy the link below, then follow these steps in DeltaChat:</p>
         <div class="code-block" id="manual-link-ios" onclick="copyText(this)"></div>
         <ol class="mt-md">
             <li>Use Other Server</li>
             <li>Scan Invitation Code</li>
-            <li>سه نقطه بالا سمت راست ⋯</li>
+            <li>⋯</li>
             <li>Paste from Clipboard</li>
-            <li>نام و عکس پروفایل (دلخواه) را وارد کنید</li>
+            <li data-i18n="index_manual_step1">Enter name and profile picture (optional)</li>
             <li>Agree & Create Profile</li>
         </ol>
     </div>
 
-    <div class="card text-right" id="ios-card">
-        <strong>نکته مخصوص کاربران iOS (آیفون):</strong>
-        <p class="text-sm mt-sm">کاربران آیفون باید لینک استاندارد بالا را کپی کرده و در هنگام
-            ساخت اکانت جدید به شکل زیر عمل کنند:</p>
-        <p class="text-sm mono">new account > use other server > scan > paste</p>
-        <p class="text-sm mt-sm">اگرچه کلیک روی دکمه ورود در iOS ممکن است کار کند، اما به دلیل
-            محدودیت‌های سیستم‌عامل، روش کپی و جایگذاری (Paste) پیشنهاد می‌شود.</p>
+    <div class="card text-start" id="ios-card">
+        <strong data-i18n="index_ios_note_title">Note for iOS (iPhone) users:</strong>
+        <p class="text-sm mt-sm" data-i18n-html="index_ios_note_text">iPhone users should copy the standard link above and during new account creation follow:</p>
+        <p class="text-sm mono" data-i18n="index_ios_note_path">new account > use other server > scan > paste</p>
+        <p class="text-sm mt-sm" data-i18n="index_ios_note_detail">Although clicking the login button may work on iOS, due to system limitations, the copy-paste method is recommended.</p>
     </div>
 
-
-
     <div class="card card--centered mt-lg">
-        <h3>اشتراک‌گذاری آی‌دی</h3>
-        <p class="mb-md">شما می‌توانید آی‌دی دلتاچت خود را به اشتراک بگذارید تا دیگران بتوانند با شما
-            تماس بگیرند.</p>
-        <a href="/share" class="btn btn--primary">اشتراک‌گذاری آی‌دی من</a>
+        <h3 data-i18n="index_share_title">Share Your ID</h3>
+        <p class="mb-md" data-i18n="index_share_text">You can share your DeltaChat ID so others can contact you.</p>
+        <a href="/share" class="btn btn--primary" data-i18n="index_share_btn">Share My ID</a>
     </div>
     {{else}}
     <div class="card card--danger card--centered mt-lg">
-        <h3 class="text-danger">ثبت‌نام بسته شده است</h3>
-        <p>ثبت‌نام کاربر جدید در این سرور موقتاً غیرفعال شده است.
-            لطفاً از سرورهای دیگر استفاده کنید.</p>
+        <h3 class="text-danger" data-i18n="index_reg_closed_title">Registration Closed</h3>
+        <p data-i18n="index_reg_closed_text">New user registration on this server is temporarily disabled. Please use other servers.</p>
     </div>
     {{end}}
 
@@ -111,6 +106,7 @@
         const registrationOpen = "{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true";
         const jitEnabled = "{{if .JitRegistrationEnabled}}true{{else}}false{{end}}" === "true";
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const PAGE_LANG = "{{.Language}}";
 
         function generateRandomString(length) {
             const charset = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -161,8 +157,8 @@
             })
             .then(response => {
                 if (!response.ok) {
-                    if (response.status === 403) throw new Error('ثبت‌نام بسته شده است');
-                    throw new Error('خطا در ایجاد اکانت: ' + response.status);
+                    if (response.status === 403) throw new Error(t('error_reg_closed'));
+                    throw new Error(t('error_create_account') + response.status);
                 }
                 return response.json();
             })
@@ -186,7 +182,7 @@
             .catch(error => {
                 document.getElementById('loading-indicator').classList.add('hidden');
                 document.getElementById('error-message').classList.remove('hidden');
-                document.getElementById('error-message').innerText = error.message || 'خطا در ارتباط با سرور';
+                document.getElementById('error-message').innerText = error.message || t('error_server');
                 document.getElementById('generate-btn').disabled = false;
             });
         }
@@ -256,6 +252,10 @@
         }
 
         window.onload = function () {
+            applyTranslations(PAGE_LANG);
+            // Update title with domain
+            document.title = t('index_title') + ' ' + '{{.MailDomain | cleanDomain}}';
+
             if (isIOS) {
                 document.getElementById('open-deltachat-btn').style.display = 'none';
                 document.getElementById('manual-card-default').style.display = 'none';
@@ -270,7 +270,7 @@
         };
     </script>
 
-    <div class="footer text-center">نسخه {{.Version}}</div>
+    <div class="footer text-center"><span data-i18n="footer_version">Version</span> {{.Version}}</div>
 </body>
 
 </html>

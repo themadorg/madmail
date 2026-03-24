@@ -1,25 +1,26 @@
 <!DOCTYPE html>
-<html dir="rtl" lang="fa">
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{if .Custom.Name}}پیام به {{.Custom.Name}}{{else}}مخاطب دلتاچت{{end}} - {{.WebDomain | cleanDomain}}</title>
+    <title>{{if .Custom.Name}}{{.Custom.Name}}{{else}}DeltaChat Contact{{end}} - {{.WebDomain | cleanDomain}}</title>
     <link rel="stylesheet" href="/main.css">
-    <script src="./main.js"></script>
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
 </head>
 
 <body>
     <header class="navbar">
-        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/">اصلی</a></li>
-            <li><a href="/share">اشتراک‌گذاری</a></li>
-            <li><a href="/info.html">راهنما</a></li>
-            <li><a href="/security.html">امنیت</a></li>
-            <li><a href="/deploy.html">راه‌اندازی</a></li>
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+            <li><a href="/deploy.html" data-i18n="nav_deploy">Deploy</a></li>
         </ul>
     </header>
 
@@ -35,41 +36,43 @@
             {{if .Custom.Name}}
             {{.Custom.Name}}
             {{else}}
-            مخاطب دلتاچت
+            <span data-i18n="contact_dc">DeltaChat Contact</span>
             {{end}}
         </h2>
-        <p class="text-muted">آماده دریافت پیام در دلتاچت</p>
+        <p class="text-muted" data-i18n="contact_ready">Ready to receive messages on DeltaChat</p>
 
         <div class="mt-md mb-md">
-            <p class="text-sm mb-md">برای شروع گفتگو، روی دکمه زیر بزنید یا لینک را کپی کرده و در برنامه وارد کنید.</p>
-            <a href="{{.Custom.URL | safeURL}}" class="btn btn--primary btn--full">ارسال پیام در دلتاچت</a>
+            <p class="text-sm mb-md" data-i18n="contact_start">To start a conversation, click the button below or copy the link and enter it in the app.</p>
+            <a href="{{.Custom.URL | safeURL}}" class="btn btn--primary btn--full" data-i18n="contact_send">Send message in DeltaChat</a>
         </div>
 
         <div class="code-block mt-md" id="inviteLink" dir="ltr">{{.Custom.URL}}</div>
-        <button onclick="copyToClipboard(document.getElementById('inviteLink').innerText.trim())" class="btn btn--secondary mt-sm">کپی لینک دعوت</button>
+        <button onclick="copyToClipboard(document.getElementById('inviteLink').innerText.trim())" class="btn btn--secondary mt-sm" data-i18n="contact_copy_invite">Copy invite link</button>
 
         <div class="alert alert--warning mt-md">
-            <strong>تایید هویت و امنیت</strong>
-            <p>ممکن است این لینک متعلق به فرد دیگری باشد یا آدرس آن تغییر کرده باشد.</p>
-            <p class="mt-sm"><strong>لطفاً پس از متصل شدن، حتماً از فرد مقابل تایید بگیرید که همان
-                شخصی است که انتظار دارید.</strong></p>
+            <strong data-i18n="contact_verify_title">Identity verification and security</strong>
+            <p data-i18n="contact_verify_text">This link may belong to someone else or its address may have changed.</p>
+            <p class="mt-sm" data-i18n-html="contact_verify_warning"><strong>Please verify with the other person after connecting that they are who you expect.</strong></p>
         </div>
     </div>
 
     {{if .SSURL}}
     <div class="proxy-box">
-        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
-            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
+        <strong data-i18n="proxy_box_title">Please use this proxy inside the DeltaChat app for faster messaging.</strong>
+        <p data-i18n="proxy_box_desc">Note that this proxy only works within this server and only for messaging to this server!</p>
         <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
-        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
-        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
+        <p class="text-muted text-sm" data-i18n="proxy_box_usage">How to use: Settings > Advanced > Network > SOCKS5 Proxy</p>
+        <p class="text-muted text-xs mt-sm" data-i18n="proxy_box_footer">* This proxy is specific to this Madmail server.</p>
     </div>
     {{end}}
 
     <div class="text-center mb-md">
-        <a href="/share" class="text-sm text-muted">ایجاد صفحه اشتراک‌گذاری برای خودتان</a>
+        <a href="/share" class="text-sm text-muted" data-i18n="contact_create_own">Create a sharing page for yourself</a>
     </div>
+
+    <script>
+        window.onload = function() { applyTranslations("{{.Language}}"); };
+    </script>
 </body>
 
 </html>

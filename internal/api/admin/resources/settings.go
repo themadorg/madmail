@@ -179,6 +179,7 @@ type AllSettingsResponse struct {
 
 	AdminPath    settingValueResponse `json:"admin_path"`
 	AdminWebPath settingValueResponse `json:"admin_web_path"`
+	Language     settingValueResponse `json:"language"`
 }
 
 // Setting key constants for all configurable values.
@@ -232,6 +233,7 @@ const (
 	KeyHTTPProxyPassword = "__HTTP_PROXY_PASSWORD__"
 	KeyAdminPath         = "__ADMIN_PATH__"
 	KeyAdminWebPath      = "__ADMIN_WEB_PATH__"
+	KeyLanguage          = "__LANGUAGE__"
 )
 
 // RegistrationHandler creates a handler for /admin/registration.
@@ -607,6 +609,7 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		resp.HTTPProxyPassword = getSetting(KeyHTTPProxyPassword, "")
 		resp.AdminPath = getSetting(KeyAdminPath, "")
 		resp.AdminWebPath = getSetting(KeyAdminWebPath, "")
+		resp.Language = getSetting(KeyLanguage, "en") // default to English
 
 		return resp, 200, nil
 	}

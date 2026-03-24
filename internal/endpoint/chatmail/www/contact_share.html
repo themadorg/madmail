@@ -1,94 +1,93 @@
 <!DOCTYPE html>
-<html dir="rtl" lang="fa">
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>اشتراک‌گذاری آی‌دی دلتاچت - {{.WebDomain}}</title>
+    <title data-i18n="share_title">Create a shareable link</title>
     <link rel="stylesheet" href="/main.css">
-    <script src="./main.js"></script>
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
 </head>
 
 <body>
     <header class="navbar">
-        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/">اصلی</a></li>
-            <li><a href="/share">اشتراک‌گذاری</a></li>
-            <li><a href="/info.html">راهنما</a></li>
-            <li><a href="/security.html">امنیت</a></li>
-            <li><a href="/deploy.html">راه‌اندازی</a></li>
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+            <li><a href="/deploy.html" data-i18n="nav_deploy">Deploy</a></li>
         </ul>
     </header>
 
     <div class="text-center">
-        <h1>ایجاد لینک قابل اشتراک‌گذاری</h1>
-        <p>اجازه دهید دیگران به راحتی در دلتاچت با شما تماس بگیرند.</p>
+        <h1 data-i18n="share_title">Create a shareable link</h1>
+        <p data-i18n="share_subtitle">Let others easily contact you on DeltaChat.</p>
     </div>
 
     <div class="card card--centered text-right">
         <form id="shareForm">
             <div class="form-group">
-                <label for="name">نام شما (اختیاری)</label>
-                <input type="text" id="name" name="name" placeholder="مثلاً علی رضا" class="rtl">
+                <label for="name" data-i18n="share_name_label">Your name (optional)</label>
+                <input type="text" id="name" name="name" data-i18n-placeholder="share_name_placeholder" placeholder="e.g. John Doe">
             </div>
             <div class="form-group">
-                <label for="slug">نام مسیر (اختیاری)</label>
+                <label for="slug" data-i18n="share_slug_label">Path name (optional)</label>
                 <div class="flex gap-sm">
-                    <input type="text" id="slug" name="slug" placeholder="مثلاً ali20" class="flex-1"
-                        pattern="[a-zA-Z0-9]+" title="فقط حروف و اعداد مجاز است">
-                    <button type="button" onclick="generateRandomSlug()" class="btn btn--secondary btn--sm">تصادفی</button>
+                    <input type="text" id="slug" name="slug" data-i18n-placeholder="share_slug_placeholder" placeholder="e.g. john23" class="flex-1"
+                        pattern="[a-zA-Z0-9]+" title="Only letters and numbers allowed">
+                    <button type="button" onclick="generateRandomSlug()" class="btn btn--secondary btn--sm" data-i18n="share_slug_random">Random</button>
                 </div>
-                <p class="text-sm text-muted mt-sm">فقط حروف و اعداد (مثلاً A231). آدرس نهایی: {{.WebDomain | cleanDomain}}/[نام]</p>
+                <p class="text-sm text-muted mt-sm"><span data-i18n="share_slug_hint">Letters and numbers only (e.g. A231). Final URL:</span> {{.WebDomain | cleanDomain}}/[name]</p>
             </div>
             <div class="form-group">
-                <label for="url">آدرس دعوت دلتاچت شما</label>
+                <label for="url" data-i18n="share_url_label">Your DeltaChat invite link</label>
                 <input type="text" id="url" name="url" required placeholder="https://i.delta.chat/#...">
                 <div class="alert alert--info mt-sm">
-                    <strong>نحوه پیدا کردن لینک در اپلیکیشن:</strong>
+                    <strong data-i18n="share_url_help_title">How to find the link in the app:</strong>
                     <ol class="list-plain">
-                        <li>وارد <strong>تنظیمات</strong> دلتاچت شوید.</li>
-                        <li>روی <strong>آیکون QR کد</strong> در بالا بزنید.</li>
-                        <li>گزینه <strong>اشتراک‌گذاری کد QR</strong> را بزنید.</li>
-                        <li>سپس <strong>کپی کردن لینک</strong> را انتخاب کنید.</li>
+                        <li data-i18n-html="share_url_help_step1">Go to DeltaChat <strong>Settings</strong>.</li>
+                        <li data-i18n-html="share_url_help_step2">Tap the <strong>QR code icon</strong> at the top.</li>
+                        <li data-i18n-html="share_url_help_step3">Select <strong>Share QR Code</strong>.</li>
+                        <li data-i18n-html="share_url_help_step4">Then choose <strong>Copy link</strong>.</li>
                     </ol>
-                    <p class="mt-sm text-xs text-muted">فقط لینک‌های وب که با <code>https://i.delta.chat/#</code> شروع می‌شوند کار می‌کنند.</p>
+                    <p class="mt-sm text-xs text-muted" data-i18n-html="share_url_help_note">Only web links starting with <code>https://i.delta.chat/#</code> will work.</p>
                 </div>
             </div>
-            <button type="submit" class="btn btn--primary btn--full">ایجاد لینک</button>
+            <button type="submit" class="btn btn--primary btn--full" data-i18n="share_submit">Create Link</button>
         </form>
     </div>
 
     <div id="errorModal" class="modal">
         <div class="modal__content">
-            <div class="modal__error" id="errorMessage">خطایی رخ داد</div>
-            <button onclick="closeModal()" class="btn btn--primary btn--full">متوجه شدم</button>
+            <div class="modal__error" id="errorMessage" data-i18n="share_error_default">An error occurred</div>
+            <button onclick="closeModal()" class="btn btn--primary btn--full" data-i18n="share_ok">Got it</button>
         </div>
     </div>
 
     {{if .SSURL}}
     <div class="proxy-box">
-        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
-            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
+        <strong data-i18n="proxy_box_title">Please use this proxy inside the DeltaChat app for faster messaging.</strong>
+        <p data-i18n="proxy_box_desc">Note that this proxy only works within this server and only for messaging to this server!</p>
         <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
-        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
-        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
+        <p class="text-muted text-sm" data-i18n="proxy_box_usage">How to use: Settings > Advanced > Network > SOCKS5 Proxy</p>
+        <p class="text-muted text-xs mt-sm" data-i18n="proxy_box_footer">* This proxy is specific to this Madmail server.</p>
     </div>
     {{end}}
 
     <div class="alert alert--warning">
-        <strong>نکته حریم خصوصی:</strong> آدرس دعوت شما در پایگاه داده ما ذخیره می‌شود تا دیگران بتوانند با شما ارتباط
-        برقرار کنند. هر کسی که لینک شما را داشته باشد می‌تواند این اطلاعات را ببیند.
+        <strong data-i18n="share_privacy">Your invite link is stored in our database so others can contact you. Anyone with your link can see this information.</strong>
     </div>
 
     <script>
         function generateRandomSlug() {
-            const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-            let result = '';
-            for (let i = 0; i < 8; i++) {
+            var chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+            var result = '';
+            for (var i = 0; i < 8; i++) {
                 result += chars.charAt(Math.floor(Math.random() * chars.length));
             }
             document.getElementById('slug').value = result;
@@ -100,29 +99,40 @@
 
         document.getElementById('shareForm').addEventListener('submit', function (e) {
             e.preventDefault();
-            const formData = new FormData(this);
+            var formData = new FormData(this);
 
             fetch('/share', {
                 method: 'POST',
                 body: formData
-            }).then(response => {
+            }).then(function(response) {
                 if (response.ok) {
-                    return response.text().then(html => {
+                    return response.text().then(function(html) {
                         document.open();
                         document.write(html);
                         document.close();
                     });
                 } else {
-                    response.text().then(text => {
+                    response.text().then(function(text) {
                         document.getElementById('errorMessage').innerText = text;
                         document.getElementById('errorModal').style.display = 'block';
                     });
                 }
             }).catch(function () {
-                document.getElementById('errorMessage').innerText = 'خطا در ارتباط با سرور';
+                document.getElementById('errorMessage').innerText = t('share_error_server');
                 document.getElementById('errorModal').style.display = 'block';
             });
         });
+
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            // Apply placeholder translations
+            var placeholders = document.querySelectorAll('[data-i18n-placeholder]');
+            for (var i = 0; i < placeholders.length; i++) {
+                var key = placeholders[i].getAttribute('data-i18n-placeholder');
+                var val = t(key);
+                if (val !== key) placeholders[i].placeholder = val;
+            }
+        };
     </script>
 </body>
 

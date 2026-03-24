@@ -1,52 +1,56 @@
 <!DOCTYPE html>
-<html dir="rtl" lang="fa">
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لینک ایجاد شد! - {{.WebDomain}}</title>
+    <title data-i18n="share_success_title">Link created!</title>
     <link rel="stylesheet" href="/main.css">
-    <script src="./main.js"></script>
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
 </head>
 
 <body>
     <header class="navbar">
-        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/">اصلی</a></li>
-            <li><a href="/share">اشتراک‌گذاری</a></li>
-            <li><a href="/info.html">راهنما</a></li>
-            <li><a href="/security.html">امنیت</a></li>
-            <li><a href="/deploy.html">راه‌اندازی</a></li>
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+            <li><a href="/deploy.html" data-i18n="nav_deploy">Deploy</a></li>
         </ul>
     </header>
 
     <div class="card card--centered card--success">
         <div class="text-success mb-md" style="font-size:2rem">✓</div>
-        <h2>لینک با موفقیت ایجاد شد!</h2>
-        <p>لینک اختصاصی شما آماده است. آن را با هر کسی که می‌خواهید با شما چت کند به اشتراک بگذارید.</p>
+        <h2 data-i18n="share_success_title">Link created successfully!</h2>
+        <p data-i18n="share_success_text">Your personal link is ready. Share it with anyone you want to chat with.</p>
 
         <div class="code-block mt-md" id="linkText" dir="ltr">https://{{.WebDomain | cleanDomain}}/{{.Custom.Slug}}</div>
 
-        <button class="btn btn--primary mt-md" onclick="copyToClipboard(document.getElementById('linkText').innerText.trim())">کپی لینک</button>
+        <button class="btn btn--primary mt-md" onclick="copyToClipboard(document.getElementById('linkText').innerText.trim())" data-i18n="share_success_copy">Copy Link</button>
 
         <div class="mt-lg">
-            <a href="/{{.Custom.Slug}}" class="btn btn--secondary">مشاهده صفحه شما</a>
+            <a href="/{{.Custom.Slug}}" class="btn btn--secondary" data-i18n="share_success_view">View your page</a>
         </div>
     </div>
 
     {{if .SSURL}}
     <div class="proxy-box">
-        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
-            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
+        <strong data-i18n="proxy_box_title">Please use this proxy inside the DeltaChat app for faster messaging.</strong>
+        <p data-i18n="proxy_box_desc">Note that this proxy only works within this server and only for messaging to this server!</p>
         <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
-        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
-        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
+        <p class="text-muted text-sm" data-i18n="proxy_box_usage">How to use: Settings > Advanced > Network > SOCKS5 Proxy</p>
+        <p class="text-muted text-xs mt-sm" data-i18n="proxy_box_footer">* This proxy is specific to this Madmail server.</p>
     </div>
     {{end}}
+
+    <script>
+        window.onload = function() { applyTranslations("{{.Language}}"); };
+    </script>
 </body>
 
 </html>

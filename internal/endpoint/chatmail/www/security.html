@@ -1,55 +1,56 @@
 <!DOCTYPE html>
-<html dir="rtl" lang="fa">
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>امنیت — {{.MailDomain}}</title>
+    <title data-i18n="security_title">Security</title>
     <link rel="stylesheet" href="./main.css">
+    <script src="./translations.js"></script>
     <script src="./main.js"></script>
 </head>
 
 <body>
     <header class="navbar">
-        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/">اصلی</a></li>
-            <li><a href="/share">اشتراک‌گذاری</a></li>
-            <li><a href="/info.html">راهنما</a></li>
-            <li><a href="/security.html">امنیت</a></li>
-            <li><a href="/deploy.html">راه‌اندازی</a></li>
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+            <li><a href="/deploy.html" data-i18n="nav_deploy">Deploy</a></li>
         </ul>
     </header>
 
     <div class="text-center">
-        <h2>امنیت و حریم خصوصی</h2>
+        <h2 data-i18n="security_title">Security & Privacy</h2>
     </div>
 
     <div class="card card--wide">
-        <p>کاربران عزیز توجه داشته باشید که دلتاچت می‌تواند هم برای ارتباط <strong>امن و رمزنگاری‌شده</strong>و هم برای
-            ارتباط <strong>غیر امن (ایمیل سنتی)</strong>استفاده شود.</p>
-        <p class="text-danger"><strong>برای حفظ امنیت کامل، حتما موارد زیر را رعایت کنید:</strong></p>
+        <p data-i18n-html="security_intro">Dear users, please note that DeltaChat can be used for both <strong>secure, encrypted</strong> and <strong>insecure (traditional email)</strong> communication.</p>
+        <p class="text-danger" data-i18n-html="security_warning"><strong>To maintain full security, make sure to follow these guidelines:</strong></p>
         <ul>
-            <li><strong>توقف استفاده از ایمیل کلاسیک:</strong>در تنظیمات دلتاچت، بخش <code>Advanced</code>، گزینه «ایمیل سنتی» را روی <strong>«نه»</strong>قرار دهید.</li>
-            <li><strong>تشخیص پیام‌های ناامن:</strong> پیام‌هایی که با آیکون <strong>پاکت‌نامه</strong> یا <strong>آیکون
-                    خاکستری</strong> ظاهر می‌شوند، در واقع ناامن هستند. آیکون خاکستری نشان‌دهنده غیرفعال بودن رمزنگاری
-                است.</li>
-            <li><strong>شروع چت فقط با لینک:</strong>به هیچ عنوان مستقیما به ID (آدرس ایمیل) پیام ندهید. ارتباط باید
-                حتما از طریق اشتراک‌گذاری لینک به فرمت <code>https://i.delta.chat/#..</code> شروع شود.
-                هرگونه ID خارج از این فرمت ناامن است.</li>
-            <li><strong>تفاوت سرورها:</strong>سرورهای <code>chatmail</code>(مانند <code>tiiz.ir</code>) تبادل ایمیل رمزنشده را کلا رد می‌کنند. اما <code>madmail</code>در نسخه‌های قدیمی ممکن است اجازه ارسال غیرامن را بدهد که توسط صاحب
-                سرور یا دیتاسنتر قابل مشاهده است.</li>
+            <li data-i18n-html="security_classic_email"><strong>Stop using classic email:</strong> In DeltaChat settings, under <code>Advanced</code>, set "Classic email" to <strong>"No"</strong>.</li>
+            <li data-i18n-html="security_unsafe_msgs"><strong>Identifying unsafe messages:</strong> Messages that appear with an <strong>envelope icon</strong> or <strong>grey icon</strong> are insecure.</li>
+            <li data-i18n-html="security_start_chat"><strong>Start chats only via link:</strong> Never send messages directly to an ID (email address).</li>
+            <li data-i18n-html="security_server_diff"><strong>Server differences:</strong> <code>chatmail</code> servers reject unencrypted email exchange entirely.</li>
         </ul>
 
         <div class="alert alert--info mt-lg">
-            <p><strong>نکته برای مدیران:</strong>اگر از نسخه‌های قدیمی Madmail استفاده می‌کنید، حتما سرور خود را
-                به‌روزرسانی کنید تا امنیت کاربران حفظ شود.</p>
+            <p data-i18n-html="security_admin_note"><strong>Note for administrators:</strong> If you are using older versions of Madmail, make sure to update your server to protect user security.</p>
         </div>
     </div>
 
-    <div class="footer text-center">نسخه {{.Version}}</div>
+    <div class="footer text-center"><span data-i18n="footer_version">Version</span> {{.Version}}</div>
+
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            document.title = t('security_title') + ' — {{.MailDomain}}';
+        };
+    </script>
 </body>
 
 </html>

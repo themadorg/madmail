@@ -12,32 +12,32 @@
             max-width: 800px;
             margin: 40px auto;
             padding: 20px;
-            background: var(--card-bg);
+            background: var(--card);
             border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--card-border);
             direction: rtl;
         }
 
         h2 {
             margin-top: 30px;
-            border-bottom: 2px solid var(--accent-color);
+            border-bottom: 2px solid var(--link);
             padding-bottom: 10px;
             display: inline-block;
         }
 
         h3 {
             margin-top: 25px;
-            color: var(--accent-color);
+            color: var(--link);
         }
 
         .highlight {
-            color: var(--accent-color);
+            color: var(--link);
             font-weight: bold;
         }
 
         .code-box {
             direction: ltr;
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--code-bg);
             padding: 12px 16px;
             border-radius: 6px;
             font-family: 'Courier New', monospace;
@@ -46,29 +46,29 @@
             margin: 10px 0;
             word-break: break-all;
             white-space: pre-wrap;
-            border: 1px dashed #444;
-            color: #ddd;
+            border: 1px solid var(--card-border);
+            color: var(--foreground);
             line-height: 1.6;
         }
 
         .tip-box {
-            background: rgba(0, 210, 255, 0.1);
-            border-right: 4px solid #00d2ff;
+            background: color-mix(in srgb, var(--link) 10%, transparent);
+            border-right: 4px solid var(--link);
             padding: 15px;
             margin: 20px 0;
             border-radius: 4px;
         }
 
         .warn-box {
-            background: rgba(255, 180, 0, 0.1);
-            border-right: 4px solid #ffb400;
+            background: color-mix(in srgb, var(--warning) 10%, transparent);
+            border-right: 4px solid var(--warning);
             padding: 15px;
             margin: 20px 0;
             border-radius: 4px;
         }
 
         .success-box {
-            background: rgba(0, 200, 80, 0.1);
+            background: color-mix(in srgb, var(--success) 10%, transparent);
             border-right: 4px solid #00c850;
             padding: 15px;
             margin: 20px 0;
@@ -79,7 +79,7 @@
         .success-box strong {
             display: block;
             margin-bottom: 10px;
-            color: var(--accent-color);
+            color: var(--link);
         }
 
         .warn-box ol,
@@ -100,7 +100,7 @@
             padding: 5px 10px;
             border-radius: 4px;
             margin-top: 5px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--code-bg);
             width: fit-content;
         }
 
@@ -109,10 +109,10 @@
             border-collapse: separate;
             border-spacing: 0;
             margin: 25px 0;
-            background: rgba(255, 255, 255, 0.02);
+            background: var(--code-bg);
             border-radius: 12px;
             overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--card-border);
             direction: rtl;
         }
 
@@ -120,12 +120,12 @@
         .mode-table td {
             padding: 12px 15px;
             text-align: right;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid var(--code-bg);
         }
 
         .mode-table th {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--accent-color);
+            background: var(--code-bg);
+            color: var(--link);
             font-size: 0.9em;
             font-weight: bold;
         }
@@ -135,7 +135,7 @@
         }
 
         .mode-table tr:hover td {
-            background: rgba(255, 255, 255, 0.02);
+            background: var(--code-bg);
         }
 
         .status-badge {
@@ -148,23 +148,23 @@
         }
 
         .status-yes {
-            background: rgba(0, 200, 80, 0.15);
-            color: #00c850;
+            background: color-mix(in srgb, var(--success) 15%, transparent);
+            color: var(--success);
         }
 
         .status-no {
-            background: rgba(255, 80, 80, 0.15);
-            color: #ff5050;
+            background: color-mix(in srgb, var(--destructive) 15%, transparent);
+            color: var(--destructive);
         }
 
         .status-na {
-            background: rgba(255, 255, 255, 0.1);
-            color: #888;
+            background: var(--card-border);
+            color: var(--muted);
         }
 
         .mode-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--card);
+            border: 1px solid var(--card-border);
             border-radius: 12px;
             padding: 25px;
             margin: 20px 0;
@@ -172,14 +172,14 @@
         }
 
         .mode-card:hover {
-            background: rgba(255, 255, 255, 0.05);
-            border-color: var(--accent-color);
+            background: var(--code-bg);
+            border-color: var(--link);
         }
 
         .code-box {
             margin-top: 0 !important;
             border-top-left-radius: 0 !important;
-            border: 1px dashed #444 !important;
+            border: 1px solid var(--card-border) !important;
         }
     </style>
 </head>

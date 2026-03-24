@@ -1,64 +1,63 @@
 <!DOCTYPE html>
-<html dir="rtl" lang="fa">
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>اطلاعات — {{.MailDomain}}</title>
+    <title data-i18n="info_title">Info</title>
     <link rel="stylesheet" href="./main.css">
+    <script src="./translations.js"></script>
     <script src="./main.js"></script>
 </head>
 
 <body>
     <header class="navbar">
-        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/">اصلی</a></li>
-            <li><a href="/share">اشتراک‌گذاری</a></li>
-            <li><a href="/info.html">راهنما</a></li>
-            <li><a href="/security.html">امنیت</a></li>
-            <li><a href="/deploy.html">راه‌اندازی</a></li>
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+            <li><a href="/deploy.html" data-i18n="nav_deploy">Deploy</a></li>
         </ul>
     </header>
 
     <div class="text-center">
-        <h2>درباره این سرور</h2>
-        <p>این یک گره (Node) از شبکه دلتاچت است. هدف آن فراهم کردن ارتباط سریع و خصوصی برای کاربران است.</p>
+        <h2 data-i18n="info_title">About This Server</h2>
+        <p data-i18n="info_subtitle">This is a node of the DeltaChat network. Its purpose is to provide fast and private communication for users.</p>
     </div>
 
-    <div class="card card--centered text-right">
+    <div class="card card--centered text-start">
         <ul>
-            <li>پیام‌ها بعد از ۲۰ روز به طور خودکار از سرور پاک می‌شوند.</li>
-            <li>حجم ذخیره‌سازی هر اکانت محدود به {{.DefaultQuota | formatBytes}} است.</li>
-            <li>ارسال پیام فقط به صورت رمزنگاری شده امکان‌پذیر است.</li>
+            <li data-i18n="info_msg_delete">Messages are automatically deleted from the server after 20 days.</li>
+            <li><span data-i18n="info_quota">Storage per account is limited to</span> {{.DefaultQuota | formatBytes}}.</li>
+            <li data-i18n="info_encryption">Messages can only be sent in encrypted form.</li>
         </ul>
     </div>
 
     {{if .SSURL}}
     <div class="proxy-box">
-        <strong>🔒 پروکسی Shadowsocks (مخصوص این سرور)</strong>
-        <p>این پروکسی <strong>فقط</strong> برای اتصال به سرویس‌های همین سرور (IMAP، SMTP و تماس تصویری) طراحی شده و
-            <strong>هیچ ترافیک خارجی</strong> (مرورگر، اینترنت عمومی و...) از آن عبور نمی‌کند.
-            هر سرور Madmail پروکسی اختصاصی خودش را دارد.</p>
-        <p style="font-size: 1.1rem; font-weight: 700; margin-top: 0.8rem;">⛔ این به هیچ عنوان فیلتر‌شکن نیست.</p>
+        <strong data-i18n="info_proxy_title">🔒 Shadowsocks Proxy (for this server only)</strong>
+        <p data-i18n-html="info_proxy_desc">This proxy is designed <strong>only</strong> for connecting to this server's services (IMAP, SMTP, and video calls) and <strong>no external traffic</strong> passes through it.</p>
+        <p style="font-size: 1.1rem; font-weight: 700; margin-top: 0.8rem;" data-i18n="info_proxy_warning">⛔ This is NOT a VPN or circumvention tool.</p>
 
         <div style="margin-top: 1rem;">
-            <strong>۱. برای دلتاچت (اتصال مستقیم):</strong>
-            <p class="text-sm" style="margin-top: 0.3rem;">این لینک را در تنظیمات دلتاچت وارد کنید:<br>
-                <span class="text-muted">تنظیمات → پیشرفته → شبکه → پروکسی SOCKS5</span></p>
+            <strong data-i18n="info_proxy_dc_title">1. For DeltaChat (direct connection):</strong>
+            <p class="text-sm" style="margin-top: 0.3rem;"><span data-i18n="info_proxy_dc_desc">Enter this link in DeltaChat settings:</span><br>
+                <span class="text-muted" data-i18n="info_proxy_dc_path">Settings → Advanced → Network → SOCKS5 Proxy</span></p>
             <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
         </div>
 
         {{if .V2rayNGConfigWS}}
         <div style="margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
-            <strong>۲. برای v2rayNG — حالت WebSocket:</strong>
+            <strong data-i18n="info_proxy_v2ray_ws">2. For v2rayNG — WebSocket mode:</strong>
             <p class="text-sm" style="margin-top: 0.3rem;">
-                این تنظیمات را در v2rayNG کپی کنید:<br>
+                <span data-i18n="info_proxy_v2ray_ws_desc">Copy these settings to v2rayNG:</span><br>
                 <span class="text-muted">v2rayNG → ➕ → Import config from clipboard</span></p>
-            <div class="proxy-box__link" onclick="copyToClipboard(document.getElementById('v2rayng-ws-config').textContent)" style="font-size: 0.7rem; word-break: break-all; cursor: pointer;">
-                📋 کپی تنظیمات v2rayNG (WebSocket) — کلیک کنید
+            <div class="proxy-box__link" onclick="copyToClipboard(document.getElementById('v2rayng-ws-config').textContent)" style="font-size: 0.7rem; word-break: break-all; cursor: pointer;" data-i18n="info_proxy_v2ray_ws_copy">
+                📋 Copy v2rayNG config (WebSocket) — click
             </div>
             <pre id="v2rayng-ws-config" style="display:none;">{{.V2rayNGConfigWS | safeHTML}}</pre>
         </div>
@@ -66,23 +65,29 @@
 
         {{if .V2rayNGConfigGRPC}}
         <div style="margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
-            <strong>۳. برای v2rayNG — حالت gRPC+TLS:</strong>
+            <strong data-i18n="info_proxy_v2ray_grpc">3. For v2rayNG — gRPC+TLS mode:</strong>
             <p class="text-sm" style="margin-top: 0.3rem;">
-                این نسخه ترافیک را داخل gRPC+TLS رمزنگاری می‌کند (شبیه ترافیک HTTPS).<br>
+                <span data-i18n-html="info_proxy_v2ray_grpc_desc">This version encrypts traffic inside gRPC+TLS (similar to HTTPS traffic).</span><br>
                 <span class="text-muted">v2rayNG → ➕ → Import config from clipboard</span></p>
-            <div class="proxy-box__link" onclick="copyToClipboard(document.getElementById('v2rayng-grpc-config').textContent)" style="font-size: 0.7rem; word-break: break-all; cursor: pointer;">
-                📋 کپی تنظیمات v2rayNG (gRPC+TLS) — کلیک کنید
+            <div class="proxy-box__link" onclick="copyToClipboard(document.getElementById('v2rayng-grpc-config').textContent)" style="font-size: 0.7rem; word-break: break-all; cursor: pointer;" data-i18n="info_proxy_v2ray_grpc_copy">
+                📋 Copy v2rayNG config (gRPC+TLS) — click
             </div>
             <pre id="v2rayng-grpc-config" style="display:none;">{{.V2rayNGConfigGRPC | safeHTML}}</pre>
         </div>
         {{end}}
 
-        <p class="text-muted text-xs mt-sm">
-            ⚠️ توجه: تمام پروکسی‌ها فقط به سرویس‌های همین سرور دسترسی دارند.
-            برای استفاده از اینترنت عمومی مناسب <strong>نیست</strong>.
+        <p class="text-muted text-xs mt-sm" data-i18n="info_proxy_footer">
+            ⚠️ Note: All proxies only have access to this server's services. NOT suitable for general internet use.
         </p>
     </div>
     {{end}}
+
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            document.title = t('info_title') + ' — {{.MailDomain}}';
+        };
+    </script>
 </body>
 
 </html>

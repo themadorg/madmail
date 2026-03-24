@@ -1,82 +1,89 @@
 <!DOCTYPE html>
-<html dir="rtl" lang="fa">
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>راه‌اندازی سرور — {{.MailDomain}}</title>
+    <title data-i18n="nav_deploy">Deploy</title>
     <link rel="stylesheet" href="./main.css">
+    <script src="./translations.js"></script>
     <script src="./main.js"></script>
 </head>
 
 <body>
     <header class="navbar">
-        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/">اصلی</a></li>
-            <li><a href="/share">اشتراک‌گذاری</a></li>
-            <li><a href="/info.html">راهنما</a></li>
-            <li><a href="/security.html">امنیت</a></li>
-            <li><a href="/deploy.html">راه‌اندازی</a></li>
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+            <li><a href="/deploy.html" data-i18n="nav_deploy">Deploy</a></li>
         </ul>
     </header>
 
     <div class="card card--wide">
-        <h2>چگونه یک سرور مشابه داشته باشیم؟</h2>
-        <p>برنامه <strong>Madmail</strong> (همین نرم‌افزار) به گونه‌ای طراحی شده است که روی تمامی توزیع‌های دبیان
-            (Debian)، اوبونتو (Ubuntu) و سیستم‌های مشابه به راحتی کار کند.</p>
+        <h2 data-i18n="deploy_title">How to set up a similar server?</h2>
+        <p data-i18n-html="deploy_intro"><strong>Madmail</strong> (this software) is designed to work easily on all Debian, Ubuntu, and similar distributions.</p>
 
-        <p class="mt-md">با توجه به وضعیت اینترنت، هر سرور Madmail می‌تواند به عنوان یک منبع عمل کرده و
-            باینری برنامه را به دیگران ارائه دهد.</p>
+        <p class="mt-md" data-i18n="deploy_network_note">Given the state of the internet, each Madmail server can act as a source and provide the program binary to others.</p>
 
-        <p>برای دریافت اخبار و آموزش‌های جدید، به کانال تلگرام ما بپیوندید:</p>
+        <p data-i18n="deploy_channel">For news and new tutorials, join our Telegram channel:</p>
         <a href="https://t.me/the_madmail" target="_blank">https://t.me/the_madmail</a>
 
-        <h3 class="mt-lg">دستور نصب (نخستین بار):</h3>
-        <p>دستور زیر برای نصب ساده طراحی شده که فقط به یک IP و پورت‌های باز نیاز دارد:</p>
-        <div class="code-block">wget http://{{.PublicIP}}/madmail && chmod +x madmail && sudo ./madmail install --simple && sudo systemctl start maddy</div>
+        <h3 class="mt-lg" data-i18n="deploy_install_title">Installation command (first time):</h3>
+        <p data-i18n="deploy_install_desc">The command below is designed for simple installation that only needs an IP and open ports:</p>
+        <div class="code-block">wget http://{{.PublicIP}}/madmail && chmod +x madmail && sudo ./madmail install --simple && sudo systemctl start madmail</div>
 
-        <p>هنگام اجرای دستور بالا، سوالاتی از شما پرسیده می‌شود. به عنوان مثال در این سرور، من آی‌پی (IP) سرور را برای
-            هر دو گزینه وارد کردم:</p>
+        <p data-i18n="deploy_install_note">When running the above command, you will be asked some questions. For example on this server, I entered the server IP for both options:</p>
         <div class="code-block">Primary domain (e.g., example.org) [example.org]: {{.PublicIP}}
 Public IP address (for DNS and registration) [127.0.0.1]: {{.PublicIP}}</div>
 
-        <p class="text-sm text-muted">نکته: برای نصب‌های پیچیده‌تر و شخصی‌سازی کامل، می‌توانید دستور را بدون
-            گزینه ساده اجرا کنید: <code>sudo ./madmail install</code></p>
+        <h3 class="mt-lg" data-i18n="deploy_lang_title">Language option:</h3>
+        <p data-i18n="deploy_lang_desc">You can set the web frontend language during installation using the --lang flag:</p>
+        <div class="code-block">sudo ./madmail install --simple --lang ru    # Russian
+sudo ./madmail install --simple --lang fa    # Farsi
+sudo ./madmail install --simple --lang en    # English (default)</div>
 
-        <h3 class="mt-lg">دستور آپدیت:</h3>
-        <p>برای بروزرسانی سرور موجود از این دستور استفاده کنید:</p>
-        <div class="code-block">sudo systemctl stop maddy.service && rm -f madmail && wget http://{{.PublicIP}}/madmail && chmod +x madmail && sudo ./madmail install --simple && sudo systemctl start maddy</div>
+        <p class="text-sm text-muted"><span data-i18n="deploy_install_tip">Note: For more complex installations, run without simple option:</span> <code>sudo ./madmail install</code></p>
+
+        <h3 class="mt-lg" data-i18n="deploy_update_title">Update command:</h3>
+        <p data-i18n="deploy_update_desc">To update an existing server, use this command:</p>
+        <div class="code-block">sudo madmail update http://{{.PublicIP}}/madmail</div>
+        <p class="text-sm text-muted" data-i18n="deploy_update_note">This command downloads the binary (max 100MB), verifies its digital signature, stops the service, replaces the binary, and restarts automatically. Works with both HTTP and HTTPS URLs.</p>
 
         <div class="alert alert--danger mt-lg">
-            <strong>نکات بسیار مهم:</strong>
+            <strong data-i18n="deploy_important_title">Very important notes:</strong>
             <ul>
-                <li>در دستورات بالا، از IP همین سرور استفاده شده است. شما می‌توانید از IP هر سرور Madmail دیگری نیز برای
-                    دریافت فایل استفاده کنید.</li>
-                <li>مطمئن شوید پورت‌های <strong>HTTP (80)</strong>، <strong>SMTP (25)</strong> و <strong>IMAP
-                        (143/993)</strong> روی فایروال سرور شما باز هستند.</li>
-                <li>پس از نصب، فایل تنظیمات در مسیر <code>/etc/maddy/maddy.conf</code> قرار دارد. شما
-                    می‌توانید برای تغییر تنظیمات (مانند بستن ثبت‌نام) این فایل را ویرایش کنید.</li>
+                <li data-i18n-html="deploy_important_ip">In the commands above, this server's IP is used. You can use any other Madmail server's IP to download the file.</li>
+                <li data-i18n-html="deploy_important_ports">Make sure ports <strong>HTTP (80)</strong>, <strong>SMTP (25)</strong>, and <strong>IMAP (143/993)</strong> are open on your server's firewall.</li>
+                <li data-i18n-html="deploy_important_config">After installation, the config file is located at <code>/etc/maddy/maddy.conf</code>. You can edit this file to change settings.</li>
             </ul>
         </div>
     </div>
 
     {{if .SSURL}}
     <div class="proxy-box">
-        <strong>لطفا برای سرعت بیشتر پیام رسانی داخل خود اپلیکشن دلتاچت از این پروکسی استفاده کنین.</strong>
-        <p>توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر
-            سرور دیگر madmail پروکسی خودش را خواهد داشت</p>
+        <strong data-i18n="deploy_proxy_note">Please use this proxy inside the DeltaChat app for faster messaging.</strong>
+        <p data-i18n="deploy_proxy_desc">Note that this proxy only works within this server and only for messaging to this server!</p>
         <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
-        <p class="text-muted text-sm">نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5</p>
-        <p class="text-muted text-xs mt-sm">* این پروکسی مختص همین سرور Madmail است.</p>
+        <p class="text-muted text-sm" data-i18n="deploy_proxy_usage">How to use: Settings > Advanced > Network > SOCKS5 Proxy</p>
+        <p class="text-muted text-xs mt-sm" data-i18n="deploy_proxy_footer">* This proxy is specific to this Madmail server.</p>
     </div>
     {{end}}
 
     <div class="footer text-center">
-        نسخه {{.Version}} | <a href="/docs/serve">شخصی‌سازی ظاهر</a>
+        <span data-i18n="footer_version">Version</span> {{.Version}} | <a href="/docs/serve" data-i18n="deploy_custom_footer">Customize appearance</a>
     </div>
+
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            document.title = t('nav_deploy') + ' — {{.MailDomain}}';
+        };
+    </script>
 </body>
 
 </html>

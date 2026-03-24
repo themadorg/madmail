@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>General Documentation - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">Home</a></li>
+            <li><a href="/docs">Docs</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide">
+        <h1>General Documentation</h1>
+        <p>Welcome to the general documentation for the <strong>Madmail</strong> server.</p>
+
+        <h2>Introduction to Madmail</h2>
+        <p><strong>Madmail</strong> is a powerful email application built on top of the <strong>Maddy</strong> project.
+            It runs as a single <strong>Go</strong> (Golang) binary and its main goal is to create
+            a secure and fast communication platform.</p>
+
+        <h2>DeltaChat Messenger Integration</h2>
+        <p>The most important feature of Madmail is that it creates an <strong>End-to-End Encrypted</strong>
+            chat server for you.
+            You can use this service with the popular <strong>DeltaChat</strong> application and
+            enjoy a modern messenger experience on a completely private and decentralized platform.</p>
+
+        <h2>Simple and Instant Registration (JIT)</h2>
+        <p>One of the smart features of <strong>Madmail</strong> is support for instant registration,
+            or <strong>Just-In-Time Registration</strong>.
+            This means you don't need to go through lengthy registration steps; upon the first login attempt
+            with new credentials, your account is automatically created if this feature is enabled. You can also use
+            the registration button on the main page to quickly get a QR Code with your settings.</p>
+
+        <h2>Voice and Video Calls (TURN)</h2>
+        <p>One of the standout features of this server is having a dedicated <strong>TURN</strong> service to improve
+            call quality in DeltaChat.
+            This service acts as a relay so that if two users cannot connect directly (P2P),
+            the call is routed through the server with high stability.</p>
+
+        <h2>Storage Quota</h2>
+        <p>To ensure fair resource distribution, the server enforces storage limits. You can
+            view your usage and quota through any email client that supports the QUOTA extension.</p>
+
+        <h2>Server Management (Admin API)</h2>
+        <p>
+            Since version <span class="highlight">v0.15.3</span>, a control API (Admin API) is embedded within the server
+            that allows easy server management.
+            The Admin API path and the admin token are configurable and can be set
+            statically in the server configuration file.
+        </p>
+        <p>
+            To get the default token for authentication, run the command <code>maddy admin-token</code> on your server.
+        </p>
+        <p>
+            In addition to this API, the <span class="highlight">Web Admin</span> project has been developed for graphical server management.
+            The source code is available at <a href="https://github.com/themadorg/madmail-admin-web/" target="_blank"
+                style="color: var(--link);">github.com/themadorg/madmail-admin-web</a> and is automatically
+            built and deployed at
+            <a href="https://admin.madmail.chat/" target="_blank"
+                style="color: var(--link);">https://admin.madmail.chat/</a>.
+            Visit this link and enter your server address and token to easily manage your server.
+        </p>
+
+        <h2>Security Recommendations</h2>
+        <div class="alert alert--info">
+            <p><strong>Message Security:</strong> This service is very secure by default. To ensure communication
+                privacy in DeltaChat, note that the presence of a <strong>grey icon</strong> next to
+                messages means encryption is disabled; therefore, sensitive messages should not have this indicator.</p>
+            <p><strong>Updates:</strong> To maintain security and benefit from the latest features, always keep your
+                DeltaChat application updated to the latest version.</p>
+        </div>
+
+        <h2>Support</h2>
+        <p>For support, please contact your server administrator.</p>
+    </div>
+</body>
+
+</html>

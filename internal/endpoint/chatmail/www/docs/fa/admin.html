@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="docs_admin">مستندات مدیر سیستم</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">اصلی</a></li>
+            <li><a href="/docs" data-i18n="nav_docs">مستندات</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide">
+        <h1>مستندات مدیر سیستم</h1>
+        <p>این راهنما نحوه مدیریت سهمیه (Quota) کاربران و مشاهده آمار سرور را با استفاده از دستورات <code>maddy</code>
+            توضیح می‌دهد.</p>
+
+        <div class="info-note"
+            style="background: color-mix(in srgb, var(--link) 5%, transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
+            <strong>💡 نکته:</strong> تمام این عملیات‌ها از طریق <a href="/docs/api"
+                style="color: var(--link);">رابط وب مدیریت</a> در مسیر <code>/admin/</code> نیز قابل انجام هستند
+            — بدون نیاز به خط فرمان.
+        </div>
+
+        <h2>مدیریت سهمیه (Quota)</h2>
+        <p>شما می‌توانید سهمیه فضای ذخیره‌سازی کاربران را با استفاده از زیر-دستورات <code>maddy imap-acct quota</code>
+            مدیریت کنید.</p>
+
+        <div class="cmd-info">
+            <h3>مشایع سهمیه کاربر</h3>
+            <p>نمایش میزان فضای مصرف شده و سقف مجاز برای یک کاربر خاص.</p>
+            <div class="code-block">maddy imap-acct quota get username@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>تنظیم سهمیه کاربر</h3>
+            <p>تنظیم یک سقف فضای اختصاصی برای یک کاربر (مثلاً 1GB، 500MB یا 10KB).</p>
+            <div class="code-block">maddy imap-acct quota set username@example.com 1GB</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>بازنشانی سهمیه کاربر</h3>
+            <p>حذف سقف اختصاصی کاربر و بازگرداندن آن به مقدار پیش‌فرض سیستم. با این کار تاریخ ایجاد حساب کاربر حفظ
+                می‌شود.</p>
+            <div class="code-block">maddy imap-acct quota reset username@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>تنظیم سهمیه پیش‌فرض کل سیستم</h3>
+            <p>تنظیم سقف فضای ذخیره‌سازی برای تمام کاربرانی که سهمیه اختصاصی ندارند. این مقدار در دیتابیس ذخیره شده و بر
+                تنظیمات فایل maddy.conf اولویت دارد.</p>
+            <div class="code-block">maddy imap-acct quota set-default 2GB</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>لیست تمام سهمیه‌ها</h3>
+            <p>نمایش لیست تمام کاربران به همراه فضای مصرفی و سقف مجاز. در این لیست مشخص می‌شود که سهمیه هر کاربر اختصاصی
+                است یا از مقدار پیش‌فرض سیستم ارث‌بری شده است.</p>
+            <div class="code-block">maddy imap-acct quota list</div>
+        </div>
+
+        <h2>نگهداری و پاکسازی</h2>
+        <p>دستوراتی برای مدیریت بار سرور و آزادسازی فضا با حذف داده‌های کاربران.</p>
+
+        <div class="cmd-info">
+            <h3>پاکسازی صف ارسال (Queue)</h3>
+            <p>حذف تمام پیام‌های در حال انتظار در صف ارسال که مربوط به یک کاربر خاص (فرستنده یا گیرنده) هستند. این دستور
+                برای رفع گرفتگی صف ناشی از اسپم یا پیام‌های حجیم مفید است.</p>
+            <div class="code-block">maddy queue purge username@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>پاکسازی پیام‌های IMAP برای یک کاربر</h3>
+            <p>حذف تمام ایمیل‌های یک کاربر از تمام صندوق‌های پستی (Inbox، Sent و غیره) بدون حذف شدن خود حساب کاربری یا
+                تنظیمات سهمیه او. این کار برای آزاد کردن سریع فضای هارد سرور کاربرد دارد.</p>
+            <div class="code-block">maddy imap-acct purge-msgs username@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>پاکسازی تمام پیام‌های تمام کاربران (Purge All)</h3>
+            <p>حذف تمام ایمیل‌های موجود در کل سرور برای تمام کاربران. این دستور تمام داده‌های ایمیل را پاک می‌کند اما
+                حساب‌های کاربری، رمز عبورها و سهمیه‌ها دست‌نخورده باقی می‌مانند.</p>
+            <div class="code-block">maddy imap-acct purge-all</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>حذف تمام پیام‌های خوانده شده (Purge Read)</h3>
+            <p>حذف تمام ایمیل‌هایی که در کل سرور توسط کاربران خوانده شده‌اند (Seen). ایمیل‌های جدید و خوانده نشده حفظ
+                می‌شوند. این کار به بهینه‌سازی فضا بدون از دست دادن پیام‌های جدید کمک می‌کند.</p>
+            <div class="code-block">maddy imap-acct purge-read [--yes]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>حذف پیام‌های خوانده نشده قدیمی (Prune Unread)</h3>
+            <p>حذف پیام‌های خوانده نشده‌ای که بیش از زمان مشخص شده (مثلاً ۳۰ روز) از تاریخ دریافت آن‌ها گذشته است. این
+                دستور
+                برای پاکسازی ایمیل‌های قدیمی که کاربر هرگز آن‌ها را باز نکرده مفید است.</p>
+            <div class="code-block">maddy imap-acct prune-unread 720h [--yes]</div>
+        </div>
+
+        <h2>مدیریت ثبت‌نام (Registration)</h2>
+        <p>شما می‌توانید ثبت‌نام کاربران جدید را باز یا بسته کنید. در صورت بسته بودن، فقط کاربرانی که از قبل اکانت دارند
+            می‌توانند لاگین کنند.</p>
+
+        <div class="cmd-info">
+            <h3>باز کردن ثبت‌نام</h3>
+            <div class="code-block">maddy creds registration open</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>بستن ثبت‌نام</h3>
+            <div class="code-block">maddy creds registration close</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده وضعیت فعلی</h3>
+            <div class="code-block">maddy creds registration status</div>
+        </div>
+
+        <h2>مدیریت ثبت‌نام آنی (JIT Registration)</h2>
+        <p>ثبت‌نام آنی (Just-In-Time) قابلیتی است که به سرور اجازه می‌دهد در اولین تلاش کاربر برای لاگین، به صورت خودکار
+            حساب کاربری او را بسازد. شما می‌توانید این قابلیت را مستقل از باز یا بسته بودن کل ثبت‌نام مدیریت کنید.</p>
+
+        <div class="cmd-info">
+            <h3>فعال کردن ثبت‌نام آنی</h3>
+            <p>با فعال بودن این گزینه، اکانت‌ها هنگام اولین لاگین یا دریافت اولین ایمیل به صورت خودکار ساخته می‌شوند.</p>
+            <div class="code-block">maddy creds jit enable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>غیرفعال کردن ثبت‌نام آنی</h3>
+            <p>با غیرفعال کردن این گزینه، حساب‌ها فقط از طریق API (رابط وب) ساخته می‌شوند و لاگین با مشخصات ثبت‌نشده رد
+                می‌شود.</p>
+            <div class="code-block">maddy creds jit disable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده وضعیت JIT</h3>
+            <div class="code-block">maddy creds jit status</div>
+        </div>
+
+        <h2>مدیریت سرور تماس (TURN/STUN)</h2>
+        <p>شما می‌توانید سرور تماس (TURN) را برای تمام کاربران فعال یا غیرفعال کنید. در صورت غیرفعال بودن، اطلاعات مربوط
+            به تماس در صفحه راهنما نمایش داده نمی‌شود.</p>
+
+        <div class="cmd-info">
+            <h3>روشن کردن سرور تماس</h3>
+            <div class="code-block">maddy creds turn on</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>خاموش کردن سرور تماس</h3>
+            <div class="code-block">maddy creds turn off</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده وضعیت فعلی</h3>
+            <div class="code-block">maddy creds turn status</div>
+        </div>
+
+        <h2>مدیریت لاگ (سیاست بدون لاگ)</h2>
+        <p>شما می‌توانید ثبت لاگ سرور را فعال یا غیرفعال کنید. در حالت غیرفعال، هیچ اطلاعاتی در مورد فعالیت‌های کاربران
+            ثبت
+            نمی‌شود.</p>
+
+        <div class="cmd-info">
+            <h3>غیرفعال کردن لاگ</h3>
+            <p>برای رعایت حریم خصوصی کاربران و جلوگیری از ذخیره اطلاعات فعالیت.</p>
+            <div class="code-block">maddy creds log disable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>فعال کردن لاگ</h3>
+            <div class="code-block">maddy creds log enable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده وضعیت فعلی</h3>
+            <div class="code-block">maddy creds log status</div>
+        </div>
+
+        <h2>تنظیمات پورت‌ها و پیکربندی</h2>
+        <p>پورت‌ها و تنظیمات سرویس‌ها (مانند hostname، secret، relay IP و غیره) از طریق Admin API قابل مدیریت هستند.
+            این تنظیمات در دیتابیس ذخیره شده و بر مقادیر فایل پیکربندی اولویت دارند.</p>
+
+        <div class="cmd-info">
+            <h3>لیست تنظیمات قابل مدیریت</h3>
+            <ul>
+                <li><strong>پورت‌ها:</strong> SMTP، Submission، IMAP، TURN، Dovecot، Iroh، Shadowsocks</li>
+                <li><strong>پیکربندی:</strong> SMTP hostname، TURN realm/secret/relay IP/TTL، Iroh relay URL،
+                    Shadowsocks
+                    cipher/password</li>
+            </ul>
+            <p>برای مدیریت این تنظیمات از <a href="/docs/api" style="color: var(--link);">Admin API</a>
+                استفاده کنید. مسیرهای مربوطه در بخش «تنظیمات پورت‌ها» و «تنظیمات پیکربندی» مستندات API توضیح داده
+                شده‌اند.</p>
+        </div>
+
+        <h2>حالت مخفی (Stealth Mode)</h2>
+        <p>سرور Madmail برای امنیت بیشتر می‌تواند در حالت مخفی فعالیت کند. در این حالت فقط پورت‌های ضروری برای دنیای
+            بیرون باز می‌مانند.</p>
+        <div class="cmd-info">
+            <p><strong>پورت‌های ضروری:</strong></p>
+            <ul>
+                <li>پورت 80 و 443 (HTTP/HTTPS): برای ثبت‌نام و رابط وب.</li>
+                <li>پورت 8388 (Shadowsocks): برای اتصال امن و سریع کاربران از داخل اپلیکیشن DeltaChat.</li>
+            </ul>
+            <p>سایر پورت‌ها (مثل 25, 143, 587, 993) را می‌توانید از طریق فایروال برای دسترسی عمومی ببندید. کاربران با
+                استفاده از پروکسی Shadowsocks که در داخل اپلیکیشن تنظیم می‌کنند، به تمام خدمات دسترسی خواهند داشت و سرور
+                شما از دید اسکنرهای اینترنتی مخفی می‌ماند.</p>
+        </div>
+
+        <h2>غیرفعال کردن Admin API</h2>
+        <p>رابط مدیریت (Admin API) به صورت پیش‌فرض فعال است. چنانچه می‌خواهید برای افزایش امنیت این قابلیت را به طور کامل از طریق فایل پیکربندی غیرفعال کنید، می‌توانید گزینه زیر را در فایل <code>maddy.conf</code> در بخش <code>chatmail</code> مقداردهی کنید.</p>
+        <div class="cmd-info">
+            <h3>تنظیم فایل maddy.conf</h3>
+            <p>مقدار <code>admin_token</code> را برابر <code>disabled</code> قرار دهید:</p>
+            <div class="code-block">
+chatmail tls://0.0.0.0:443 {
+    # ... سایر تنظیمات ...
+
+    # Disable the admin API entirely:
+    admin_token disabled
+}
+            </div>
+            <p>پس از ذخیره فایل، سرویس maddy را ریستارت کنید. با این کار تمامی امکانات پنل مدیریت وب و Admin API استاپ خواهند شد.</p>
+        </div>
+
+        <h2>کش DNS و بازنویسی آدرس</h2>
+        <p>سیستم کش DNS داخلی به شما اجازه می‌دهد بدون تغییر DNS سیستم‌عامل، مسیر ارسال ایمیل‌های خروجی را به سرور
+            دلخواه
+            هدایت کنید. قوانین بازنویسی در دیتابیس اصلی برنامه (همان دیتابیس ذخیره‌سازی) ذخیره می‌شوند.
+            تغییرات بلافاصله اعمال می‌شوند و
+            نیازی به ریستارت سرور نیست.</p>
+
+        <div class="cmd-info">
+            <h3>مشاهده تمام بازنویسی‌ها</h3>
+            <p>نمایش لیست تمام قوانین بازنویسی DNS که در دیتابیس ذخیره شده‌اند.</p>
+            <div class="code-block">maddy dns-cache list</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>ایجاد یا ویرایش بازنویسی</h3>
+            <p>تنظیم یک قانون بازنویسی DNS. اگر قبلاً برای این آدرس قانونی وجود داشته باشد، به‌روزرسانی می‌شود.</p>
+            <div class="code-block">maddy dns-cache set LOOKUP_KEY TARGET_HOST [COMMENT]</div>
+            <p><strong>مثال‌ها:</strong></p>
+            <div class="code-block"># هدایت ایمیل‌های دامنه به سرور داخلی
+maddy dns-cache set nine.testrun.org 10.0.0.5 "Route to staging"
+
+# بازنویسی آدرس IP
+maddy dns-cache set 1.1.1.1 2.2.2.2 "Redirect IP"
+
+# هدایت به سرور جدید هنگام مهاجرت
+maddy dns-cache set example.com new-mx.example.com "Migration"</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده یک بازنویسی خاص</h3>
+            <p>نمایش جزئیات یک قانون بازنویسی DNS شامل آدرس مبدأ، مقصد، توضیحات و زمان ایجاد.</p>
+            <div class="code-block">maddy dns-cache get nine.testrun.org</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>حذف یک بازنویسی</h3>
+            <p>حذف یک قانون بازنویسی DNS. پس از حذف، ایمیل‌ها از طریق DNS عادی سیستم‌عامل مسیریابی خواهند شد.</p>
+            <div class="code-block">maddy dns-cache remove nine.testrun.org</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>نحوه کارکرد</h3>
+            <ul>
+                <li><strong>اولویت:</strong> ابتدا دیتابیس داخلی بررسی می‌شود. اگر قانونی یافت نشد، DNS سیستم‌عامل
+                    استفاده می‌شود.</li>
+                <li><strong>بدون حساسیت به حروف:</strong> آدرس‌ها بدون توجه به بزرگ یا کوچک بودن حروف مطابقت داده
+                    می‌شوند.</li>
+                <li><strong>پشتیبانی از IP و دامنه:</strong> هم دامنه (مانند example.com) و هم آدرس IP (مانند 1.1.1.1)
+                    قابل بازنویسی هستند.</li>
+                <li><strong>بدون نیاز به ریستارت:</strong> تغییرات بلافاصله روی ایمیل‌های جدید اعمال می‌شوند.</li>
+                <li><strong>بازگشت خودکار:</strong> اگر دیتابیس در دسترس نباشد، سیستم به صورت خودکار به DNS عادی
+                    بازمی‌گردد.</li>
+            </ul>
+        </div>
+
+        <h2>آمار سرور</h2>
+        <div class="cmd-info">
+            <h3>مشاهده آمار کلی</h3>
+            <p>نمایش مجموع فضای ذخیره‌سازی مصرف شده در سرور و تعداد کل حساب‌های کاربری فعال.</p>
+            <div class="code-block">maddy imap-acct stat</div>
+        </div>
+
+        <h2>مانیتورینگ اتصالات آنلاین</h2>
+        <p>دستور <code>maddy status</code> وضعیت لحظه‌ای سرور را نشان می‌دهد. این شامل اتصالات فعال IMAP،
+            رله‌های TURN (تماس صوتی/تصویری)، Shadowsocks، تعداد کاربران ثبت‌شده و زمان آپتایم می‌شود.</p>
+
+        <div class="cmd-info">
+            <h3>مشاهده اتصالات فعال</h3>
+            <p>نمایش خلاصه وضعیت سرور شامل اتصالات فعال، کاربران ثبت‌شده، زمان بوت و آپتایم.
+            </p>
+            <div class="code-block">maddy status</div>
+            <p>خروجی نمونه:</p>
+            <pre class="code-block">IMAP            connections: 27     unique IPs: 7
+TURN            relays: 1
+Shadowsocks     connections: 0      unique IPs: 0
+
+Registered users:   42
+Boot time:          2026-02-16 20:56:19 (up 5m 24s)
+
+Email servers seen (since last restart):
+  Connection IPs:   1
+  Domain servers:   1
+  IP servers:       0</pre>
+        </div>
+
+        <div class="cmd-info">
+            <h3>مشاهده جزئیات به تفکیک پورت</h3>
+            <p>با استفاده از فلگ <code>--details</code> (یا <code>-d</code>) می‌توانید جزئیات اتصالات را به تفکیک هر
+                پورت ببینید.</p>
+            <div class="code-block">maddy status --details</div>
+            <p>خروجی نمونه:</p>
+            <pre class="code-block">PORT   PROTO   TYPE              CONNECTIONS   UNIQUE IPs
+993    tcp     IMAP TLS          25            7
+143    tcp     IMAP              0             0
+3478   udp     TURN UDP          1 relays      -
+3478   tcp     TURN TCP          0             0
+8388   tcp     Shadowsocks       0             0
+443    tcp     ALPN (chatmail)   3             1</pre>
+        </div>
+
+        <div class="cmd-info">
+            <h3>توضیحات فیلدها</h3>
+            <ul>
+                <li><strong>IMAP:</strong> تعداد اتصالات فعال کاربران به سرور ایمیل (دریافت پیام).</li>
+                <li><strong>TURN relays:</strong> تعداد رله‌های فعال تماس صوتی/تصویری. هر رله یک تماس فعال را نشان
+                    می‌دهد.</li>
+                <li><strong>Shadowsocks:</strong> تعداد اتصالات فعال از طریق پروکسی Shadowsocks.</li>
+                <li><strong>Boot time:</strong> زمان راه‌اندازی سرور و مدت زمان آپتایم.</li>
+                <li><strong>Email servers seen:</strong> تعداد سرورهای ایمیل یکتایی که از زمان آخرین ریستارت پیام ارسال
+                    کرده‌اند. این اطلاعات با هش رمزنگاری‌شده ذخیره می‌شوند و هیچ اطلاعات خصوصی قابل بازیابی نیست.</li>
+            </ul>
+        </div>
+
+    </div>
+
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            document.title = t('docs_admin') + ' — {{.WebDomain}}';
+        };
+    </script>
+</body>
+
+</html>

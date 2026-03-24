@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,6 +52,8 @@ func upgradeCommand(ctx *cli.Context) error {
 	return performUpgrade(input)
 }
 
+const maxDownloadSize = 100 * 1024 * 1024 // 100 MB
+
 func handleUpdateURL(url string) error {
 	// Create temporary file
 	tmpFile, err := os.CreateTemp("", "maddy-update-*")
@@ -61,7 +64,17 @@ func handleUpdateURL(url string) error {
 	defer tmpFile.Close()
 
 	fmt.Printf("📥 Downloading %s...\n", url)
-	resp, err := http.Get(url)
+
+	// Create a client that accepts both HTTP and HTTPS (skip TLS verify for
+	// self-signed certs commonly used by other Madmail servers).
+	client := &http.Client{
+		Timeout: 5 * time.Minute,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	resp, err := client.Get(url)
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}
@@ -71,9 +84,21 @@ func handleUpdateURL(url string) error {
 		return fmt.Errorf("download failed with status: %s", resp.Status)
 	}
 
-	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+	// Pre-check Content-Length if available
+	if resp.ContentLength > maxDownloadSize {
+		return fmt.Errorf("file too large: %d bytes (max %d MB)", resp.ContentLength, maxDownloadSize/(1024*1024))
+	}
+
+	// Limit download to 100 MB
+	limitedReader := io.LimitReader(resp.Body, maxDownloadSize+1)
+	n, err := io.Copy(tmpFile, limitedReader)
+	if err != nil {
 		return fmt.Errorf("failed to save download: %w", err)
 	}
+	if n > maxDownloadSize {
+		return fmt.Errorf("download exceeded maximum size of %d MB, aborting", maxDownloadSize/(1024*1024))
+	}
+	fmt.Printf("✅ Downloaded %d bytes\n", n)
 	tmpFile.Close()
 
 	return performUpgrade(tmpFile.Name())

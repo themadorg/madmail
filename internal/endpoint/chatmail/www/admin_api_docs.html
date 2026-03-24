@@ -1,1314 +1,328 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مستندات Admin API - {{.WebDomain | cleanDomain}}</title>
+    <title id="page-title">Admin API Documentation</title>
     <link rel="stylesheet" href="/main.css">
     <style>
         .doc-container {
             max-width: 900px;
             margin: 40px auto;
             padding: 20px;
-            background: var(--card-bg);
+            background: var(--card);
             border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            direction: rtl;
+            border: 1px solid var(--card-border);
         }
 
         pre.code-block {
-            background: #0d1117;
+            background: var(--code-bg);
             padding: 18px;
             border-radius: 8px;
-            color: #e6edf3;
+            color: var(--foreground);
             font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
             font-size: 0.85em;
             margin: 15px 0;
             overflow-x: auto;
             direction: ltr;
             text-align: left;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--card-border);
             line-height: 1.7;
             white-space: pre;
             word-wrap: normal;
         }
 
-        pre.code-block .c {
-            color: #6a737d;
-            font-style: italic;
-        }
-
-        pre.code-block .k {
-            color: #00d2ff;
-        }
-
-        pre.code-block .s {
-            color: #ffa657;
-        }
-
-        pre.code-block .n {
-            color: #d2a8ff;
-        }
-
         h2 {
             margin-top: 40px;
-            border-bottom: 2px solid var(--accent-color);
+            border-bottom: 2px solid var(--link);
             padding-bottom: 10px;
             display: inline-block;
         }
 
-        h3 {
-            margin-top: 25px;
-            font-size: 1.2em;
-        }
+        h3 { margin-top: 25px; font-size: 1.2em; }
 
         .endpoint-card {
             margin-bottom: 35px;
             padding: 20px;
-            background: rgba(255, 255, 255, 0.03);
+            background: var(--card);
             border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--card-border);
         }
-
-        .endpoint-card h3 {
-            margin-top: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+        .endpoint-card h3 { margin-top: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
         .method-badge {
-            display: inline-block;
-            padding: 3px 10px;
-            border-radius: 6px;
-            font-size: 0.75em;
-            font-weight: bold;
-            font-family: monospace;
-            direction: ltr;
-            letter-spacing: 0.5px;
+            display: inline-block; padding: 3px 10px; border-radius: 6px;
+            font-size: 0.75em; font-weight: bold; font-family: monospace;
+            direction: ltr; letter-spacing: 0.5px;
         }
-
-        .method-get {
-            background: rgba(46, 204, 113, 0.15);
-            color: #2ecc71;
-            border: 1px solid rgba(46, 204, 113, 0.3);
-        }
-
-        .method-post {
-            background: rgba(0, 210, 255, 0.15);
-            color: #00d2ff;
-            border: 1px solid rgba(0, 210, 255, 0.3);
-        }
-
-        .method-put {
-            background: rgba(255, 171, 0, 0.15);
-            color: #ffab00;
-            border: 1px solid rgba(255, 171, 0, 0.3);
-        }
-
-        .method-delete {
-            background: rgba(255, 68, 68, 0.15);
-            color: #ff4444;
-            border: 1px solid rgba(255, 68, 68, 0.3);
-        }
+        .method-get { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); }
+        .method-post { background: color-mix(in srgb, var(--link) 15%, transparent); color: var(--link); border: 1px solid color-mix(in srgb, var(--link) 30%, transparent); }
+        .method-put { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent); }
+        .method-delete { background: color-mix(in srgb, var(--destructive) 15%, transparent); color: var(--destructive); border: 1px solid color-mix(in srgb, var(--destructive) 30%, transparent); }
 
         .resource-path {
-            font-family: monospace;
-            font-size: 0.85em;
-            background: rgba(0, 210, 255, 0.1);
-            padding: 4px 10px;
-            border-radius: 6px;
-            color: var(--accent-color);
-            direction: ltr;
+            font-family: monospace; font-size: 0.85em;
+            background: color-mix(in srgb, var(--link) 10%, transparent); padding: 4px 10px;
+            border-radius: 6px; color: var(--link); direction: ltr;
         }
 
-        .security-note {
-            background: rgba(46, 204, 113, 0.08);
-            border-right: 4px solid #2ecc71;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 4px;
-        }
+        .note-box { padding: 15px; margin: 20px 0; border-radius: 4px; }
+        .note-info { background: color-mix(in srgb, var(--link) 8%, transparent); border-left: 4px solid var(--link); }
+        .note-security { background: color-mix(in srgb, var(--success) 8%, transparent); border-left: 4px solid var(--success); }
+        .note-warning { background: color-mix(in srgb, var(--warning) 8%, transparent); border-left: 4px solid var(--warning); }
+        .note-danger { background: color-mix(in srgb, var(--destructive) 8%, transparent); border-left: 4px solid var(--destructive); }
 
-        .warning-note {
-            background: rgba(255, 171, 0, 0.08);
-            border-right: 4px solid #ffab00;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 4px;
+        [dir="rtl"] .note-info, [dir="rtl"] .note-security, [dir="rtl"] .note-warning, [dir="rtl"] .note-danger {
+            border-left: none; border-right: 4px solid;
         }
+        [dir="rtl"] .note-info { border-right-color: var(--link); }
+        [dir="rtl"] .note-security { border-right-color: var(--success); }
+        [dir="rtl"] .note-warning { border-right-color: var(--warning); }
+        [dir="rtl"] .note-danger { border-right-color: var(--destructive); }
 
-        .danger-note {
-            background: rgba(255, 68, 68, 0.08);
-            border-right: 4px solid #ff4444;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 4px;
-        }
+        .toc { background: var(--card); border-radius: 10px; padding: 20px; margin: 25px 0; border: 1px solid var(--card-border); }
+        .toc h3 { margin-top: 0; }
+        .toc ol { padding-inline-start: 20px; }
+        .toc li { margin: 8px 0; }
+        .toc a { color: var(--muted); transition: color 0.2s; }
+        .toc a:hover { color: var(--link); }
 
-        .info-note {
-            background: rgba(0, 210, 255, 0.08);
-            border-right: 4px solid #00d2ff;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 4px;
-        }
-
-        .toc {
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 10px;
-            padding: 20px;
-            margin: 25px 0;
-            border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .toc h3 {
-            margin-top: 0;
-        }
-
-        .toc ol {
-            padding-right: 20px;
-        }
-
-        .toc li {
-            margin: 8px 0;
-        }
-
-        .toc a {
-            color: var(--text-secondary);
-            transition: color 0.2s;
-        }
-
-        .toc a:hover {
-            color: var(--accent-color);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 15px 0;
-            direction: ltr;
-            text-align: left;
-        }
-
-        th,
-        td {
-            padding: 10px 14px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        th {
-            background: rgba(0, 210, 255, 0.1);
-            font-weight: bold;
-            color: var(--accent-color);
-        }
-
-        td {
-            color: var(--text-secondary);
-        }
-
-        td code {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.9em;
-        }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; direction: ltr; text-align: left; }
+        th, td { padding: 10px 14px; border: 1px solid var(--card-border); }
+        th { background: var(--code-bg); font-weight: bold; color: var(--link); }
+        td { color: var(--muted); }
+        td code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
 
         .arch-diagram {
-            background: #0d1117;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 8px;
-            padding: 20px;
-            margin: 20px 0;
-            font-family: monospace;
-            color: #e6edf3;
-            direction: ltr;
-            text-align: center;
-            line-height: 1.8;
-            overflow-x: auto;
+            background: var(--code-bg); border: 1px solid var(--card-border);
+            border-radius: 8px; padding: 20px; margin: 20px 0;
+            font-family: monospace; color: var(--foreground); direction: ltr;
+            text-align: center; line-height: 1.8; overflow-x: auto;
         }
-
-        .separator {
-            border: none;
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
-            margin: 40px 0;
-        }
-
-        .field-desc {
-            margin: 10px 0;
-            padding: 10px 15px;
-            background: rgba(255, 255, 255, 0.02);
-            border-radius: 6px;
-            font-size: 0.9em;
-            color: var(--text-secondary);
-        }
-
-        .field-desc ul {
-            padding-right: 20px;
-            margin: 5px 0;
-        }
-
-        .field-desc li {
-            margin: 4px 0;
-        }
-
-        .field-desc code {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 1px 5px;
-            border-radius: 3px;
-            font-size: 0.9em;
-            direction: ltr;
-            display: inline-block;
-        }
+        .separator { border: none; border-top: 1px solid var(--card-border); margin: 40px 0; }
+        .field-desc { margin: 10px 0; padding: 10px 15px; background: var(--code-bg); border-radius: 6px; font-size: 0.9em; color: var(--muted); }
+        .field-desc ul { padding-inline-start: 20px; margin: 5px 0; }
+        .field-desc li { margin: 4px 0; }
+        .field-desc code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; direction: ltr; display: inline-block; }
     </style>
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+    <script src="/api_data.js"></script>
 </head>
 
 <body>
-    <ul id="menu">
-        <li><a href="/">اصلی</a></li>
-        <li><a href="/docs">مستندات</a></li>
-    </ul>
-
-    <div class="doc-container">
-        <h1>مستندات Admin API</h1>
-        <p>
-            رابط برنامه‌نویسی مدیریتی (Admin API) به شما امکان مدیریت کامل سرور از طریق HTTP را می‌دهد.
-            تمام عملیات‌هایی که از طریق خط فرمان (CLI) قابل انجام هستند، از طریق این API نیز در دسترس‌اند.
-        </p>
-
-        <!-- Table of Contents -->
-        <div class="toc">
-            <h3>فهرست مطالب</h3>
-            <ol>
-                <li><a href="#architecture">معماری و نحوه کار</a></li>
-                <li><a href="#auth">احراز هویت و توکن</a></li>
-                <li><a href="#request-format">ساختار درخواست و پاسخ</a></li>
-                <li><a href="#quick-start">شروع سریع</a></li>
-                <li><a href="#status">وضعیت سرور — <code>/admin/status</code></a></li>
-                <li><a href="#storage">اطلاعات فضای ذخیره‌سازی — <code>/admin/storage</code></a></li>
-                <li><a href="#registration">مدیریت ثبت‌نام — <code>/admin/registration</code></a></li>
-                <li><a href="#jit">ثبت‌نام آنی — <code>/admin/registration/jit</code></a></li>
-                <li><a href="#turn">سرویس تماس — <code>/admin/services/turn</code></a></li>
-                <li><a href="#iroh">سرویس Iroh — <code>/admin/services/iroh</code></a></li>
-                <li><a href="#shadowsocks">سرویس Shadowsocks — <code>/admin/services/shadowsocks</code></a></li>
-                <li><a href="#log">مدیریت لاگ — <code>/admin/services/log</code></a></li>
-                <li><a href="#settings">تنظیمات یکجا — <code>/admin/settings</code></a></li>
-                <li><a href="#port-settings">تنظیمات پورت‌ها</a></li>
-                <li><a href="#config-settings">تنظیمات پیکربندی</a></li>
-                <li><a href="#accounts">مدیریت حساب‌ها — <code>/admin/accounts</code></a></li>
-                <li><a href="#blocklist">لیست مسدودی — <code>/admin/blocklist</code></a></li>
-                <li><a href="#quota">مدیریت سهمیه — <code>/admin/quota</code></a></li>
-                <li><a href="#queue">عملیات صف — <code>/admin/queue</code></a></li>
-                <li><a href="#shares">اشتراک‌گذاری مخاطبین — <code>/admin/shares</code></a></li>
-                <li><a href="#dns">بازنویسی DNS — <code>/admin/dns</code></a></li>
-                <li><a href="#web-panel">رابط وب مدیریت</a></li>
-                <li><a href="#errors">کدهای خطا</a></li>
-            </ol>
-        </div>
-
-        <hr class="separator">
-
-        <!-- ARCHITECTURE -->
-        <h2 id="architecture">معماری و نحوه کار</h2>
-        <p>
-            Admin API از یک معماری <strong>RPC تک‌نقطه</strong> (Single-Endpoint RPC) استفاده می‌کند. به جای داشتن
-            مسیرهای HTTP
-            مختلف برای هر عملیات، تمام درخواست‌ها به یک آدرس واحد ارسال می‌شوند:
-        </p>
-
-        <div class="arch-diagram">
-            Client → POST /api/admin → JSON Request → Auth Check → Resource Handler → JSON Response
-        </div>
-
-        <div class="info-note">
-            <strong>چرا تک‌نقطه؟</strong>
-            این طراحی امکان مخفی‌سازی بهتر API را فراهم می‌کند. از بیرون، تنها یک مسیر HTTP قابل مشاهده است
-            و تمام پاسخ‌ها (حتی خطاها) با کد HTTP 200 بازگردانده می‌شوند. وضعیت واقعی عملیات فقط در بدنه JSON قابل
-            مشاهده است.
-        </div>
-
-        <hr class="separator">
-
-        <!-- AUTHENTICATION -->
-        <h2 id="auth">احراز هویت و توکن</h2>
-
-        <h3>توکن خودکار</h3>
-        <p>
-            توکن مدیریتی به صورت خودکار در اولین اجرای سرور تولید و در مسیر
-            <code>/var/lib/maddy/admin_token</code> ذخیره می‌شود. این توکن شامل ۲۵۶ بیت آنتروپی رمزنگاری‌شده است
-            و در هر بار راه‌اندازی مجدد حفظ می‌شود.
-        </p>
-
-        <h3>دریافت توکن با CLI</h3>
-        <pre class="code-block"># Show current token
-maddy admin-token
-
-# Save to variable
-TOKEN=$(maddy admin-token)</pre>
-
-        <h3>تنظیمات توکن سفارشی</h3>
-        <p>شما می‌توانید در فایل <code>maddy.conf</code> یکی از تنظیمات زیر را اعمال کنید:</p>
-        <pre class="code-block"># Set custom token
-admin_token your-custom-secret-token
-
-# Disable API entirely
-admin_token disabled</pre>
-
-        <div class="security-note">
-            <strong>🔒 امنیت توکن:</strong>
-            فایل توکن با مجوز <code>0600</code> (فقط قابل خواندن توسط root) ذخیره می‌شود.
-            توکن هیچ‌گاه در لاگ‌ها ثبت نمی‌شود و مقایسه آن به صورت <em>ثابت‌زمان</em> (constant-time) انجام می‌شود.
-        </div>
-
-        <hr class="separator">
-
-        <!-- REQUEST FORMAT -->
-        <h2 id="request-format">ساختار درخواست و پاسخ</h2>
-
-        <h3>درخواست (Request)</h3>
-        <p>تمام درخواست‌ها باید به صورت <code>POST</code> به آدرس <code>/api/admin</code> ارسال شوند:</p>
-        <pre class="code-block">{
-    <span class="k">"method"</span>:   <span class="s">"GET"</span>,
-    <span class="k">"resource"</span>: <span class="s">"/admin/status"</span>,
-    <span class="k">"headers"</span>:  {
-        <span class="k">"Authorization"</span>: <span class="s">"Bearer YOUR_TOKEN"</span>
-    },
-    <span class="k">"body"</span>:     {}
-}</pre>
-        <div class="field-desc">
-            <ul>
-                <li><code>method</code> — متد عملیات: <code>GET</code>، <code>POST</code>، <code>PUT</code>،
-                    <code>DELETE</code>
-                </li>
-                <li><code>resource</code> — مسیر منبع مورد نظر</li>
-                <li><code>headers</code> — هدرهای داخلی (شامل توکن احراز هویت)</li>
-                <li><code>body</code> — بدنه اختیاری (بسته به عملیات)</li>
-            </ul>
-        </div>
-
-        <h3>پاسخ (Response)</h3>
-        <p>تمام پاسخ‌ها با فرمت یکسان بازگردانده می‌شوند:</p>
-        <pre class="code-block">{
-    <span class="k">"status"</span>:   <span class="n">200</span>,
-    <span class="k">"resource"</span>: <span class="s">"/admin/status"</span>,
-    <span class="k">"body"</span>:     { ... },
-    <span class="k">"error"</span>:    null
-}</pre>
-        <div class="field-desc">
-            <ul>
-                <li><code>status</code> — کد وضعیت واقعی عملیات</li>
-                <li><code>resource</code> — مسیر منبع درخواست‌شده</li>
-                <li><code>body</code> — داده‌های بازگشتی (در صورت موفقیت)</li>
-                <li><code>error</code> — پیام خطا (در صورت شکست، در غیر اینصورت <code>null</code>)</li>
-            </ul>
-        </div>
-
-        <div class="warning-note">
-            <strong>⚠️ توجه:</strong>
-            کد HTTP خارجی همیشه <code>200</code> است. برای بررسی نتیجه واقعی، فیلد <code>status</code> در بدنه JSON
-            را بررسی کنید.
-        </div>
-
-        <hr class="separator">
-
-        <!-- QUICK START -->
-        <h2 id="quick-start">شروع سریع</h2>
-        <p>نمونه‌ای ساده از استفاده با <code>curl</code>:</p>
-        <pre class="code-block"><span class="c"># Get token</span>
-TOKEN=$(maddy admin-token)
-
-<span class="c"># Check server status</span>
-curl -s -X POST https://your-server/api/admin \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"method\": \"GET\",
-    \"resource\": \"/admin/status\",
-    \"headers\": {\"Authorization\": \"Bearer $TOKEN\"}
-  }" | python3 -m json.tool</pre>
-
-        <p>یا با استفاده از اسکریپت پایتون:</p>
-        <pre class="code-block">import requests
-
-TOKEN = "your-admin-token"
-BASE  = "https://your-server"
-
-def api(resource, method="GET", body=None):
-    resp = requests.post(f"{BASE}/api/admin", json={
-        "method": method,
-        "resource": resource,
-        "headers": {"Authorization": f"Bearer {TOKEN}"},
-        "body": body or {},
-    })
-    return resp.json()
-
-# Example: get status
-print(api("/admin/status"))</pre>
-
-        <hr class="separator">
-
-        <!-- /admin/status -->
-        <h2 id="status">وضعیت سرور</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/status</span>
-                <span class="method-badge method-get">GET</span>
-            </h3>
-            <p>نمایش وضعیت کلی سرور شامل تعداد کاربران، آپتایم و آمار سرورهای ایمیل.</p>
-
-            <strong>درخواست:</strong>
-            <pre class="code-block">{
-    <span class="k">"method"</span>: <span class="s">"GET"</span>,
-    <span class="k">"resource"</span>: <span class="s">"/admin/status"</span>,
-    <span class="k">"headers"</span>: {<span class="k">"Authorization"</span>: <span class="s">"Bearer TOKEN"</span>}
-}</pre>
-
-            <strong>پاسخ:</strong>
-            <pre class="code-block">{
-    <span class="k">"status"</span>: <span class="n">200</span>,
-    <span class="k">"body"</span>: {
-        <span class="k">"users"</span>: {
-            <span class="k">"registered"</span>: <span class="n">799</span>
-        },
-        <span class="k">"uptime"</span>: {
-            <span class="k">"boot_time"</span>: <span class="s">"2026-02-17T20:51:21Z"</span>,
-            <span class="k">"duration"</span>: <span class="s">"2d 5h 30m 15s"</span>
-        },
-        <span class="k">"email_servers"</span>: {
-            <span class="k">"connection_ips"</span>: <span class="n">12</span>,
-            <span class="k">"domain_servers"</span>: <span class="n">8</span>,
-            <span class="k">"ip_servers"</span>: <span class="n">3</span>
-        }
-    }
-}</pre>
-
-            <table>
-                <tr>
-                    <th>Field</th>
-                    <th>Type</th>
-                    <th>Description</th>
-                </tr>
-                <tr>
-                    <td><code>users.registered</code></td>
-                    <td>int</td>
-                    <td>Total registered accounts</td>
-                </tr>
-                <tr>
-                    <td><code>uptime.boot_time</code></td>
-                    <td>string</td>
-                    <td>Server boot time (RFC3339)</td>
-                </tr>
-                <tr>
-                    <td><code>uptime.duration</code></td>
-                    <td>string</td>
-                    <td>Human-readable uptime</td>
-                </tr>
-                <tr>
-                    <td><code>email_servers.connection_ips</code></td>
-                    <td>int</td>
-                    <td>Unique connecting IPs since boot</td>
-                </tr>
-                <tr>
-                    <td><code>email_servers.domain_servers</code></td>
-                    <td>int</td>
-                    <td>Unique domain servers seen</td>
-                </tr>
-                <tr>
-                    <td><code>email_servers.ip_servers</code></td>
-                    <td>int</td>
-                    <td>Unique IP-based servers seen</td>
-                </tr>
-            </table>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/storage -->
-        <h2 id="storage">اطلاعات فضای ذخیره‌سازی</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/storage</span>
-                <span class="method-badge method-get">GET</span>
-            </h3>
-            <p>اطلاعات دیسک، پوشه داده و حجم دیتابیس.</p>
-
-            <strong>پاسخ:</strong>
-            <pre class="code-block">{
-    <span class="k">"status"</span>: <span class="n">200</span>,
-    <span class="k">"body"</span>: {
-        <span class="k">"disk"</span>: {
-            <span class="k">"total_bytes"</span>: <span class="n">53687091200</span>,
-            <span class="k">"used_bytes"</span>: <span class="n">18253611008</span>,
-            <span class="k">"available_bytes"</span>: <span class="n">35433480192</span>,
-            <span class="k">"percent_used"</span>: <span class="n">34.0</span>
-        },
-        <span class="k">"state_dir"</span>: {
-            <span class="k">"path"</span>: <span class="s">"/var/lib/maddy"</span>,
-            <span class="k">"size_bytes"</span>: <span class="n">1073741824</span>
-        },
-        <span class="k">"database"</span>: {
-            <span class="k">"driver"</span>: <span class="s">"sqlite3"</span>,
-            <span class="k">"size_bytes"</span>: <span class="n">52428800</span>
-        }
-    }
-}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/registration -->
-        <h2 id="registration">مدیریت ثبت‌نام</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/registration</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-            </h3>
-            <p>باز و بسته کردن ثبت‌نام کاربران جدید.</p>
-
-            <strong>مشاهده وضعیت فعلی:</strong>
-            <pre
-                class="code-block"><span class="c">// Request</span>
-{<span class="k">"method"</span>: <span class="s">"GET"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/registration"</span>, ...}
-
-<span class="c">// Response</span>
-{<span class="k">"status"</span>: <span class="n">200</span>, <span class="k">"body"</span>: {<span class="k">"status"</span>: <span class="s">"open"</span>}}</pre>
-
-            <strong>تغییر وضعیت:</strong>
-            <pre class="code-block"><span class="c">// Close registration</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/registration"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"close"</span>}, ...}
-
-<span class="c">// Open registration</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/registration"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"open"</span>}, ...}</pre>
-
-            <table>
-                <tr>
-                    <th>Action</th>
-                    <th>Description</th>
-                </tr>
-                <tr>
-                    <td><code>open</code></td>
-                    <td>Allow new user registration</td>
-                </tr>
-                <tr>
-                    <td><code>close</code></td>
-                    <td>Block new registrations, existing users unaffected</td>
-                </tr>
-            </table>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/registration/jit -->
-        <h2 id="jit">ثبت‌نام آنی (JIT)</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/registration/jit</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-            </h3>
-            <p>فعال/غیرفعال کردن ثبت‌نام آنی. وقتی فعال باشد، حساب کاربری در اولین لاگین به‌صورت خودکار ساخته می‌شود.
-            </p>
-
-            <pre
-                class="code-block"><span class="c">// Enable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/registration/jit"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"enable"</span>}, ...}
-
-<span class="c">// Disable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/registration/jit"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"disable"</span>}, ...}
-
-<span class="c">// Response</span>
-{<span class="k">"status"</span>: <span class="n">200</span>, <span class="k">"body"</span>: {<span class="k">"status"</span>: <span class="s">"enabled"</span>}}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/services/turn -->
-        <h2 id="turn">سرویس تماس (TURN)</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/services/turn</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-            </h3>
-            <p>فعال/غیرفعال کردن سرور TURN برای تماس‌های صوتی و تصویری.</p>
-
-            <pre class="code-block"><span class="c">// Enable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/turn"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"enable"</span>}, ...}
-
-<span class="c">// Disable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/turn"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"disable"</span>}, ...}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/services/iroh -->
-        <h2 id="iroh">سرویس Iroh</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/services/iroh</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-            </h3>
-            <p>فعال/غیرفعال کردن سرور رله Iroh برای اتصالات Webxdc بلادرنگ.</p>
-
-            <pre class="code-block"><span class="c">// Enable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/iroh"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"enable"</span>}, ...}
-
-<span class="c">// Disable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/iroh"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"disable"</span>}, ...}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/services/shadowsocks -->
-        <h2 id="shadowsocks">سرویس Shadowsocks</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/services/shadowsocks</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-            </h3>
-            <p>فعال/غیرفعال کردن پروکسی Shadowsocks. این سرویس برای عبور از سانسور استفاده می‌شود.</p>
-
-            <pre class="code-block"><span class="c">// Enable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/shadowsocks"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"enable"</span>}, ...}
-
-<span class="c">// Disable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/shadowsocks"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"disable"</span>}, ...}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/services/log -->
-        <h2 id="log">مدیریت لاگ</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/services/log</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-            </h3>
-            <p>فعال/غیرفعال کردن ثبت لاگ سرور (سیاست بدون لاگ).</p>
-
-            <pre class="code-block"><span class="c">// Enable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/log"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"enable"</span>}, ...}
-
-<span class="c">// Disable</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/services/log"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"disable"</span>}, ...}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/settings -->
-        <h2 id="settings">تنظیمات یکجا</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/settings</span>
-                <span class="method-badge method-get">GET</span>
-            </h3>
-            <p>دریافت تمام تنظیمات سرور در یک درخواست واحد. شامل کلیدهای روشن/خاموش، پورت‌ها و تنظیمات پیکربندی.</p>
-
-            <pre class="code-block"><span class="c">// Request</span>
-{<span class="k">"method"</span>: <span class="s">"GET"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings"</span>, ...}
-
-<span class="c">// Response (partial)</span>
-{
-    <span class="k">"status"</span>: <span class="n">200</span>,
-    <span class="k">"body"</span>: {
-        <span class="k">"registration"</span>: <span class="s">"closed"</span>,
-        <span class="k">"turn_enabled"</span>: <span class="s">"enabled"</span>,
-        <span class="k">"iroh_enabled"</span>: <span class="s">"enabled"</span>,
-        <span class="k">"ss_enabled"</span>: <span class="s">"enabled"</span>,
-        <span class="k">"smtp_port"</span>: {<span class="k">"key"</span>: <span class="s">"__SMTP_PORT__"</span>, <span class="k">"value"</span>: <span class="s">"2525"</span>, <span class="k">"is_set"</span>: true},
-        <span class="k">"turn_secret"</span>: {<span class="k">"key"</span>: <span class="s">"__TURN_SECRET__"</span>, <span class="k">"value"</span>: <span class="s">""</span>, <span class="k">"is_set"</span>: false}
-    }
-}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- Port Settings -->
-        <h2 id="port-settings">تنظیمات پورت‌ها</h2>
-
-        <p>هر پورت سرویسی از طریق یک مسیر اختصاصی قابل تنظیم است. مقادیر در دیتابیس ذخیره می‌شوند و بر مقادیر فایل
-            پیکربندی اولویت دارند.</p>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-            </h3>
-
-            <table>
-                <tr>
-                    <th>Endpoint</th>
-                    <th>Description</th>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/smtp_port</code></td>
-                    <td>SMTP server port</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/submission_port</code></td>
-                    <td>Submission server port</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/imap_port</code></td>
-                    <td>IMAP server port</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/turn_port</code></td>
-                    <td>TURN relay port</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/dovecot_port</code></td>
-                    <td>Dovecot SASL port</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/iroh_port</code></td>
-                    <td>Iroh relay port</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/ss_port</code></td>
-                    <td>Shadowsocks proxy port</td>
-                </tr>
-            </table>
-
-            <strong>Set:</strong>
-            <pre
-                class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings/smtp_port"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"set"</span>, <span class="k">"value"</span>: <span class="s">"2525"</span>}, ...}
-
-<span class="c">// Response</span>
-{<span class="k">"key"</span>: <span class="s">"__SMTP_PORT__"</span>, <span class="k">"value"</span>: <span class="s">"2525"</span>, <span class="k">"is_set"</span>: true}</pre>
-
-            <strong>Reset:</strong>
-            <pre class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings/smtp_port"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"reset"</span>}, ...}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- Config Settings -->
-        <h2 id="config-settings">تنظیمات پیکربندی</h2>
-
-        <p>تنظیمات پیکربندی سرویس‌ها مانند hostname، secret و URL از طریق همان الگوی set/reset قابل مدیریت هستند.</p>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-            </h3>
-
-            <table>
-                <tr>
-                    <th>Endpoint</th>
-                    <th>Description</th>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/smtp_hostname</code></td>
-                    <td>SMTP server hostname</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/turn_realm</code></td>
-                    <td>TURN server realm</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/turn_secret</code></td>
-                    <td>TURN shared secret</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/turn_relay_ip</code></td>
-                    <td>TURN relay IP address</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/turn_ttl</code></td>
-                    <td>TURN credential TTL (seconds)</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/iroh_relay_url</code></td>
-                    <td>Iroh relay URL</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/ss_cipher</code></td>
-                    <td>Shadowsocks cipher algorithm</td>
-                </tr>
-                <tr>
-                    <td><code>/admin/settings/ss_password</code></td>
-                    <td>Shadowsocks password</td>
-                </tr>
-            </table>
-
-            <strong>Example — set TURN secret:</strong>
-            <pre
-                class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings/turn_secret"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"set"</span>, <span class="k">"value"</span>: <span class="s">"my-shared-secret"</span>}, ...}</pre>
-
-            <strong>Example — read Iroh relay URL:</strong>
-            <pre
-                class="code-block"><span class="c">// Request</span>
-{<span class="k">"method"</span>: <span class="s">"GET"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/settings/iroh_relay_url"</span>, ...}
-
-<span class="c">// Response</span>
-{<span class="k">"key"</span>: <span class="s">"__IROH_RELAY_URL__"</span>, <span class="k">"value"</span>: <span class="s">"https://iroh.example.com"</span>, <span class="k">"is_set"</span>: true}</pre>
-
-            <div class="info-note">
-                <strong>💡 نکته:</strong> وقتی یک تنظیم <code>is_set: false</code> باشد، به معنی استفاده از مقدار
-                پیش‌فرض فایل پیکربندی است.
-                با <code>action: "reset"</code> می‌توانید هر تنظیمی را به مقدار پیش‌فرض بازگردانید.
-            </div>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/accounts -->
-        <h2 id="accounts">مدیریت حساب‌ها</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/accounts</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-delete">DELETE</span>
-            </h3>
-            <p>لیست و حذف حساب‌های کاربری. ایجاد حساب از طریق API امکان‌پذیر نیست (رمز عبورها هیچ‌گاه از طریق API منتقل
-                نمی‌شوند).</p>
-
-            <strong>لیست تمام حساب‌ها:</strong>
-            <pre class="code-block"><span class="c">// Request</span>
-{<span class="k">"method"</span>: <span class="s">"GET"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/accounts"</span>, ...}
-
-<span class="c">// Response</span>
-{
-    <span class="k">"status"</span>: <span class="n">200</span>,
-    <span class="k">"body"</span>: {
-        <span class="k">"total"</span>: <span class="n">3</span>,
-        <span class="k">"accounts"</span>: [
-            {<span class="k">"username"</span>: <span class="s">"alice@example.com"</span>},
-            {<span class="k">"username"</span>: <span class="s">"bob@example.com"</span>},
-            {<span class="k">"username"</span>: <span class="s">"charlie@example.com"</span>}
-        ]
-    }
-}</pre>
-
-            <strong>حذف یک حساب:</strong>
-            <pre
-                class="code-block"><span class="c">// Request</span>
-{<span class="k">"method"</span>: <span class="s">"DELETE"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/accounts"</span>,
- <span class="k">"body"</span>: {<span class="k">"username"</span>: <span class="s">"alice@example.com"</span>}, ...}
-
-<span class="c">// Response</span>
-{<span class="k">"status"</span>: <span class="n">200</span>, <span class="k">"body"</span>: {<span class="k">"deleted"</span>: <span class="s">"alice@example.com"</span>}}</pre>
-
-            <div class="danger-note">
-                <strong>⚠️ هشدار:</strong> حذف حساب غیرقابل بازگشت است. تمام ایمیل‌ها، تنظیمات و اطلاعات کاربر به‌طور
-                کامل
-                حذف خواهند شد و نام کاربری برای همیشه مسدود می‌شود.
-            </div>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/blocklist -->
-        <h2 id="blocklist">لیست مسدودی</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/blocklist</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-                <span class="method-badge method-delete">DELETE</span>
-            </h3>
-            <p>مدیریت لیست نام‌های کاربری مسدود. کاربران مسدود نمی‌توانند از طریق <code>/new</code> یا JIT ثبت‌نام کنند.
-                حساب‌های حذف‌شده به‌طور خودکار به این لیست اضافه می‌شوند.</p>
-
-            <strong>لیست کاربران مسدود:</strong>
-            <pre class="code-block"><span class="c">// Request</span>
-{<span class="k">"method"</span>: <span class="s">"GET"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/blocklist"</span>, ...}
-
-<span class="c">// Response</span>
-{
-    <span class="k">"status"</span>: <span class="n">200</span>,
-    <span class="k">"body"</span>: {
-        <span class="k">"total"</span>: <span class="n">2</span>,
-        <span class="k">"blocked"</span>: [
-            {
-                <span class="k">"username"</span>: <span class="s">"spammer@example.com"</span>,
-                <span class="k">"reason"</span>: <span class="s">"deleted via admin panel"</span>,
-                <span class="k">"blocked_at"</span>: <span class="s">"2026-02-18T15:30:00Z"</span>
-            }
-        ]
-    }
-}</pre>
-
-            <strong>مسدود کردن یک کاربر:</strong>
-            <pre
-                class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/blocklist"</span>,
- <span class="k">"body"</span>: {<span class="k">"username"</span>: <span class="s">"spammer@example.com"</span>, <span class="k">"reason"</span>: <span class="s">"abuse"</span>}, ...}</pre>
-
-            <strong>رفع مسدودی:</strong>
-            <pre
-                class="code-block">{<span class="k">"method"</span>: <span class="s">"DELETE"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/blocklist"</span>,
- <span class="k">"body"</span>: {<span class="k">"username"</span>: <span class="s">"spammer@example.com"</span>}, ...}</pre>
-
-            <table>
-                <tr>
-                    <th>Field</th>
-                    <th>Type</th>
-                    <th>Description</th>
-                </tr>
-                <tr>
-                    <td><code>username</code></td>
-                    <td>string</td>
-                    <td>Blocked username (required)</td>
-                </tr>
-                <tr>
-                    <td><code>reason</code></td>
-                    <td>string</td>
-                    <td>Reason for blocking (optional, default: "manually blocked")</td>
-                </tr>
-                <tr>
-                    <td><code>blocked_at</code></td>
-                    <td>string</td>
-                    <td>RFC3339 timestamp (in GET responses only)</td>
-                </tr>
-            </table>
-
-            <div class="info-note">
-                <strong>💡 نکته:</strong> وقتی یک حساب از طریق <code>/admin/accounts</code> حذف می‌شود، نام کاربری
-                به‌طور خودکار به لیست مسدودی اضافه می‌شود.
-                برای اجازه ثبت‌نام مجدد، ابتدا باید کاربر را از لیست مسدودی حذف کنید.
-            </div>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/quota -->
-        <h2 id="quota">مدیریت سهمیه (Quota)</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/quota</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-put">PUT</span>
-                <span class="method-badge method-delete">DELETE</span>
-            </h3>
-            <p>مدیریت سهمیه فضای ذخیره‌سازی کاربران.</p>
-
-            <strong>آمار کلی (بدون body):</strong>
-            <pre class="code-block">{
-    <span class="k">"status"</span>: <span class="n">200</span>,
-    <span class="k">"body"</span>: {
-        <span class="k">"total_storage_bytes"</span>: <span class="n">1073741824</span>,
-        <span class="k">"accounts_count"</span>: <span class="n">42</span>,
-        <span class="k">"default_quota_bytes"</span>: <span class="n">107374182400</span>
-    }
-}</pre>
-
-            <strong>سهمیه یک کاربر خاص:</strong>
-            <pre class="code-block"><span class="c">// Request</span>
-{<span class="k">"method"</span>: <span class="s">"GET"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/quota"</span>,
- <span class="k">"body"</span>: {<span class="k">"username"</span>: <span class="s">"alice@example.com"</span>}, ...}
-
-<span class="c">// Response</span>
-{
-    <span class="k">"body"</span>: {
-        <span class="k">"username"</span>: <span class="s">"alice@example.com"</span>,
-        <span class="k">"used_bytes"</span>: <span class="n">52428800</span>,
-        <span class="k">"max_bytes"</span>: <span class="n">107374182400</span>,
-        <span class="k">"is_default"</span>: true
-    }
-}</pre>
-
-            <strong>تنظیم سهمیه اختصاصی:</strong>
-            <pre class="code-block"><span class="c">// Set quota for one user (1GB)</span>
-{<span class="k">"method"</span>: <span class="s">"PUT"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/quota"</span>,
- <span class="k">"body"</span>: {<span class="k">"username"</span>: <span class="s">"alice@example.com"</span>, <span class="k">"max_bytes"</span>: <span class="n">1073741824</span>}, ...}
-
-<span class="c">// Set default quota for all users (2GB)</span>
-{<span class="k">"method"</span>: <span class="s">"PUT"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/quota"</span>,
- <span class="k">"body"</span>: {<span class="k">"max_bytes"</span>: <span class="n">2147483648</span>}, ...}</pre>
-
-            <strong>بازنشانی سهمیه به پیش‌فرض:</strong>
-            <pre
-                class="code-block">{<span class="k">"method"</span>: <span class="s">"DELETE"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/quota"</span>,
- <span class="k">"body"</span>: {<span class="k">"username"</span>: <span class="s">"alice@example.com"</span>}, ...}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/queue -->
-        <h2 id="queue">عملیات صف (Queue)</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/queue</span>
-                <span class="method-badge method-post">POST</span>
-            </h3>
-            <p>پاکسازی پیام‌های ذخیره‌شده. فقط متد <code>POST</code> پشتیبانی می‌شود.</p>
-
-            <table>
-                <tr>
-                    <th>Action</th>
-                    <th>Description</th>
-                </tr>
-                <tr>
-                    <td><code>purge_user</code></td>
-                    <td>Delete all messages for a specific user (requires <code>username</code>)</td>
-                </tr>
-                <tr>
-                    <td><code>purge_all</code></td>
-                    <td>Delete ALL stored messages for all users</td>
-                </tr>
-                <tr>
-                    <td><code>purge_read</code></td>
-                    <td>Delete only read (Seen) messages for all users</td>
-                </tr>
-            </table>
-
-            <pre class="code-block"><span class="c">// Purge messages for one user</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/queue"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"purge_user"</span>, <span class="k">"username"</span>: <span class="s">"alice@example.com"</span>}, ...}
-
-<span class="c">// Purge read messages for all users</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/queue"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"purge_read"</span>}, ...}
-
-<span class="c">// Purge ALL messages</span>
-{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/queue"</span>,
- <span class="k">"body"</span>: {<span class="k">"action"</span>: <span class="s">"purge_all"</span>}, ...}</pre>
-
-            <div class="danger-note">
-                <strong>⚠️ هشدار:</strong> عملیات <code>purge_all</code> تمام ایمیل‌های تمام کاربران در سرور را حذف
-                می‌کند.
-                حساب‌های کاربری حفظ می‌شوند.
-            </div>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/shares -->
-        <h2 id="shares">اشتراک‌گذاری مخاطبین</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/shares</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-                <span class="method-badge method-put">PUT</span>
-                <span class="method-badge method-delete">DELETE</span>
-            </h3>
-            <p>مدیریت لینک‌های اشتراک‌گذاری مخاطبین (Contact Shares). فقط در صورت فعال بودن اشتراک‌گذاری در تنظیمات.</p>
-
-            <strong>لیست:</strong>
-            <pre class="code-block"><span class="c">// GET Response</span>
-{
-    <span class="k">"body"</span>: {
-        <span class="k">"total"</span>: <span class="n">2</span>,
-        <span class="k">"shares"</span>: [
-            {<span class="k">"slug"</span>: <span class="s">"support"</span>, <span class="k">"url"</span>: <span class="s">"openpgp4fpr:ABCD..."</span>, <span class="k">"name"</span>: <span class="s">"Support Team"</span>},
-            {<span class="k">"slug"</span>: <span class="s">"admin"</span>, <span class="k">"url"</span>: <span class="s">"openpgp4fpr:EFGH..."</span>, <span class="k">"name"</span>: <span class="s">"Admin"</span>}
-        ]
-    }
-}</pre>
-
-            <strong>ایجاد:</strong>
-            <pre class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/shares"</span>,
- <span class="k">"body"</span>: {
-    <span class="k">"slug"</span>: <span class="s">"support"</span>,
-    <span class="k">"url"</span>: <span class="s">"openpgp4fpr:ABCDEF123456..."</span>,
-    <span class="k">"name"</span>: <span class="s">"Support Team"</span>
- }, ...}</pre>
-
-            <strong>ویرایش:</strong>
-            <pre class="code-block">{<span class="k">"method"</span>: <span class="s">"PUT"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/shares"</span>,
- <span class="k">"body"</span>: {
-    <span class="k">"slug"</span>: <span class="s">"support"</span>,
-    <span class="k">"name"</span>: <span class="s">"New Name"</span>
- }, ...}</pre>
-
-            <strong>حذف:</strong>
-            <pre class="code-block">{<span class="k">"method"</span>: <span class="s">"DELETE"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/shares"</span>,
- <span class="k">"body"</span>: {<span class="k">"slug"</span>: <span class="s">"support"</span>}, ...}</pre>
-        </div>
-
-        <hr class="separator">
-
-        <!-- /admin/dns -->
-        <h2 id="dns">بازنویسی DNS</h2>
-
-        <div class="endpoint-card">
-            <h3>
-                <span class="resource-path">/admin/dns</span>
-                <span class="method-badge method-get">GET</span>
-                <span class="method-badge method-post">POST</span>
-                <span class="method-badge method-delete">DELETE</span>
-            </h3>
-            <p>مدیریت قوانین بازنویسی DNS داخلی. این قوانین مسیر ارسال ایمیل‌ها را تغییر می‌دهند.</p>
-
-            <strong>لیست تمام قوانین:</strong>
-            <pre class="code-block"><span class="c">// GET Response</span>
-{
-    <span class="k">"body"</span>: {
-        <span class="k">"total"</span>: <span class="n">1</span>,
-        <span class="k">"overrides"</span>: [
-            {
-                <span class="k">"lookup_key"</span>: <span class="s">"old-server.example.com"</span>,
-                <span class="k">"target_host"</span>: <span class="s">"new-server.example.com"</span>,
-                <span class="k">"comment"</span>: <span class="s">"migration in progress"</span>
-            }
-        ]
-    }
-}</pre>
-
-            <strong>ایجاد یا ویرایش:</strong>
-            <pre class="code-block">{<span class="k">"method"</span>: <span class="s">"POST"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/dns"</span>,
- <span class="k">"body"</span>: {
-    <span class="k">"lookup_key"</span>: <span class="s">"old.example.com"</span>,
-    <span class="k">"target_host"</span>: <span class="s">"10.0.0.5"</span>,
-    <span class="k">"comment"</span>: <span class="s">"Route to internal server"</span>
- }, ...}</pre>
-
-            <strong>حذف:</strong>
-            <pre
-                class="code-block">{<span class="k">"method"</span>: <span class="s">"DELETE"</span>, <span class="k">"resource"</span>: <span class="s">"/admin/dns"</span>,
- <span class="k">"body"</span>: {<span class="k">"lookup_key"</span>: <span class="s">"old.example.com"</span>}, ...}</pre>
-
-            <div class="info-note">
-                <strong>💡 نکته:</strong> تغییرات DNS بلافاصله اعمال می‌شوند و نیازی به ریستارت سرور نیست.
-            </div>
-        </div>
-
-        <hr class="separator">
-
-        <!-- WEB ADMIN PANEL -->
-        <h2 id="web-panel">رابط وب مدیریت</h2>
-
-        <div class="endpoint-card">
-            <p>تمام عملیات‌های Admin API از طریق یک رابط وب داخلی در مسیر <code>/admin/</code> نیز قابل دسترسی هستند.
-                این پنل از همان توکن احراز هویت استفاده می‌کند.</p>
-
-            <strong>صفحات مدیریتی:</strong>
-            <table>
-                <tr>
-                    <th>صفحه</th>
-                    <th>امکانات</th>
-                </tr>
-                <tr>
-                    <td><strong>Overview</strong></td>
-                    <td>آمار سرور (کاربران، آپتایم، دیسک، ذخیره‌سازی)، اتصالات فعال (IMAP، TURN، Shadowsocks)، نوار مصرف
-                        دیسک، دکمه‌های پاکسازی صف</td>
-                </tr>
-                <tr>
-                    <td><strong>Services</strong></td>
-                    <td>کلیدهای فعال/غیرفعال برای ثبت‌نام، JIT، TURN، Iroh، Shadowsocks و لاگ</td>
-                </tr>
-                <tr>
-                    <td><strong>Ports</strong></td>
-                    <td>مشاهده و تغییر شماره پورت‌ها و تنظیمات پیکربندی</td>
-                </tr>
-                <tr>
-                    <td><strong>Accounts</strong></td>
-                    <td>لیست حساب‌ها با مصرف فضا، حذف حساب (با پنجره تأیید)</td>
-                </tr>
-                <tr>
-                    <td><strong>Blocked</strong></td>
-                    <td>مشاهده کاربران مسدود شده، رفع مسدودیت (با پنجره تأیید)</td>
-                </tr>
-                <tr>
-                    <td><strong>DNS</strong></td>
-                    <td>مشاهده، افزودن، جستجو و حذف بازنویسی‌های DNS (با پنجره تأیید)</td>
-                </tr>
-            </table>
-
-            <div class="info-note">
-                <strong>💡 نکته:</strong> پنل مدیریت از حالت <strong>روشن و تاریک</strong> پشتیبانی می‌کند (با دکمه
-                تغییر تم در هدر) و به زبان‌های فارسی، انگلیسی، اسپانیایی و روسی موجود است.
-            </div>
-        </div>
-
-        <hr class="separator">
-
-        <!-- ERROR CODES -->
-
-        <h2 id="errors">کدهای خطا</h2>
-
-        <p>کدهای وضعیت داخلی (در فیلد <code>status</code> پاسخ JSON):</p>
-
-        <table>
-            <tr>
-                <th>Code</th>
-                <th>Meaning</th>
-                <th>When</th>
-            </tr>
-            <tr>
-                <td><code>200</code></td>
-                <td>Success</td>
-                <td>Operation completed successfully</td>
-            </tr>
-            <tr>
-                <td><code>201</code></td>
-                <td>Created</td>
-                <td>New resource created (DNS override, share)</td>
-            </tr>
-            <tr>
-                <td><code>400</code></td>
-                <td>Bad Request</td>
-                <td>Missing required fields or invalid action</td>
-            </tr>
-            <tr>
-                <td><code>401</code></td>
-                <td>Unauthorized</td>
-                <td>Missing, wrong, or rate-limited token</td>
-            </tr>
-            <tr>
-                <td><code>404</code></td>
-                <td>Not Found</td>
-                <td>Unknown resource path or entry not found</td>
-            </tr>
-            <tr>
-                <td><code>405</code></td>
-                <td>Method Not Allowed</td>
-                <td>Using wrong method for this resource</td>
-            </tr>
-            <tr>
-                <td><code>500</code></td>
-                <td>Internal Error</td>
-                <td>Server-side failure (database, filesystem)</td>
-            </tr>
-            <tr>
-                <td><code>503</code></td>
-                <td>Unavailable</td>
-                <td>Feature not enabled (e.g. sharing, DNS)</td>
-            </tr>
-        </table>
-
-    </div>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/docs" data-i18n="nav_docs">Docs</a></li>
+        </ul>
+    </header>
+
+    <div class="doc-container" id="api-docs-root"></div>
 
     <footer style="text-align: center; margin: 40px; color: #888; font-size: 0.8em;">
-        نسخه {{.Version}}
+        {{.Version}}
     </footer>
+
+    <script>
+    (function() {
+        var LANG = "{{.Language}}";
+        var D = API_DOCS;
+        var root = document.getElementById('api-docs-root');
+
+        function L(obj) {
+            if (!obj) return '';
+            if (typeof obj === 'string') return obj;
+            return obj[LANG] || obj['en'] || '';
+        }
+
+        function h(tag, attrs, children) {
+            var el = document.createElement(tag);
+            if (attrs) for (var k in attrs) {
+                if (k === 'html') el.innerHTML = attrs[k];
+                else if (k === 'text') el.textContent = attrs[k];
+                else if (k === 'cls') el.className = attrs[k];
+                else el.setAttribute(k, attrs[k]);
+            }
+            if (children) for (var i = 0; i < children.length; i++) {
+                if (typeof children[i] === 'string') el.appendChild(document.createTextNode(children[i]));
+                else if (children[i]) el.appendChild(children[i]);
+            }
+            return el;
+        }
+
+        function codeBlock(code) {
+            return h('pre', { cls: 'code-block', text: code });
+        }
+
+        function noteBox(note) {
+            var div = h('div', { cls: 'note-box note-' + note.type });
+            div.innerHTML = '<strong>' + L(note.title) + '</strong> ' + L(note.text);
+            return div;
+        }
+
+        function methodBadges(methods) {
+            var frag = document.createDocumentFragment();
+            for (var i = 0; i < methods.length; i++) {
+                frag.appendChild(h('span', { cls: 'method-badge method-' + methods[i].toLowerCase(), text: methods[i] }));
+            }
+            return frag;
+        }
+
+        function fieldsTable(fields) {
+            var rows = '<tr><th>Field</th><th>Type</th><th>Description</th></tr>';
+            for (var i = 0; i < fields.length; i++) {
+                rows += '<tr><td><code>' + fields[i].name + '</code></td><td>' + (fields[i].type||'') + '</td><td>' + (L(fields[i].desc) || fields[i].desc) + '</td></tr>';
+            }
+            return h('table', { html: rows });
+        }
+
+        function portTable(ports) {
+            var rows = '<tr><th>Endpoint</th><th>Description</th></tr>';
+            for (var i = 0; i < ports.length; i++) {
+                rows += '<tr><td><code>' + ports[i].endpoint + '</code></td><td>' + ports[i].desc + '</td></tr>';
+            }
+            return h('table', { html: rows });
+        }
+
+        function actionTable(actions) {
+            var rows = '<tr><th>Action</th><th>Description</th></tr>';
+            for (var i = 0; i < actions.length; i++) {
+                rows += '<tr><td><code>' + actions[i].action + '</code></td><td>' + L(actions[i].desc) + '</td></tr>';
+            }
+            return h('table', { html: rows });
+        }
+
+        // Title
+        document.getElementById('page-title').textContent = L(D.title);
+        root.appendChild(h('h1', { text: L(D.title) }));
+
+        // TOC
+        var tocDiv = h('div', { cls: 'toc' });
+        tocDiv.appendChild(h('h3', { text: L(D.toc_title) }));
+        var tocOl = h('ol');
+        var allItems = [];
+        for (var i = 0; i < D.sections.length; i++) allItems.push({ id: D.sections[i].id, title: L(D.sections[i].title) });
+        for (var i = 0; i < D.endpoints.length; i++) {
+            var ep = D.endpoints[i];
+            var label = L(ep.title);
+            if (ep.resource && ep.resource.indexOf('{') === -1) label += ' — ' + ep.resource;
+            allItems.push({ id: ep.id, title: label });
+        }
+        allItems.push({ id: D.webPanel.id, title: L(D.webPanel.title) });
+        allItems.push({ id: D.errorCodes.id, title: L(D.errorCodes.title) });
+        for (var i = 0; i < allItems.length; i++) {
+            var li = h('li');
+            li.appendChild(h('a', { href: '#' + allItems[i].id, text: allItems[i].title }));
+            tocOl.appendChild(li);
+        }
+        tocDiv.appendChild(tocOl);
+        root.appendChild(tocDiv);
+
+        // Sections
+        for (var si = 0; si < D.sections.length; si++) {
+            var sec = D.sections[si];
+            root.appendChild(h('hr', { cls: 'separator' }));
+            root.appendChild(h('h2', { id: sec.id, text: L(sec.title) }));
+
+            if (sec.paragraphs) for (var pi = 0; pi < sec.paragraphs.length; pi++) {
+                root.appendChild(h('p', { html: L(sec.paragraphs[pi]) }));
+            }
+            if (sec.diagram) root.appendChild(h('div', { cls: 'arch-diagram', text: sec.diagram }));
+            if (sec.subsections) for (var ssi = 0; ssi < sec.subsections.length; ssi++) {
+                var ss = sec.subsections[ssi];
+                root.appendChild(h('h3', { text: L(ss.title) }));
+                if (ss.text) root.appendChild(h('p', { html: L(ss.text) }));
+                if (ss.code) root.appendChild(codeBlock(ss.code));
+                if (ss.fields) {
+                    var fd = h('div', { cls: 'field-desc' });
+                    var ul = h('ul');
+                    for (var fi = 0; fi < ss.fields.length; fi++) {
+                        ul.appendChild(h('li', { html: '<code>' + ss.fields[fi].name + '</code> — ' + L(ss.fields[fi].desc) }));
+                    }
+                    fd.appendChild(ul);
+                    root.appendChild(fd);
+                }
+            }
+            if (sec.notes) for (var ni = 0; ni < sec.notes.length; ni++) root.appendChild(noteBox(sec.notes[ni]));
+        }
+
+        // Endpoints
+        for (var ei = 0; ei < D.endpoints.length; ei++) {
+            var ep = D.endpoints[ei];
+            root.appendChild(h('hr', { cls: 'separator' }));
+            root.appendChild(h('h2', { id: ep.id, text: L(ep.title) }));
+
+            var card = h('div', { cls: 'endpoint-card' });
+            var cardH3 = h('h3');
+            if (ep.resource && ep.resource.indexOf('{') === -1) {
+                cardH3.appendChild(h('span', { cls: 'resource-path', text: ep.resource }));
+            }
+            cardH3.appendChild(methodBadges(ep.methods));
+            card.appendChild(cardH3);
+            card.appendChild(h('p', { html: L(ep.desc) }));
+
+            if (ep.request) {
+                card.appendChild(h('strong', { html: (LANG === 'fa' ? 'درخواست:' : LANG === 'ru' ? 'Запрос:' : 'Request:') }));
+                card.appendChild(codeBlock(ep.request));
+            }
+            if (ep.response) {
+                card.appendChild(h('strong', { html: (LANG === 'fa' ? 'پاسخ:' : LANG === 'ru' ? 'Ответ:' : 'Response:') }));
+                card.appendChild(codeBlock(ep.response));
+            }
+            if (ep.fields) card.appendChild(fieldsTable(ep.fields));
+            if (ep.port_table) card.appendChild(portTable(ep.port_table));
+            if (ep.action_table) card.appendChild(actionTable(ep.action_table));
+
+            if (ep.toggle_code) {
+                card.appendChild(codeBlock('// Enable\n{"method": "POST", "resource": "' + ep.toggle_code + '",\n "body": {"action": "enable"}, ...}\n\n// Disable\n{"method": "POST", "resource": "' + ep.toggle_code + '",\n "body": {"action": "disable"}, ...}'));
+            }
+
+            if (ep.examples) for (var exi = 0; exi < ep.examples.length; exi++) {
+                var ex = ep.examples[exi];
+                card.appendChild(h('strong', { text: L(ex.label) + ':' }));
+                card.appendChild(codeBlock(ex.code));
+            }
+            if (ep.notes) for (var ni = 0; ni < ep.notes.length; ni++) card.appendChild(noteBox(ep.notes[ni]));
+
+            root.appendChild(card);
+        }
+
+        // Web Panel
+        var wp = D.webPanel;
+        root.appendChild(h('hr', { cls: 'separator' }));
+        root.appendChild(h('h2', { id: wp.id, text: L(wp.title) }));
+        var wpCard = h('div', { cls: 'endpoint-card' });
+        wpCard.appendChild(h('p', { html: L(wp.desc) }));
+        var wpLabel = h('strong', { text: (LANG === 'fa' ? 'صفحات مدیریتی:' : LANG === 'ru' ? 'Административные страницы:' : 'Admin pages:') });
+        wpCard.appendChild(wpLabel);
+        var wpRows = '<tr><th>' + (LANG === 'fa' ? 'صفحه' : LANG === 'ru' ? 'Страница' : 'Page') + '</th><th>' + (LANG === 'fa' ? 'امکانات' : LANG === 'ru' ? 'Возможности' : 'Features') + '</th></tr>';
+        for (var pi = 0; pi < wp.pages.length; pi++) {
+            wpRows += '<tr><td><strong>' + wp.pages[pi].name + '</strong></td><td>' + L(wp.pages[pi].desc) + '</td></tr>';
+        }
+        wpCard.appendChild(h('table', { html: wpRows }));
+        wpCard.appendChild(h('div', { cls: 'note-box note-info', html: '<strong>💡</strong> ' + L(wp.note) }));
+        root.appendChild(wpCard);
+
+        // Error Codes
+        var ec = D.errorCodes;
+        root.appendChild(h('hr', { cls: 'separator' }));
+        root.appendChild(h('h2', { id: ec.id, text: L(ec.title) }));
+        root.appendChild(h('p', { html: L(ec.desc) }));
+        var ecRows = '<tr><th>Code</th><th>Meaning</th><th>When</th></tr>';
+        for (var ci = 0; ci < ec.codes.length; ci++) {
+            ecRows += '<tr><td><code>' + ec.codes[ci].code + '</code></td><td>' + ec.codes[ci].meaning + '</td><td>' + ec.codes[ci].when + '</td></tr>';
+        }
+        root.appendChild(h('table', { html: ecRows }));
+
+        // Apply nav translations
+        applyTranslations(LANG);
+    })();
+    </script>
 </body>
 
 </html>

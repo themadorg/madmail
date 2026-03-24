@@ -94,7 +94,7 @@ p {
 }
 
 ul, ol {
-  padding-right: 20px;
+  padding-inline-start: 20px;
 }
 
 li {
@@ -229,9 +229,10 @@ pre code {
   max-width: 750px;
   margin-left: auto;
   margin-right: auto;
-  text-align: right;
   line-height: 1.8;
 }
+.is-rtl .card--wide { text-align: right; }
+.is-ltr .card--wide { text-align: left; }
 
 .card--success {
   border-color: var(--success);
@@ -389,27 +390,28 @@ input:focus {
   margin: 16px 0;
   font-size: 0.875rem;
   line-height: 1.6;
-  text-align: right;
 }
+.is-rtl .alert { text-align: right; }
+.is-ltr .alert { text-align: left; }
 
 .alert--info {
   background: color-mix(in srgb, var(--link) 6%, transparent);
-  border-right: 2px solid var(--link);
+  border-inline-start: 2px solid var(--link);
 }
 
 .alert--danger {
   background: color-mix(in srgb, var(--destructive) 6%, transparent);
-  border-right: 2px solid var(--destructive);
+  border-inline-start: 2px solid var(--destructive);
 }
 
 .alert--warning {
   background: color-mix(in srgb, var(--warning) 6%, transparent);
-  border-right: 2px solid var(--warning);
+  border-inline-start: 2px solid var(--warning);
 }
 
 .alert--success {
   background: color-mix(in srgb, var(--success) 6%, transparent);
-  border-right: 2px solid var(--success);
+  border-inline-start: 2px solid var(--success);
 }
 
 /* ── Toast ── */
@@ -553,6 +555,7 @@ input:focus {
 
 .text-center { text-align: center; }
 .text-right { text-align: right; }
+.text-start { text-align: start; }
 .text-muted { color: var(--muted); }
 .text-danger { color: var(--destructive); }
 .text-success { color: var(--success); }

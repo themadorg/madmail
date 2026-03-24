@@ -39,6 +39,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/emersion/go-message/textproto"
 	"github.com/emersion/go-smtp"
@@ -127,6 +128,9 @@ type Endpoint struct {
 
 	wwwDir string
 
+	// Language configuration (en, fa, ru)
+	language string
+
 	// Admin API
 	adminToken string
 	adminPath  string
@@ -140,6 +144,17 @@ type Endpoint struct {
 	ssCipher           string
 	ssAllowedPortsList []string
 	ssAllowedPorts     map[string]bool
+
+	// RAM cache for frequently accessed settings to prevent redundant DB calls
+	cache struct {
+		sync.RWMutex
+		language               string
+		registrationOpen       bool
+		jitRegistrationEnabled bool
+		defaultQuota           int64
+		hydrated               bool
+		lastChecked            time.Time
+	}
 
 	// Shadowsocks QUIC transport (v2ray-plugin)
 	ssCertPath string
@@ -176,6 +191,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	cfg.String("alpn_imap", false, false, "", &e.alpnIMAP)
 	cfg.Bool("enable_contact_sharing", false, false, &e.enableContactSharing)
 	cfg.String("www_dir", false, false, "", &e.wwwDir)
+	cfg.String("language", false, false, "en", &e.language)
 	cfg.String("ss_addr", false, false, "", &e.ssAddr)
 	cfg.String("ss_password", false, false, "", &e.ssPassword)
 	cfg.String("ss_cipher", false, false, "aes-128-gcm", &e.ssCipher)
@@ -458,6 +474,50 @@ func (e *Endpoint) Close() error {
 	return nil
 }
 
+// hydrateCache ensures that the settings cache is populated from the DB.
+func (e *Endpoint) hydrateCache() {
+	e.cache.Lock()
+	defer e.cache.Unlock()
+
+	if e.authDB != nil {
+		if val, ok, err := e.authDB.GetSetting(resources.KeyLanguage); err == nil && ok {
+			e.cache.language = val
+		}
+		if open, err := e.authDB.IsRegistrationOpen(); err == nil {
+			e.cache.registrationOpen = open
+		}
+		if jit, err := e.authDB.IsJitRegistrationEnabled(); err == nil {
+			e.cache.jitRegistrationEnabled = jit
+		}
+	}
+	if e.storage != nil {
+		e.cache.defaultQuota = e.storage.GetDefaultQuota()
+	}
+	e.cache.hydrated = true
+	e.cache.lastChecked = time.Now()
+}
+
+// getLanguage returns the active UI language from cache (fallback to DB).
+func (e *Endpoint) getLanguage() string {
+	e.cache.RLock()
+	// Re-hydrate if not hydrated or if cache is stale (TTL: 5 seconds for CLI sync)
+	if !e.cache.hydrated || time.Since(e.cache.lastChecked) > 5*time.Second {
+		e.cache.RUnlock()
+		e.hydrateCache()
+		e.cache.RLock()
+	}
+	lang := e.cache.language
+	e.cache.RUnlock()
+
+	if lang != "" {
+		return lang
+	}
+	if e.language != "" {
+		return e.language
+	}
+	return "en"
+}
+
 // generateRandomString generates a random string of specified length using alphanumeric characters
 func (e *Endpoint) generateRandomString(length int) (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -591,22 +651,45 @@ func (e *Endpoint) handleDocs(w http.ResponseWriter, r *http.Request) {
 	case "", "index", "index.html":
 		e.serveTemplate(w, r, "docs_index.html", nil)
 	case "admin":
-		e.serveTemplate(w, r, "admin_docs.html", nil)
+		e.serveDocLang(w, r, "admin.html")
 	case "api":
 		e.serveTemplate(w, r, "admin_api_docs.html", nil)
 	case "general":
-		e.serveTemplate(w, r, "general_docs.html", nil)
+		e.serveDocLang(w, r, "general.html")
 	case "serve", "custom-html":
-		e.serveTemplate(w, r, "docs_serve.html", nil)
+		e.serveDocLang(w, r, "serve.html")
 	case "database":
-		e.serveTemplate(w, r, "database_docs.html", nil)
+		e.serveDocLang(w, r, "database.html")
 	case "docker":
-		e.serveTemplate(w, r, "docker_docs.html", nil)
+		e.serveDocLang(w, r, "docker.html")
 	case "relay", "domain", "tls":
-		e.serveTemplate(w, r, "relay_docs.html", nil)
+		e.serveDocLang(w, r, "relay.html")
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// serveDocLang serves a doc template from docs/{lang}/ with fallback to docs/en/.
+func (e *Endpoint) serveDocLang(w http.ResponseWriter, r *http.Request, name string) {
+	lang := e.getLanguage()
+	langPath := "docs/" + lang + "/" + name
+
+	// Try language-specific file first
+	if _, err := e.readFile(langPath); err == nil {
+		e.serveTemplate(w, r, langPath, nil)
+		return
+	}
+
+	// Fallback to English
+	enPath := "docs/en/" + name
+	if _, err := e.readFile(enPath); err == nil {
+		e.serveTemplate(w, r, enPath, nil)
+		return
+	}
+
+	// Final fallback: try legacy root-level name (e.g., general_docs.html)
+	legacyName := strings.TrimSuffix(name, ".html") + "_docs.html"
+	e.serveTemplate(w, r, legacyName, nil)
 }
 
 func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
@@ -696,6 +779,7 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 			RegistrationOpen       bool
 			JitRegistrationEnabled bool
 			TurnEnabled            bool
+			Language               string
 		}{
 			MailDomain:             e.mailDomain,
 			MXDomain:               e.mxDomain,
@@ -714,6 +798,7 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 			RegistrationOpen:       func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
 			JitRegistrationEnabled: func() bool { enabled, _ := e.authDB.IsJitRegistrationEnabled(); return enabled }(),
 			TurnEnabled:            func() bool { enabled, _ := e.authDB.IsTurnEnabled(); return enabled }(),
+			Language:               e.getLanguage(),
 		}
 
 		w.Header().Set("Content-Type", contentType)
@@ -2055,6 +2140,7 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 	tmpl, err := template.New(name).Funcs(template.FuncMap{
 		"upper":       strings.ToUpper,
 		"safeURL":     func(s string) template.URL { return template.URL(s) },
+		"safeHTML":    func(s string) template.HTML { return template.HTML(s) },
 		"cleanDomain": func(s string) string { return strings.Trim(s, "[]") },
 		"formatBytes": formatBytes,
 	}).Parse(string(fileData))
@@ -2076,6 +2162,7 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		DefaultQuota           int64
 		RegistrationOpen       bool
 		JitRegistrationEnabled bool
+		Language               string
 		Custom                 interface{}
 	}{
 		MailDomain:             e.mailDomain,
@@ -2088,7 +2175,30 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		DefaultQuota:           e.storage.GetDefaultQuota(),
 		RegistrationOpen:       func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
 		JitRegistrationEnabled: func() bool { enabled, _ := e.authDB.IsJitRegistrationEnabled(); return enabled }(),
-		Custom:                 customData,
+		Language:               e.getLanguage(),
+	Custom:                 customData,
+	}
+
+	// Hot-path optimization: use cached values to avoid DB calls on every request
+	// (Re-sync with DB every 5 seconds to catch CLI changes)
+	e.cache.RLock()
+	isStale := !e.cache.hydrated || time.Since(e.cache.lastChecked) > 5*time.Second
+	e.cache.RUnlock()
+
+	if isStale {
+		e.hydrateCache()
+	}
+
+	e.cache.RLock()
+	data.DefaultQuota = e.cache.defaultQuota
+	data.RegistrationOpen = e.cache.registrationOpen
+	data.JitRegistrationEnabled = e.cache.jitRegistrationEnabled
+	data.Language = e.cache.language
+	e.cache.RUnlock()
+
+	// Fallback for language if cache is empty
+	if data.Language == "" {
+		data.Language = e.getLanguage()
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -2168,8 +2278,48 @@ func (e *Endpoint) setupAdminAPI() {
 
 	// Generic DB-backed settings using the auth pass_table's settings table
 	settingsDeps.GetSetting = e.authDB.GetSetting
-	settingsDeps.SetSetting = e.authDB.SetSetting
-	settingsDeps.DeleteSetting = e.authDB.DeleteSetting
+	settingsDeps.SetSetting = func(key, value string) error {
+		err := e.authDB.SetSetting(key, value)
+		if err == nil {
+			e.cache.Lock()
+			if key == resources.KeyLanguage {
+				e.cache.language = value
+			}
+			e.cache.Unlock()
+		}
+		return err
+	}
+	settingsDeps.DeleteSetting = func(key string) error {
+		err := e.authDB.DeleteSetting(key)
+		if err == nil {
+			e.cache.Lock()
+			if key == resources.KeyLanguage {
+				e.cache.language = ""
+			}
+			e.cache.Unlock()
+		}
+		return err
+	}
+
+	// Registration Control (override to update cache)
+	settingsDeps.SetRegistrationOpen = func(open bool) error {
+		err := e.authDB.SetRegistrationOpen(open)
+		if err == nil {
+			e.cache.Lock()
+			e.cache.registrationOpen = open
+			e.cache.Unlock()
+		}
+		return err
+	}
+	settingsDeps.SetJitRegistrationEnabled = func(enabled bool) error {
+		err := e.authDB.SetJitRegistrationEnabled(enabled)
+		if err == nil {
+			e.cache.Lock()
+			e.cache.jitRegistrationEnabled = enabled
+			e.cache.Unlock()
+		}
+		return err
+	}
 
 	// Also ensure the GORM table_entries table exists for legacy compatibility
 	if gormDB != nil {
@@ -2248,6 +2398,7 @@ func (e *Endpoint) setupAdminAPI() {
 	handler.Register("/admin/settings/http_proxy_password", resources.GenericSettingHandler(resources.KeyHTTPProxyPassword, settingsDeps))
 	handler.Register("/admin/settings/admin_path", resources.GenericSettingHandler(resources.KeyAdminPath, settingsDeps))
 	handler.Register("/admin/settings/admin_web_path", resources.GenericSettingHandler(resources.KeyAdminWebPath, settingsDeps))
+	handler.Register("/admin/settings/language", resources.GenericSettingHandler(resources.KeyLanguage, settingsDeps))
 	handler.Register("/admin/services/admin_web", resources.AdminWebHandler(settingsDeps))
 
 	handler.Register("/admin/accounts", resources.AccountsHandler(resources.AccountsDeps{

@@ -169,6 +169,9 @@ type InstallConfig struct {
 	// Admin API
 	AdminToken string
 
+	// Language for the web frontend (en, fa, ru)
+	Language string
+
 	// BinaryName drives all derived paths: config dir, state dir, systemd unit
 	// names, and system user/group. Set via --binary-name flag or inferred from
 	// os.Executable() at runtime.
@@ -232,6 +235,7 @@ func defaultConfig() *InstallConfig {
 		SkipSync:                 false,
 		EnableIroh:               false,
 		IrohPort:                 "3340",
+		Language:                 "en",
 	}
 }
 
@@ -469,6 +473,11 @@ Examples:
 					Name:  "service-name",
 					Usage: "Systemd service name without .service suffix (defaults to binary name)",
 				},
+				&cli.StringFlag{
+					Name:  "lang",
+					Usage: "Web frontend language: en (English), fa (Farsi), ru (Russian)",
+					Value: "en",
+				},
 			},
 		})
 }
@@ -705,6 +714,15 @@ func installCommand(ctx *cli.Context) error {
 	}
 	if ctx.IsSet("iroh-port") {
 		config.IrohPort = ctx.String("iroh-port")
+	}
+	if ctx.IsSet("lang") {
+		lang := ctx.String("lang")
+		switch lang {
+		case "en", "fa", "ru":
+			config.Language = lang
+		default:
+			return fmt.Errorf("unsupported language: %s (supported: en, fa, ru)", lang)
+		}
 	}
 
 	// Convert all paths to absolute paths to avoid issues with relative paths in config

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройка базы данных - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Меню">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Главная</a></li>
+            <li><a href="/docs" data-i18n="nav_docs">Документация</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide">
+        <h1>Настройка базы данных</h1>
+        <p><strong>Madmail</strong> теперь поддерживает <strong>GORM</strong>, что позволяет
+            использовать различные базы данных и автоматическую миграцию (Auto Migration).</p>
+
+        <div class="alert alert--warning">
+            <p><strong>Важно:</strong> SQLite используется по умолчанию, но для высокой масштабируемости
+                рекомендуется использовать PostgreSQL.</p>
+        </div>
+
+        <h2>SQLite (по умолчанию)</h2>
+        <p>Самая простая настройка для быстрого развертывания. Файл базы данных хранится по указанному пути.</p>
+        <pre><code>storage.imapsql local_mail {
+    driver sqlite3
+    dsn ./madmail.db
+}</code></pre>
+
+        <h2>PostgreSQL</h2>
+        <p>Чтобы использовать PostgreSQL, сначала создайте базу данных на вашем сервере (вы можете использовать
+            <code>docker-compose.yml</code> из этого проекта).</p>
+        <p>Пример конфигурации в <code>maddy.conf</code>:</p>
+        <pre><code>storage.imapsql local_mail {
+    driver postgres
+    dsn "host=localhost user=test password=test dbname=test port=5432 sslmode=disable"
+}</code></pre>
+        <p>Учетные данные по умолчанию в Docker:</p>
+        <ul>
+            <li>Пользователь: <code>test</code></li>
+            <li>Пароль: <code>test</code></li>
+            <li>База данных: <code>test</code></li>
+        </ul>
+
+        <h2>MySQL</h2>
+        <p>Чтобы использовать MySQL, используйте следующий формат DSN:</p>
+        <pre><code>storage.imapsql local_mail {
+    driver mysql
+    dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+}</code></pre>
+
+        <h2>Миграция</h2>
+        <p>Сервис автоматически создает или обновляет необходимые таблицы при первом запуске. Нет необходимости выполнять SQL-команды вручную для создания таблиц <code>quotas</code> или <code>contacts</code>.</p>
+    </div>
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+        };
+    </script>
+</body>
+
+</html>

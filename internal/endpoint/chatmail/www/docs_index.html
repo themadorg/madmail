@@ -1,59 +1,67 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>فهرست مستندات - {{.WebDomain | cleanDomain}}</title>
+    <title data-i18n="docs_index_title">Documentation Index</title>
     <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
     <script src="/main.js"></script>
 </head>
 
 <body>
     <header class="navbar">
-        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/">اصلی</a></li>
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
         </ul>
     </header>
 
     <div class="card card--wide">
-        <h1>فهرست مستندات</h1>
-        <p>مستندات {{.WebDomain | cleanDomain}} را در اینجا مدیریت کنید.</p>
+        <h1 data-i18n="docs_index_title">Documentation Index</h1>
+        <p><span data-i18n="docs_index_subtitle">Manage documentation for</span> {{.WebDomain | cleanDomain}}.</p>
 
         <ul class="doc-list">
             <li>
-                <a href="/docs/general">مستندات عمومی</a>
-                <span>اطلاعات پایه برای تمام کاربران.</span>
+                <a href="/docs/general" data-i18n="docs_general">General Documentation</a>
+                <span data-i18n="docs_general_desc">Basic information for all users.</span>
             </li>
             <li>
-                <a href="/docs/admin">مستندات مدیر سیستم</a>
-                <span>مدیریت پیشرفته و دستورات خط فرمان.</span>
+                <a href="/docs/admin" data-i18n="docs_admin">System Administrator Documentation</a>
+                <span data-i18n="docs_admin_desc">Advanced management and CLI commands.</span>
             </li>
             <li>
-                <a href="/docs/api">مستندات Admin API</a>
-                <span>رابط برنامه‌نویسی مدیریتی — تمام endpointها و نحوه استفاده.</span>
+                <a href="/docs/api" data-i18n="docs_api">Admin API Documentation</a>
+                <span data-i18n="docs_api_desc">Administrative API — all endpoints and usage.</span>
             </li>
             <li>
-                <a href="/docs/custom-html">راهنمای شخصی‌سازی HTML</a>
-                <span>چگونه ظاهر این سرور را شخصی‌سازی کنید.</span>
+                <a href="/docs/custom-html" data-i18n="docs_custom_html">HTML Customization Guide</a>
+                <span data-i18n="docs_custom_html_desc">How to customize this server's appearance.</span>
             </li>
             <li>
-                <a href="/docs/database">مستندات پایگاه داده</a>
-                <span>نحوه اتصال به PostgreSQL و MySQL.</span>
+                <a href="/docs/database" data-i18n="docs_database">Database Documentation</a>
+                <span data-i18n="docs_database_desc">How to connect to PostgreSQL and MySQL.</span>
             </li>
             <li>
-                <a href="/docs/docker">🐳 راه‌اندازی با داکر</a>
-                <span>نحوه اجرای سرور با Docker و docker-compose.</span>
+                <a href="/docs/docker" data-i18n="docs_docker">🐳 Docker Setup</a>
+                <span data-i18n="docs_docker_desc">How to run the server with Docker and docker-compose.</span>
             </li>
             <li>
-                <a href="/docs/relay">🌐 راه‌اندازی دامنه و TLS</a>
-                <span>اتصال دامنه واقعی، تنظیم DNS و گواهینامه Let's Encrypt.</span>
+                <a href="/docs/relay" data-i18n="docs_relay">🌐 Domain & TLS Setup</a>
+                <span data-i18n="docs_relay_desc">Connect a real domain, configure DNS, and Let's Encrypt certificates.</span>
             </li>
         </ul>
     </div>
+
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            document.title = t('docs_index_title') + ' - {{.WebDomain | cleanDomain}}';
+        };
+    </script>
 </body>
 
 </html>

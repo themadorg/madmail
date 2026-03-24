@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="docs_admin">Документация системного администратора</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Меню">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Главная</a></li>
+            <li><a href="/docs" data-i18n="nav_docs">Документация</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide">
+        <h1>Документация системного администратора</h1>
+        <p>Это руководство объясняет управление квотами пользователей и просмотр статистики сервера с помощью команд <code>maddy</code>.</p>
+
+        <div class="info-note"
+            style="background: color-mix(in srgb, var(--link) 5%, transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
+            <strong>💡 Подсказка:</strong> Все эти операции также можно выполнить через <a href="/docs/api"
+                style="color: var(--link);">Веб-панель администратора</a> по адресу <code>/admin/</code>
+            — без командной строки.
+        </div>
+
+        <h2>Управление квотами</h2>
+        <p>Вы можете управлять квотами хранения пользователей с помощью подкоманд <code>maddy imap-acct quota</code>.</p>
+
+        <div class="cmd-info">
+            <h3>Просмотр квоты пользователя</h3>
+            <p>Отображение использованного пространства и максимального лимита для конкретного пользователя.</p>
+            <div class="code-block">maddy imap-acct quota get username@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Установка квоты пользователя</h3>
+            <p>Установка пользовательского лимита хранения (например, 1GB, 500MB или 10KB).</p>
+            <div class="code-block">maddy imap-acct quota set username@example.com 1GB</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Сброс квоты пользователя</h3>
+            <p>Удаление пользовательской квоты и возврат к системному значению по умолчанию. Дата создания аккаунта сохраняется.</p>
+            <div class="code-block">maddy imap-acct quota reset username@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Установка системной квоты по умолчанию</h3>
+            <p>Установка лимита хранения по умолчанию для всех пользователей без пользовательской квоты. Значение сохраняется в базе данных и имеет приоритет над настройкой в maddy.conf.</p>
+            <div class="code-block">maddy imap-acct quota set-default 2GB</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Список всех квот</h3>
+            <p>Отображение всех пользователей с использованным пространством и лимитами квот. В списке указано, является ли квота пользователя пользовательской или унаследованной от системного значения по умолчанию.</p>
+            <div class="code-block">maddy imap-acct quota list</div>
+        </div>
+
+        <h2>Обслуживание и очистка</h2>
+        <p>Команды для управления нагрузкой сервера и освобождения пространства путём удаления данных пользователей.</p>
+
+        <div class="cmd-info">
+            <h3>Очистка очереди отправки</h3>
+            <p>Удаление всех ожидающих сообщений в очереди отправки, связанных с конкретным пользователем (отправитель или получатель). Полезно для устранения заторов очереди, вызванных спамом или большими сообщениями.</p>
+            <div class="code-block">maddy queue purge username@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Очистка IMAP-сообщений пользователя</h3>
+            <p>Удаление всех писем пользователя из всех почтовых ящиков (Входящие, Отправленные и т.д.) без удаления аккаунта или настроек квоты. Полезно для быстрого освобождения дискового пространства.</p>
+            <div class="code-block">maddy imap-acct purge-msgs username@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Очистка всех сообщений всех пользователей</h3>
+            <p>Удаление всех писем на всём сервере для всех пользователей. Все данные электронной почты удаляются, но аккаунты, пароли и квоты сохраняются.</p>
+            <div class="code-block">maddy imap-acct purge-all</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Очистка всех прочитанных сообщений</h3>
+            <p>Удаление всех писем, отмеченных как прочитанные (Seen), на всём сервере. Новые непрочитанные сообщения сохраняются. Помогает оптимизировать пространство без потери новых сообщений.</p>
+            <div class="code-block">maddy imap-acct purge-read [--yes]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Удаление старых непрочитанных сообщений</h3>
+            <p>Удаление непрочитанных сообщений старше указанной продолжительности (например, 30 дней). Полезно для очистки старых писем, которые пользователь никогда не открывал.</p>
+            <div class="code-block">maddy imap-acct prune-unread 720h [--yes]</div>
+        </div>
+
+        <h2>Управление регистрацией</h2>
+        <p>Вы можете открыть или закрыть регистрацию новых пользователей. При закрытой регистрации только пользователи с существующими аккаунтами могут войти в систему.</p>
+
+        <div class="cmd-info">
+            <h3>Открыть регистрацию</h3>
+            <div class="code-block">maddy creds registration open</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Закрыть регистрацию</h3>
+            <div class="code-block">maddy creds registration close</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Просмотр текущего статуса</h3>
+            <div class="code-block">maddy creds registration status</div>
+        </div>
+
+        <h2>Мгновенная регистрация (JIT)</h2>
+        <p>JIT-регистрация позволяет серверу автоматически создавать аккаунты пользователей при первой попытке входа. Вы можете управлять этой функцией независимо от общей настройки регистрации.</p>
+
+        <div class="cmd-info">
+            <h3>Включить JIT-регистрацию</h3>
+            <p>При включении аккаунты автоматически создаются при первом входе или получении первого письма.</p>
+            <div class="code-block">maddy creds jit enable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Отключить JIT-регистрацию</h3>
+            <p>При отключении аккаунты можно создать только через API (веб-интерфейс), а вход с незарегистрированными учётными данными отклоняется.</p>
+            <div class="code-block">maddy creds jit disable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Просмотр статуса JIT</h3>
+            <div class="code-block">maddy creds jit status</div>
+        </div>
+
+        <h2>Управление сервером вызовов (TURN/STUN)</h2>
+        <p>Вы можете включить или отключить сервер вызовов (TURN) для всех пользователей. При отключении информация о вызовах не отображается на странице информации.</p>
+
+        <div class="cmd-info">
+            <h3>Включить сервер вызовов</h3>
+            <div class="code-block">maddy creds turn on</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Отключить сервер вызовов</h3>
+            <div class="code-block">maddy creds turn off</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Просмотр текущего статуса</h3>
+            <div class="code-block">maddy creds turn status</div>
+        </div>
+
+        <h2>Управление логами (Политика без логов)</h2>
+        <p>Вы можете включить или отключить ведение журнала сервера. При отключении информация о действиях пользователей не записывается.</p>
+
+        <div class="cmd-info">
+            <h3>Отключить логирование</h3>
+            <p>Для конфиденциальности пользователей и предотвращения хранения информации о действиях.</p>
+            <div class="code-block">maddy creds log disable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Включить логирование</h3>
+            <div class="code-block">maddy creds log enable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Просмотр текущего статуса</h3>
+            <div class="code-block">maddy creds log status</div>
+        </div>
+
+        <h2>Настройки портов и конфигурации</h2>
+        <p>Порты и настройки сервисов (hostname, secret, relay IP и т.д.) можно управлять через Admin API. Эти настройки хранятся в базе данных и имеют приоритет над значениями файла конфигурации.</p>
+
+        <div class="cmd-info">
+            <h3>Управляемые настройки</h3>
+            <ul>
+                <li><strong>Порты:</strong> SMTP, Submission, IMAP, TURN, Dovecot, Iroh, Shadowsocks</li>
+                <li><strong>Конфигурация:</strong> SMTP hostname, TURN realm/secret/relay IP/TTL, Iroh relay URL,
+                    Shadowsocks cipher/password</li>
+            </ul>
+            <p>Для управления этими настройками используйте <a href="/docs/api" style="color: var(--link);">Admin API</a>.
+                Соответствующие конечные точки описаны в разделах «Настройки портов» и «Настройки конфигурации» документации API.</p>
+        </div>
+
+        <h2>Режим скрытности</h2>
+        <p>Сервер Madmail может работать в режиме скрытности для повышения безопасности. В этом режиме для внешнего мира остаются открытыми только необходимые порты.</p>
+        <div class="cmd-info">
+            <p><strong>Необходимые порты:</strong></p>
+            <ul>
+                <li>Порты 80 и 443 (HTTP/HTTPS): Для регистрации и веб-интерфейса.</li>
+                <li>Порт 8388 (Shadowsocks): Для безопасного и быстрого подключения пользователей из приложения DeltaChat.</li>
+            </ul>
+            <p>Остальные порты (25, 143, 587, 993) можно закрыть через файервол для публичного доступа. Пользователи подключаются ко всем сервисам через прокси Shadowsocks, настроенный в приложении, что скрывает ваш сервер от интернет-сканеров.</p>
+        </div>
+
+        <h2>Отключение Admin API</h2>
+        <p>Admin API включён по умолчанию. Для полного отключения через файл конфигурации для повышения безопасности установите следующую опцию в <code>maddy.conf</code> в разделе <code>chatmail</code>.</p>
+        <div class="cmd-info">
+            <h3>Настройка maddy.conf</h3>
+            <p>Установите <code>admin_token</code> в значение <code>disabled</code>:</p>
+            <div class="code-block">chatmail tls://0.0.0.0:443 {
+    # ... другие настройки ...
+
+    # Полностью отключить Admin API:
+    admin_token disabled
+}</div>
+            <p>После сохранения файла перезапустите сервис maddy. Это отключит все функции веб-панели администратора и Admin API.</p>
+        </div>
+
+        <h2>DNS-кэш и перезапись адресов</h2>
+        <p>Внутренняя система DNS-кэша позволяет перенаправлять маршрутизацию исходящей почты на пользовательские серверы без изменения DNS-настроек ОС. Правила перезаписи хранятся в основной базе данных программы. Изменения вступают в силу немедленно без перезапуска сервера.</p>
+
+        <div class="cmd-info">
+            <h3>Просмотр всех перезаписей</h3>
+            <p>Отображение всех правил перезаписи DNS, хранящихся в базе данных.</p>
+            <div class="code-block">maddy dns-cache list</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Создание или редактирование перезаписи</h3>
+            <p>Установка правила перезаписи DNS. Если правило для этого адреса уже существует, оно будет обновлено.</p>
+            <div class="code-block">maddy dns-cache set LOOKUP_KEY TARGET_HOST [COMMENT]</div>
+            <p><strong>Примеры:</strong></p>
+            <div class="code-block"># Маршрутизация писем домена на внутренний сервер
+maddy dns-cache set nine.testrun.org 10.0.0.5 "Route to staging"
+
+# Перезапись IP-адреса
+maddy dns-cache set 1.1.1.1 2.2.2.2 "Redirect IP"
+
+# Маршрутизация на новый server при миграции
+maddy dns-cache set example.com new-mx.example.com "Migration"</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Просмотр конкретной перезаписи</h3>
+            <p>Отображение деталей правила перезаписи DNS, включая адрес источника, назначение, комментарии и время создания.</p>
+            <div class="code-block">maddy dns-cache get nine.testrun.org</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Удаление перезаписи</h3>
+            <p>Удаление правила перезаписи DNS. После удаления письма будут маршрутизироваться через обычный DNS ОС.</p>
+            <div class="code-block">maddy dns-cache remove nine.testrun.org</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Как это работает</h3>
+            <ul>
+                <li><strong>Приоритет:</strong> Сначала проверяется внутренняя база данных. Если правило не найдено, используется DNS ОС.</li>
+                <li><strong>Без учёта регистра:</strong> Адреса сопоставляются без учёта регистра букв.</li>
+                <li><strong>Поддержка IP и доменов:</strong> Можно перезаписывать как домены (например, example.com), так и IP-адреса (например, 1.1.1.1).</li>
+                <li><strong>Без перезапуска:</strong> Изменения вступают в силу немедленно для новых писем.</li>
+                <li><strong>Автоматический откат:</strong> Если база данных недоступна, система автоматически возвращается к обычному DNS.</li>
+            </ul>
+        </div>
+
+        <h2>Статистика сервера</h2>
+        <div class="cmd-info">
+            <h3>Просмотр общей статистики</h3>
+            <p>Отображение общего использованного хранилища на сервере и количества активных аккаунтов.</p>
+            <div class="code-block">maddy imap-acct stat</div>
+        </div>
+
+        <h2>Мониторинг онлайн-подключений</h2>
+        <p>Команда <code>maddy status</code> показывает состояние сервера в реальном времени. Включает активные IMAP-подключения, TURN-реле (голосовые/видеозвонки), Shadowsocks, зарегистрированных пользователей и время работы.</p>
+
+        <div class="cmd-info">
+            <h3>Просмотр активных подключений</h3>
+            <p>Отображение сводки состояния сервера, включая активные подключения, зарегистрированных пользователей, время загрузки и аптайм.</p>
+            <div class="code-block">maddy status</div>
+            <p>Пример вывода:</p>
+            <pre class="code-block">IMAP            connections: 27     unique IPs: 7
+TURN            relays: 1
+Shadowsocks     connections: 0      unique IPs: 0
+
+Registered users:   42
+Boot time:          2026-02-16 20:56:19 (up 5m 24s)
+
+Email servers seen (since last restart):
+  Connection IPs:   1
+  Domain servers:   1
+  IP servers:       0</pre>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Просмотр деталей по портам</h3>
+            <p>Используйте флаг <code>--details</code> (или <code>-d</code>) для просмотра деталей подключений по каждому порту.</p>
+            <div class="code-block">maddy status --details</div>
+            <p>Пример вывода:</p>
+            <pre class="code-block">PORT   PROTO   TYPE              CONNECTIONS   UNIQUE IPs
+993    tcp     IMAP TLS          25            7
+143    tcp     IMAP              0             0
+3478   udp     TURN UDP          1 relays      -
+3478   tcp     TURN TCP          0             0
+8388   tcp     Shadowsocks       0             0
+443    tcp     ALPN (chatmail)   3             1</pre>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Описание полей</h3>
+            <ul>
+                <li><strong>IMAP:</strong> Количество активных подключений пользователей к серверу электронной почты (получение сообщений).</li>
+                <li><strong>TURN relays:</strong> Количество активных реле голосовых/видеозвонков. Каждое реле представляет активный вызов.</li>
+                <li><strong>Shadowsocks:</strong> Количество активных подключений через прокси Shadowsocks.</li>
+                <li><strong>Boot time:</strong> Время запуска сервера и продолжительность работы.</li>
+                <li><strong>Email servers seen:</strong> Количество уникальных почтовых серверов, отправивших сообщения с момента последнего перезапуска. Информация хранится с криптографическими хэшами, и никакая личная информация не может быть восстановлена.</li>
+            </ul>
+        </div>
+
+    </div>
+
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            document.title = t('docs_admin') + ' — {{.WebDomain}}';
+        };
+    </script>
+</body>
+
+</html>

@@ -30,7 +30,7 @@ function showToast(message) {
 function copyToClipboard(text) {
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(text).then(function () {
-            showToast("\u06a9\u067e\u06cc \u0634\u062f!");
+            showToast(t("toast_copied"));
         }).catch(function () {
             fallbackCopyTextToClipboard(text);
         });
@@ -50,7 +50,7 @@ function fallbackCopyTextToClipboard(text) {
     textArea.select();
     try {
         var successful = document.execCommand('copy');
-        if (successful) showToast("\u06a9\u067e\u06cc \u0634\u062f!");
+        if (successful) showToast(t("toast_copied"));
     } catch (err) {
         console.error('Fallback copy failed', err);
     }
