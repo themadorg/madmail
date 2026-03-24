@@ -2176,7 +2176,7 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		RegistrationOpen:       func() bool { open, _ := e.authDB.IsRegistrationOpen(); return open }(),
 		JitRegistrationEnabled: func() bool { enabled, _ := e.authDB.IsJitRegistrationEnabled(); return enabled }(),
 		Language:               e.getLanguage(),
-	Custom:                 customData,
+		Custom:                 customData,
 	}
 
 	// Hot-path optimization: use cached values to avoid DB calls on every request
