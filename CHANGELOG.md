@@ -1,3 +1,10 @@
+## [0.29.1](https://github.com/themadorg/madmail/compare/v0.29.0...v0.29.1) (2026-03-24)
+
+
+### Bug Fixes
+
+* correct gofmt indentation in chatmail.go ([b1e213e](https://github.com/themadorg/madmail/commit/b1e213e728ebf320044ecc1160aca1cecaf0392f))
+
 # [0.29.0](https://github.com/themadorg/madmail/compare/v0.28.4...v0.29.0) (2026-03-24)
 
 
