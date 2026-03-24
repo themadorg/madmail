@@ -51,6 +51,7 @@ import (
 	adminapi "github.com/themadorg/madmail/internal/api/admin"
 	"github.com/themadorg/madmail/internal/api/admin/resources"
 	"github.com/themadorg/madmail/internal/auth/pass_table"
+	"github.com/themadorg/madmail/internal/endpoint/webimap"
 
 	"github.com/shadowsocks/go-shadowsocks2/core"
 	"github.com/shadowsocks/go-shadowsocks2/socks"
@@ -302,6 +303,17 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	e.mux.HandleFunc("/qr", e.handleQRCode)
 	e.mux.HandleFunc("/madmail", e.handleBinaryDownload)
 	e.mux.HandleFunc("/mxdeliv", e.handleReceiveEmail)
+
+	// WebIMAP REST API: HTTP interface for IMAP operations
+	webimapHandler := &webimap.Handler{
+		AuthDB:  e.authDB,
+		Storage: e.storage,
+		Logger:  log.Logger{Name: modName + "/webimap", Debug: e.logger.Debug},
+	}
+	webimapHandler.Register(e.mux, "/webimap")
+
+	// Delta Chat Web Client: served from embedded www/app.html
+	e.mux.HandleFunc("/app", e.handleApp)
 
 	// Admin API: auto-generate token if not configured, respect "disabled"
 	if e.adminToken == "disabled" {
@@ -576,6 +588,14 @@ func (e *Endpoint) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 	// All attempts exhausted — this should be extremely rare
 	e.logger.Error("failed to create account after max retries", nil)
 	http.Error(w, "Internal server error", http.StatusInternalServerError)
+}
+
+func (e *Endpoint) handleApp(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	e.serveTemplate(w, r, "app.html", nil)
 }
 
 func (e *Endpoint) handleDocs(w http.ResponseWriter, r *http.Request) {

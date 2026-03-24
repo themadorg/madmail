@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Delta Chat Web — WebIMAP/SMTP Test</title>
+  <meta name="description" content="Delta Chat-compatible web client for testing WebIMAP and WebSMTP REST APIs with OpenPGP encryption">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            dc: {
+              primary: '#159b6b',
+              'primary-hover': '#0f7d56',
+              dark: '#0f0f15',
+              surface: '#16161f',
+              'surface-2': '#1e1e2a',
+              'surface-3': '#262636',
+              border: '#2a2a3e',
+              text: '#e8e8f4',
+              muted: '#8888a8',
+              accent: '#6c5ce7',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['SF Mono', 'Fira Code', 'Cascadia Code', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- OpenPGP.js -->
+  <script src="https://unpkg.com/openpgp@5.11.2/dist/openpgp.min.js"></script>
+
+  <!-- Emoji Picker (emoji-mart web component) -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-mart@latest/dist/browser.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    [x-cloak] { display: none !important; }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2a3e; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #8888a8; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse-dot { 0%,100% { opacity:.3; transform:scale(.8); } 50% { opacity:1; transform:scale(1.2); } }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    .animate-fade { animation: fadeIn .3s ease-out; }
+    .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+    .animate-slide { animation: slideIn .3s ease; }
+
+    .msg-bubble {
+      max-width: 80%;
+      word-break: break-word;
+    }
+  </style>
+</head>
+
+<body class="dark bg-dc-dark text-dc-text font-sans h-screen overflow-hidden">
+
+<div x-data="app()" x-init="init()" class="h-full flex flex-col">
+
+  <!-- ===== INITIALIZATION OVERLAY ===== -->
+  <div x-show="state === 'init'" x-cloak
+       class="fixed inset-0 bg-dc-dark z-50 flex items-center justify-center">
+    <div class="text-center animate-fade">
+      <div class="w-16 h-16 border-4 border-dc-border border-t-dc-primary rounded-full animate-spin mx-auto mb-6"></div>
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-dc-primary to-dc-accent bg-clip-text text-transparent mb-2">
+        Delta Chat Web
+      </h1>
+      <p class="text-dc-muted text-sm" x-text="initStatus">Connecting...</p>
+    </div>
+  </div>
+
+  <!-- ===== SETUP / SERVER CONFIG ===== -->
+  <div x-show="state === 'setup'" x-cloak
+       class="fixed inset-0 bg-dc-dark z-50 flex items-center justify-center p-4">
+    <div class="bg-dc-surface border border-dc-border rounded-2xl p-8 w-full max-w-md shadow-2xl shadow-dc-primary/10 animate-fade">
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-dc-primary to-dc-accent bg-clip-text text-transparent mb-1">
+        Delta Chat Web
+      </h1>
+      <p class="text-dc-muted text-sm mb-6">End-to-end encrypted messaging via WebIMAP/SMTP</p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-dc-muted uppercase tracking-wider mb-1.5">Server URL</label>
+          <input x-model="serverUrl" type="text" placeholder="https://your-server.com"
+                 class="w-full px-4 py-2.5 bg-dc-surface-2 border border-dc-border rounded-lg text-dc-text text-sm
+                        focus:border-dc-primary focus:ring-2 focus:ring-dc-primary/20 outline-none transition-all">
+        </div>
+        <button @click="connect()" :disabled="connecting"
+                class="w-full py-3 bg-dc-primary hover:bg-dc-primary-hover text-white font-semibold rounded-lg
+                       transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-dc-primary/30
+                       disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0">
+          <span x-show="!connecting">Connect & Auto-Register</span>
+          <span x-show="connecting" class="flex items-center justify-center gap-2">
+            <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"/></svg>
+            Registering...
+          </span>
+        </button>
+        <p x-show="error" x-text="error" class="text-red-400 text-xs text-center mt-2"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MAIN APP ===== -->
+  <template x-if="state === 'ready'">
+    <div class="flex flex-col h-full">
+
+      <!-- Top Bar -->
+      <header class="bg-dc-surface border-b border-dc-border px-5 py-3 flex items-center gap-4 shrink-0">
+        <div class="relative cursor-pointer" @click="$refs.avatarInput.click()">
+          <template x-if="profileImageB64">
+            <img :src="profileImageB64" class="w-9 h-9 rounded-full object-cover border-2 border-dc-primary">
+          </template>
+          <template x-if="!profileImageB64">
+            <div class="w-9 h-9 rounded-full bg-dc-primary/20 flex items-center justify-center text-dc-primary font-bold text-sm" x-text="(displayName || credentials.email || '?')[0].toUpperCase()"></div>
+          </template>
+          <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-dc-surface border border-dc-border rounded-full flex items-center justify-center text-[8px]">📷</div>
+          <input type="file" accept="image/*" x-ref="avatarInput" class="hidden" @change="handleAvatarUpload($event)">
+        </div>
+        <div class="flex flex-col">
+          <input x-model="displayName" placeholder="Your name" @change="saveState()"
+                 class="bg-transparent text-sm font-semibold text-dc-text border-none outline-none placeholder-dc-muted w-32">
+          <span class="text-[10px] text-dc-muted font-mono" x-text="credentials.email"></span>
+        </div>
+        <div class="flex items-center gap-2 ml-auto">
+          <div class="w-2 h-2 rounded-full bg-green-400 shadow-lg shadow-green-400/50"></div>
+        </div>
+        <button @click="showInfo = !showInfo"
+                class="text-dc-muted hover:text-dc-text text-sm px-2 py-1 rounded border border-dc-border hover:border-dc-primary transition-all">
+          ⓘ Info
+        </button>
+      </header>
+
+      <div class="flex flex-1 overflow-hidden">
+
+        <!-- Sidebar: Contacts -->
+        <aside class="w-72 bg-dc-surface border-r border-dc-border flex flex-col shrink-0">
+          <div class="p-4 border-b border-dc-border">
+            <h2 class="text-xs font-semibold uppercase tracking-widest text-dc-muted mb-3">Contacts</h2>
+            <div class="flex gap-2 mb-2">
+              <input x-model="newContactAddr" type="text" placeholder="user@server.com or QR URI"
+                     @keydown.enter="addContactOrScan()"
+                     class="flex-1 px-3 py-2 bg-dc-surface-2 border border-dc-border rounded-lg text-xs text-dc-text
+                            focus:border-dc-primary outline-none">
+              <button @click="addContactOrScan()" class="px-3 py-2 bg-dc-primary text-white text-xs rounded-lg hover:bg-dc-primary-hover transition-all"
+                      title="Add contact or scan SecureJoin QR">
+                +
+              </button>
+            </div>
+            <p class="text-[10px] text-dc-muted">Paste a <span class="text-dc-accent">SecureJoin URI</span> to verify</p>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2">
+            <template x-for="contact in contacts" :key="contact.email">
+              <div @click="selectContact(contact)"
+                   :class="{'bg-dc-surface-3 border-l-2 border-dc-primary': selectedContact?.email === contact.email,
+                            'border-l-2 border-transparent': selectedContact?.email !== contact.email}"
+                   class="px-3 py-3 rounded-r-lg cursor-pointer hover:bg-dc-surface-2 transition-all mb-1">
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0"
+                       :class="contact.verified ? 'bg-green-500/20 text-green-400' : 'bg-dc-primary/20 text-dc-primary'"
+                       x-text="contact.email[0].toUpperCase()"></div>
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium truncate flex items-center gap-1" x-text="contact.email">
+                    </p>
+                    <p class="text-xs text-dc-muted truncate">
+                      <span x-show="contact.verified" class="text-green-400">✓ verified · </span>
+                      <span x-text="contact.lastMsg || 'No messages yet'"></span>
+                    </p>
+                  </div>
+                  <span x-show="contact.unread > 0"
+                        class="ml-auto bg-dc-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        x-text="contact.unread"></span>
+                </div>
+              </div>
+            </template>
+            <div x-show="contacts.length === 0" class="text-center text-dc-muted text-sm py-8">
+              No contacts yet.<br>Paste a SecureJoin URI<br>or add an email!
+            </div>
+          </div>
+        </aside>
+
+        <!-- Chat Area -->
+        <main class="flex-1 flex flex-col bg-dc-dark">
+          <!-- No contact selected -->
+          <div x-show="!selectedContact" class="flex-1 flex items-center justify-center text-dc-muted">
+            <div class="text-center">
+              <p class="text-4xl mb-3">💬</p>
+              <p class="text-lg font-medium">Select a contact to chat</p>
+              <p class="text-sm mt-1">Messages are end-to-end encrypted with OpenPGP</p>
+            </div>
+          </div>
+
+          <!-- Chat view -->
+          <template x-if="selectedContact">
+            <div class="flex flex-col h-full">
+              <!-- Chat header -->
+              <div class="bg-dc-surface border-b border-dc-border px-5 py-3 flex items-center gap-3 shrink-0">
+                <div class="w-8 h-8 rounded-full bg-dc-primary/20 flex items-center justify-center text-dc-primary font-bold text-sm"
+                     x-text="selectedContact.email[0].toUpperCase()"></div>
+                <div>
+                  <p class="text-sm font-medium" x-text="selectedContact.email"></p>
+                  <p class="text-xs text-dc-muted flex items-center gap-1">
+                    <span x-show="selectedContact.verified" class="text-green-400">✓ Verified</span>
+                    <span x-show="selectedContact.pgpKey" class="text-dc-accent">🔒 Encrypted</span>
+                    <span x-show="!selectedContact.pgpKey" class="text-yellow-400">⚠ No key (cleartext)</span>
+                  </p>
+                </div>
+                <div class="ml-auto flex items-center gap-3">
+                  <button @click="deleteChat(selectedContact)"
+                          class="text-dc-muted hover:text-red-400 transition-colors text-sm" title="Delete chat">
+                    🗑️
+                  </button>
+                  <div x-show="polling" class="flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 bg-dc-accent rounded-full animate-pulse-dot"></div>
+                    <span class="text-[10px] text-dc-muted">listening</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Messages -->
+              <div x-ref="chatArea" class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
+                <template x-for="msg in chatMessages" :key="msg.uid">
+                  <div class="flex animate-fade"
+                       :class="msg.outgoing ? 'justify-end' : 'justify-start'"
+                       :style="msg.reactions && Object.keys(msg.reactions).length > 0 ? 'margin-bottom:18px' : 'margin-bottom:6px'">
+                    <div class="relative max-w-[80%]">
+                      <div class="msg-bubble rounded-2xl text-sm overflow-hidden relative group min-w-[80px]"
+                           :class="msg.outgoing
+                             ? 'bg-dc-primary text-white rounded-br-md'
+                             : 'bg-dc-surface-2 text-dc-text border border-dc-border rounded-bl-md'"
+                           :style="msg.imageData ? 'max-width:280px' : ''"
+                           @contextmenu.prevent="showContextMenu($event, msg)"
+                           @touchstart="startLongPress($event, msg)"
+                           @touchend="cancelLongPress()" @touchmove="cancelLongPress()">
+                        <template x-if="msg.imageData">
+                          <img :src="msg.imageData" class="w-full rounded-t-2xl cursor-pointer max-h-64 object-cover"
+                               @click="window.open(msg.imageData, '_blank')">
+                        </template>
+                        <div class="px-3 py-2">
+                          <p x-show="msg.text" x-text="msg.text" class="whitespace-pre-wrap break-words"></p>
+                          <div class="flex items-center gap-1 mt-0.5 justify-end whitespace-nowrap">
+                            <span class="text-[10px] opacity-50" x-text="formatTime(msg.date)"></span>
+                            <span x-show="msg.outgoing" class="text-[10px] opacity-50">✓</span>
+                          </div>
+                        </div>
+                      </div>
+                      <!-- Reaction pills (overlapping bottom of message) -->
+                      <template x-if="msg.reactions && Object.keys(msg.reactions).length > 0">
+                        <div class="absolute -bottom-3 flex gap-0.5"
+                             :class="msg.outgoing ? 'right-1' : 'left-1'">
+                          <template x-for="[emoji, count] in getReactionCounts(msg)" :key="emoji">
+                            <button @click="sendReaction(msg, emoji)"
+                                    class="inline-flex items-center gap-0.5 h-6 px-1.5 rounded-full text-xs shadow-md backdrop-blur-sm transition-all hover:scale-110 cursor-pointer"
+                                    :class="hasMyReaction(msg, emoji)
+                                      ? 'bg-dc-primary/30 border border-dc-primary/60 text-white'
+                                      : 'bg-dc-surface/90 border border-dc-border text-dc-text'">
+                              <span x-text="emoji" class="text-sm leading-none"></span>
+                              <span x-show="count > 1" x-text="count" class="text-[10px] opacity-70"></span>
+                            </button>
+                          </template>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+                <div x-show="chatMessages.length === 0" class="text-center text-dc-muted text-sm py-16">
+                  No messages yet. Send the first one!
+                </div>
+              </div>
+
+              <!-- Context Menu -->
+              <div x-show="contextMenu.show" x-cloak @click.away="contextMenu.show = false"
+                   class="fixed z-50 bg-dc-surface border border-dc-border rounded-xl shadow-2xl py-1.5 min-w-[180px] animate-fade"
+                   :style="`left:${contextMenu.x}px;top:${contextMenu.y}px`">
+                <!-- Quick React Bar -->
+                <div class="flex items-center gap-1 px-3 py-2 border-b border-dc-border">
+                  <template x-for="emoji in ['👍','❤️','😂','😮','😢','🙏']" :key="emoji">
+                    <button @click="sendReaction(contextMenu.msg, emoji); contextMenu.show = false"
+                            class="text-xl hover:scale-125 transition-transform p-1 rounded hover:bg-dc-surface-2"
+                            x-text="emoji">
+                    </button>
+                  </template>
+                  <button @click="openEmojiPicker(contextMenu.msg); contextMenu.show = false"
+                          class="text-lg p-1 rounded hover:bg-dc-surface-2 text-dc-muted hover:text-dc-text transition-colors"
+                          title="More emojis">
+                    ➕
+                  </button>
+                </div>
+                <button @click="deleteMessage(contextMenu.msg)"
+                        class="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-dc-surface-2 transition-colors flex items-center gap-2">
+                  🗑️ Delete
+                </button>
+                <template x-if="contextMenu.msg?.outgoing && contextMenu.msg?.encrypted">
+                  <button @click="deleteForEveryone(contextMenu.msg)"
+                          class="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-dc-surface-2 transition-colors flex items-center gap-2">
+                    🗑️ Delete for everyone
+                  </button>
+                </template>
+                <button @click="contextMenu.show = false"
+                        class="w-full text-left px-4 py-2 text-sm text-dc-muted hover:bg-dc-surface-2 transition-colors">
+                  Cancel
+                </button>
+              </div>
+
+              <!-- Emoji Picker Overlay -->
+              <div x-show="emojiPickerOpen" x-cloak @click.self="emojiPickerOpen = false"
+                   class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+                <div class="bg-dc-surface rounded-2xl shadow-2xl border border-dc-border overflow-hidden animate-fade">
+                  <div class="flex items-center justify-between px-4 py-2 border-b border-dc-border">
+                    <span class="text-sm font-medium text-dc-text">Pick a reaction</span>
+                    <button @click="emojiPickerOpen = false" class="text-dc-muted hover:text-dc-text">✕</button>
+                  </div>
+                  <div x-ref="emojiPickerContainer"></div>
+                </div>
+              </div>
+
+              <!-- Compose -->
+              <div class="bg-dc-surface border-t border-dc-border shrink-0">
+                <!-- Image preview strip -->
+                <div x-show="composeImage" class="px-4 pt-3 pb-1">
+                  <div class="relative inline-block">
+                    <img :src="composeImage" class="h-20 rounded-lg border border-dc-border object-cover">
+                    <button @click="composeImage = null"
+                            class="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600">×</button>
+                  </div>
+                </div>
+                <div class="flex gap-2 p-3 items-center">
+                  <button @click="$refs.imageInput.click()" :disabled="state !== 'ready'"
+                          class="p-2.5 text-dc-muted hover:text-dc-primary rounded-xl hover:bg-dc-surface-2 transition-all
+                                 disabled:opacity-40 disabled:cursor-not-allowed" title="Send image">
+                    🖼️
+                  </button>
+                  <input type="file" accept="image/*" x-ref="imageInput" class="hidden" @change="handleComposeImage($event)">
+                  <input x-model="composeText" @keydown.enter="sendMessage()" type="text"
+                         :placeholder="composeImage ? 'Add a caption...' : 'Write a message'"
+                         :disabled="state !== 'ready'"
+                         class="flex-1 px-4 py-2.5 bg-dc-surface-2 border border-dc-border rounded-xl text-sm text-dc-text
+                                focus:border-dc-primary focus:ring-2 focus:ring-dc-primary/20 outline-none transition-all
+                                disabled:opacity-40 disabled:cursor-not-allowed">
+                  <button @click="sendMessage()" :disabled="state !== 'ready' || (!composeText.trim() && !composeImage) || sending"
+                          class="px-5 py-2.5 bg-dc-primary hover:bg-dc-primary-hover text-white text-sm font-semibold rounded-xl
+                                 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    <span x-show="!sending">Send</span>
+                    <span x-show="sending">...</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </main>
+
+        <!-- Info Panel (togglable) -->
+        <aside x-show="showInfo" x-cloak
+               class="w-80 bg-dc-surface border-l border-dc-border p-5 overflow-y-auto shrink-0 animate-fade">
+          <h2 class="text-sm font-semibold uppercase tracking-widest text-dc-muted mb-4">Account Info</h2>
+
+          <div class="space-y-4 text-xs">
+            <div class="bg-dc-surface-2 rounded-xl p-4 border border-dc-border">
+              <p class="text-dc-muted mb-1">Email</p>
+              <p class="font-mono text-dc-text break-all" x-text="credentials.email"></p>
+            </div>
+            <div class="bg-dc-surface-2 rounded-xl p-4 border border-dc-border">
+              <p class="text-dc-muted mb-1">Password</p>
+              <p class="font-mono text-dc-text break-all" x-text="credentials.password"></p>
+            </div>
+            <div class="bg-dc-surface-2 rounded-xl p-4 border border-dc-border">
+              <p class="text-dc-muted mb-1">PGP Fingerprint</p>
+              <p class="font-mono text-dc-text break-all text-[10px] leading-relaxed" x-text="pgpFingerprint || 'Generating...'"></p>
+            </div>
+            <div class="bg-dc-surface-2 rounded-xl p-4 border border-dc-border">
+              <p class="text-dc-muted mb-1">Public Key (Autocrypt)</p>
+              <textarea readonly :value="publicKeyArmored"
+                        class="w-full h-24 bg-dc-dark border border-dc-border rounded-lg text-[9px] font-mono text-dc-muted p-2 resize-none mt-1"></textarea>
+            </div>
+
+            <div class="border-t border-dc-border pt-4">
+              <h3 class="text-dc-muted font-semibold uppercase tracking-wider mb-3">SecureJoin QR</h3>
+              <p class="text-dc-muted mb-2">Share this with another Delta Chat user to verify each other:</p>
+              <div class="bg-white p-3 rounded-xl" x-show="qrDataUrl">
+                <img :src="qrDataUrl" class="w-full" alt="SecureJoin QR Code">
+              </div>
+              <p class="font-mono text-[9px] text-dc-muted mt-2 break-all" x-text="securejoinUri"></p>
+            </div>
+
+            <div class="border-t border-dc-border pt-4">
+              <h3 class="text-dc-muted font-semibold uppercase tracking-wider mb-3">API Endpoints</h3>
+              <div class="space-y-2 text-dc-muted">
+                <p><span class="text-green-400">GET</span> /webimap/mailboxes</p>
+                <p><span class="text-green-400">GET</span> /webimap/messages</p>
+                <p><span class="text-green-400">GET</span> /webimap/message/{uid}</p>
+                <p><span class="text-red-400">DEL</span> /webimap/message/{uid}</p>
+                <p><span class="text-blue-400">POST</span> /webimap/message/flags</p>
+                <p><span class="text-blue-400">POST</span> /webimap/send</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+
+    </div>
+  </template>
+</div>
+
+<script src="app_db.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

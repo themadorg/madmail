@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Delta Chat Web — WebIMAP/SMTP Test</title>
+  <meta name="description" content="Delta Chat-compatible web client for testing WebIMAP and WebSMTP REST APIs with OpenPGP encryption">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            dc: {
+              primary: '#159b6b',
+              'primary-hover': '#0f7d56',
+              dark: 'var(--dc-bg)',
+              surface: 'var(--dc-surface)',
+              'surface-2': 'var(--dc-surface-2)',
+              'surface-3': 'var(--dc-surface-3)',
+              border: 'var(--dc-border)',
+              text: 'var(--dc-text)',
+              muted: 'var(--dc-muted)',
+              accent: '#6c5ce7',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['SF Mono', 'Fira Code', 'Cascadia Code', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- OpenPGP.js -->
+  <script src="https://unpkg.com/openpgp@5.11.2/dist/openpgp.min.js"></script>
+
+  <!-- Emoji Picker (emoji-mart web component) -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-mart@latest/dist/browser.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <!-- Dexie.js (IndexedDB wrapper) -->
+  <script src="https://unpkg.com/dexie@4/dist/dexie.min.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- App Styles -->
+  <link rel="stylesheet" href="app.css">
+</head>
+
+<body class="dark bg-dc-dark text-dc-text font-sans h-screen overflow-hidden" x-data="{ darkMode: true }"
+      :class="darkMode ? 'dark' : 'light'">
+
+<div x-data="app()" x-init="init()" class="h-full flex flex-col">
+
+  <!-- ===== INITIALIZATION OVERLAY ===== -->
+  <div x-show="state === 'init'" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center" style="background: var(--dc-bg)">
+    <div class="text-center animate-fade">
+      <div class="w-16 h-16 border-4 border-t-transparent rounded-full animate-spin mx-auto mb-6"
+           style="border-color: var(--dc-border); border-top-color: var(--dc-primary)"></div>
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-dc-primary to-dc-accent bg-clip-text text-transparent mb-2">
+        Delta Chat Web
+      </h1>
+      <p class="text-dc-muted text-sm" x-text="initStatus">Connecting...</p>
+    </div>
+  </div>
+
+  <!-- ===== SETUP / SERVER CONFIG ===== -->
+  <div x-show="state === 'setup'" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: var(--dc-bg)">
+    <div class="border rounded-2xl p-8 w-full max-w-md shadow-2xl animate-fade"
+         style="background: var(--dc-surface); border-color: var(--dc-border); box-shadow: 0 25px 50px var(--dc-shadow)">
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-dc-primary to-dc-accent bg-clip-text text-transparent mb-1">
+        Delta Chat Web
+      </h1>
+      <p class="text-dc-muted text-sm mb-6">End-to-end encrypted messaging via WebIMAP/SMTP</p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-dc-muted uppercase tracking-wider mb-1.5">Server URL</label>
+          <input x-model="serverUrl" type="text" placeholder="https://your-server.com"
+                 class="compose-input w-full px-4 py-2.5 rounded-lg text-sm">
+        </div>
+        <button @click="connect()" :disabled="connecting"
+                class="w-full py-3 bg-dc-primary hover:bg-dc-primary-hover text-white font-semibold rounded-lg
+                       transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg
+                       disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0"
+                style="--tw-shadow-color: rgba(21,155,107,0.3)">
+          <span x-show="!connecting">Connect & Auto-Register</span>
+          <span x-show="connecting" class="flex items-center justify-center gap-2">
+            <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"/></svg>
+            Registering...
+          </span>
+        </button>
+        <p x-show="error" x-text="error" class="text-red-400 text-xs text-center mt-2"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MAIN APP ===== -->
+  <template x-if="state === 'ready'">
+    <div class="flex flex-col h-full">
+
+      <!-- Top Bar -->
+      <header class="border-b px-5 py-3 flex items-center gap-4 shrink-0"
+              style="background: var(--dc-surface); border-color: var(--dc-border)">
+        <div class="relative cursor-pointer" @click="$refs.avatarInput.click()">
+          <template x-if="profileImageB64">
+            <img :src="profileImageB64" class="w-9 h-9 rounded-full object-cover border-2 border-dc-primary">
+          </template>
+          <template x-if="!profileImageB64">
+            <div class="w-9 h-9 rounded-full bg-dc-primary/20 flex items-center justify-center text-dc-primary font-bold text-sm" x-text="(displayName || credentials.email || '?')[0].toUpperCase()"></div>
+          </template>
+          <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center icon icon-sm"
+               style="background: var(--dc-surface); border: 1px solid var(--dc-border)">
+            <i data-lucide="camera" style="width:10px;height:10px"></i>
+          </div>
+          <input type="file" accept="image/*" x-ref="avatarInput" class="hidden" @change="handleAvatarUpload($event)">
+        </div>
+        <div class="flex flex-col">
+          <input x-model="displayName" placeholder="Your name" @change="saveState()"
+                 class="bg-transparent text-sm font-semibold border-none outline-none w-32"
+                 style="color: var(--dc-text)"
+                 :style="'::placeholder { color: var(--dc-muted) }'">
+          <span class="text-[10px] font-mono" style="color: var(--dc-muted)" x-text="credentials.email"></span>
+        </div>
+        <div class="flex items-center gap-2 ml-auto">
+          <div class="w-2 h-2 rounded-full bg-green-400 shadow-lg shadow-green-400/50"></div>
+        </div>
+
+        <!-- Theme Toggle -->
+        <button class="theme-toggle" @click="darkMode = !darkMode" title="Toggle light/dark mode">
+          <div class="theme-toggle-knob">
+            <template x-if="darkMode">
+              <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </template>
+            <template x-if="!darkMode">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            </template>
+          </div>
+        </button>
+
+        <button @click="showInfo = !showInfo"
+                class="flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-lg border transition-all icon"
+                style="color: var(--dc-muted); border-color: var(--dc-border)"
+                onmouseover="this.style.borderColor='var(--dc-primary)';this.style.color='var(--dc-text)'"
+                onmouseout="this.style.borderColor='var(--dc-border)';this.style.color='var(--dc-muted)'">
+          <i data-lucide="info" style="width:14px;height:14px"></i>
+          <span>Info</span>
+        </button>
+      </header>
+
+      <div class="flex flex-1 overflow-hidden">
+
+        <!-- Sidebar: Contacts -->
+        <aside class="w-72 border-r flex flex-col shrink-0"
+               style="background: var(--dc-surface); border-color: var(--dc-border)">
+          <div class="p-4" style="border-bottom: 1px solid var(--dc-border)">
+            <h2 class="text-xs font-semibold uppercase tracking-widest mb-3" style="color: var(--dc-muted)">Contacts</h2>
+            <div class="flex gap-2 mb-2">
+              <input x-model="newContactAddr" type="text" placeholder="user@server.com or QR URI"
+                     @keydown.enter="addContactOrScan()"
+                     class="compose-input flex-1 px-3 py-2 rounded-lg text-xs">
+              <button @click="addContactOrScan()" class="px-3 py-2 bg-dc-primary text-white text-xs rounded-lg hover:bg-dc-primary-hover transition-all flex items-center gap-1"
+                      title="Add contact or scan SecureJoin QR">
+                <i data-lucide="user-plus" style="width:14px;height:14px"></i>
+              </button>
+            </div>
+            <p class="text-[10px]" style="color: var(--dc-muted)">Paste a <span class="text-dc-accent">SecureJoin URI</span> to verify</p>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2">
+            <template x-for="contact in contacts" :key="contact.email">
+              <div @click="selectContact(contact)"
+                   :class="{'border-l-2 border-dc-primary': selectedContact?.email === contact.email,
+                            'border-l-2 border-transparent': selectedContact?.email !== contact.email}"
+                   :style="selectedContact?.email === contact.email ? 'background: var(--dc-surface-3)' : ''"
+                   class="px-3 py-3 rounded-r-lg cursor-pointer transition-all mb-1"
+                   onmouseover="if(!this.classList.contains('border-dc-primary'))this.style.background='var(--dc-surface-2)'"
+                   onmouseout="if(!this.classList.contains('border-dc-primary'))this.style.background=''">
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0"
+                       :class="contact.verified ? 'bg-green-500/20 text-green-400' : 'bg-dc-primary/20 text-dc-primary'"
+                       x-text="contact.email[0].toUpperCase()"></div>
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium truncate flex items-center gap-1" x-text="contact.email"
+                       style="color: var(--dc-text)">
+                    </p>
+                    <p class="text-xs truncate" style="color: var(--dc-muted)">
+                      <span x-show="contact.verified" class="text-green-400 inline-flex items-center gap-0.5">
+                        <i data-lucide="shield-check" style="width:10px;height:10px"></i> verified ·
+                      </span>
+                      <span x-text="contact.lastMsg || 'No messages yet'"></span>
+                    </p>
+                  </div>
+                  <span x-show="contact.unread > 0"
+                        class="ml-auto bg-dc-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        x-text="contact.unread"></span>
+                </div>
+              </div>
+            </template>
+            <div x-show="contacts.length === 0 && channels.length === 0" class="text-center text-sm py-4" style="color: var(--dc-muted)">
+              No contacts yet.<br>Paste a SecureJoin URI<br>or add an email!
+            </div>
+
+            <!-- Channels Section -->
+            <div class="mt-3 pt-3" style="border-top: 1px solid var(--dc-border)">
+              <div class="flex items-center justify-between px-2 mb-2">
+                <h3 class="text-xs font-semibold uppercase tracking-widest" style="color: var(--dc-muted)">
+                  <i data-lucide="hash" style="width:10px;height:10px;display:inline;vertical-align:middle"></i>
+                  Channels
+                </h3>
+                <button @click="showCreateChannel = true"
+                        class="p-1 rounded transition-colors"
+                        style="color: var(--dc-muted)"
+                        title="Create channel">
+                  <i data-lucide="plus" style="width:14px;height:14px"></i>
+                </button>
+              </div>
+
+              <!-- Create Channel Inline Form -->
+              <div x-show="showCreateChannel" class="px-2 mb-2 animate-fade">
+                <div class="flex gap-1">
+                  <input x-model="newChannelName" type="text" placeholder="Channel name..."
+                         @keydown.enter="createChannel(newChannelName)"
+                         class="compose-input flex-1 px-2 py-1.5 rounded text-xs">
+                  <button @click="createChannel(newChannelName)"
+                          class="px-2 py-1.5 bg-dc-primary text-white text-xs rounded hover:bg-dc-primary-hover transition-all"
+                          title="Create">
+                    <i data-lucide="check" style="width:12px;height:12px"></i>
+                  </button>
+                  <button @click="showCreateChannel = false"
+                          class="px-2 py-1.5 text-xs rounded transition-all"
+                          style="color: var(--dc-muted); background: var(--dc-surface-2)"
+                          title="Cancel">
+                    <i data-lucide="x" style="width:12px;height:12px"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Channel List -->
+              <template x-for="channel in channels" :key="channel.id">
+                <div @click="selectChannel(channel)"
+                     :class="{'border-l-2 border-dc-accent': selectedChannel?.id === channel.id,
+                              'border-l-2 border-transparent': selectedChannel?.id !== channel.id}"
+                     :style="selectedChannel?.id === channel.id ? 'background: var(--dc-surface-3)' : ''"
+                     class="px-3 py-2.5 rounded-r-lg cursor-pointer transition-all mb-1 group"
+                     onmouseover="if(!this.classList.contains('border-dc-accent'))this.style.background='var(--dc-surface-2)'"
+                     onmouseout="if(!this.classList.contains('border-dc-accent'))this.style.background=''">
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                         :class="channel.status === 'joining' ? 'bg-yellow-500/10 text-yellow-500 animate-pulse' : ''"
+                         :style="channel.status !== 'joining' ? (isChannelOwner(channel)
+                            ? 'background: rgba(108,92,231,0.15); color: #6c5ce7'
+                            : 'background: rgba(0,206,209,0.10); color: #00ced1') : ''">
+                      <template x-if="channel.status === 'joining'">
+                        <i data-lucide="refresh-cw" class="animate-spin" style="width:14px;height:14px"></i>
+                      </template>
+                      <template x-if="channel.status !== 'joining'">
+                        <template x-if="isChannelOwner(channel)">
+                          <i data-lucide="megaphone" style="width:14px;height:14px"></i>
+                        </template>
+                        <template x-if="!isChannelOwner(channel)">
+                          <i data-lucide="eye" style="width:14px;height:14px"></i>
+                        </template>
+                      </template>
+                    </div>
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium truncate" x-text="channel.name" style="color: var(--dc-text)"></p>
+                      <p class="text-[10px] truncate" style="color: var(--dc-muted)">
+                         <span x-show="channel.status === 'joining'">Joining handshake...</span>
+                         <span x-show="channel.status !== 'joining'"
+                               x-text="isChannelOwner(channel) ? 'Owner · ' + (channel.members || []).length + ' subscribers' : 'Subscribed · ' + (channel.members || []).length + ' members'"></span>
+                      </p>
+                    </div>
+                    <span x-show="channel.unread > 0"
+                          class="ml-auto text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          style="background: #6c5ce7"
+                          x-text="channel.unread"></span>
+                  </div>
+                </div>
+              </template>
+              <div x-show="channels.length === 0 && !showCreateChannel" class="text-center text-[10px] py-2" style="color: var(--dc-muted)">
+                No channels yet
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Chat Area -->
+        <main class="flex-1 flex flex-col" style="background: var(--dc-bg)">
+          <!-- No contact or channel selected -->
+          <div x-show="!selectedContact && !selectedChannel" class="flex-1 flex items-center justify-center" style="color: var(--dc-muted)">
+            <div class="text-center">
+              <div class="icon icon-xl mx-auto mb-3 opacity-40">
+                <i data-lucide="message-circle" style="width:48px;height:48px"></i>
+              </div>
+              <p class="text-lg font-medium">Select a contact or channel</p>
+              <p class="text-sm mt-1 flex items-center justify-center gap-1">
+                <i data-lucide="lock" style="width:12px;height:12px;stroke:currentColor;fill:none"></i>
+                Messages are end-to-end encrypted with OpenPGP
+              </p>
+            </div>
+          </div>
+
+          <!-- ===== Channel View ===== -->
+          <template x-if="selectedChannel">
+            <div class="flex flex-col h-full">
+              <!-- Channel header -->
+              <div class="border-b px-5 py-3 flex items-center gap-3 shrink-0"
+                   style="background: var(--dc-surface); border-color: var(--dc-border)">
+                <div class="w-8 h-8 rounded-lg flex items-center justify-center"
+                     style="background: rgba(108,92,231,0.15); color: #6c5ce7">
+                  <i data-lucide="hash" style="width:16px;height:16px"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <p class="text-sm font-medium" x-text="selectedChannel.name" style="color: var(--dc-text)"></p>
+                    <!-- Role badge -->
+                    <span x-show="isChannelOwner(selectedChannel)"
+                          class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                          style="background: rgba(108,92,231,0.15); color: #6c5ce7">Owner</span>
+                    <span x-show="!isChannelOwner(selectedChannel)"
+                          class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                          style="background: rgba(0,206,209,0.12); color: #00ced1">Subscribed</span>
+                  </div>
+                  <p class="text-[10px] truncate" style="color: var(--dc-muted)"
+                     x-text="(selectedChannel.members || []).length + ' members · Created by ' + (selectedChannel.createdBy || 'you')"></p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <!-- Invite button: only for owners -->
+                  <button x-show="isChannelOwner(selectedChannel)"
+                          @click="navigator.clipboard.writeText(selectedChannel.inviteUri); toast('success', 'Invite link copied!')"
+                          class="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border transition-all"
+                          style="color: var(--dc-accent); border-color: var(--dc-border)"
+                          title="Copy invite link">
+                    <i data-lucide="link" style="width:12px;height:12px"></i>
+                    <span>Invite</span>
+                  </button>
+                  <button @click="deleteChannel(selectedChannel)"
+                          class="transition-colors icon" style="color: var(--dc-muted)"
+                          onmouseover="this.style.color='#ef4444'"
+                          onmouseout="this.style.color='var(--dc-muted)'"
+                          title="Delete channel">
+                    <i data-lucide="trash-2" style="width:16px;height:16px"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Channel invite info banner (owners only) -->
+              <div x-show="isChannelOwner(selectedChannel)"
+                   class="px-5 py-3 flex items-center gap-3" style="background: var(--dc-surface-2); border-bottom: 1px solid var(--dc-border)">
+                <i data-lucide="qr-code" style="width:16px;height:16px;color:var(--dc-accent);stroke:currentColor;fill:none"></i>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium" style="color: var(--dc-text)">Channel Invite Link</p>
+                  <p class="text-[9px] font-mono truncate" style="color: var(--dc-muted)" x-text="selectedChannel.inviteUri"></p>
+                </div>
+                <button @click="navigator.clipboard.writeText(selectedChannel.inviteUri); toast('success', 'Copied!')"
+                        class="text-xs px-2 py-1 rounded transition-all"
+                        style="color: var(--dc-primary); background: var(--dc-surface-3)">
+                  <i data-lucide="copy" style="width:12px;height:12px"></i>
+                </button>
+              </div>
+
+              <!-- Subscriber read-only notice -->
+              <div x-show="!isChannelOwner(selectedChannel) && selectedChannel.status === 'joined'"
+                   class="px-5 py-2.5 flex items-center gap-2" style="background: var(--dc-surface-2); border-bottom: 1px solid var(--dc-border)">
+                <i data-lucide="lock" style="width:14px;height:14px;color:var(--dc-muted)"></i>
+                <p class="text-xs" style="color: var(--dc-muted)">
+                  You are subscribed. Only the owner can send messages.
+                </p>
+              </div>
+
+              <!-- Channel Messages -->
+              <div class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
+                <!-- Joining Loader -->
+                <div x-show="selectedChannel.status === 'joining'" 
+                     class="flex flex-col items-center justify-center p-20 text-center animate-fade">
+                  <div class="relative mb-6">
+                    <div class="w-20 h-20 border-4 border-dc-primary/20 border-t-dc-primary rounded-full animate-spin"></div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                      <i data-lucide="shield" style="width:30px;height:30px;color:var(--dc-primary)"></i>
+                    </div>
+                  </div>
+                  <h3 class="text-xl font-bold mb-2" style="color: var(--dc-text)">Securing Handshake</h3>
+                  <p class="text-sm" style="color: var(--dc-muted)">Joining <span x-text="selectedChannel.name" class="font-bold"></span>...</p>
+                </div>
+
+                <div x-show="selectedChannel.status !== 'joining'">
+                  <template x-for="msg in getChannelMessages()" :key="msg.uid">
+                    <div class="flex animate-fade"
+                         :class="msg.outgoing ? 'justify-end' : 'justify-start'" style="margin-bottom:6px">
+                      <div class="msg-bubble rounded-2xl text-sm overflow-hidden min-w-[80px]"
+                           :style="msg.outgoing
+                             ? 'background:var(--dc-bubble-out);color:var(--dc-bubble-out-text);border-bottom-right-radius:6px'
+                             : 'background:var(--dc-bubble-in);color:var(--dc-bubble-in-text);border:1px solid var(--dc-bubble-in-border);border-bottom-left-radius:6px'">
+                        <div class="px-3 py-2">
+                          <p x-show="!msg.outgoing" class="text-[10px] font-semibold mb-0.5" style="color: var(--dc-accent)" x-text="msg.peerEmail"></p>
+                          <p x-text="msg.text" class="whitespace-pre-wrap break-words"></p>
+                          <div class="flex items-center gap-1 mt-0.5 justify-end whitespace-nowrap">
+                            <span class="text-[10px] opacity-50" x-text="formatTime(msg.date)"></span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                  <div x-show="getChannelMessages().length === 0" class="text-center py-16" style="color: var(--dc-muted)">
+                    <div class="icon mx-auto mb-3 opacity-30">
+                      <i data-lucide="hash" style="width:40px;height:40px"></i>
+                    </div>
+                    <p class="text-sm font-medium">Welcome to #<span x-text="selectedChannel.name"></span></p>
+                    <p x-show="isChannelOwner(selectedChannel)" class="text-xs mt-1">Share the invite link to bring others here</p>
+                    <p x-show="!isChannelOwner(selectedChannel)" class="text-xs mt-1">Waiting for the owner to post...</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Channel Compose: ONLY for owners (OutBroadcast) -->
+              <div x-show="isChannelOwner(selectedChannel)"
+                   class="border-t shrink-0" style="background: var(--dc-surface); border-color: var(--dc-border)">
+                <div class="flex gap-2 p-3 items-center">
+                  <input x-model="composeText" @keydown.enter="sendMessage()" type="text"
+                         :placeholder="'Broadcast to #' + selectedChannel.name + '...'"
+                         :disabled="state !== 'ready'"
+                         class="compose-input flex-1 px-4 py-2.5 rounded-xl text-sm
+                                disabled:opacity-40 disabled:cursor-not-allowed">
+                  <button @click="sendMessage()" :disabled="state !== 'ready' || !composeText.trim() || sending"
+                          class="px-4 py-2.5 bg-dc-primary hover:bg-dc-primary-hover text-white text-sm font-semibold rounded-xl
+                                 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    <i data-lucide="send" style="width:16px;height:16px;stroke:currentColor;fill:none"></i>
+                    <span x-show="!sending">Send</span>
+                    <span x-show="sending">...</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Chat view -->
+          <template x-if="selectedContact">
+            <div class="flex flex-col h-full">
+              <!-- Chat header -->
+              <div class="border-b px-5 py-3 flex items-center gap-3 shrink-0"
+                   style="background: var(--dc-surface); border-color: var(--dc-border)">
+                <div class="w-8 h-8 rounded-full bg-dc-primary/20 flex items-center justify-center text-dc-primary font-bold text-sm"
+                     x-text="selectedContact.email[0].toUpperCase()"></div>
+                <div>
+                  <p class="text-sm font-medium" x-text="selectedContact.email" style="color: var(--dc-text)"></p>
+                  <p class="text-xs flex items-center gap-1" style="color: var(--dc-muted)">
+                    <span x-show="selectedContact.verified" class="text-green-400 inline-flex items-center gap-0.5">
+                      <i data-lucide="shield-check" style="width:10px;height:10px"></i> Verified
+                    </span>
+                    <span x-show="selectedContact.pgpKey" class="text-dc-accent inline-flex items-center gap-0.5">
+                      <i data-lucide="lock" style="width:10px;height:10px;stroke:currentColor;fill:none"></i> Encrypted
+                    </span>
+                    <span x-show="!selectedContact.pgpKey" class="text-yellow-400 inline-flex items-center gap-0.5">
+                      <i data-lucide="alert-triangle" style="width:10px;height:10px;stroke:currentColor;fill:none"></i> No key (cleartext)
+                    </span>
+                  </p>
+                </div>
+                <div class="ml-auto flex items-center gap-3">
+                  <button @click="deleteChat(selectedContact)"
+                          class="transition-colors icon" style="color: var(--dc-muted)"
+                          onmouseover="this.style.color='#ef4444'"
+                          onmouseout="this.style.color='var(--dc-muted)'"
+                          title="Delete chat">
+                    <i data-lucide="trash-2" style="width:16px;height:16px"></i>
+                  </button>
+                  <div x-show="polling" class="flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 bg-dc-accent rounded-full animate-pulse-dot"></div>
+                    <span class="text-[10px]" style="color: var(--dc-muted)">listening</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Messages -->
+              <div x-ref="chatArea" class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
+                <template x-for="msg in getChatMessages()" :key="msg.uid">
+                  <div class="flex animate-fade"
+                       :class="msg.outgoing ? 'justify-end' : 'justify-start'"
+                       :style="msg.reactions && Object.keys(msg.reactions).length > 0 ? 'margin-bottom:18px' : 'margin-bottom:6px'">
+                    <div class="relative max-w-[80%]">
+                      <div class="msg-bubble rounded-2xl text-sm overflow-hidden relative group min-w-[80px]"
+                           :style="(msg.outgoing
+                             ? 'background:var(--dc-bubble-out);color:var(--dc-bubble-out-text);border-bottom-right-radius:6px'
+                             : 'background:var(--dc-bubble-in);color:var(--dc-bubble-in-text);border:1px solid var(--dc-bubble-in-border);border-bottom-left-radius:6px')
+                             + (msg.imageData ? ';max-width:280px' : '')"
+                           @contextmenu.prevent="showContextMenu($event, msg)"
+                           @touchstart="startLongPress($event, msg)"
+                           @touchend="cancelLongPress()" @touchmove="cancelLongPress()">
+                        <template x-if="msg.imageData">
+                          <img :src="msg.imageData" class="w-full rounded-t-2xl cursor-pointer max-h-64 object-cover"
+                               @click="window.open(msg.imageData, '_blank')">
+                        </template>
+                        <div class="px-3 py-2">
+                          <p x-show="msg.text" x-text="msg.text" class="whitespace-pre-wrap break-words"></p>
+                          <div class="flex items-center gap-1 mt-0.5 justify-end whitespace-nowrap">
+                            <span class="text-[10px] opacity-50" x-text="formatTime(msg.date)"></span>
+                            <span x-show="msg.outgoing" class="opacity-50 icon" style="font-size:10px">
+                              <i data-lucide="check" style="width:10px;height:10px"></i>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <!-- Reaction pills (overlapping bottom of message) -->
+                      <template x-if="msg.reactions && Object.keys(msg.reactions).length > 0">
+                        <div class="absolute -bottom-3 flex gap-0.5"
+                             :class="msg.outgoing ? 'right-1' : 'left-1'">
+                          <template x-for="[emoji, count] in getReactionCounts(msg)" :key="emoji">
+                            <button @click="sendReaction(msg, emoji)"
+                                    class="inline-flex items-center gap-0.5 h-6 px-1.5 rounded-full text-xs shadow-md backdrop-blur-sm transition-all hover:scale-110 cursor-pointer"
+                                    :style="hasMyReaction(msg, emoji)
+                                      ? 'background:var(--dc-reaction-active-bg);border:1px solid var(--dc-reaction-active-border);color:var(--dc-text)'
+                                      : 'background:var(--dc-reaction-bg);border:1px solid var(--dc-border);color:var(--dc-text)'">
+                              <span x-text="emoji" class="text-sm leading-none"></span>
+                              <span x-show="count > 1" x-text="count" class="text-[10px] opacity-70"></span>
+                            </button>
+                          </template>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+                <div x-show="getChatMessages().length === 0" class="text-center text-sm py-16" style="color: var(--dc-muted)">
+                  No messages yet. Send the first one!
+                </div>
+              </div>
+
+              <!-- Context Menu -->
+              <div x-show="contextMenu.show" x-cloak @click.away="contextMenu.show = false"
+                   class="fixed z-50 context-menu animate-fade"
+                   :style="`left:${contextMenu.x}px;top:${contextMenu.y}px`">
+                <!-- Quick React Bar -->
+                <div class="flex items-center gap-1 px-3 py-2" style="border-bottom: 1px solid var(--dc-border)">
+                  <template x-for="emoji in ['👍','❤️','😂','😮','😢','🙏']" :key="emoji">
+                    <button @click="sendReaction(contextMenu.msg, emoji); contextMenu.show = false"
+                            class="text-xl hover:scale-125 transition-transform p-1 rounded"
+                            x-text="emoji">
+                    </button>
+                  </template>
+                  <button @click="openEmojiPicker(contextMenu.msg); contextMenu.show = false"
+                          class="p-1 rounded transition-colors icon"
+                          style="color: var(--dc-muted)"
+                          title="More emojis">
+                    <i data-lucide="plus-circle" style="width:18px;height:18px"></i>
+                  </button>
+                </div>
+                <button @click="deleteMessage(contextMenu.msg)" class="context-menu-item danger">
+                  <i data-lucide="trash-2" style="width:14px;height:14px;stroke:currentColor;fill:none"></i>
+                  Delete
+                </button>
+                <template x-if="contextMenu.msg?.outgoing && contextMenu.msg?.encrypted">
+                  <button @click="deleteForEveryone(contextMenu.msg)" class="context-menu-item danger-strong">
+                    <i data-lucide="trash" style="width:14px;height:14px;stroke:currentColor;fill:none"></i>
+                    Delete for everyone
+                  </button>
+                </template>
+                <button @click="contextMenu.show = false" class="context-menu-item muted">
+                  <i data-lucide="x" style="width:14px;height:14px;stroke:currentColor;fill:none"></i>
+                  Cancel
+                </button>
+              </div>
+
+              <!-- Emoji Picker Overlay -->
+              <div x-show="emojiPickerOpen" x-cloak @click.self="emojiPickerOpen = false"
+                   class="fixed inset-0 z-50 flex items-center justify-center" style="background: var(--dc-overlay)">
+                <div class="rounded-2xl shadow-2xl border overflow-hidden animate-fade"
+                     style="background: var(--dc-surface); border-color: var(--dc-border)">
+                  <div class="flex items-center justify-between px-4 py-2" style="border-bottom: 1px solid var(--dc-border)">
+                    <span class="text-sm font-medium" style="color: var(--dc-text)">Pick a reaction</span>
+                    <button @click="emojiPickerOpen = false" class="icon" style="color: var(--dc-muted)"
+                            onmouseover="this.style.color='var(--dc-text)'"
+                            onmouseout="this.style.color='var(--dc-muted)'">
+                      <i data-lucide="x" style="width:16px;height:16px"></i>
+                    </button>
+                  </div>
+                  <div x-ref="emojiPickerContainer"></div>
+                </div>
+              </div>
+
+              <!-- Compose -->
+              <div x-show="!selectedChannel || (selectedChannel && isChannelOwner(selectedChannel))"
+                   class="border-t shrink-0 p-3" 
+                   style="background: var(--dc-surface); border-color: var(--dc-border)">
+                <!-- Image preview strip -->
+                <div x-show="composeImage" class="px-4 pt-3 pb-1">
+                  <div class="relative inline-block">
+                    <img :src="composeImage" class="h-20 rounded-lg border object-cover" style="border-color: var(--dc-border)">
+                    <button @click="composeImage = null"
+                            class="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600">
+                      <i data-lucide="x" style="width:12px;height:12px"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="flex gap-2 items-center">
+                  <button @click="$refs.imageInput.click()" :disabled="state !== 'ready'"
+                          class="p-2.5 rounded-xl transition-all icon
+                                 disabled:opacity-40 disabled:cursor-not-allowed"
+                          style="color: var(--dc-muted)"
+                          onmouseover="this.style.color='var(--dc-primary)';this.style.background='var(--dc-surface-2)'"
+                          onmouseout="this.style.color='var(--dc-muted)';this.style.background=''"
+                          title="Send image">
+                    <i data-lucide="image" style="width:20px;height:20px"></i>
+                  </button>
+                  <input type="file" accept="image/*" x-ref="imageInput" class="hidden" @change="handleComposeImage($event)">
+                  <input x-model="composeText" @keydown.enter="sendMessage()" type="text"
+                         :placeholder="composeImage ? 'Add a caption...' : 'Write a message'"
+                         :disabled="state !== 'ready'"
+                         class="compose-input flex-1 px-4 py-2.5 rounded-xl text-sm
+                                style='border: 1px solid var(--dc-border);'
+                                disabled:opacity-40 disabled:cursor-not-allowed">
+                  <button @click="sendMessage()" :disabled="state !== 'ready' || (!composeText.trim() && !composeImage) || sending"
+                          class="px-4 py-2.5 bg-dc-primary hover:bg-dc-primary-hover text-white text-sm font-semibold rounded-xl
+                                 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    <i data-lucide="send" style="width:16px;height:16px;stroke:currentColor;fill:none"></i>
+                    <span x-show="!sending">Send</span>
+                    <span x-show="sending">...</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Read Only Notice for Subscribers -->
+              <div x-show="selectedChannel && !isChannelOwner(selectedChannel)"
+                   class="p-4 border-t text-center text-sm italic"
+                   style="background: var(--dc-surface-2); border-color: var(--dc-border); color: var(--dc-muted)">
+                <i data-lucide="lock" style="display:inline-block; width:14px; height:14px; margin-right:4px"></i>
+                Only the channel owner can send messages
+              </div>
+            </div>
+          </template>
+        </main>
+
+        <!-- Info Panel (togglable) -->
+        <aside x-show="showInfo" x-cloak
+               class="w-80 border-l p-5 overflow-y-auto shrink-0 animate-fade"
+               style="background: var(--dc-surface); border-color: var(--dc-border)">
+          <h2 class="text-sm font-semibold uppercase tracking-widest mb-4" style="color: var(--dc-muted)">Account Info</h2>
+
+          <div class="mb-6 flex flex-col gap-2">
+            <button @click="showLogs = true; debugLogs = AppLog.getLogs()" 
+                    class="w-full flex items-center gap-2 p-3 rounded-xl border transition-all text-sm font-medium"
+                    style="border-color: var(--dc-border); background: var(--dc-surface-2); color: var(--dc-text)"
+                    onmouseover="this.style.borderColor='var(--dc-primary)';this.style.background='var(--dc-surface-3)'"
+                    onmouseout="this.style.borderColor='var(--dc-border)';this.style.background='var(--dc-surface-2)'">
+                <i data-lucide="terminal" style="width:18px;height:18px;color:var(--dc-primary)"></i>
+                View System Logs
+                <div class="ml-auto bg-dc-primary/10 text-dc-primary text-[10px] px-2 py-0.5 rounded-full" x-text="debugLogs.length"></div>
+            </button>
+          </div>
+
+          <div class="space-y-4 text-xs">
+            <div class="info-card">
+              <p style="color: var(--dc-muted)" class="mb-1 flex items-center gap-1">
+                <i data-lucide="mail" style="width:12px;height:12px;stroke:currentColor;fill:none"></i> Email
+              </p>
+              <p class="font-mono break-all" style="color: var(--dc-text)" x-text="credentials.email"></p>
+            </div>
+            <div class="info-card">
+              <p style="color: var(--dc-muted)" class="mb-1 flex items-center gap-1">
+                <i data-lucide="key" style="width:12px;height:12px;stroke:currentColor;fill:none"></i> Password
+              </p>
+              <p class="font-mono break-all" style="color: var(--dc-text)" x-text="credentials.password"></p>
+            </div>
+            <div class="info-card">
+              <p style="color: var(--dc-muted)" class="mb-1 flex items-center gap-1">
+                <i data-lucide="fingerprint" style="width:12px;height:12px;stroke:currentColor;fill:none"></i> PGP Fingerprint
+              </p>
+              <p class="font-mono break-all text-[10px] leading-relaxed" style="color: var(--dc-text)" x-text="pgpFingerprint || 'Generating...'"></p>
+            </div>
+            <div class="info-card">
+              <p style="color: var(--dc-muted)" class="mb-1 flex items-center gap-1">
+                <i data-lucide="shield" style="width:12px;height:12px;stroke:currentColor;fill:none"></i> Public Key (Autocrypt)
+              </p>
+              <textarea readonly :value="publicKeyArmored"
+                        class="w-full h-24 rounded-lg text-[9px] font-mono p-2 resize-none mt-1"
+                        style="background: var(--dc-bg); border: 1px solid var(--dc-border); color: var(--dc-muted)"></textarea>
+            </div>
+
+            <div style="border-top: 1px solid var(--dc-border)" class="pt-4">
+              <h3 class="font-semibold uppercase tracking-wider mb-3 flex items-center gap-1" style="color: var(--dc-muted)">
+                <i data-lucide="qr-code" style="width:12px;height:12px;stroke:currentColor;fill:none"></i> SecureJoin QR
+              </h3>
+              <p style="color: var(--dc-muted)" class="mb-2">Share this with another Delta Chat user to verify each other:</p>
+              <div class="bg-white p-3 rounded-xl" x-show="qrDataUrl">
+                <img :src="qrDataUrl" class="w-full" alt="SecureJoin QR Code">
+              </div>
+              <p class="font-mono text-[9px] mt-2 break-all" style="color: var(--dc-muted)" x-text="securejoinUri"></p>
+            </div>
+
+            <div style="border-top: 1px solid var(--dc-border)" class="pt-4">
+              <h3 class="font-semibold uppercase tracking-wider mb-3 flex items-center gap-1" style="color: var(--dc-muted)">
+                <i data-lucide="server" style="width:12px;height:12px;stroke:currentColor;fill:none"></i> API Endpoints
+              </h3>
+              <div class="space-y-2" style="color: var(--dc-muted)">
+                <p><span class="text-green-400">GET</span> /webimap/mailboxes</p>
+                <p><span class="text-green-400">GET</span> /webimap/messages</p>
+                <p><span class="text-green-400">GET</span> /webimap/message/{uid}</p>
+                <p><span class="text-red-400">DEL</span> /webimap/message/{uid}</p>
+                <p><span class="text-blue-400">POST</span> /webimap/message/flags</p>
+                <p><span class="text-blue-400">POST</span> /webimap/send</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+
+    </div>
+  </template>
+  <!-- Debug Logs Overlay -->
+  <div x-show="showLogs" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-6" style="background: var(--dc-overlay)">
+    <div class="w-full max-w-4xl h-[80vh] flex flex-col rounded-2xl shadow-2xl border"
+         style="background: var(--dc-surface); border-color: var(--dc-border)">
+      <div class="px-6 py-4 border-b flex items-center justify-between" style="border-color: var(--dc-border)">
+        <div class="flex items-center gap-2">
+          <i data-lucide="terminal" style="width:18px;height:18px;color:var(--dc-primary)"></i>
+          <h2 class="text-lg font-bold" style="color: var(--dc-text)">System Debug Logs</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <button @click="copyLogs()" class="px-3 py-1.5 bg-dc-primary text-white text-xs rounded-lg hover:bg-dc-primary-hover flex items-center gap-1.5 transition-all">
+            <i data-lucide="copy" style="width:14px;height:14px"></i>
+            Copy To Clipboard
+          </button>
+          <button @click="AppLog.clear(); debugLogs = []" class="px-3 py-1.5 text-xs rounded-lg hover:bg-black/5 flex items-center gap-1.5 transition-all" style="color: var(--dc-muted)">
+            <i data-lucide="trash" style="width:14px;height:14px"></i>
+            Clear
+          </button>
+          <button @click="showLogs = false" class="p-1.5 rounded-lg hover:bg-black/5" style="color: var(--dc-muted)">
+            <i data-lucide="x" style="width:18px;height:18px"></i>
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-[11px]" x-ref="logContainer">
+        <template x-for="log in debugLogs" :key="log.timestamp + Math.random()">
+          <div class="p-2 rounded border flex flex-col gap-1"
+               :style="log.level === 'error' ? 'background:#fee2e2;border-color:#fecaca;color:#991b1b' :
+                       log.level === 'warn' ? 'background:#fef3c7;border-color:#fde68a;color:#92400e' :
+                       log.level === 'success' ? 'background:#ecfdf5;border-color:#d1fae5;color:#065f46' :
+                       'background:var(--dc-surface-2);border-color:var(--dc-border);color:var(--dc-text)'">
+            <div class="flex items-center justify-between opacity-70">
+              <span x-text="log.time"></span>
+              <span x-text="log.category.toUpperCase()" class="font-bold"></span>
+            </div>
+            <div x-text="log.message" class="font-bold"></div>
+            <div x-show="log.data" class="mt-1 p-2 bg-black/5 rounded whitespace-pre-wrap overflow-x-auto" x-text="JSON.stringify(log.data, null, 2)"></div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app_db.js"></script>
+<script src="app_log.js"></script>
+<script src="app_transport.js"></script>
+<script src="app.js"></script>
+
+<!-- Initialize Lucide icons after Alpine renders -->
+<script>
+  (function() {
+    let _pending = null;
+    function refreshIcons() {
+      // Only run if there are unconverted <i data-lucide> tags remaining
+      if (!document.querySelector('i[data-lucide]')) return;
+      if (window.lucide) lucide.createIcons();
+    }
+    function debouncedRefresh() {
+      clearTimeout(_pending);
+      _pending = setTimeout(refreshIcons, 80);
+    }
+
+    // Initial render
+    document.addEventListener('alpine:initialized', () => {
+      refreshIcons();
+      const observer = new MutationObserver(debouncedRefresh);
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+
+    // Fallback
+    setTimeout(refreshIcons, 600);
+  })();
+</script>
+
+</body>
+</html>
