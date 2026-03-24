@@ -1,3 +1,10 @@
+# [0.29.0](https://github.com/themadorg/madmail/compare/v0.28.4...v0.29.0) (2026-03-24)
+
+
+### Features
+
+* implement RAM caching for settings and full Russian documentation support ([5ceb8cf](https://github.com/themadorg/madmail/commit/5ceb8cf5e3f5ea318ab973516c4b34440fa5d877)), closes [hi#performance](https://github.com/hi/issues/performance)
+
 ## [0.28.4](https://github.com/themadorg/madmail/compare/v0.28.3...v0.28.4) (2026-03-17)
 
 
