@@ -1,3 +1,10 @@
+## [0.28.4](https://github.com/themadorg/madmail/compare/v0.28.3...v0.28.4) (2026-03-17)
+
+
+### Bug Fixes
+
+* **docker:** update Go image from 1.24 to 1.25 for go.mod compatibility ([912cbeb](https://github.com/themadorg/madmail/commit/912cbeb316548586d2836d0266fb3b236881a884))
+
 ## [0.28.3](https://github.com/themadorg/madmail/compare/v0.28.2...v0.28.3) (2026-03-17)
 
 
