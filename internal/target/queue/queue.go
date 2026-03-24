@@ -867,6 +867,7 @@ func (q *Queue) openMessage(id string) (*QueueMetadata, textproto.Header, buffer
 		}
 		return nil, textproto.Header{}, nil, err
 	}
+	defer headerFile.Close()
 
 	bufferedHeader := bufio.NewReader(headerFile)
 	header, err := textproto.ReadHeader(bufferedHeader)

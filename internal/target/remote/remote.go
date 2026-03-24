@@ -93,6 +93,8 @@ type Target struct {
 	pool           *pool.P
 	connReuseLimit int
 
+	httpClient *http.Client
+
 	Log log.Logger
 
 	connectTimeout    time.Duration
@@ -112,6 +114,14 @@ func New(_, instName string, _, inlineArgs []string) (module.Module, error) {
 		resolver: dns.DefaultResolver(),
 		dialer:   (&net.Dialer{}).DialContext,
 		Log:      log.Logger{Name: "remote"},
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+			Timeout: 30 * time.Second,
+		},
 	}, nil
 }
 
@@ -668,16 +678,7 @@ func (rd *remoteDelivery) doHTTPRequestURL(ctx context.Context, url string, rcpt
 		req.Header.Add("X-Mail-To", rcpt)
 	}
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := client.Do(req)
+	resp, err := rd.rt.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
