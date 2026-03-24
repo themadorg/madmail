@@ -1,6 +1,14 @@
 # Madmail - Maddy Chatmail Server
 A mad fork of [maddy](https://github.com/foxcpp/maddy), bringing the madness to mail delivery — optimized for instant, secure messaging with #deltachat.
 
+## Quick Setup
+
+```bash
+curl -fsSL https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o madmail && chmod +x madmail && sudo ./madmail install --simple --ip YOUR_IP --lang en && sudo systemctl enable madmail && sudo systemctl start madmail
+```
+
+> Replace `YOUR_IP` with your server's public IP address.
+
 ## Documentation
 For installation, configuration, and detailed guides, please refer to the [**Documentation Index**](./docs/index.md).
 
