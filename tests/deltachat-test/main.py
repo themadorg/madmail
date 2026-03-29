@@ -562,7 +562,8 @@ def main():
                             print("\n" + "="*50)
                             print("TEST #7: Federation (Cross-Server Messaging)")
                             print("="*50)
-                        acc3 = test_07_federation.run(rpc, dc, acc1, acc2, remote1, remote2, timestamp)
+                        server_info = lxc.get_server_info() if args.lxc else None
+                        acc3 = test_07_federation.run(rpc, dc, acc1, acc2, remote1, remote2, timestamp, server_info=server_info)
                         if not cool:
                             print("✓ TEST #7 PASSED: Federation test completed successfully")
                     _run_cool(7, _t7)

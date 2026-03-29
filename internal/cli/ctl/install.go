@@ -650,11 +650,21 @@ func installCommand(ctx *cli.Context) error {
 		}
 		if ctx.IsSet("ip") {
 			config.PublicIP = ctx.String("ip")
-			config.PrimaryDomain = auth.WrapIP(config.PublicIP)
-			config.LocalDomains = fmt.Sprintf("$(primary_domain) %s", config.PublicIP)
 			config.A = config.PublicIP
-			config.Hostname = ctx.String("ip")
 			config.SkipPrompts = true
+
+			if ctx.IsSet("domain") {
+				// Domain-based install with explicit IP: domain is primary,
+				// IP is just for network addresses and as an accepted alias.
+				config.Hostname = ctx.String("domain")
+				config.LocalDomains = fmt.Sprintf("$(primary_domain) %s [%s]", config.PublicIP, config.PublicIP)
+			} else {
+				// IP-only install: IP is the primary domain
+				config.PrimaryDomain = auth.WrapIP(config.PublicIP)
+				config.LocalDomains = fmt.Sprintf("$(primary_domain) %s", config.PublicIP)
+				config.Hostname = ctx.String("ip")
+			}
+
 			// IP-based installs use self-signed certs with no real DNS.
 			// DANE and strict TLS enforcement would always fail, so relax them
 			// automatically to allow SMTP as a fallback federation path.

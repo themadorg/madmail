@@ -183,12 +183,12 @@ def _try_deliver(sender, receiver, text, max_wait=90):
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp):
+def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp, server_info=None):
     """
     Test #7: Federation Test
 
     Self-contained test that verifies cross-server, same-server, and
-    port-based federation behaviour.
+    port-based federation behaviour, plus address format combinations.
 
     Args:
         rpc: RPC instance
@@ -198,6 +198,8 @@ def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp):
         remote1: Address / IP of server 1
         remote2: Address / IP of server 2
         timestamp: Test run timestamp
+        server_info: Optional list of dicts from LXCManager.get_server_info()
+                     [{"ip": ..., "domain": ...}, ...]
 
     Returns:
         acc3: The third account created for use in subsequent tests
@@ -400,5 +402,150 @@ def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp):
     print("  └─────────────────────────┴────────────┴───────────────────┘")
 
     print("\n✓ Part C complete: Port-based federation analysis finished!")
-    print("✓ Federation test complete: All parts (A + B + C) verified!")
+
+    # ==================================================================
+    # Part D: Address Format Matrix
+    # ==================================================================
+    if server_info and len(server_info) >= 2 and server_info[0].get("domain"):
+        print("\n── Part D: Address Format Matrix ──")
+        print("  Testing all address format combinations:")
+        print("  domain, bare-IP, [bracketed-IP]\n")
+
+        s1 = server_info[0]  # has domain + IP
+        s2 = server_info[1]  # IP-only
+        s1_domain = s1["domain"]
+        s1_ip = s1["ip"]
+        s2_ip = s2["ip"]
+
+        # Define the address formats to test
+        # Each entry: (label, server_ip, email_domain_suffix)
+        # server_ip = which IMAP/SMTP server to connect to
+        # email_domain_suffix = the @domain part of the address
+        addr_formats = [
+            ("domain",      s1_ip, s1_domain),           # user@s1.test
+            ("bare-IP-s1",  s1_ip, s1_ip),               # user@10.0.3.X
+            ("bracket-s1",  s1_ip, f"[{s1_ip}]"),        # user@[10.0.3.X]
+            ("bare-IP-s2",  s2_ip, s2_ip),               # user@10.0.3.Y
+            ("bracket-s2",  s2_ip, f"[{s2_ip}]"),        # user@[10.0.3.Y]
+        ]
+
+        # Create an account for each format
+        import random, string, urllib.parse, ipaddress
+        from deltachat_rpc_client import EventType
+
+        def _create_account_with_format(dc_inst, label, server_ip, email_domain):
+            """Create an account on server_ip with a specific email domain format."""
+            username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=12))
+            password = ''.join(random.choices(string.ascii_lowercase + string.digits, k=20))
+            encoded_pw = urllib.parse.quote(password, safe="")
+
+            # Always connect via IP; the email address uses the desired domain format
+            login_uri = (
+                f"dclogin:{username}@{email_domain}/?"
+                f"p={encoded_pw}&v=1&ip=993&sp=465&ic=3&ss=default"
+            )
+
+            acct = dc_inst.add_account()
+            acct.set_config_from_qr(login_uri)
+            acct.set_config("displayname", f"Fmt {label}")
+
+            # Delta Chat resolves the email domain for IMAP/SMTP connections.
+            # For bare IP / bracketed IP, it should connect directly.
+            # For domain, it needs DNS resolution (which is set up via dnsmasq).
+            # If the domain resolves but the actual IMAP/SMTP connection
+            # target differs, we need to override the server settings.
+            # dclogin URI typically handles this, but let's ensure:
+            clean_ip = email_domain.strip("[]")
+            try:
+                ipaddress.ip_address(clean_ip)
+                # It's an IP-based address — DC will connect to the IP directly
+            except ValueError:
+                # It's a domain — DC resolves via DNS, which dnsmasq handles
+                pass
+
+            acct.start_io()
+            start_t = time.time()
+            while time.time() - start_t < 30:
+                ev = acct.wait_for_event()
+                if ev and ev.kind == EventType.IMAP_INBOX_IDLE:
+                    addr = acct.get_config("addr")
+                    print(f"    ✓ {label}: {addr}")
+                    return acct
+                elif ev and ev.kind == EventType.ERROR:
+                    print(f"    ✗ {label}: ERROR — {ev.msg}")
+                    break
+            return None
+
+        # Create accounts
+        print("  Creating accounts with diverse address formats...")
+        accts = {}
+        for label, server_ip, email_domain in addr_formats:
+            acct = _create_account_with_format(dc, label, server_ip, email_domain)
+            if acct:
+                accts[label] = acct
+
+        # Test matrix: every cross-server pair should work
+        # (same-server pairs aren't interesting for federation)
+        s1_labels = [l for l, sip, _ in addr_formats if sip == s1_ip]
+        s2_labels = [l for l, sip, _ in addr_formats if sip == s2_ip]
+
+        matrix_results = []
+        step = 1
+        for src_label in s1_labels:
+            for dst_label in s2_labels:
+                if src_label not in accts or dst_label not in accts:
+                    continue
+                src = accts[src_label]
+                dst = accts[dst_label]
+                src_addr = src.get_config("addr")
+                dst_addr = dst.get_config("addr")
+                msg = f"FmtTest {src_label}→{dst_label} [{timestamp}]"
+                print(f"  [{step}] {src_addr} → {dst_addr}")
+                ok = _try_deliver(src, dst, msg, max_wait=45)
+                status = "✓" if ok else "✗"
+                print(f"      {status} {'delivered' if ok else 'FAILED'}")
+                matrix_results.append({"src": src_label, "dst": dst_label, "ok": ok})
+                step += 1
+
+        # Reverse direction: s2 → s1
+        for src_label in s2_labels:
+            for dst_label in s1_labels:
+                if src_label not in accts or dst_label not in accts:
+                    continue
+                src = accts[src_label]
+                dst = accts[dst_label]
+                src_addr = src.get_config("addr")
+                dst_addr = dst.get_config("addr")
+                msg = f"FmtTest {src_label}→{dst_label} [{timestamp}]"
+                print(f"  [{step}] {src_addr} → {dst_addr}")
+                ok = _try_deliver(src, dst, msg, max_wait=45)
+                status = "✓" if ok else "✗"
+                print(f"      {status} {'delivered' if ok else 'FAILED'}")
+                matrix_results.append({"src": src_label, "dst": dst_label, "ok": ok})
+                step += 1
+
+        # Summary table
+        passed = sum(1 for r in matrix_results if r["ok"])
+        total = len(matrix_results)
+        print(f"\n  Address format results: {passed}/{total} passed")
+        print("  ┌─────────────────┬─────────────────┬────────┐")
+        print("  │ Sender          │ Receiver        │ Result │")
+        print("  ├─────────────────┼─────────────────┼────────┤")
+        for r in matrix_results:
+            s = "✓" if r["ok"] else "✗"
+            print(f"  │ {r['src']:<15} │ {r['dst']:<15} │   {s}    │")
+        print("  └─────────────────┴─────────────────┴────────┘")
+
+        if passed < total:
+            failed = [r for r in matrix_results if not r["ok"]]
+            print(f"\n  ⚠ {total - passed} format combination(s) failed:")
+            for f in failed:
+                print(f"    - {f['src']} → {f['dst']}")
+
+        print("\n✓ Part D complete: Address format matrix tested!")
+    else:
+        print("\n── Part D: Address Format Matrix ──")
+        print("  ⏭ Skipped (requires LXC mode with domain-configured servers)")
+
+    print("\n✓ Federation test complete: All parts verified!")
     return acc3

@@ -3,13 +3,19 @@ import time
 import os
 import sys
 
+# Test domain names for LXC federation testing
+DOMAIN1 = "s1.test"
+DOMAIN2 = "s2.test"
+
 class LXCManager:
     def __init__(self, memory_limit="1G", cpu_limit="1", logger=None):
         self.containers = ["madmail-server1", "madmail-server2"]
         self.ips = {}
+        self.domains = {}  # container name -> domain (or None for IP-only)
         self.logger = logger or print
         self.memory_limit = memory_limit
         self.cpu_limit = cpu_limit
+        self._dnsmasq_pid = None  # PID of the test dnsmasq process
 
     def _run(self, cmd, check=True, input_data=None, quiet=False):
         if isinstance(cmd, str):
@@ -59,6 +65,94 @@ class LXCManager:
                            capture_output=True)
         else:
             self.logger("NAT masquerade rule for LXC subnet already present.")
+
+    def _setup_dns(self):
+        """
+        Start a lightweight dnsmasq on the LXC bridge (10.0.3.1) that resolves
+        test domains to container IPs and forwards everything else upstream.
+
+        Containers will use 10.0.3.1 as their DNS server.
+        """
+        # Build address entries for each container that has a domain
+        addr_args = []
+        for name, domain in self.domains.items():
+            if domain:
+                ip = self.ips[name]
+                addr_args.extend(["--address", f"/{domain}/{ip}"])
+                self.logger(f"DNS: {domain} → {ip}")
+
+        if not addr_args:
+            self.logger("No domain-based servers; skipping dnsmasq setup.")
+            return
+
+        # Kill any existing test dnsmasq on 10.0.3.1
+        self._stop_dns()
+
+        # Start dnsmasq in foreground-but-background mode
+        cmd = [
+            "sudo", "dnsmasq",
+            "--no-daemon",          # stay in foreground (we'll background it)
+            "--listen-address=10.0.3.1",
+            "--bind-interfaces",
+            "--no-resolv",
+            "--server=8.8.8.8",     # upstream DNS
+            "--server=1.1.1.1",
+            "--log-queries",
+            "--no-hosts",
+            "--pid-file=/tmp/madmail-test-dnsmasq.pid",
+        ] + addr_args
+
+        self.logger(f"Starting test dnsmasq on 10.0.3.1...")
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self._dnsmasq_pid = proc.pid
+        time.sleep(1)  # let it bind
+
+        # Verify it's running
+        if proc.poll() is not None:
+            raise Exception(f"dnsmasq failed to start (exit code: {proc.returncode})")
+        self.logger(f"dnsmasq running (PID {self._dnsmasq_pid})")
+
+        # Also add /etc/hosts entries on the HOST so the Delta Chat RPC client
+        # (running on the host) can resolve test domains for IMAP/SMTP connections.
+        self._host_entries = []
+        for name, domain in self.domains.items():
+            if domain:
+                ip = self.ips[name]
+                entry = f"{ip} {domain}"
+                subprocess.run(
+                    ["sudo", "sh", "-c", f"echo '{entry}  # madmail-test' >> /etc/hosts"],
+                    check=True,
+                )
+                self._host_entries.append(domain)
+                self.logger(f"Host /etc/hosts: {entry}")
+
+    def _stop_dns(self):
+        """Stop the test dnsmasq if running and clean up /etc/hosts."""
+        # Try PID file first
+        try:
+            pid_data = subprocess.run(
+                ["sudo", "cat", "/tmp/madmail-test-dnsmasq.pid"],
+                capture_output=True, text=True
+            )
+            if pid_data.returncode == 0 and pid_data.stdout.strip():
+                subprocess.run(["sudo", "kill", pid_data.stdout.strip()], capture_output=True)
+        except Exception:
+            pass
+
+        # Also kill by our stored PID
+        if self._dnsmasq_pid:
+            subprocess.run(["sudo", "kill", str(self._dnsmasq_pid)], capture_output=True)
+            self._dnsmasq_pid = None
+
+        # Remove test entries from /etc/hosts
+        subprocess.run(
+            ["sudo", "sed", "-i", "/# madmail-test$/d", "/etc/hosts"],
+            capture_output=True,
+        )
 
     def setup(self, containers=None, binary_path=None, reuse_existing=False):
         if containers:
@@ -128,12 +222,21 @@ class LXCManager:
             self.ips[name] = ip
             self.logger(f"Container {name} IP: {ip}")
 
+        # Assign domains: server1 gets a domain, server2 stays IP-only
+        self.domains[self.containers[0]] = DOMAIN1
+        if len(self.containers) > 1:
+            self.domains[self.containers[1]] = None  # IP-only
+
+        # Set up DNS before configuring containers (so DNS is ready when maddy starts)
+        self._setup_dns()
+
         for name in self.containers:
             # If we are reusing, we might want to skip installation if maddy is already there
             # But the binary might have changed, so we usually want to re-push and restart.
             # For "reuse same ip each time", just re-pushing maddy is fine.
             
             ip = self.ips[name]
+            domain = self.domains.get(name)
             
             # Check if maddy is already running with the correct IP
             # For simplicity, we'll re-run install but it's faster if we skip apt-get
@@ -144,14 +247,14 @@ class LXCManager:
                 else:
                     self.logger(f"Dependencies already present in {name}. Skipping apt-get.")
                     # Still push the binary and restart maddy to be sure
-                    self._push_and_start(name, madmail_bin, ip)
+                    self._push_and_start(name, madmail_bin, ip, domain=domain)
                     continue
 
             self.logger(f"Configuring container {name}...")
-            # Fix DNS: containers inherit the host's systemd-resolved stub (127.0.0.53)
-            # which is not reachable from inside the container. Override with a real resolver.
+            # Fix DNS: point to our local dnsmasq for domain resolution
+            dns_server = "10.0.3.1" if any(d for d in self.domains.values()) else "8.8.8.8"
             self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c",
-                        "echo 'nameserver 8.8.8.8' > /etc/resolv.conf"])
+                        f"echo 'nameserver {dns_server}' > /etc/resolv.conf; echo 'nameserver 8.8.8.8' >> /etc/resolv.conf"])
             # Install dependencies
             self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin apt-get update"])
             self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin apt-get install -y openssh-server ca-certificates curl iproute2 jq"])
@@ -174,12 +277,30 @@ class LXCManager:
             self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "echo 'root:root' | /usr/sbin/chpasswd"])
             self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin systemctl restart ssh"])
 
-            self._push_and_start(name, madmail_bin, ip)
+            self._push_and_start(name, madmail_bin, ip, domain=domain)
 
         self.logger("LXC environment ready.")
+        # Return both IPs and domain info
         return [self.ips[name] for name in self.containers]
 
-    def _push_and_start(self, name, madmail_bin, ip):
+    def get_server_info(self):
+        """Return structured info about each server for use by federation tests.
+        
+        Returns a list of dicts:
+            [
+                {"ip": "10.0.3.X", "domain": "s1.test"},
+                {"ip": "10.0.3.Y", "domain": None},
+            ]
+        """
+        result = []
+        for name in self.containers:
+            result.append({
+                "ip": self.ips.get(name),
+                "domain": self.domains.get(name),
+            })
+        return result
+
+    def _push_and_start(self, name, madmail_bin, ip, domain=None):
         # Push madmail binary
         self.logger(f"Pushing madmail binary to {name}...")
         subprocess.run(f"ssh-keyscan {ip} >> ~/.ssh/known_hosts", shell=True, capture_output=True)
@@ -189,8 +310,19 @@ class LXCManager:
             self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "cat > /tmp/maddy && chmod +x /tmp/maddy"], input_data=f.read())
 
         self.logger(f"Installing madmail on {name}...")
-        # Run install from /tmp/maddy to target /usr/local/bin/maddy
-        self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", f"env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /tmp/maddy install --simple --ip {ip} --non-interactive --ss-password testing --turn-secret testing --debug --enable-iroh"])
+        # Build install command
+        install_cmd = (
+            f"env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
+            f"/tmp/maddy install --simple --ip {ip} --non-interactive "
+            f"--ss-password testing --turn-secret testing --debug --enable-iroh"
+        )
+        if domain:
+            install_cmd += f" --domain {domain}"
+            self.logger(f"  Domain: {domain}, IP: {ip}")
+        else:
+            self.logger(f"  IP-only: {ip}")
+
+        self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", install_cmd])
         self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin systemctl restart maddy"])
 
         self.logger("LXC environment ready.")
@@ -225,8 +357,8 @@ class LXCManager:
 
     def cleanup(self):
         self.logger("Cleaning up LXC environment...")
+        self._stop_dns()
         for name in self.containers:
             self.logger(f"Destroying container {name}...")
             self._sudo(f"lxc-stop -n {name} -k", check=False)
             self._sudo(f"lxc-destroy -n {name}", check=False)
-
