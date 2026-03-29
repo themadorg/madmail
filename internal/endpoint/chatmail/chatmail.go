@@ -306,9 +306,20 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 
 	// WebIMAP REST API: HTTP interface for IMAP operations
 	webimapHandler := &webimap.Handler{
-		AuthDB:  e.authDB,
-		Storage: e.storage,
-		Logger:  log.Logger{Name: modName + "/webimap", Debug: e.logger.Debug},
+		AuthDB:     e.authDB,
+		Storage:    e.storage,
+		Logger:     log.Logger{Name: modName + "/webimap", Debug: e.logger.Debug},
+		MailDomain: e.mailDomain,
+	}
+	// Try to discover the outbound delivery module so WebIMAP can send
+	// to external domains (not just local recipients).
+	if remoteInst, err := module.GetInstance("outbound_delivery"); err == nil {
+		if dt, ok := remoteInst.(module.DeliveryTarget); ok {
+			webimapHandler.RemoteTarget = dt
+			e.logger.Printf("webimap: outbound delivery via target.remote enabled")
+		}
+	} else {
+		e.logger.Debugf("webimap: no outbound delivery module found, external send disabled")
 	}
 	webimapHandler.Register(e.mux, "/webimap")
 
