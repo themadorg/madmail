@@ -1033,7 +1033,7 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	e.logger.Msg("received email via "+scheme, "from", mailFrom, "to", mailTo)
+	e.logger.Msg("[federation] received via "+scheme, "from", mailFrom, "to", mailTo)
 	w.WriteHeader(http.StatusOK)
 }
 

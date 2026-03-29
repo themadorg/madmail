@@ -655,6 +655,12 @@ func installCommand(ctx *cli.Context) error {
 			config.A = config.PublicIP
 			config.Hostname = ctx.String("ip")
 			config.SkipPrompts = true
+			// IP-based installs use self-signed certs with no real DNS.
+			// DANE and strict TLS enforcement would always fail, so relax them
+			// automatically to allow SMTP as a fallback federation path.
+			if net.ParseIP(config.PublicIP) != nil {
+				config.TurnOffTLS = true
+			}
 		}
 	} else {
 		// Advanced mode

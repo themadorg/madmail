@@ -539,6 +539,7 @@ func (s *Session) Data(r io.Reader) error {
 	module.IncrementSentMessages()
 	if !s.endp.submission {
 		module.IncrementReceivedMessages()
+		s.log.Msg("[federation] received via SMTP", "msg_id", s.msgMeta.ID, "from", s.mailFrom, "rcpts", s.rcpts)
 	}
 
 	return nil

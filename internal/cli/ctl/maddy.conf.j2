@@ -138,7 +138,9 @@ smtp tcp://0.0.0.0:{{.SMTPPort}} {
 
     dmarc yes
     check {
+{{if not .TurnOffTLS}}
         require_tls
+{{end}}
         require_mx_record
         dkim
         spf
@@ -211,6 +213,15 @@ target.remote outbound_delivery {
         destination rate 20 1s
         destination concurrency 10
     }
+{{if .TurnOffTLS}}
+    # Simple/IP mode: no DANE or strict TLS enforcement (no real DNS available)
+    mx_auth {
+        local_policy {
+            min_tls_level none
+            min_mx_level none
+        }
+    }
+{{else}}
     mx_auth {
         dane
         mtasts {
@@ -222,6 +233,7 @@ target.remote outbound_delivery {
             min_mx_level none
         }
     }
+{{end}}
 }
 
 target.queue remote_queue {

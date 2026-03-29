@@ -480,16 +480,16 @@ func (rd *remoteDelivery) BodyNonAtomic(ctx context.Context, c module.StatusColl
 			defer wg.Done()
 
 			// Try HTTP delivery first as requested.
-			err := rd.tryHTTP(ctx, domain, rcpts, header, b)
+			httpMethod, err := rd.tryHTTP(ctx, domain, rcpts, header, b)
 			if err == nil {
-				rd.Log.Msg("HTTP delivery succeeded!", "domain", domain)
+				rd.Log.Msg("[federation] delivery OK", "method", httpMethod, "domain", domain, "rcpts", rcpts)
 				for _, rcpt := range rcpts {
 					c.SetStatus(rcpt, nil)
 				}
 				return
 			}
 
-			rd.Log.Msg("HTTP delivery failed, falling back to SMTP", "err", err, "domain", domain)
+			rd.Log.Msg("[federation] HTTP delivery failed, falling back to SMTP", "err", err, "domain", domain)
 
 			// Traditional SMTP fallback
 			conn, err := rd.connectionForDomain(ctx, domain)
@@ -518,6 +518,11 @@ func (rd *remoteDelivery) BodyNonAtomic(ctx context.Context, c module.StatusColl
 			err = conn.Data(ctx, header, bodyR)
 			for _, rcpt := range conn.Rcpts() {
 				c.SetStatus(rcpt, err)
+			}
+			if err == nil {
+				rd.Log.Msg("[federation] delivery OK", "method", "SMTP", "domain", domain, "rcpts", conn.Rcpts())
+			} else {
+				rd.Log.Msg("[federation] SMTP delivery failed", "err", err, "domain", domain)
 			}
 			conn.errored = err != nil
 			conn.lastUseAt = time.Now()
@@ -578,13 +583,22 @@ func (rd *remoteDelivery) Close() error {
 	return nil
 }
 
-func (rd *remoteDelivery) tryHTTP(ctx context.Context, host string, rcpts []string, header textproto.Header, b buffer.Buffer) error {
+// tryHTTP attempts HTTPS then HTTP delivery, returning the method name
+// ("HTTPS" or "HTTP") on success.
+func (rd *remoteDelivery) tryHTTP(ctx context.Context, host string, rcpts []string, header textproto.Header, b buffer.Buffer) (method string, err error) {
 	// If an endpoint_rewrite is configured, deliver via the relay
 	// instead of directly to the recipient domain.
 	if rd.rt.endpointRewrite != "" {
 		url := rd.buildRewriteURL(rd.rt.endpointRewrite)
 		rd.Log.Msg("routing via endpoint rewrite", "url", url, "original_host", host)
-		return rd.doHTTPRequestURL(ctx, url, rcpts, header, b)
+		if err := rd.doHTTPRequestURL(ctx, url, rcpts, header, b); err != nil {
+			return "", err
+		}
+		// Determine scheme from the URL
+		if strings.HasPrefix(url, "https://") {
+			return "HTTPS", nil
+		}
+		return "HTTP", nil
 	}
 
 	// Strip brackets if they exist
@@ -594,8 +608,8 @@ func (rd *remoteDelivery) tryHTTP(ctx context.Context, host string, rcpts []stri
 	// Check endpoint cache for per-destination overrides.
 	// This allows routing specific destinations through a relay (e.g. exchanger).
 	if rd.rt.endpointCache != nil {
-		resolved, err := rd.rt.endpointCache.Resolve(ctx, host)
-		if err == nil && resolved != "" && resolved != host {
+		resolved, resolveErr := rd.rt.endpointCache.Resolve(ctx, host)
+		if resolveErr == nil && resolved != "" && resolved != host {
 			rd.Log.Msg("endpoint cache override for HTTP delivery", "original", host, "target", resolved)
 			host = resolved
 		}
@@ -606,13 +620,18 @@ func (rd *remoteDelivery) tryHTTP(ctx context.Context, host string, rcpts []stri
 		host = "[" + host + "]"
 	}
 
-	err := rd.doHTTPRequest(ctx, "https", host, rcpts, header, b)
-	if err == nil {
-		return nil
+	httpsErr := rd.doHTTPRequest(ctx, "https", host, rcpts, header, b)
+	if httpsErr == nil {
+		return "HTTPS", nil
 	}
 
-	rd.Log.Msg("HTTPS delivery failed, trying HTTP fallback", "err", err, "host", host)
-	return rd.doHTTPRequest(ctx, "http", host, rcpts, header, b)
+	rd.Log.Msg("[federation] HTTPS failed, trying HTTP", "err", httpsErr, "host", host)
+	httpErr := rd.doHTTPRequest(ctx, "http", host, rcpts, header, b)
+	if httpErr == nil {
+		return "HTTP", nil
+	}
+
+	return "", httpErr
 }
 
 // buildRewriteURL normalises the endpoint_rewrite value into a full URL.

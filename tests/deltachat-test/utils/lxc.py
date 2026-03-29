@@ -37,10 +37,35 @@ class LXCManager:
             cmd = cmd.split()
         return self._run(["sudo", "env", path_env] + cmd, check=check, input_data=input_data, quiet=quiet)
 
+    def _ensure_host_nat(self):
+        """Ensure the host has NAT masquerade rules for the LXC bridge subnet."""
+        # Check if rule already exists
+        check = subprocess.run(
+            ["sudo", "iptables", "-t", "nat", "-C", "POSTROUTING",
+             "-s", "10.0.3.0/24", "!", "-d", "10.0.3.0/24", "-j", "MASQUERADE"],
+            capture_output=True
+        )
+        if check.returncode != 0:
+            self.logger("Adding missing NAT masquerade rule for LXC subnet 10.0.3.0/24...")
+            subprocess.run(
+                ["sudo", "iptables", "-t", "nat", "-A", "POSTROUTING",
+                 "-s", "10.0.3.0/24", "!", "-d", "10.0.3.0/24", "-j", "MASQUERADE"],
+                check=True
+            )
+            # Also ensure FORWARD is open for lxcbr0
+            subprocess.run(["sudo", "iptables", "-I", "FORWARD", "-i", "lxcbr0", "-j", "ACCEPT"],
+                           capture_output=True)
+            subprocess.run(["sudo", "iptables", "-I", "FORWARD", "-o", "lxcbr0", "-j", "ACCEPT"],
+                           capture_output=True)
+        else:
+            self.logger("NAT masquerade rule for LXC subnet already present.")
+
     def setup(self, containers=None, binary_path=None, reuse_existing=False):
         if containers:
             self.containers = containers
-            
+
+        self._ensure_host_nat()
+
         self.logger("Setting up LXC environment...")
         
         # Check if madmail binary exists
@@ -123,6 +148,10 @@ class LXCManager:
                     continue
 
             self.logger(f"Configuring container {name}...")
+            # Fix DNS: containers inherit the host's systemd-resolved stub (127.0.0.53)
+            # which is not reachable from inside the container. Override with a real resolver.
+            self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c",
+                        "echo 'nameserver 8.8.8.8' > /etc/resolv.conf"])
             # Install dependencies
             self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin apt-get update"])
             self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin apt-get install -y openssh-server ca-certificates curl iproute2 jq"])
