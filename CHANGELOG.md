@@ -1,3 +1,10 @@
+## [0.32.1](https://github.com/themadorg/madmail/compare/v0.32.0...v0.32.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* **lint:** resolve gofmt and errcheck issues in chatmail endpoint ([54b48e7](https://github.com/themadorg/madmail/commit/54b48e756233371e31910e49b330b713e99394ee))
+
 # [0.32.0](https://github.com/themadorg/madmail/compare/v0.31.0...v0.32.0) (2026-04-02)
 
 
