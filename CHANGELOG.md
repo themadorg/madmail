@@ -1,3 +1,11 @@
+# [0.31.0](https://github.com/themadorg/madmail/compare/v0.30.0...v0.31.0) (2026-04-02)
+
+
+### Features
+
+* **exchanger:** add pull-based email relay support ([4896697](https://github.com/themadorg/madmail/commit/48966971b3b06324223576c980b3d3ef70135e4c))
+* **exchanger:** update admin-web submodule to include relay management UI ([f2d3718](https://github.com/themadorg/madmail/commit/f2d371867d17e6dd39c529dc3f8bdddde40be8d5))
+
 # [0.30.0](https://github.com/themadorg/madmail/compare/v0.29.1...v0.30.0) (2026-04-02)
 
 
