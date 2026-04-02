@@ -1,3 +1,10 @@
+# [0.33.0](https://github.com/themadorg/madmail/compare/v0.32.2...v0.33.0) (2026-04-02)
+
+
+### Features
+
+* **cli:** add 'maddy language' command and update docs with language setting ([ab4e5a8](https://github.com/themadorg/madmail/commit/ab4e5a87cad36a9483d8202439368476498f93b4))
+
 ## [0.32.2](https://github.com/themadorg/madmail/compare/v0.32.1...v0.32.2) (2026-04-02)
 
 
