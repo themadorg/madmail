@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -54,9 +55,19 @@ Examples:
 				Usage:     "Import accounts from a JSON file",
 				ArgsUsage: "FILE",
 				Description: `Import user accounts from a JSON file.
-The file must contain a JSON array of objects with "username" and "password" fields.
+The file must contain a JSON array of objects with a "username" field.
+The "password" field is optional — if omitted, a random password is generated.
 
-Example file format:
+This makes it compatible with export files (backup/restore flow).
+
+Example file formats:
+  Export-compatible (passwords auto-generated):
+  [
+    {"username": "alice@example.com"},
+    {"username": "bob@example.com"}
+  ]
+
+  With explicit passwords:
   [
     {"username": "alice@example.com", "password": "secret123"},
     {"username": "bob@example.com", "password": "hunter2"}
@@ -184,7 +195,7 @@ func accountsImport(be module.PlainUserDB, ctx *cli.Context) error {
 
 	imported, skipped := 0, 0
 	for _, u := range users {
-		if u.Username == "" || u.Password == "" {
+		if u.Username == "" {
 			skipped++
 			continue
 		}
@@ -193,7 +204,18 @@ func accountsImport(be module.PlainUserDB, ctx *cli.Context) error {
 			continue
 		}
 
-		if err := be.CreateUser(u.Username, u.Password); err != nil {
+		// Auto-generate password if not provided (backup/restore flow)
+		password := u.Password
+		if password == "" {
+			p, err := generateCLIPassword(24)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "⚠ %s: failed to generate password: %v\n", u.Username, err)
+				continue
+			}
+			password = p
+		}
+
+		if err := be.CreateUser(u.Username, password); err != nil {
 			if strings.Contains(err.Error(), "already exist") {
 				skipped++
 				continue
@@ -246,4 +268,17 @@ func accountsDeleteAll(be module.PlainUserDB, ctx *cli.Context) error {
 
 	fmt.Printf("🗑️  Deleted %d accounts\n", deleted)
 	return nil
+}
+
+// generateCLIPassword generates a random password with mixed characters.
+func generateCLIPassword(length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = charset[b[i]%byte(len(charset))]
+	}
+	return string(b), nil
 }

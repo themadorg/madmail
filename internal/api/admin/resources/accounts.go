@@ -223,7 +223,8 @@ func handleExport(deps AccountsDeps) (interface{}, int, error) {
 	return exportResponse{Users: entries, Total: len(entries)}, 200, nil
 }
 
-// handleImport creates accounts from a list of username:password pairs.
+// handleImport creates accounts from a list of username entries.
+// If password is omitted (e.g. from an export file), a random one is generated.
 // Existing accounts are skipped (not overwritten).
 func handleImport(deps AccountsDeps, usersRaw json.RawMessage) (interface{}, int, error) {
 	var users []importUser
@@ -237,10 +238,21 @@ func handleImport(deps AccountsDeps, usersRaw json.RawMessage) (interface{}, int
 
 	result := importResponse{}
 	for _, u := range users {
-		if u.Username == "" || u.Password == "" {
+		if u.Username == "" {
 			result.Skipped++
-			result.Errors = append(result.Errors, "skipped entry with empty username or password")
+			result.Errors = append(result.Errors, "skipped entry with empty username")
 			continue
+		}
+
+		// Auto-generate password if not provided (backup/restore flow)
+		password := u.Password
+		if password == "" {
+			var err error
+			password, err = generateRandomPassword(24)
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to generate password: %v", u.Username, err))
+				continue
+			}
 		}
 
 		// Skip internal keys
@@ -250,7 +262,7 @@ func handleImport(deps AccountsDeps, usersRaw json.RawMessage) (interface{}, int
 		}
 
 		// Create user in auth DB
-		if err := deps.AuthDB.CreateUser(u.Username, u.Password); err != nil {
+		if err := deps.AuthDB.CreateUser(u.Username, password); err != nil {
 			if strings.Contains(err.Error(), "already exist") {
 				result.Skipped++
 				continue
