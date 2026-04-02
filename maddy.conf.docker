@@ -180,3 +180,15 @@ imap tls://0.0.0.0:993 tcp://0.0.0.0:143 {
     auth &local_authdb
     storage &local_mailboxes
 }
+
+# ----------------------------------------------------------------------------
+# Chatmail endpoint (Registration, QR codes, and Admin Panel)
+
+chatmail tcp://0.0.0.0:8080 {
+    mail_domain $(primary_domain)
+    mx_domain $(primary_domain)
+    web_domain $(primary_domain)
+    auth_db local_authdb
+    storage local_mailboxes
+    admin_web_path /admin
+}

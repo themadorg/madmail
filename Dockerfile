@@ -1,3 +1,10 @@
+FROM oven/bun:1 AS admin-web-build
+WORKDIR /app
+COPY admin-web/package.json admin-web/bun.lock* ./
+RUN bun install --frozen-lockfile
+COPY admin-web/ .
+RUN bun run build
+
 FROM golang:1.25-alpine AS build-env
 
 ARG ADDITIONAL_BUILD_TAGS=""
@@ -14,6 +21,9 @@ COPY internal/go-imap-mess ./internal/go-imap-mess
 RUN go mod download
 
 COPY . ./
+# Copy built admin-web from previous stage
+COPY --from=admin-web-build /app/build ./admin-web/build
+
 RUN mkdir -p /pkg/data && \
     cp maddy.conf.docker /pkg/data/maddy.conf && \
     ./build.sh --builddir /tmp --destdir /pkg/ --tags "docker ${ADDITIONAL_BUILD_TAGS}" build install

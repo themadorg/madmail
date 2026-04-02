@@ -1,6 +1,8 @@
 package ctl
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,8 +22,8 @@ func init() {
 		Usage: "Display the admin API credentials",
 		Description: `Display the admin API credentials for this server.
 
-The token is automatically generated on first chatmail startup and stored
-in the state directory (default: /var/lib/maddy/admin_token).
+The token is automatically generated on first use or chatmail startup and
+stored in the state directory (default: /var/lib/maddy/admin_token).
 
 If admin_token is set explicitly in maddy.conf, that value is used instead.
 If admin_token is set to "disabled", the admin API is not available.
@@ -60,11 +62,33 @@ Usage example:
 				data, err := os.ReadFile(tokenPath)
 				if err != nil {
 					if os.IsNotExist(err) {
-						return fmt.Errorf("admin token not found at %s\nThe token is generated on first chatmail startup. Start maddy first.", tokenPath)
+						// Generate new token if it doesn't exist
+						b := make([]byte, 32)
+						if _, err := rand.Read(b); err != nil {
+							return fmt.Errorf("failed to generate random token: %v", err)
+						}
+						token = base64.RawURLEncoding.EncodeToString(b)
+
+						// Ensure state directory exists
+						if err := os.MkdirAll(stateDir, 0750); err != nil {
+							return fmt.Errorf("failed to create state directory: %v", err)
+						}
+
+						// Save to file
+						if err := os.WriteFile(tokenPath, []byte(token+"\n"), 0600); err != nil {
+							return fmt.Errorf("failed to save generated token to %s: %v", tokenPath, err)
+						}
+
+						if !c.Bool("raw") && isTerminal(os.Stdout) {
+							fmt.Printf("✨ Generated new admin token and saved to %s\n", tokenPath)
+						}
+					} else {
+						return fmt.Errorf("failed to read admin token: %v", err)
 					}
-					return fmt.Errorf("failed to read admin token: %v", err)
+				} else {
+					token = strings.TrimSpace(string(data))
 				}
-				token = strings.TrimSpace(string(data))
+
 				if token == "" {
 					return fmt.Errorf("admin token file is empty: %s", tokenPath)
 				}
