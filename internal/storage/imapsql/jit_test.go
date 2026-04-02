@@ -28,8 +28,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	imapsql "github.com/foxcpp/go-imap-sql"
 	"github.com/emersion/go-imap/backend"
+	imapsql "github.com/foxcpp/go-imap-sql"
 	"github.com/themadorg/madmail/internal/testutils"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"

@@ -68,10 +68,10 @@ type MessageStat struct {
 // Exchanger represents a remote pull-based email relay provider.
 // Madmail will periodically poll these endpoints to download messages for itself.
 type Exchanger struct {
-	Name         string    `gorm:"primaryKey"` // Identifier for this exchanger (e.g., onjast)
-	URL          string    `gorm:"not null"`   // Pull endpoint (e.g., http://onjast.com/mxdeliv)
-	Enabled      bool      `gorm:"default:true"`
-	PollInterval int       `gorm:"default:60"` // Polling interval in seconds
+	Name         string `gorm:"primaryKey"` // Identifier for this exchanger (e.g., onjast)
+	URL          string `gorm:"not null"`   // Pull endpoint (e.g., http://onjast.com/mxdeliv)
+	Enabled      bool   `gorm:"default:true"`
+	PollInterval int    `gorm:"default:60"` // Polling interval in seconds
 	LastPollAt   time.Time
 	CreatedAt    time.Time `gorm:"autoCreateTime"`
 	UpdatedAt    time.Time `gorm:"autoUpdateTime"`

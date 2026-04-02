@@ -84,7 +84,7 @@ func (e *Endpoint) pollOne(ex db.Exchanger, domain string) error {
 
 	// The exchanger now uses a unified queue called 'me'
 	url := fmt.Sprintf("%s/me/full", strings.TrimSuffix(ex.URL, "/"))
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -151,7 +151,7 @@ func (e *Endpoint) injectMessage(msg exchangerMessage) error {
 	if err != nil {
 		return err
 	}
-	defer delivery.Abort(ctx)
+	defer func() { _ = delivery.Abort(ctx) }()
 
 	anyAccepted := false
 	for _, to := range msg.To {

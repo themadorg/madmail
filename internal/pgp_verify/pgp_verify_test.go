@@ -100,10 +100,10 @@ func TestIsSecureJoinMessage_Valid(t *testing.T) {
 			expectedResult: false,
 		},
 		{
-			name:          "Invalid - not multipart",
-			secureJoinHdr: "vc-request",
-			contentType:   "text/plain",
-			body:          "secure-join: vc-request",
+			name:           "Invalid - not multipart",
+			secureJoinHdr:  "vc-request",
+			contentType:    "text/plain",
+			body:           "secure-join: vc-request",
 			expectedResult: false,
 		},
 		{

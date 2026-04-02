@@ -125,7 +125,7 @@ type Endpoint struct {
 	sharingDriver        string
 	sharingDSN           []string
 	sharingGORM          *gorm.DB
-exchangerGORM        *gorm.DB
+	exchangerGORM        *gorm.DB
 
 	wwwDir string
 
