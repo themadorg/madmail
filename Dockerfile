@@ -24,7 +24,9 @@ COPY . ./
 # Copy built admin-web from previous stage
 COPY --from=admin-web-build /app/build ./admin-web/build
 
-RUN mkdir -p /pkg/data && \
+RUN mkdir -p internal/endpoint/iroh/assets && \
+    touch internal/endpoint/iroh/assets/iroh-relay && \
+    mkdir -p /pkg/data && \
     cp maddy.conf.docker /pkg/data/maddy.conf && \
     ./build.sh --builddir /tmp --destdir /pkg/ --tags "docker ${ADDITIONAL_BUILD_TAGS}" build install
 
