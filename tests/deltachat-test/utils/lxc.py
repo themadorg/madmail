@@ -37,11 +37,12 @@ class LXCManager:
             
         return result.stdout.strip() if not input_data else result.stdout
 
-    def _sudo(self, cmd, check=True, input_data=None, quiet=False):
+    def _exec(self, cmd, check=True, input_data=None, quiet=False):
+        """Run a command with proper PATH set (unprivileged LXC — no sudo)."""
         path_env = "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         if isinstance(cmd, str):
             cmd = cmd.split()
-        return self._run(["sudo", "env", path_env] + cmd, check=check, input_data=input_data, quiet=quiet)
+        return self._run(["env", path_env] + cmd, check=check, input_data=input_data, quiet=quiet)
 
     def _ensure_host_nat(self):
         """Ensure the host has NAT masquerade rules for the LXC bridge subnet."""
@@ -124,15 +125,21 @@ class LXCManager:
                 ip = self.ips[name]
                 entry = f"{ip} {domain}"
                 subprocess.run(
-                    ["sudo", "sh", "-c", f"echo '{entry}  # madmail-test' >> /etc/hosts"],
-                    check=True,
+                    ["sudo", "tee", "-a", "/etc/hosts"],
+                    input=f"{entry}  # madmail-test\n".encode(),
+                    capture_output=True, check=True,
                 )
                 self._host_entries.append(domain)
                 self.logger(f"Host /etc/hosts: {entry}")
 
     def _stop_dns(self):
         """Stop the test dnsmasq if running and clean up /etc/hosts."""
-        # Try PID file first
+        # Aggressively kill anything on port 53 (test networking)
+        # Some systems have lxc-net's dnsmasq holding this port by default.
+        subprocess.run(["sudo", "fuser", "-k", "53/udp"], capture_output=True)
+        subprocess.run(["sudo", "fuser", "-k", "53/tcp"], capture_output=True)
+
+        # Try PID file too
         try:
             pid_data = subprocess.run(
                 ["sudo", "cat", "/tmp/madmail-test-dnsmasq.pid"],
@@ -171,47 +178,47 @@ class LXCManager:
             self.logger(f"Error: madmail binary not found at {madmail_bin}. Please check the path.")
             sys.exit(1)
 
-        existing_containers = self._sudo("lxc-ls").split()
+        existing_containers = self._exec("lxc-ls").split()
         for name in self.containers:
             if name in existing_containers:
                 if reuse_existing:
                     self.logger(f"Container {name} already exists. Reusing it (reuse_existing=True).")
                     # Ensure it's started
-                    info = self._sudo(f"lxc-info -n {name}")
+                    info = self._exec(f"lxc-info -n {name}")
                     if "STOPPED" in info:
                         self.logger(f"Starting stopped container {name}...")
-                        self._sudo(f"lxc-start -n {name}")
+                        self._exec(f"lxc-start -n {name}")
                     continue
                 else:
                     self.logger(f"Container {name} already exists. Destroying...")
-                    self._sudo(f"lxc-stop -n {name} -k", check=False)
-                    self._sudo(f"lxc-destroy -n {name}")
+                    self._exec(f"lxc-stop -n {name} -k", check=False)
+                    self._exec(f"lxc-destroy -n {name}")
 
             self.logger(f"Creating container {name} (Debian 12)...")
             # Using download template for Debian Bookworm (12)
-            self._sudo(f"lxc-create -n {name} -t download -- -d debian -r bookworm -a amd64")
+            self._exec(f"lxc-create -n {name} -t download -- -d debian -r bookworm -a amd64")
 
             # Apply resource limits
             # Check for cgroup v2 (standard on Debian 12)
-            config_path = f"/var/lib/lxc/{name}/config"
-            self._sudo(["sh", "-c", f"echo 'lxc.cgroup2.memory.max = {self.memory_limit}' >> {config_path}"])
+            config_path = os.path.expanduser(f"~/.local/share/lxc/{name}/config")
+            self._exec(["sh", "-c", f"echo 'lxc.cgroup2.memory.max = {self.memory_limit}' >> {config_path}"])
             # Mapping cpu limit to cpuset.cpus is tricky if we don't know which cores are free.
             # However, we can use cpu.max for CFS quota. 1 core = 100000 100000
             # For simplicity, if cpu_limit is an integer, we'll try to use cpu.max
             try:
                 cpu_quota = int(self.cpu_limit) * 100000
-                self._sudo(["sh", "-c", f"echo 'lxc.cgroup2.cpu.max = {cpu_quota} 100000' >> {config_path}"])
+                self._exec(["sh", "-c", f"echo 'lxc.cgroup2.cpu.max = {cpu_quota} 100000' >> {config_path}"])
             except ValueError:
                 pass
 
             self.logger(f"Starting container {name}...")
-            self._sudo(f"lxc-start -n {name}")
+            self._exec(f"lxc-start -n {name}")
 
         self.logger("Waiting for containers to get IPs...")
         for name in self.containers:
             ip = ""
             for _ in range(30):
-                info = self._sudo(f"lxc-info -n {name} -i")
+                info = self._exec(f"lxc-info -n {name} -i")
                 if "IP:" in info:
                     ip = info.split("IP:")[1].strip()
                     if ip:
@@ -241,7 +248,7 @@ class LXCManager:
             # Check if maddy is already running with the correct IP
             # For simplicity, we'll re-run install but it's faster if we skip apt-get
             if reuse_existing:
-                deps_installed = self._sudo(["lxc-attach", "-n", name, "--", "which", "sshd"], check=False)
+                deps_installed = self._exec(["lxc-attach", "-n", name, "--", "which", "sshd"], check=False)
                 if not deps_installed:
                     self.logger(f"Dependencies not found in reused container {name}. Installing...")
                 else:
@@ -253,17 +260,17 @@ class LXCManager:
             self.logger(f"Configuring container {name}...")
             # Fix DNS: point to our local dnsmasq for domain resolution
             dns_server = "10.0.3.1" if any(d for d in self.domains.values()) else "8.8.8.8"
-            self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c",
+            self._exec(["lxc-attach", "-n", name, "--", "sh", "-c",
                         f"echo 'nameserver {dns_server}' > /etc/resolv.conf; echo 'nameserver 8.8.8.8' >> /etc/resolv.conf"])
             # Install dependencies
-            self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin apt-get update"])
-            self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin apt-get install -y openssh-server ca-certificates curl iproute2 jq"])
+            self._exec(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin apt-get update"])
+            self._exec(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin apt-get install -y openssh-server ca-certificates curl iproute2 jq"])
             
             # Create helper lib directory required by systemd unit sandboxing
-            self._sudo(["lxc-attach", "-n", name, "--", "mkdir", "-p", "/usr/lib/maddy"])
+            self._exec(["lxc-attach", "-n", name, "--", "mkdir", "-p", "/usr/lib/maddy"])
 
             # Setup root SSH access
-            self._sudo(["lxc-attach", "-n", name, "--", "mkdir", "-p", "/root/.ssh"])
+            self._exec(["lxc-attach", "-n", name, "--", "mkdir", "-p", "/root/.ssh"])
             pub_key_path = os.path.expanduser("~/.ssh/id_rsa.pub")
             if not os.path.exists(pub_key_path):
                 self.logger("Generating SSH key for the host...")
@@ -271,11 +278,11 @@ class LXCManager:
             
             with open(pub_key_path, 'r') as f:
                 pub_key = f.read()
-            self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", f"echo '{pub_key.strip()}' >> /root/.ssh/authorized_keys"])
+            self._exec(["lxc-attach", "-n", name, "--", "sh", "-c", f"echo '{pub_key.strip()}' >> /root/.ssh/authorized_keys"])
             
-            self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config"])
-            self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "echo 'root:root' | /usr/sbin/chpasswd"])
-            self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin systemctl restart ssh"])
+            self._exec(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config"])
+            self._exec(["lxc-attach", "-n", name, "--", "sh", "-c", "echo 'root:root' | /usr/sbin/chpasswd"])
+            self._exec(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin systemctl restart ssh"])
 
             self._push_and_start(name, madmail_bin, ip, domain=domain)
 
@@ -307,7 +314,7 @@ class LXCManager:
         
         # Copy to /tmp/maddy first to avoid "text file busy" if we run from destination
         with open(madmail_bin, 'rb') as f:
-            self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "cat > /tmp/maddy && chmod +x /tmp/maddy"], input_data=f.read())
+            self._exec(["lxc-attach", "-n", name, "--", "sh", "-c", "cat > /tmp/maddy && chmod +x /tmp/maddy"], input_data=f.read())
 
         self.logger(f"Installing madmail on {name}...")
         # Build install command
@@ -322,8 +329,8 @@ class LXCManager:
         else:
             self.logger(f"  IP-only: {ip}")
 
-        self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", install_cmd])
-        self._sudo(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin systemctl restart maddy"])
+        self._exec(["lxc-attach", "-n", name, "--", "sh", "-c", install_cmd])
+        self._exec(["lxc-attach", "-n", name, "--", "sh", "-c", "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin systemctl restart maddy"])
 
         self.logger("LXC environment ready.")
         return [self.ips[name] for name in self.containers]
@@ -332,7 +339,7 @@ class LXCManager:
         """Get CPU and Memory usage for a container (quiet mode for monitoring)."""
         try:
             # Use quiet mode to avoid spamming logs
-            info = self._sudo(f"lxc-info -n {name}", quiet=True)
+            info = self._exec(f"lxc-info -n {name}", quiet=True)
             mem = 0
             for line in info.split('\n'):
                 if "Memory use:" in line:
@@ -360,5 +367,5 @@ class LXCManager:
         self._stop_dns()
         for name in self.containers:
             self.logger(f"Destroying container {name}...")
-            self._sudo(f"lxc-stop -n {name} -k", check=False)
-            self._sudo(f"lxc-destroy -n {name}", check=False)
+            self._exec(f"lxc-stop -n {name} -k", check=False)
+            self._exec(f"lxc-destroy -n {name}", check=False)
