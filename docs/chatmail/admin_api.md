@@ -258,6 +258,31 @@ Only available when the storage module provides a GORM DB.
 
 See [dns_cache.md](dns_cache.md) for detailed documentation on the DNS override system.
 
+### `/admin/exchangers` — Exchanger Management
+- **GET**: List all configured exchangers
+- **POST**: Add a new exchanger — `{"name": "onjast", "url": "https://onjast.com/mxdeliv", "poll_interval": 1}`
+- **PUT**: Update an exchanger — `{"name": "onjast", "enabled": false, "poll_interval": 60}`
+- **DELETE**: Remove an exchanger — `{"name": "onjast"}`
+
+Example response for GET:
+```json
+{
+    "status": 200,
+    "body": {
+        "exchangers": [
+            {
+                "name": "onjast",
+                "url": "https://onjast.com/mxdeliv",
+                "enabled": true,
+                "poll_interval": 1,
+                "last_poll_at": "2026-04-02T11:51:00Z"
+            }
+        ],
+        "total": 1
+    }
+}
+```
+
 ## Web Admin Panel
 
 All Admin API resources are also accessible through a built-in web interface at `/admin/`. The panel uses the same authentication token and provides:

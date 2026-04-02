@@ -120,6 +120,12 @@ func init() {
 			Value:   config.ConfigFile(),
 		},
 	)
+	maddycli.AddGlobalFlag(
+		&cli.StringFlag{
+			Name:  "state-dir",
+			Usage: "Directory to store state (databases, etc.)",
+		},
+	)
 	maddycli.AddGlobalFlag(&cli.BoolFlag{
 		Name:        "debug",
 		Usage:       "enable debug logging early",

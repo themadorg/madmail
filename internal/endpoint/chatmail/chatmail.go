@@ -125,6 +125,7 @@ type Endpoint struct {
 	sharingDriver        string
 	sharingDSN           []string
 	sharingGORM          *gorm.DB
+exchangerGORM        *gorm.DB
 
 	wwwDir string
 
@@ -265,11 +266,68 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 		return fmt.Errorf("%s: storage is required", modName)
 	}
 
+	// Initialize exchanger GORM DB (uses the same credentials file as CLI by default)
+	e.logger.Msg("chatmail Init: starting DB detection", "config", config.ConfigFile())
+	exDriver := e.sharingDriver
+	stateDir := config.StateDirectory
+	if stateDir == "" {
+		stateDir = "/var/lib/maddy"
+	}
+	exchangerDSN := []string{filepath.Join(stateDir, "credentials.db")}
+
+	// Try to detect the auth table driver / DSN from the same maddy.conf as the CLI
+	data, err := os.ReadFile(config.ConfigFile())
+	if err != nil {
+		e.logger.Error("failed to read config for DB detection", err)
+	} else {
+		inAuthBlock := false
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "auth.pass_table local_authdb") {
+				inAuthBlock = true
+			}
+			if inAuthBlock {
+				if strings.HasPrefix(trimmed, "driver ") {
+					exDriver = strings.TrimSpace(strings.TrimPrefix(trimmed, "driver"))
+				}
+				if strings.HasPrefix(trimmed, "dsn ") {
+					d := strings.TrimSpace(strings.TrimPrefix(trimmed, "dsn"))
+					d = strings.Trim(d, `"'`)
+					if exDriver == "sqlite3" || exDriver == "sqlite" {
+						if !filepath.IsAbs(d) {
+							d = filepath.Join(stateDir, d)
+						}
+					}
+					exchangerDSN = []string{d}
+				}
+				if trimmed == "}" {
+					inAuthBlock = false
+				}
+			}
+		}
+	}
+
+	if exDriver == "" {
+		exDriver = "sqlite3"
+	}
+
+	e.logger.Msg("exchanger poller: opening DB", "driver", exDriver, "dsn", exchangerDSN[0])
+	exGDB, err := mdb.New(exDriver, exchangerDSN, e.logger.Debug)
+	if err != nil {
+		e.logger.Error("failed to open exchanger GORM DB", err)
+	} else {
+		e.exchangerGORM = exGDB
+		if err := exGDB.AutoMigrate(&mdb.Exchanger{}); err != nil {
+			e.logger.Error("failed to migrate exchanger table", err)
+		}
+	}
+
 	if e.enableContactSharing {
 		driver := e.sharingDriver
 		dsn := e.sharingDSN
 		if dsn == nil && driver == "sqlite3" {
-			dsn = []string{filepath.Join(config.StateDirectory, "sharing.db")}
+			dsn = []string{filepath.Join(stateDir, "sharing.db")}
 		}
 
 		gdb, err := mdb.New(driver, dsn, e.logger.Debug)
@@ -281,6 +339,9 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 			return fmt.Errorf("%s: failed to migrate sharing table: %v", modName, err)
 		}
 	}
+
+	// Start the exchanger poller in the background
+	go e.runExchangerPoller()
 
 	// Get the authentication database instance
 	authDBInst, err := module.GetInstance(authDBName)
@@ -2436,6 +2497,13 @@ func (e *Endpoint) setupAdminAPI() {
 	if gormDB != nil {
 		handler.Register("/admin/dns", resources.DNSCacheHandler(resources.DNSCacheDeps{
 			DB: gormDB,
+		}))
+	}
+
+	// Exchangers (if exchanger GORM DB available)
+	if e.exchangerGORM != nil {
+		handler.Register("/admin/exchangers", resources.ExchangerHandler(resources.ExchangerDeps{
+			DB: e.exchangerGORM,
 		}))
 	}
 

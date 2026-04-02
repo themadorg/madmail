@@ -52,6 +52,7 @@ from scenarios import (
     test_18_stealth_mode,
     test_19_login_validation,
     test_20_exchanger,
+    test_21_exchanger_php,
 )
 from utils.lxc import LXCManager
 from stress import run_stress
@@ -119,6 +120,7 @@ TEST_NAMES = {
     18: 'Stealth Mode',
     19: 'Login Validation',
     20: 'Exchanger E2E',
+    21: 'PHP Exchanger E2E',
 }
 
 
@@ -264,6 +266,7 @@ def main():
     parser.add_argument("--test-18", action="store_true", help="Run Stealth / Camouflage Mode Test")
     parser.add_argument("--test-19", action="store_true", help="Run Login Domain Validation Test")
     parser.add_argument("--test-20", action="store_true", help="Run Madexchanger E2E Test (3 LXC containers)")
+    parser.add_argument("--test-21", action="store_true", help="Run PHP Exchanger E2E Test (3 LXC containers)")
     parser.add_argument("--domain", help="Specify domain/IP for tests (updates REMOTE1/REMOTE2)")
     parser.add_argument("--lxc", action="store_true", help="Run tests in local LXC containers")
     parser.add_argument("--keep-lxc", action="store_true", help="Keep LXC containers alive after test")
@@ -293,7 +296,7 @@ def main():
         args.test_5, args.test_6, args.test_7, args.test_8, args.test_9,
         args.test_10, args.test_11, args.test_12, args.test_13, args.test_14,
         args.test_15, args.test_16, args.test_17, args.test_18,
-        args.test_19, args.test_20,
+        args.test_19, args.test_20, args.test_21,
     ])
 
     def should_run(n):
@@ -429,6 +432,44 @@ def main():
                     if not cool:
                         print("\n" + "="*60)
                         print("🎉 TEST #20 PASSED! 🎉")
+                        print("="*60)
+                    success = True
+
+            # ==========================================
+            # TEST #21: PHP Exchanger E2E (self-contained, own LXC)
+            # ==========================================
+            if args.test_21:
+                if cool:
+                    cool.begin_test(21)
+                    try:
+                        test_21_exchanger_php.run(
+                            rpc, dc, remote1, remote2, test_dir, timestamp,
+                            keep_lxc=args.keep_lxc,
+                        )
+                        cool.end_test(21, True)
+                    except Exception as e:
+                        cool.end_test(21, False, e)
+                else:
+                    print("\n" + "="*50)
+                    print("TEST #21: PHP Exchanger E2E (3 LXC containers)")
+                    print("="*50)
+                    test_21_exchanger_php.run(
+                        rpc, dc, remote1, remote2, test_dir, timestamp,
+                        keep_lxc=args.keep_lxc,
+                    )
+                    print("✓ TEST #21 PASSED: PHP Exchanger E2E verified")
+                # If test_21 is the only test, we're done
+                only_test_21 = not run_all and not any([
+                    args.test_1, args.test_2, args.test_3, args.test_4,
+                    args.test_5, args.test_6, args.test_7, args.test_8,
+                    args.test_9, args.test_10, args.test_11, args.test_12,
+                    args.test_13, args.test_14, args.test_15, args.test_16,
+                    args.test_17, args.test_18, args.test_19, args.test_20,
+                ])
+                if only_test_21:
+                    if not cool:
+                        print("\n" + "="*60)
+                        print("🎉 TEST #21 PASSED! 🎉")
                         print("="*60)
                     success = True
 
