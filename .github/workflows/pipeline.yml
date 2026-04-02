@@ -56,6 +56,11 @@ jobs:
         run: |
           mkdir -p internal/endpoint/iroh/assets
           touch internal/endpoint/iroh/assets/iroh-relay
+      - name: Build admin-web for embedding
+        run: |
+          cd admin-web && npm install && npm run build && cd ..
+          rm -rf internal/adminweb/build
+          cp -r admin-web/build internal/adminweb/build
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.9.0
@@ -83,6 +88,11 @@ jobs:
         run: |
           mkdir -p internal/endpoint/iroh/assets
           touch internal/endpoint/iroh/assets/iroh-relay
+      - name: Build admin-web for embedding
+        run: |
+          cd admin-web && npm install && npm run build && cd ..
+          rm -rf internal/adminweb/build
+          cp -r admin-web/build internal/adminweb/build
       - name: Build legacy static binary
         run: |
           make build_legacy
