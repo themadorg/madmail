@@ -166,6 +166,17 @@ var API_DOCS = {
             response: '// Request\n{"method": "GET", "resource": "/admin/settings", ...}\n\n// Response (partial)\n{\n    "status": 200,\n    "body": {\n        "registration": "closed",\n        "turn_enabled": "enabled",\n        "iroh_enabled": "enabled",\n        "ss_enabled": "enabled",\n        "smtp_port": {"key": "__SMTP_PORT__", "value": "2525", "is_set": true},\n        "turn_secret": {"key": "__TURN_SECRET__", "value": "", "is_set": false}\n    }\n}'
         },
         {
+            id: "language", resource: "/admin/settings/language", methods: ["GET", "POST"],
+            title: { en: "Website Language", fa: "زبان وب‌سایت", ru: "Язык сайта" },
+            desc: { en: "View or change the website language. Supported languages: <code>en</code> (English), <code>fa</code> (Farsi), <code>ru</code> (Russian), <code>es</code> (Spanish). Changes take effect immediately without a restart.", fa: "مشاهده یا تغییر زبان وب‌سایت. زبان‌های پشتیبانی‌شده: <code>en</code> (انگلیسی)، <code>fa</code> (فارسی)، <code>ru</code> (روسی)، <code>es</code> (اسپانیایی). تغییرات بلافاصله اعمال می‌شوند و نیازی به ریستارت نیست.", ru: "Просмотр или изменение языка сайта. Поддерживаемые языки: <code>en</code> (английский), <code>fa</code> (фарси), <code>ru</code> (русский), <code>es</code> (испанский). Изменения вступают в силу немедленно без перезапуска." },
+            examples: [
+                { label: { en: "View current language", fa: "مشاهده زبان فعلی", ru: "Просмотр текущего языка" }, code: '// Request\n{"method": "GET", "resource": "/admin/settings/language", ...}\n\n// Response\n{"status": 200, "body": {"key": "__LANGUAGE__", "value": "fa", "is_set": true}}' },
+                { label: { en: "Set language", fa: "تنظیم زبان", ru: "Установить язык" }, code: '{"method": "POST", "resource": "/admin/settings/language",\n "body": {"action": "set", "value": "fa"}, ...}\n\n// Reset to config default\n{"method": "POST", "resource": "/admin/settings/language",\n "body": {"action": "reset"}, ...}' },
+                { label: { en: "CLI equivalent", fa: "معادل خط فرمان", ru: "Аналог в CLI" }, code: '# View current language\nmaddy language\n\n# Set language\nmaddy language set fa\n\n# Reset to default\nmaddy language reset' }
+            ]
+        },
+
+        {
             id: "port-settings", resource: "/admin/settings/{port}", methods: ["GET", "POST"],
             title: { en: "Port Settings", fa: "تنظیمات پورت‌ها", ru: "Настройки портов" },
             desc: { en: "Each service port is configurable via a dedicated path. Values are stored in the database and override config file values.", fa: "هر پورت سرویسی از طریق یک مسیر اختصاصی قابل تنظیم است. مقادیر در دیتابیس ذخیره می‌شوند و بر مقادیر فایل پیکربندی اولویت دارند.", ru: "Каждый порт сервиса настраивается через отдельный путь. Значения хранятся в БД и имеют приоритет над конфигурационным файлом." },

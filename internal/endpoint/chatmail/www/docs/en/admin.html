@@ -173,6 +173,26 @@
             <div class="code-block">maddy creds log status</div>
         </div>
 
+        <h2>Website Language</h2>
+        <p>You can change the language of the web interface. Supported languages: English (en), Farsi (fa), Russian (ru), Spanish (es). Changes take effect immediately without a restart.</p>
+
+        <div class="cmd-info">
+            <h3>View Current Language</h3>
+            <div class="code-block">maddy language</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Set Language</h3>
+            <p>Switch the website to a different language.</p>
+            <div class="code-block">maddy language set fa</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Reset to Default</h3>
+            <p>Remove the database override and revert to the language configured in <code>maddy.conf</code>.</p>
+            <div class="code-block">maddy language reset</div>
+        </div>
+
         <h2>Port & Configuration Settings</h2>
         <p>Ports and service settings (such as hostname, secret, relay IP, etc.) can be managed through the Admin API. These settings are stored in the database and take priority over the configuration file values.</p>
 

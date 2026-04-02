@@ -173,6 +173,26 @@
             <div class="code-block">maddy creds log status</div>
         </div>
 
+        <h2>Язык сайта</h2>
+        <p>Вы можете изменить язык веб-интерфейса. Поддерживаемые языки: английский (en), фарси (fa), русский (ru), испанский (es). Изменения вступают в силу немедленно без перезапуска.</p>
+
+        <div class="cmd-info">
+            <h3>Просмотр текущего языка</h3>
+            <div class="code-block">maddy language</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Установить язык</h3>
+            <p>Переключить сайт на другой язык.</p>
+            <div class="code-block">maddy language set fa</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Сброс к значению по умолчанию</h3>
+            <p>Удалить переопределение из базы данных и вернуться к языку, настроенному в <code>maddy.conf</code>.</p>
+            <div class="code-block">maddy language reset</div>
+        </div>
+
         <h2>Настройки портов и конфигурации</h2>
         <p>Порты и настройки сервисов (hostname, secret, relay IP и т.д.) можно управлять через Admin API. Эти настройки хранятся в базе данных и имеют приоритет над значениями файла конфигурации.</p>
 
