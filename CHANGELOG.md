@@ -1,3 +1,10 @@
+## [0.32.2](https://github.com/themadorg/madmail/compare/v0.32.1...v0.32.2) (2026-04-02)
+
+
+### Bug Fixes
+
+* **ci:** build admin-web before linter to satisfy go:embed directive ([654686b](https://github.com/themadorg/madmail/commit/654686bab7fc69374e56cc26a9c4b8d9f3513145))
+
 ## [0.32.1](https://github.com/themadorg/madmail/compare/v0.32.0...v0.32.1) (2026-04-02)
 
 
