@@ -80,6 +80,39 @@ func BlocklistHandler(deps BlocklistDeps) func(string, json.RawMessage) (interfa
 			}
 			return map[string]string{"unblocked": req.Username}, 200, nil
 
+		case "PATCH":
+			// Bulk operations
+			var bulkReq struct {
+				Action string `json:"action"`
+			}
+			if err := json.Unmarshal(body, &bulkReq); err != nil {
+				return nil, 400, fmt.Errorf("invalid request body: %v", err)
+			}
+
+			switch bulkReq.Action {
+			case "delete_all":
+				entries, err := deps.Storage.ListBlockedUsers()
+				if err != nil {
+					return nil, 500, fmt.Errorf("failed to list blocked users: %v", err)
+				}
+				unblocked := 0
+				var errors []string
+				for _, e := range entries {
+					if err := deps.Storage.UnblockUser(e.Username); err != nil {
+						errors = append(errors, fmt.Sprintf("%s: %v", e.Username, err))
+						continue
+					}
+					unblocked++
+				}
+				resp := map[string]interface{}{"unblocked": unblocked}
+				if len(errors) > 0 {
+					resp["errors"] = errors
+				}
+				return resp, 200, nil
+			default:
+				return nil, 400, fmt.Errorf("unknown action: %s", bulkReq.Action)
+			}
+
 		default:
 			return nil, 405, fmt.Errorf("method %s not allowed", method)
 		}
