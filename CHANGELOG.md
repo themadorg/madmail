@@ -1,3 +1,16 @@
+# [0.30.0](https://github.com/themadorg/madmail/compare/v0.29.1...v0.30.0) (2026-04-02)
+
+
+### Bug Fixes
+
+* add unprivileged LXC support for test environment with setup script and documentation ([76906f8](https://github.com/themadorg/madmail/commit/76906f886c84e8cf7bc2ad51b03051c99014e395))
+
+
+### Features
+
+* **federation:** address format matrix test (Part D) + DNS + domain-based install ([7cd571b](https://github.com/themadorg/madmail/commit/7cd571be371396c7319ffb2d46f423bdefd5d472))
+* **federation:** structured [federation] delivery logs + test transport verification ([c1d0039](https://github.com/themadorg/madmail/commit/c1d00393a27a5d0fb47841570a4d07e325c45f70))
+
 ## [0.29.1](https://github.com/themadorg/madmail/compare/v0.29.0...v0.29.1) (2026-03-24)
 
 
