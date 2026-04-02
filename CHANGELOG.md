@@ -1,3 +1,10 @@
+# [0.32.0](https://github.com/themadorg/madmail/compare/v0.31.0...v0.32.0) (2026-04-02)
+
+
+### Features
+
+* integrate admin-web portal and auto-generate API token ([72f319b](https://github.com/themadorg/madmail/commit/72f319b9318bea546f22a089abd651b360d8b67e))
+
 # [0.31.0](https://github.com/themadorg/madmail/compare/v0.30.0...v0.31.0) (2026-04-02)
 
 
