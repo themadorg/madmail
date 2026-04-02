@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 )
 
@@ -38,6 +39,37 @@ type deleteAccountRequest struct {
 type createAccountResponse struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+// Bulk operation types
+type bulkRequest struct {
+	Action string          `json:"action"` // "export", "import", "delete_all"
+	Users  json.RawMessage `json:"users"`  // For import: [{"username":"...","password":"..."}]
+}
+
+type exportEntry struct {
+	Username string `json:"username"`
+}
+
+type exportResponse struct {
+	Users []exportEntry `json:"users"`
+	Total int           `json:"total"`
+}
+
+type importUser struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type importResponse struct {
+	Imported int      `json:"imported"`
+	Skipped  int      `json:"skipped"`
+	Errors   []string `json:"errors,omitempty"`
+}
+
+type deleteAllResponse struct {
+	Deleted int      `json:"deleted"`
+	Errors  []string `json:"errors,omitempty"`
 }
 
 // AccountsHandler creates a handler for /admin/accounts.
@@ -149,10 +181,127 @@ func AccountsHandler(deps AccountsDeps) func(string, json.RawMessage) (interface
 
 			return map[string]string{"deleted": req.Username}, 200, nil
 
+		case "PATCH":
+			// Bulk operations: export, import, delete_all
+			var req bulkRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				return nil, 400, fmt.Errorf("invalid request body: %v", err)
+			}
+
+			switch req.Action {
+			case "export":
+				return handleExport(deps)
+			case "import":
+				return handleImport(deps, req.Users)
+			case "delete_all":
+				return handleDeleteAll(deps)
+			default:
+				return nil, 400, fmt.Errorf("unknown bulk action: %s (expected: export, import, delete_all)", req.Action)
+			}
+
 		default:
 			return nil, 405, fmt.Errorf("method %s not allowed for /admin/accounts", method)
 		}
 	}
+}
+
+// handleExport returns all non-internal usernames.
+func handleExport(deps AccountsDeps) (interface{}, int, error) {
+	users, err := deps.AuthDB.ListUsers()
+	if err != nil {
+		return nil, 500, fmt.Errorf("failed to list users: %v", err)
+	}
+
+	entries := make([]exportEntry, 0, len(users))
+	for _, u := range users {
+		if strings.HasPrefix(u, "__") && strings.HasSuffix(u, "__") {
+			continue
+		}
+		entries = append(entries, exportEntry{Username: u})
+	}
+
+	return exportResponse{Users: entries, Total: len(entries)}, 200, nil
+}
+
+// handleImport creates accounts from a list of username:password pairs.
+// Existing accounts are skipped (not overwritten).
+func handleImport(deps AccountsDeps, usersRaw json.RawMessage) (interface{}, int, error) {
+	var users []importUser
+	if err := json.Unmarshal(usersRaw, &users); err != nil {
+		return nil, 400, fmt.Errorf("invalid users array: %v", err)
+	}
+
+	if len(users) == 0 {
+		return nil, 400, fmt.Errorf("users array is empty")
+	}
+
+	result := importResponse{}
+	for _, u := range users {
+		if u.Username == "" || u.Password == "" {
+			result.Skipped++
+			result.Errors = append(result.Errors, "skipped entry with empty username or password")
+			continue
+		}
+
+		// Skip internal keys
+		if strings.HasPrefix(u.Username, "__") && strings.HasSuffix(u.Username, "__") {
+			result.Skipped++
+			continue
+		}
+
+		// Create user in auth DB
+		if err := deps.AuthDB.CreateUser(u.Username, u.Password); err != nil {
+			if strings.Contains(err.Error(), "already exist") {
+				result.Skipped++
+				continue
+			}
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", u.Username, err))
+			continue
+		}
+
+		// Create IMAP account
+		if err := deps.Storage.CreateIMAPAcct(u.Username); err != nil {
+			// Clean up auth entry on failure
+			_ = deps.AuthDB.DeleteUser(u.Username)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: IMAP create failed: %v", u.Username, err))
+			continue
+		}
+
+		result.Imported++
+	}
+
+	return result, 200, nil
+}
+
+// handleDeleteAll removes ALL user accounts (not internal settings keys).
+func handleDeleteAll(deps AccountsDeps) (interface{}, int, error) {
+	users, err := deps.AuthDB.ListUsers()
+	if err != nil {
+		return nil, 500, fmt.Errorf("failed to list users: %v", err)
+	}
+
+	result := deleteAllResponse{}
+	for _, u := range users {
+		// Skip internal settings keys
+		if strings.HasPrefix(u, "__") && strings.HasSuffix(u, "__") {
+			continue
+		}
+
+		// Delete credentials
+		if err := deps.AuthDB.DeleteUser(u); err != nil {
+			log.DefaultLogger.Printf("delete-all: failed to delete creds for %s: %v", u, err)
+		}
+
+		// Full storage cleanup + block
+		if err := deps.Storage.DeleteAccount(u, "bulk delete via admin"); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", u, err))
+			continue
+		}
+
+		result.Deleted++
+	}
+
+	return result, 200, nil
 }
 
 // generateRandomString generates a random alphanumeric string for usernames.
