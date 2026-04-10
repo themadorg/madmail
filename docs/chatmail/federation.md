@@ -256,6 +256,18 @@ No configuration is needed. The `/mxdeliv` endpoint is always active on the
 chatmail HTTP listener. Messages are delivered through the standard
 `DeliveryTarget` pipeline, which means all policies apply:
 
+- **TLS required** — Only HTTPS connections are accepted. Plain HTTP
+  requests to `/mxdeliv` are rejected with `403 Forbidden`.
+- **Domain validation** — Recipients must belong to this server. Emails
+  addressed to users at other domains (e.g., `user@2.2.2.2` on a server
+  configured for `1.1.1.1`) are rejected with `404 Not Found`.
+- **Admin protection** — Delivery to system addresses (`admin`, `root`,
+  `postmaster`, `mailer-daemon`, `abuse`, `hostmaster`, `webmaster`) is
+  blocked via federation to prevent probing and abuse.
+- **Silent drop for non-existent users** — If a recipient address has
+  the correct domain but the user account does not exist, the server
+  responds `200 OK` to the sender but silently discards the message.
+  This prevents user enumeration by remote servers.
 - **PGP enforcement** — Unencrypted messages are rejected (`523 5.7.1`).
 - **Auto-provisioning** — If `auto_create` is enabled, accounts are created
   on first delivery.

@@ -53,6 +53,7 @@ from scenarios import (
     test_19_login_validation,
     test_20_exchanger,
     test_21_exchanger_php,
+    test_22_mxdeliv_security,
 )
 from utils.lxc import LXCManager
 from stress import run_stress
@@ -121,6 +122,7 @@ TEST_NAMES = {
     19: 'Login Validation',
     20: 'Exchanger E2E',
     21: 'PHP Exchanger E2E',
+    22: 'MxDeliv Security',
 }
 
 
@@ -267,6 +269,7 @@ def main():
     parser.add_argument("--test-19", action="store_true", help="Run Login Domain Validation Test")
     parser.add_argument("--test-20", action="store_true", help="Run Madexchanger E2E Test (3 LXC containers)")
     parser.add_argument("--test-21", action="store_true", help="Run PHP Exchanger E2E Test (3 LXC containers)")
+    parser.add_argument("--test-22", action="store_true", help="Run MxDeliv Security Validation Test")
     parser.add_argument("--domain", help="Specify domain/IP for tests (updates REMOTE1/REMOTE2)")
     parser.add_argument("--lxc", action="store_true", help="Run tests in local LXC containers")
     parser.add_argument("--keep-lxc", action="store_true", help="Keep LXC containers alive after test")
@@ -296,7 +299,7 @@ def main():
         args.test_5, args.test_6, args.test_7, args.test_8, args.test_9,
         args.test_10, args.test_11, args.test_12, args.test_13, args.test_14,
         args.test_15, args.test_16, args.test_17, args.test_18,
-        args.test_19, args.test_20, args.test_21,
+        args.test_19, args.test_20, args.test_21, args.test_22,
     ])
 
     def should_run(n):
@@ -426,7 +429,7 @@ def main():
                     args.test_5, args.test_6, args.test_7, args.test_8,
                     args.test_9, args.test_10, args.test_11, args.test_12,
                     args.test_13, args.test_14, args.test_15, args.test_16,
-                    args.test_17, args.test_18, args.test_19,
+                    args.test_17, args.test_18, args.test_19, args.test_22,
                 ])
                 if only_test_20:
                     if not cool:
@@ -464,7 +467,7 @@ def main():
                     args.test_5, args.test_6, args.test_7, args.test_8,
                     args.test_9, args.test_10, args.test_11, args.test_12,
                     args.test_13, args.test_14, args.test_15, args.test_16,
-                    args.test_17, args.test_18, args.test_19, args.test_20,
+                    args.test_17, args.test_18, args.test_19, args.test_20, args.test_22,
                 ])
                 if only_test_21:
                     if not cool:
@@ -473,8 +476,40 @@ def main():
                         print("="*60)
                     success = True
 
+            # ==========================================
+            # TEST #22: MxDeliv Security (standalone, no accounts needed)
+            # ==========================================
+            if should_run(22):
+                if cool:
+                    cool.begin_test(22)
+                    try:
+                        test_22_mxdeliv_security.run(dc, (remote1, remote2))
+                        cool.end_test(22, True)
+                    except Exception as e:
+                        cool.end_test(22, False, e)
+                else:
+                    print("\n" + "="*50)
+                    print("TEST #22: MxDeliv Security Validation")
+                    print("="*50)
+                    test_22_mxdeliv_security.run(dc, (remote1, remote2))
+                    print("✓ TEST #22 PASSED: MxDeliv security validation verified")
+                # If test_22 is the only test, we're done
+                only_test_22 = not run_all and not any([
+                    args.test_1, args.test_2, args.test_3, args.test_4,
+                    args.test_5, args.test_6, args.test_7, args.test_8,
+                    args.test_9, args.test_10, args.test_11, args.test_12,
+                    args.test_13, args.test_14, args.test_15, args.test_16,
+                    args.test_17, args.test_18, args.test_19, args.test_20, args.test_21,
+                ])
+                if only_test_22:
+                    if not cool:
+                        print("\n" + "="*60)
+                        print("🎉 TEST #22 PASSED! 🎉")
+                        print("="*60)
+                    success = True
+
             if success:
-                pass  # test_20 was the only test and it passed
+                pass  # standalone test was the only test and it passed
             else:
                 # ==========================================
                 # PRE-REQUISITE: Accounts needed for almost all tests
@@ -748,6 +783,8 @@ def main():
                         if not cool:
                             print("✓ TEST #19 PASSED: Login domain validation verified")
                     _run_cool(19, _t19)
+
+
 
                 # ==========================================
                 # ALL TESTS COMPLETE

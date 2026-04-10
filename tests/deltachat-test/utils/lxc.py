@@ -86,10 +86,10 @@ class LXCManager:
             self.logger("No domain-based servers; skipping dnsmasq setup.")
             return
 
-        # Kill any existing test dnsmasq on 10.0.3.1
+        # Kill any existing test dnsmasq (not the lxc-net one)
         self._stop_dns()
 
-        # Start dnsmasq in foreground-but-background mode
+        # Try to start our own dnsmasq on 10.0.3.1
         cmd = [
             "sudo", "dnsmasq",
             "--no-daemon",          # stay in foreground (we'll background it)
@@ -114,8 +114,36 @@ class LXCManager:
 
         # Verify it's running
         if proc.poll() is not None:
-            raise Exception(f"dnsmasq failed to start (exit code: {proc.returncode})")
-        self.logger(f"dnsmasq running (PID {self._dnsmasq_pid})")
+            # dnsmasq failed — likely because lxc-net's dnsmasq is already on port 53.
+            # Fall back: inject domain records into lxc-net's hosts file and SIGHUP it.
+            self.logger(f"  dnsmasq couldn't bind (lxc-net owns port 53). Using /etc/hosts fallback.")
+            self._dnsmasq_pid = None
+            hosts_lines = []
+            for name, domain in self.domains.items():
+                if domain:
+                    ip = self.ips[name]
+                    hosts_lines.append(f"{ip} {domain}  # madmail-test\n")
+            if hosts_lines:
+                subprocess.run(
+                    ["sudo", "tee", "-a", "/etc/hosts"],
+                    input="".join(hosts_lines).encode(),
+                    capture_output=True, check=True,
+                )
+                # Also write to a separate hosts file and wire it into lxc-net's dnsmasq
+                subprocess.run(
+                    ["sudo", "sh", "-c",
+                     f"echo '{''.join(hosts_lines).strip()}' > /tmp/madmail-test-hosts"],
+                    capture_output=True,
+                )
+                # SIGHUP lxc-net's dnsmasq to re-read /etc/hosts
+                subprocess.run(
+                    ["sudo", "killall", "-HUP", "dnsmasq"],
+                    capture_output=True,
+                )
+                for line in hosts_lines:
+                    self.logger(f"  Fallback hosts entry: {line.strip()}")
+        else:
+            self.logger(f"dnsmasq running (PID {self._dnsmasq_pid})")
 
         # Also add /etc/hosts entries on the HOST so the Delta Chat RPC client
         # (running on the host) can resolve test domains for IMAP/SMTP connections.
@@ -124,22 +152,26 @@ class LXCManager:
             if domain:
                 ip = self.ips[name]
                 entry = f"{ip} {domain}"
-                subprocess.run(
-                    ["sudo", "tee", "-a", "/etc/hosts"],
-                    input=f"{entry}  # madmail-test\n".encode(),
-                    capture_output=True, check=True,
+                # Check if already added by fallback above
+                check = subprocess.run(
+                    ["grep", "-q", f"{domain}.*# madmail-test", "/etc/hosts"],
+                    capture_output=True,
                 )
+                if check.returncode != 0:
+                    subprocess.run(
+                        ["sudo", "tee", "-a", "/etc/hosts"],
+                        input=f"{entry}  # madmail-test\n".encode(),
+                        capture_output=True, check=True,
+                    )
                 self._host_entries.append(domain)
                 self.logger(f"Host /etc/hosts: {entry}")
 
     def _stop_dns(self):
         """Stop the test dnsmasq if running and clean up /etc/hosts."""
-        # Aggressively kill anything on port 53 (test networking)
-        # Some systems have lxc-net's dnsmasq holding this port by default.
-        subprocess.run(["sudo", "fuser", "-k", "53/udp"], capture_output=True)
-        subprocess.run(["sudo", "fuser", "-k", "53/tcp"], capture_output=True)
+        # Only kill our test dnsmasq — NOT the lxc-net dnsmasq that provides
+        # DHCP to containers. Killing that breaks the next test run.
 
-        # Try PID file too
+        # Try PID file first
         try:
             pid_data = subprocess.run(
                 ["sudo", "cat", "/tmp/madmail-test-dnsmasq.pid"],
@@ -147,6 +179,7 @@ class LXCManager:
             )
             if pid_data.returncode == 0 and pid_data.stdout.strip():
                 subprocess.run(["sudo", "kill", pid_data.stdout.strip()], capture_output=True)
+                subprocess.run(["sudo", "rm", "-f", "/tmp/madmail-test-dnsmasq.pid"], capture_output=True)
         except Exception:
             pass
 
@@ -166,6 +199,11 @@ class LXCManager:
             self.containers = containers
 
         self._ensure_host_nat()
+
+        # Restart lxc-net to ensure the bridge DHCP server (dnsmasq) is running.
+        # A previous test run's _stop_dns() may have killed it via fuser -k 53/udp.
+        subprocess.run(["sudo", "systemctl", "restart", "lxc-net"], capture_output=True)
+        time.sleep(1)
 
         self.logger("Setting up LXC environment...")
         

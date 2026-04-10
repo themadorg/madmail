@@ -1007,12 +1007,28 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+
 	mailFrom := r.Header.Get("X-Mail-From")
 	mailTo := r.Header.Values("X-Mail-To")
 
 	if len(mailTo) == 0 {
 		e.logger.Error("missing X-Mail-To header", nil)
 		http.Error(w, "Missing X-Mail-To header", http.StatusBadRequest)
+		return
+	}
+
+	// ── Security Check #2 & #3: Validate recipients ──
+	// Reject recipients that don't belong to this server or target admin accounts.
+	validDomains := NormalizeMailDomain(e.mailDomain)
+	validatedTo, rejectedTo := ValidateAllRecipients(mailTo, validDomains)
+
+	for rcpt, err := range rejectedTo {
+		e.logger.Msg("mxdeliv security: rejected recipient", "rcpt", rcpt, "reason", err.Error(), "remote", r.RemoteAddr)
+	}
+
+	if len(validatedTo) == 0 {
+		e.logger.Error("mxdeliv security: all recipients rejected", nil, "remote", r.RemoteAddr, "recipients", mailTo)
+		http.Error(w, "No valid recipients", http.StatusNotFound)
 		return
 	}
 
@@ -1051,17 +1067,25 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// ── Security Fix #4: Accept silently even if user doesn't exist ──
+	// For recipients that pass security checks, try AddRcpt. If the user
+	// doesn't exist, we log it but tell the sender "OK" (don't bounce).
+	// This prevents user enumeration by remote servers.
 	anyAccepted := false
-	for _, to := range mailTo {
+	for _, to := range validatedTo {
 		if err := delivery.AddRcpt(r.Context(), to, smtp.RcptOptions{}); err != nil {
-			e.logger.Error("failed to add recipient", err, "to", to)
+			// User doesn't exist - silently accept (don't tell sender)
+			e.logger.Msg("mxdeliv: recipient not found, silently dropping", "to", to, "error", err.Error())
 		} else {
 			anyAccepted = true
 		}
 	}
 
+	// Even if no users actually exist, respond 200 OK to prevent enumeration.
+	// The sender should not know which addresses are valid.
 	if !anyAccepted {
-		http.Error(w, "No valid recipients", http.StatusNotFound)
+		e.logger.Msg("mxdeliv: no deliverable recipients, responding OK anyway", "recipients", validatedTo)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
@@ -1090,11 +1114,7 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 
 	module.IncrementReceivedMessages()
 
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	e.logger.Msg("[federation] received via "+scheme, "from", mailFrom, "to", mailTo)
+	e.logger.Msg("[federation] received via https", "from", mailFrom, "to", validatedTo)
 	w.WriteHeader(http.StatusOK)
 }
 
