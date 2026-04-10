@@ -1,3 +1,10 @@
+## [0.33.1](https://github.com/themadorg/madmail/compare/v0.33.0...v0.33.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* **docker:** create iroh-relay placeholder before build to satisfy go:embed ([ebd959a](https://github.com/themadorg/madmail/commit/ebd959a75ac7d9306fd6dbf1c7515ff291c9262e))
+
 # [0.33.0](https://github.com/themadorg/madmail/compare/v0.32.2...v0.33.0) (2026-04-02)
 
 
