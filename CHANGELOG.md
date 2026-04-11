@@ -1,3 +1,19 @@
+# [0.34.0](https://github.com/themadorg/madmail/compare/v0.33.1...v0.34.0) (2026-04-11)
+
+
+### Bug Fixes
+
+* **import:** auto-generate passwords when importing from export files ([46801db](https://github.com/themadorg/madmail/commit/46801db1c85fc8af08ef61b82ad71a064eee5c92))
+* update the admin-web reference ([2c3f4a3](https://github.com/themadorg/madmail/commit/2c3f4a34171479c143a9e9cf7222ff737e82163f))
+
+
+### Features
+
+* **accounts:** add bulk operations (export, import, delete-all) ([12c277e](https://github.com/themadorg/madmail/commit/12c277ef8dcabaca2e5d4eb1e46f90bbcad4b377))
+* **blocklist:** add unblock-all (delete all) to blocklist API and frontend ([b2a2e07](https://github.com/themadorg/madmail/commit/b2a2e078bea25c7361a057e6e20cd77f88fdcf7e))
+* **chatmail:** prioritize domain name in dclogin links and update Makefile paths ([b490345](https://github.com/themadorg/madmail/commit/b4903456e1448799fa68559a5399285bbda1cb26))
+* implement mxdeliv security validation and add user creation CLI support ([39787f8](https://github.com/themadorg/madmail/commit/39787f80ecfd5d9da2fbe52adfe37039c6ab202a))
+
 ## [0.33.1](https://github.com/themadorg/madmail/compare/v0.33.0...v0.33.1) (2026-04-02)
 
 
