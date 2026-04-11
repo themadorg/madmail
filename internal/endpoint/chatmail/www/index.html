@@ -118,7 +118,7 @@
         }
 
         function createDcloginLink(email, password) {
-            const host = "{{.PublicIP | cleanDomain}}" || "{{.MXDomain | cleanDomain}}";
+            const host = "{{.MXDomain | cleanDomain}}" || "{{.PublicIP | cleanDomain}}";
             const turnOffTLS = ("{{if .TurnOffTLS}}true{{else}}false{{end}}" === "true");
 
             if (turnOffTLS) {

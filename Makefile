@@ -78,9 +78,9 @@ sign:
 
 # Remote deployment helper (sign → upload → upgrade with signature verification)
 define deploy_remote
-	scp $(BINARY) root@$(1):~/maddy-new
+	scp $(BINARY) root@$(1):~/madmail-new
 	@echo "Upgrading remote instance ($(1))"
-	ssh root@$(1) "sudo /usr/local/bin/maddy upgrade ~/maddy-new && rm ~/maddy-new"
+	ssh root@$(1) "sudo /usr/local/bin/madmail upgrade ~/madmail-new && rm ~/madmail-new"
 endef
 
 # Push to both servers (sign once, deploy to both)
