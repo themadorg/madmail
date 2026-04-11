@@ -1007,7 +1007,6 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	mailFrom := r.Header.Get("X-Mail-From")
 	mailTo := r.Header.Values("X-Mail-To")
 
