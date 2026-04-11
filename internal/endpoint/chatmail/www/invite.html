@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+    <title data-i18n="inv_title">Invitation</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+    <link rel="icon" href="/logo.svg">
+</head>
+
+<body>
+
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu" data-i18n="nav_menu_label">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+        </ul>
+    </header>
+
+    <div class="text-center">
+        <div class="inv-icon">🎟️</div>
+        <h2><span data-i18n="inv_heading">You've been invited!</span></h2>
+        <p class="text-muted" data-i18n="inv_desc">Someone has invited you to join this chat server.</p>
+    </div>
+
+    <div class="text-center">
+        <p class="text-muted mono" id="inv-server">{{.MailDomain | cleanDomain}}</p>
+    </div>
+
+    <div id="inv-valid" class="text-center">
+        <button class="btn btn--primary mt-md" onclick="createWithToken()" id="create-btn" data-i18n="inv_create">
+            Create Account
+        </button>
+
+        <div id="loading-indicator" class="hidden mt-md text-muted" data-i18n="inv_loading">
+            Creating your account...
+        </div>
+        <div id="error-message" class="alert alert--danger hidden"></div>
+
+        <div id="account-result" class="hidden">
+            <div id="qr-container" class="hidden mt-md">
+                <div class="qr-wrap">
+                    <img id="result-qr" width="180" alt="QR Code" />
+                </div>
+            </div>
+
+            <div class="flex flex-center flex-wrap gap-sm mt-md">
+                <button class="btn btn--primary" onclick="openDeltaChat()" id="open-deltachat-btn" disabled data-i18n="index_open_dc">Open DeltaChat</button>
+                <button class="btn btn--secondary" onclick="copyLink()" id="copy-link-btn" disabled data-i18n="index_copy_link">Copy Link</button>
+            </div>
+        </div>
+
+        <div id="deltachat-error" class="alert alert--warning hidden">
+            <strong data-i18n="index_dc_not_installed_title">DeltaChat is not installed</strong>
+            <p class="mt-sm text-sm" data-i18n="index_dc_not_installed_text">Please install the DeltaChat app first, then use the "Copy Link" button.</p>
+        </div>
+
+        <div class="card mt-lg text-start" id="manual-card-default" style="display:none">
+            <strong data-i18n="index_manual_title">Manual setup (if the button didn't work):</strong>
+            <ol>
+                <li data-i18n="index_manual_step1">In DeltaChat, select "Create new profile".</li>
+                <li data-i18n="index_manual_step2">Then tap "Use Other Server".</li>
+                <li data-i18n="index_manual_step3">Copy the text below and in the scan code section, tap "Paste from clipboard":</li>
+            </ol>
+            <div class="code-block" id="manual-link" onclick="copyText(this)"></div>
+        </div>
+
+        <div class="card mt-lg text-start hidden" id="manual-card-ios">
+            <strong data-i18n="index_ios_title">iPhone account creation guide:</strong>
+            <p class="mt-sm" data-i18n="index_ios_intro">First copy the link below, then follow these steps in DeltaChat:</p>
+            <div class="code-block" id="manual-link-ios" onclick="copyText(this)"></div>
+            <ol class="mt-md">
+                <li>Use Other Server</li>
+                <li>Scan Invitation Code</li>
+                <li>⋯</li>
+                <li>Paste from Clipboard</li>
+                <li data-i18n="index_manual_step1">Enter name and profile picture (optional)</li>
+                <li>Agree & Create Profile</li>
+            </ol>
+        </div>
+    </div>
+
+    <div id="inv-invalid" class="hidden text-center">
+        <div class="card card--danger card--centered mt-lg">
+            <h3 class="text-danger" data-i18n="inv_invalid_title">Invalid Invitation</h3>
+            <p data-i18n="inv_invalid_text">This invitation link is invalid, expired, or has been used up. Please ask the person who invited you for a new link.</p>
+        </div>
+    </div>
+
+    <div id="inv-no-token" class="hidden text-center">
+        <div class="card card--danger card--centered mt-lg">
+            <h3 class="text-danger" data-i18n="inv_no_token_title">Missing Invitation Code</h3>
+            <p data-i18n="inv_no_token_text">No invitation code was found in this link. Please check the link you received.</p>
+        </div>
+    </div>
+
+    <script>
+        let currentLink = "";
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const PAGE_LANG = "{{.Language}}";
+
+        // Extract token from URL path: /inv/TOKEN
+        const pathParts = window.location.pathname.split("/");
+        const invToken = pathParts.length >= 3 ? pathParts[2] : "";
+
+        function createDcloginLink(email, password) {
+            const host = "{{.MXDomain | cleanDomain}}" || "{{.PublicIP | cleanDomain}}";
+            const turnOffTLS = ("{{if .TurnOffTLS}}true{{else}}false{{end}}" === "true");
+
+            if (turnOffTLS) {
+                return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=143&sh=${host}&sp=25&is=plain&ss=plain&sc=3`;
+            } else {
+                return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=993&sh=${host}&sp=465&ic=3&ss=default`;
+            }
+        }
+
+        function createWithToken() {
+            if (!invToken) return;
+
+            document.getElementById('account-result').classList.add('hidden');
+            document.getElementById('error-message').classList.add('hidden');
+            document.getElementById('loading-indicator').classList.remove('hidden');
+            document.getElementById('create-btn').disabled = true;
+
+            fetch('/new', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: invToken })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        return response.text().then(txt => {
+                            throw new Error(txt || t('inv_invalid_title'));
+                        });
+                    }
+                    throw new Error(t('error_create_account') + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const email = data.email;
+                const password = data.password;
+
+                currentLink = createDcloginLink(email, password);
+
+                document.getElementById('manual-link').innerText = currentLink;
+                var iosLink = document.getElementById('manual-link-ios');
+                if (iosLink) iosLink.innerText = currentLink;
+
+                if (!isIOS) {
+                    document.getElementById('result-qr').src = `/qr?data=${encodeURIComponent(currentLink)}`;
+                    document.getElementById('qr-container').classList.remove('hidden');
+                }
+                document.getElementById('account-result').classList.remove('hidden');
+                document.getElementById('loading-indicator').classList.add('hidden');
+                document.getElementById('create-btn').style.display = 'none';
+                document.getElementById('manual-card-default').style.display = '';
+                updateButtonStates();
+            })
+            .catch(error => {
+                document.getElementById('loading-indicator').classList.add('hidden');
+                document.getElementById('error-message').classList.remove('hidden');
+                document.getElementById('error-message').innerText = error.message || t('error_server');
+                document.getElementById('create-btn').disabled = false;
+            });
+        }
+
+        function updateButtonStates() {
+            const hasLink = currentLink && currentLink.length > 0;
+            document.getElementById('open-deltachat-btn').disabled = !hasLink;
+            document.getElementById('copy-link-btn').disabled = !hasLink;
+        }
+
+        function openDeltaChat() {
+            if (!currentLink) {
+                document.getElementById('deltachat-error').classList.remove('hidden');
+                return;
+            }
+
+            document.getElementById('deltachat-error').classList.add('hidden');
+
+            let deltaChatOpened = false;
+            let timeoutId = null;
+
+            const cleanup = () => {
+                if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                window.removeEventListener('blur', handleBlur);
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+            };
+
+            const handleBlur = () => { deltaChatOpened = true; cleanup(); };
+            const handleVisibilityChange = () => { if (document.hidden) { deltaChatOpened = true; cleanup(); } };
+
+            window.addEventListener('blur', handleBlur, { once: true });
+            document.addEventListener('visibilitychange', handleVisibilityChange, { once: true });
+
+            try {
+                window.location.href = currentLink;
+            } catch (e) {
+                const link = document.createElement('a');
+                link.href = currentLink;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            timeoutId = setTimeout(() => {
+                cleanup();
+                if (!deltaChatOpened) {
+                    document.getElementById('deltachat-error').classList.remove('hidden');
+                }
+            }, 2500);
+        }
+
+        function copyLink() {
+            if (currentLink) copyToClipboard(currentLink);
+        }
+
+        function copyText(el) {
+            copyToClipboard(el.innerText);
+        }
+
+        window.onload = function () {
+            applyTranslations(PAGE_LANG);
+            document.title = t('inv_title') + ' — ' + '{{.MailDomain | cleanDomain}}';
+
+            if (!invToken) {
+                document.getElementById('inv-valid').classList.add('hidden');
+                document.getElementById('inv-no-token').classList.remove('hidden');
+                return;
+            }
+
+            if (isIOS) {
+                document.getElementById('open-deltachat-btn').style.display = 'none';
+                document.getElementById('manual-card-default').style.display = 'none';
+                document.getElementById('manual-card-ios').classList.remove('hidden');
+            }
+
+            updateButtonStates();
+        };
+    </script>
+
+    <div class="footer text-center"><span data-i18n="footer_version">Version</span> {{.Version}}</div>
+</body>
+
+</html>

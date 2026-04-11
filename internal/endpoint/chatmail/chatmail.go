@@ -152,6 +152,7 @@ type Endpoint struct {
 		language               string
 		registrationOpen       bool
 		jitRegistrationEnabled bool
+		tokenRequired          bool
 		defaultQuota           int64
 		hydrated               bool
 		lastChecked            time.Time
@@ -379,6 +380,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	e.mux.HandleFunc("/qr", e.handleQRCode)
 	e.mux.HandleFunc("/madmail", e.handleBinaryDownload)
 	e.mux.HandleFunc("/mxdeliv", e.handleReceiveEmail)
+	e.mux.HandleFunc("/inv/", e.handleInvite)
 
 	// Admin API: auto-generate token if not configured, respect "disabled"
 	if e.adminToken == "disabled" {
@@ -550,6 +552,12 @@ func (e *Endpoint) hydrateCache() {
 		if jit, err := e.authDB.IsJitRegistrationEnabled(); err == nil {
 			e.cache.jitRegistrationEnabled = jit
 		}
+		// Cache the token-required toggle so /new doesn't hit the DB every time
+		if val, ok, err := e.authDB.GetSetting(resources.KeyRegistrationTokenRequired); err == nil && ok {
+			e.cache.tokenRequired = val == "true"
+		} else {
+			e.cache.tokenRequired = false
+		}
 	}
 	if e.storage != nil {
 		e.cache.defaultQuota = e.storage.GetDefaultQuota()
@@ -579,6 +587,19 @@ func (e *Endpoint) getLanguage() string {
 	return "en"
 }
 
+// isTokenRequired returns whether registration tokens are required (from cache).
+func (e *Endpoint) isTokenRequired() bool {
+	e.cache.RLock()
+	if !e.cache.hydrated || time.Since(e.cache.lastChecked) > 5*time.Second {
+		e.cache.RUnlock()
+		e.hydrateCache()
+		e.cache.RLock()
+	}
+	required := e.cache.tokenRequired
+	e.cache.RUnlock()
+	return required
+}
+
 // generateRandomString generates a random string of specified length using alphanumeric characters
 func (e *Endpoint) generateRandomString(length int) (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -606,20 +627,59 @@ func (e *Endpoint) generateRandomPassword(length int) (string, error) {
 }
 
 func (e *Endpoint) handleNewAccount(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	open, err := e.authDB.IsRegistrationOpen()
-	if err != nil {
-		e.logger.Error("failed to check registration status", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+	// Check if registration tokens are required (from cache, not DB)
+	var gormDB *gorm.DB
+	if gp, ok := e.storage.(module.GORMProvider); ok {
+		gormDB = gp.GetGORMDB()
 	}
-	if !open {
-		http.Error(w, "Registration is closed", http.StatusForbidden)
+
+	// Always try to extract token from request (query param or JSON body)
+	var registrationToken string
+	registrationToken = r.URL.Query().Get("token")
+	if registrationToken == "" {
+		var tokenReq struct {
+			Token string `json:"token"`
+		}
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&tokenReq)
+		}
+		registrationToken = tokenReq.Token
+	}
+
+	tokenRequired := e.isTokenRequired()
+
+	if registrationToken != "" {
+		// A token was provided — validate it. If valid, it overrides "registration closed".
+		if gormDB == nil {
+			http.Error(w, "Token system not available", http.StatusInternalServerError)
+			return
+		}
+		if err := validateToken(gormDB, registrationToken); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid registration token: %v", err), http.StatusForbidden)
+			return
+		}
+		// Token valid — proceed to create account
+	} else if tokenRequired {
+		// Token required but none provided
+		http.Error(w, "Registration token is required", http.StatusForbidden)
 		return
+	} else {
+		// No token system — check if registration is open
+		open, err := e.authDB.IsRegistrationOpen()
+		if err != nil {
+			e.logger.Error("failed to check registration status", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if !open {
+			http.Error(w, "Registration is closed", http.StatusForbidden)
+			return
+		}
 	}
 
 	// Retry loop with bounded attempts to avoid unbounded recursion
@@ -679,7 +739,33 @@ func (e *Endpoint) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Return the generated credentials
+		// If a registration token was used, store it in the quota record
+		// for deferred consumption on first login
+		if registrationToken != "" && gormDB != nil {
+			gormDB.Model(&mdb.Quota{}).
+				Where("username = ?", email).
+				Update("used_token", registrationToken)
+		}
+
+		// GET = browser redirect to dclogin:// deep link
+		if r.Method == http.MethodGet {
+			host := strings.Trim(e.mxDomain, "[]")
+			if host == "" {
+				host = strings.Trim(e.publicIP, "[]")
+			}
+			var dclogin string
+			if e.turnOffTLS {
+				dclogin = fmt.Sprintf("dclogin:%s/?p=%s&v=1&ih=%s&ip=143&sh=%s&sp=25&is=plain&ss=plain&sc=3",
+					email, url.QueryEscape(password), host, host)
+			} else {
+				dclogin = fmt.Sprintf("dclogin:%s/?p=%s&v=1&ih=%s&ip=993&sh=%s&sp=465&ic=3&ss=default",
+					email, url.QueryEscape(password), host, host)
+			}
+			http.Redirect(w, r, dclogin, http.StatusFound)
+			return
+		}
+
+		// POST = JSON API response
 		response := AccountResponse{
 			Email:    email,
 			Password: password,
@@ -751,6 +837,16 @@ func (e *Endpoint) serveDocLang(w http.ResponseWriter, r *http.Request, name str
 	// Final fallback: try legacy root-level name (e.g., general_docs.html)
 	legacyName := strings.TrimSuffix(name, ".html") + "_docs.html"
 	e.serveTemplate(w, r, legacyName, nil)
+}
+
+// handleInvite serves the invite.html page for /inv/{token} URLs.
+// The token is extracted client-side from the URL path by the page's JavaScript.
+func (e *Endpoint) handleInvite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	e.serveTemplate(w, r, "invite.html", nil)
 }
 
 func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
@@ -2365,6 +2461,9 @@ func (e *Endpoint) setupAdminAPI() {
 			if key == resources.KeyLanguage {
 				e.cache.language = value
 			}
+			if key == resources.KeyRegistrationTokenRequired {
+				e.cache.tokenRequired = value == "true"
+			}
 			e.cache.Unlock()
 		}
 		return err
@@ -2375,6 +2474,9 @@ func (e *Endpoint) setupAdminAPI() {
 			e.cache.Lock()
 			if key == resources.KeyLanguage {
 				e.cache.language = ""
+			}
+			if key == resources.KeyRegistrationTokenRequired {
+				e.cache.tokenRequired = false
 			}
 			e.cache.Unlock()
 		}
@@ -2404,6 +2506,8 @@ func (e *Endpoint) setupAdminAPI() {
 	// Also ensure the GORM table_entries table exists for legacy compatibility
 	if gormDB != nil {
 		_ = gormDB.AutoMigrate(&mdb.TableEntry{})
+		// Ensure RegistrationToken table exists for the invitation system
+		_ = gormDB.AutoMigrate(&mdb.RegistrationToken{})
 	}
 
 	// User count helper
@@ -2480,6 +2584,16 @@ func (e *Endpoint) setupAdminAPI() {
 	handler.Register("/admin/settings/admin_web_path", resources.GenericSettingHandler(resources.KeyAdminWebPath, settingsDeps))
 	handler.Register("/admin/settings/language", resources.GenericSettingHandler(resources.KeyLanguage, settingsDeps))
 	handler.Register("/admin/services/admin_web", resources.AdminWebHandler(settingsDeps))
+
+	// Registration token toggle
+	handler.Register("/admin/settings/registration_token_required", resources.GenericSettingHandler(resources.KeyRegistrationTokenRequired, settingsDeps))
+
+	// Registration tokens (invitation system)
+	if gormDB != nil {
+		handler.Register("/admin/registration-token", resources.TokensHandler(resources.TokensDeps{
+			DB: gormDB,
+		}))
+	}
 
 	handler.Register("/admin/accounts", resources.AccountsHandler(resources.AccountsDeps{
 		AuthDB:     e.authDB,

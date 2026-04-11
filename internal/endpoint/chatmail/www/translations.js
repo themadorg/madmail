@@ -170,7 +170,17 @@ var TRANSLATIONS = {
         proxy_box_usage: "How to use: Settings > Advanced > Network > SOCKS5 Proxy",
         proxy_box_footer: "* This proxy is specific to this Madmail server.",
         // Privacy note
-        share_privacy: "Your invite link is stored in our database so others can contact you. Anyone with your link can see this information."
+        share_privacy: "Your invite link is stored in our database so others can contact you. Anyone with your link can see this information.",
+        // Invitation page
+        inv_title: "Invitation",
+        inv_heading: "You've been invited!",
+        inv_desc: "Someone has invited you to join this chat server.",
+        inv_create: "Create Account",
+        inv_loading: "Creating your account...",
+        inv_invalid_title: "Invalid Invitation",
+        inv_invalid_text: "This invitation link is invalid, expired, or has been used up. Please ask the person who invited you for a new link.",
+        inv_no_token_title: "Missing Invitation Code",
+        inv_no_token_text: "No invitation code was found in this link. Please check the link you received."
     },
 
     fa: {
@@ -328,7 +338,16 @@ var TRANSLATIONS = {
         proxy_box_desc: "توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است!",
         proxy_box_usage: "نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5",
         proxy_box_footer: "* این پروکسی مختص همین سرور Madmail است.",
-        share_privacy: "آدرس دعوت شما در پایگاه داده ما ذخیره می‌شود تا دیگران بتوانند با شما ارتباط برقرار کنند. هر کسی که لینک شما را داشته باشد می‌تواند این اطلاعات را ببیند."
+        share_privacy: "آدرس دعوت شما در پایگاه داده ما ذخیره می‌شود تا دیگران بتوانند با شما ارتباط برقرار کنند. هر کسی که لینک شما را داشته باشد می‌تواند این اطلاعات را ببیند.",
+        inv_title: "دعوت‌نامه",
+        inv_heading: "شما دعوت شده‌اید!",
+        inv_desc: "شخصی شما را به این سرور چت دعوت کرده است.",
+        inv_create: "ساخت اکانت",
+        inv_loading: "در حال ساخت اکانت...",
+        inv_invalid_title: "دعوت‌نامه نامعتبر",
+        inv_invalid_text: "این لینک دعوت نامعتبر، منقضی شده یا تمام شده است. لطفاً از فردی که شما را دعوت کرده لینک جدید بخواهید.",
+        inv_no_token_title: "کد دعوت پیدا نشد",
+        inv_no_token_text: "کد دعوتی در این لینک یافت نشد. لطفاً لینکی که دریافت کرده‌اید را بررسی کنید."
     },
 
     ru: {
@@ -486,7 +505,16 @@ var TRANSLATIONS = {
         proxy_box_desc: "Этот прокси работает только в пределах этого сервера и только для обмена сообщениями с этим сервером!",
         proxy_box_usage: "Как использовать: Настройки > Дополнительно > Сеть > SOCKS5 Прокси",
         proxy_box_footer: "* Этот прокси специфичен для данного сервера Madmail.",
-        share_privacy: "Ваша ссылка-приглашение хранится в нашей базе данных, чтобы другие могли связаться с вами. Любой, у кого есть ваша ссылка, может видеть эту информацию."
+        share_privacy: "Ваша ссылка-приглашение хранится в нашей базе данных, чтобы другие могли связаться с вами. Любой, у кого есть ваша ссылка, может видеть эту информацию.",
+        inv_title: "Приглашение",
+        inv_heading: "Вас пригласили!",
+        inv_desc: "Кто-то пригласил вас присоединиться к этому чат-серверу.",
+        inv_create: "Создать аккаунт",
+        inv_loading: "Создание аккаунта...",
+        inv_invalid_title: "Недействительное приглашение",
+        inv_invalid_text: "Эта ссылка-приглашение недействительна, истекла или была использована полностью. Попросите пригласившего вас человека отправить новую ссылку.",
+        inv_no_token_title: "Отсутствует код приглашения",
+        inv_no_token_text: "В этой ссылке не найден код приглашения. Проверьте полученную ссылку."
     }
 };
 

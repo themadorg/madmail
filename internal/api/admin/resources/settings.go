@@ -193,7 +193,8 @@ const (
 	KeySsWsEnabled            = "__SS_WS_ENABLED__"
 	KeySsGrpcEnabled          = "__SS_GRPC_ENABLED__"
 	KeyHTTPProxyEnabled       = "__HTTP_PROXY_ENABLED__"
-	KeyAdminWebEnabled        = "__ADMIN_WEB_ENABLED__"
+	KeyAdminWebEnabled            = "__ADMIN_WEB_ENABLED__"
+	KeyRegistrationTokenRequired = "__REGISTRATION_TOKEN_REQUIRED__"
 
 	// Port settings
 	KeySMTPPort       = "__SMTP_PORT__"

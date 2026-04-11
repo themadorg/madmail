@@ -389,6 +389,9 @@ func (store *Storage) initQuotaTable() error {
 	if err := store.GORMDB.AutoMigrate(&mdb.MessageStat{}); err != nil {
 		return err
 	}
+	if err := store.GORMDB.AutoMigrate(&mdb.RegistrationToken{}); err != nil {
+		return err
+	}
 
 	// Load persisted message counters into global atomic counters.
 	var stat mdb.MessageStat
@@ -705,6 +708,49 @@ func (store *Storage) UpdateFirstLogin(username string) error {
 	quota.LastLoginAt = now
 
 	if quota.FirstLoginAt == 1 {
+		// This is the user's first login — handle deferred token consumption.
+		if quota.UsedToken != "" {
+			// Attempt to consume the registration token atomically.
+			// UPDATE registration_tokens SET used_count = used_count + 1
+			//   WHERE token = ? AND used_count < max_uses
+			result := store.GORMDB.Model(&mdb.RegistrationToken{}).
+				Where("token = ? AND used_count < max_uses", quota.UsedToken).
+				Update("used_count", gorm.Expr("used_count + 1"))
+
+			if result.Error != nil || result.RowsAffected == 0 {
+				// Case B: Token was deleted, expired, or all slots taken.
+				// Delete the account — the reservation is no longer valid.
+				store.Log.Printf("late validation failed for %s (token %s): deleting account", username, quota.UsedToken)
+
+				// Get auth DB to also delete credentials
+				if store.authDBName != "" {
+					if mod, err := module.GetInstance(store.authDBName); err == nil {
+						if authDB, ok := mod.(module.PlainUserDB); ok {
+							_ = authDB.DeleteUser(username)
+						}
+					}
+				}
+
+				// Delete IMAP storage (guard against nil Back in tests)
+				if store.Back != nil {
+					_ = store.DeleteIMAPAcct(username)
+				}
+
+				// Delete quota record
+				store.GORMDB.Where("username = ?", username).Delete(&mdb.Quota{})
+
+				// Invalidate cache
+				if store.QuotaCache != nil {
+					store.QuotaCache.Invalidate(username)
+				}
+
+				return fmt.Errorf("registration token no longer valid, account deleted")
+			}
+
+			// Case A: Success — token consumed. Clear UsedToken and proceed.
+			quota.UsedToken = ""
+		}
+
 		quota.FirstLoginAt = now
 	}
 

@@ -9,8 +9,9 @@ type Quota struct {
 	Username     string `gorm:"primaryKey"`
 	MaxStorage   int64
 	CreatedAt    int64
-	FirstLoginAt int64
+	FirstLoginAt int64  // 1 = Registered but never logged in; >1 = Logged in
 	LastLoginAt  int64
+	UsedToken    string `gorm:"column:used_token;index:idx_used_token_pending,priority:1"` // The token used during /new (cleared after consumption)
 }
 
 // Contact represents the contacts table for contact sharing.
@@ -75,4 +76,15 @@ type Exchanger struct {
 	LastPollAt   time.Time
 	CreatedAt    time.Time `gorm:"autoCreateTime"`
 	UpdatedAt    time.Time `gorm:"autoUpdateTime"`
+}
+
+// RegistrationToken represents a token that controls account registration.
+// Tokens have a max_uses limit; consumption is deferred until first login.
+type RegistrationToken struct {
+	Token     string     `gorm:"primaryKey"`
+	MaxUses   int        `gorm:"column:max_uses;default:1"`
+	UsedCount int        `gorm:"column:used_count;default:0"` // Persisted successes (consumed on first login)
+	Comment   string     `gorm:"column:comment"`
+	CreatedAt time.Time  `gorm:"autoCreateTime"`
+	ExpiresAt *time.Time `gorm:"column:expires_at"`
 }

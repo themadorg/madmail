@@ -43,9 +43,12 @@ func setupTestStorage(t *testing.T) (*Storage, func()) {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
 
-	// Auto-migrate quota table
+	// Auto-migrate quota and registration token tables
 	if err := db.AutoMigrate(&mdb.Quota{}); err != nil {
 		t.Fatalf("Failed to migrate quota table: %v", err)
+	}
+	if err := db.AutoMigrate(&mdb.RegistrationToken{}); err != nil {
+		t.Fatalf("Failed to migrate registration token table: %v", err)
 	}
 
 	store := &Storage{
@@ -362,3 +365,140 @@ func TestMigrateFirstLoginFromCreatedAt(t *testing.T) {
 		}
 	})
 }
+
+func TestUpdateFirstLogin_LateValidation_Success(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	// Create a valid token with room for consumption
+	store.GORMDB.Create(&mdb.RegistrationToken{
+		Token:     "valid-token-123",
+		MaxUses:   5,
+		UsedCount: 2,
+	})
+
+	// Create a user registered with this token (never logged in)
+	store.GORMDB.Create(&mdb.Quota{
+		Username:     "tokenuser@example.com",
+		CreatedAt:    time.Now().Add(-1 * time.Hour).Unix(),
+		FirstLoginAt: 1,
+		UsedToken:    "valid-token-123",
+	})
+
+	// First login should succeed and consume the token
+	err := store.UpdateFirstLogin("tokenuser@example.com")
+	if err != nil {
+		t.Fatalf("UpdateFirstLogin returned error: %v", err)
+	}
+
+	// Verify token was consumed (UsedCount incremented)
+	var token mdb.RegistrationToken
+	store.GORMDB.Where("token = ?", "valid-token-123").First(&token)
+	if token.UsedCount != 3 {
+		t.Errorf("Expected UsedCount=3 after consumption, got %d", token.UsedCount)
+	}
+
+	// Verify UsedToken was cleared
+	var quota mdb.Quota
+	store.GORMDB.Where("username = ?", "tokenuser@example.com").First(&quota)
+	if quota.UsedToken != "" {
+		t.Errorf("Expected UsedToken to be cleared, got '%s'", quota.UsedToken)
+	}
+	if quota.FirstLoginAt <= 1 {
+		t.Error("Expected FirstLoginAt to be > 1 after first login")
+	}
+}
+
+func TestUpdateFirstLogin_LateValidation_TokenDeleted(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	// Create a user registered with a token that no longer exists
+	store.GORMDB.Create(&mdb.Quota{
+		Username:     "orphan@example.com",
+		CreatedAt:    time.Now().Add(-1 * time.Hour).Unix(),
+		FirstLoginAt: 1,
+		UsedToken:    "deleted-token-xyz",
+	})
+	// Note: NOT creating the token in registration_tokens — it's "deleted"
+
+	// First login should fail and delete the account
+	err := store.UpdateFirstLogin("orphan@example.com")
+	if err == nil {
+		t.Fatal("expected error for deleted token, got nil")
+	}
+
+	// Verify account was deleted (quota record removed)
+	var count int64
+	store.GORMDB.Model(&mdb.Quota{}).Where("username = ?", "orphan@example.com").Count(&count)
+	if count != 0 {
+		t.Errorf("Expected quota record to be deleted, but found %d", count)
+	}
+}
+
+func TestUpdateFirstLogin_LateValidation_TokenExhausted(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	// Create a token that's already fully consumed
+	store.GORMDB.Create(&mdb.RegistrationToken{
+		Token:     "full-token-456",
+		MaxUses:   1,
+		UsedCount: 1, // Already at limit
+	})
+
+	// Create a user registered with this exhausted token
+	store.GORMDB.Create(&mdb.Quota{
+		Username:     "latecomer@example.com",
+		CreatedAt:    time.Now().Add(-1 * time.Hour).Unix(),
+		FirstLoginAt: 1,
+		UsedToken:    "full-token-456",
+	})
+
+	// First login should fail and delete the account
+	err := store.UpdateFirstLogin("latecomer@example.com")
+	if err == nil {
+		t.Fatal("expected error for exhausted token, got nil")
+	}
+
+	// Verify account was deleted
+	var count int64
+	store.GORMDB.Model(&mdb.Quota{}).Where("username = ?", "latecomer@example.com").Count(&count)
+	if count != 0 {
+		t.Errorf("Expected quota record to be deleted, but found %d", count)
+	}
+
+	// Verify token was NOT incremented (should stay at 1)
+	var token mdb.RegistrationToken
+	store.GORMDB.Where("token = ?", "full-token-456").First(&token)
+	if token.UsedCount != 1 {
+		t.Errorf("Expected UsedCount to remain 1, got %d", token.UsedCount)
+	}
+}
+
+func TestUpdateFirstLogin_NoToken_Normal(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	// Create a user without a token (normal registration, no token system)
+	store.GORMDB.Create(&mdb.Quota{
+		Username:     "normaluser@example.com",
+		CreatedAt:    time.Now().Add(-1 * time.Hour).Unix(),
+		FirstLoginAt: 1,
+		UsedToken:    "", // No token used
+	})
+
+	// First login should succeed normally
+	err := store.UpdateFirstLogin("normaluser@example.com")
+	if err != nil {
+		t.Fatalf("UpdateFirstLogin returned error: %v", err)
+	}
+
+	// Verify first login was set
+	var quota mdb.Quota
+	store.GORMDB.Where("username = ?", "normaluser@example.com").First(&quota)
+	if quota.FirstLoginAt <= 1 {
+		t.Error("Expected FirstLoginAt to be > 1 after first login")
+	}
+}
+
