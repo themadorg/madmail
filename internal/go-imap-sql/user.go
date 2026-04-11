@@ -117,10 +117,10 @@ func (u *User) GetMailbox(name string, readOnly bool, conn backend.Conn) (*imap.
 	mbox.readOnly = readOnly
 
 	if conn == nil {
-		// For non-interactive sessions (conn == nil) we do not provide Uids (expensive DB query). 
-		// The SMTP internal/go-imap-sql/delivery.go pipeline does not need a list of Uids. 
+		// For non-interactive sessions (conn == nil) we do not provide Uids (expensive DB query).
+		// The SMTP internal/go-imap-sql/delivery.go pipeline does not need a list of Uids.
 		// All the methods that use uidMap (Sync, ResolveSeq, UidAsSeq, MsgsCount) have conn == nil guards or are
-		// only called from IMAP command handlers that require an active connection. 
+		// only called from IMAP command handlers that require an active connection.
 		mbox.handle = u.parent.mngr.ManagementHandle(mbox.id, nil, nil)
 		return nil, mbox, nil
 	}

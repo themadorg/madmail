@@ -155,12 +155,12 @@ func TestValidateAllRecipients(t *testing.T) {
 	validDomains := NormalizeMailDomain("[1.1.1.1]")
 
 	mailTo := []string{
-		"alice@[1.1.1.1]",    // valid
-		"bob@1.1.1.1",        // valid (bare IP)
-		"admin@[1.1.1.1]",   // blocked admin
-		"user@2.2.2.2",       // wrong domain
-		"root@1.1.1.1",       // blocked admin
-		"carol@[1.1.1.1]",   // valid
+		"alice@[1.1.1.1]", // valid
+		"bob@1.1.1.1",     // valid (bare IP)
+		"admin@[1.1.1.1]", // blocked admin
+		"user@2.2.2.2",    // wrong domain
+		"root@1.1.1.1",    // blocked admin
+		"carol@[1.1.1.1]", // valid
 	}
 
 	accepted, rejected := ValidateAllRecipients(mailTo, validDomains)

@@ -54,8 +54,8 @@ func initTestBackend() backendtests.Backend {
 	}
 
 	b, err := New(driver, dsn, &FSStore{Root: storeDir}, Opts{
-		PRNG:            prng,
-		Log:             log,
+		PRNG: prng,
+		Log:  log,
 	})
 	if err != nil {
 		panic(err)

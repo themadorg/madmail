@@ -1,11 +1,13 @@
+//go:build ignore
 // +build ignore
 
 // devserver.go — standalone dev server for previewing chatmail HTML templates.
 //
 // Usage:
-//   go run devserver.go                 (serves on :8080)
-//   go run devserver.go -port 3000      (serves on :3000)
-//   go run devserver.go -domain chat.example.org
+//
+//	go run devserver.go                 (serves on :8080)
+//	go run devserver.go -port 3000      (serves on :3000)
+//	go run devserver.go -domain chat.example.org
 //
 // Every request re-reads the files from disk, so just edit & reload the browser.
 package main
@@ -53,9 +55,9 @@ type TemplateData struct {
 // ─── Template helpers (same as the real server) ───
 
 var funcMap = template.FuncMap{
-	"upper":    strings.ToUpper,
-	"safeURL":  func(s string) template.URL { return template.URL(s) },
-	"safeHTML": func(s string) template.HTML { return template.HTML(s) },
+	"upper":       strings.ToUpper,
+	"safeURL":     func(s string) template.URL { return template.URL(s) },
+	"safeHTML":    func(s string) template.HTML { return template.HTML(s) },
 	"cleanDomain": func(s string) string { return strings.Trim(s, "[]") },
 	"formatBytes": func(b int64) string {
 		const unit = 1024

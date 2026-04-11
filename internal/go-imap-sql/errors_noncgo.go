@@ -1,4 +1,5 @@
-//+build !cgo nosqlite3
+//go:build !cgo || nosqlite3
+// +build !cgo nosqlite3
 
 package imapsql
 

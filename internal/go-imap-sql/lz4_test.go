@@ -44,9 +44,9 @@ func initTestBackendLZ4() backendtests.Backend {
 	}
 
 	b, err := New(driver, dsn, &FSStore{Root: storeDir}, Opts{
-		CompressAlgo:    "lz4",
-		PRNG:            prng,
-		Log:             DummyLogger{},
+		CompressAlgo: "lz4",
+		PRNG:         prng,
+		Log:          DummyLogger{},
 	})
 	if err != nil {
 		panic(err)
