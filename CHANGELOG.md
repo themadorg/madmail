@@ -1,3 +1,10 @@
+# [0.35.0](https://github.com/themadorg/madmail/compare/v0.34.0...v0.35.0) (2026-04-11)
+
+
+### Features
+
+* implement registration token system with deferred validation and atomic consumption on first login ([ce43e86](https://github.com/themadorg/madmail/commit/ce43e8633f21cc82b00e3c0e7211bb9dd242775f))
+
 # [0.34.0](https://github.com/themadorg/madmail/compare/v0.33.1...v0.34.0) (2026-04-11)
 
 
