@@ -1,0 +1,322 @@
+/**
+ * app.css — Delta Chat Web styles
+ *
+ * Design system with CSS custom properties for dark/light mode.
+ * All theming goes through `--dc-*` variables so Tailwind utilities
+ * and custom classes both reference the same tokens.
+ */
+
+/* ---- CSS Variables (Dark Mode = default) ---- */
+:root {
+  --dc-primary: #159b6b;
+  --dc-primary-hover: #0f7d56;
+  --dc-primary-light: rgba(21, 155, 107, 0.15);
+  --dc-accent: #6c5ce7;
+
+  /* Dark mode surfaces */
+  --dc-bg: #0f0f15;
+  --dc-surface: #16161f;
+  --dc-surface-2: #1e1e2a;
+  --dc-surface-3: #262636;
+  --dc-border: #2a2a3e;
+  --dc-text: #e8e8f4;
+  --dc-text-secondary: #c0c0d8;
+  --dc-muted: #8888a8;
+
+  /* Scrollbar */
+  --dc-scrollbar: #2a2a3e;
+  --dc-scrollbar-hover: #8888a8;
+
+  /* Shadows */
+  --dc-shadow: rgba(0, 0, 0, 0.4);
+  --dc-shadow-primary: rgba(21, 155, 107, 0.15);
+
+  /* Message bubbles */
+  --dc-bubble-out: var(--dc-primary);
+  --dc-bubble-out-text: #ffffff;
+  --dc-bubble-in: var(--dc-surface-2);
+  --dc-bubble-in-text: var(--dc-text);
+  --dc-bubble-in-border: var(--dc-border);
+
+  /* Reactions */
+  --dc-reaction-active-bg: rgba(21, 155, 107, 0.3);
+  --dc-reaction-active-border: rgba(21, 155, 107, 0.6);
+  --dc-reaction-bg: rgba(22, 22, 31, 0.9);
+
+  /* Emoji picker */
+  --dc-emoji-picker-theme: dark;
+
+  /* Overlay */
+  --dc-overlay: rgba(0, 0, 0, 0.4);
+}
+
+/* ---- Light Mode ---- */
+.light {
+  --dc-bg: #f5f5f7;
+  --dc-surface: #ffffff;
+  --dc-surface-2: #f0f0f4;
+  --dc-surface-3: #e8e8ee;
+  --dc-border: #d8d8e2;
+  --dc-text: #1a1a2e;
+  --dc-text-secondary: #3a3a52;
+  --dc-muted: #6e6e8a;
+
+  --dc-scrollbar: #d0d0dc;
+  --dc-scrollbar-hover: #a0a0b0;
+
+  --dc-shadow: rgba(0, 0, 0, 0.08);
+  --dc-shadow-primary: rgba(21, 155, 107, 0.1);
+
+  --dc-bubble-out: var(--dc-primary);
+  --dc-bubble-out-text: #ffffff;
+  --dc-bubble-in: #ffffff;
+  --dc-bubble-in-text: var(--dc-text);
+  --dc-bubble-in-border: var(--dc-border);
+
+  --dc-reaction-active-bg: rgba(21, 155, 107, 0.15);
+  --dc-reaction-active-border: rgba(21, 155, 107, 0.4);
+  --dc-reaction-bg: rgba(255, 255, 255, 0.95);
+
+  --dc-emoji-picker-theme: light;
+
+  --dc-overlay: rgba(0, 0, 0, 0.2);
+}
+
+/* ---- Base ---- */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+[x-cloak] {
+  display: none !important;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--dc-bg);
+  color: var(--dc-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--dc-scrollbar);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dc-scrollbar-hover);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dc-scrollbar) transparent;
+}
+
+/* ---- Animations ---- */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fade {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.animate-slide {
+  animation: slideIn 0.3s ease;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* ---- Message Bubble ---- */
+.msg-bubble {
+  max-width: 80%;
+  word-break: break-word;
+}
+
+/* ---- Lucide Icons ---- */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.icon svg {
+  width: 1em;
+  height: 1em;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.icon-sm svg {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-md svg {
+  width: 18px;
+  height: 18px;
+}
+
+.icon-lg svg {
+  width: 24px;
+  height: 24px;
+}
+
+.icon-xl svg {
+  width: 40px;
+  height: 40px;
+}
+
+/* ---- Theme Toggle ---- */
+.theme-toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--dc-surface-2);
+  border: 1px solid var(--dc-border);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  padding: 0;
+  outline: none;
+}
+
+.theme-toggle:hover {
+  border-color: var(--dc-primary);
+}
+
+.theme-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dc-primary);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.light .theme-toggle-knob {
+  transform: translateX(20px);
+}
+
+.theme-toggle-knob svg {
+  width: 12px;
+  height: 12px;
+  stroke: white;
+  stroke-width: 2.5;
+  fill: none;
+}
+
+/* ---- Compose area ---- */
+.compose-input {
+  background: var(--dc-surface-2);
+  border: 1px solid var(--dc-border);
+  color: var(--dc-text);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.compose-input:focus {
+  border-color: var(--dc-primary);
+  box-shadow: 0 0 0 3px var(--dc-shadow-primary);
+  outline: none;
+}
+
+.compose-input::placeholder {
+  color: var(--dc-muted);
+}
+
+/* ---- Context Menu ---- */
+.context-menu {
+  background: var(--dc-surface);
+  border: 1px solid var(--dc-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px var(--dc-shadow);
+  min-width: 180px;
+  padding: 6px 0;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 16px;
+  font-size: 14px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--dc-text);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.context-menu-item:hover {
+  background: var(--dc-surface-2);
+}
+
+.context-menu-item.danger {
+  color: #ef4444;
+}
+
+.context-menu-item.danger-strong {
+  color: #dc2626;
+}
+
+.context-menu-item.muted {
+  color: var(--dc-muted);
+}
+
+/* ---- Info Panel Cards ---- */
+.info-card {
+  background: var(--dc-surface-2);
+  border: 1px solid var(--dc-border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+/* ---- Smooth transitions for theme change ---- */
+header, aside, main, .info-card, .context-menu,
+.compose-input, .msg-bubble, button, input, textarea {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
