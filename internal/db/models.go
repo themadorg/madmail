@@ -9,7 +9,7 @@ type Quota struct {
 	Username     string `gorm:"primaryKey"`
 	MaxStorage   int64
 	CreatedAt    int64
-	FirstLoginAt int64  // 1 = Registered but never logged in; >1 = Logged in
+	FirstLoginAt int64 // 1 = Registered but never logged in; >1 = Logged in
 	LastLoginAt  int64
 	UsedToken    string `gorm:"column:used_token;index:idx_used_token_pending,priority:1"` // The token used during /new (cleared after consumption)
 }

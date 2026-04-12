@@ -501,4 +501,3 @@ func TestUpdateFirstLogin_NoToken_Normal(t *testing.T) {
 		t.Error("Expected FirstLoginAt to be > 1 after first login")
 	}
 }
-

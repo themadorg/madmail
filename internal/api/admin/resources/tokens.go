@@ -18,9 +18,9 @@ type TokensDeps struct {
 // Token API request/response types
 
 type tokenCreateRequest struct {
-	Token    string  `json:"token"`     // Optional: auto-generated if empty
-	MaxUses  int     `json:"max_uses"`  // Default: 1
-	Comment  string  `json:"comment"`
+	Token   string `json:"token"`    // Optional: auto-generated if empty
+	MaxUses int    `json:"max_uses"` // Default: 1
+	Comment string `json:"comment"`
 	// ExpiresIn is a duration string like "72h" or "168h".
 	// If set, the token expires after this duration from creation.
 	ExpiresIn string `json:"expires_in,omitempty"`

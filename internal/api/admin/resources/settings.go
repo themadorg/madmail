@@ -124,14 +124,14 @@ type settingValueResponse struct {
 // AllSettingsResponse is the response for GET /admin/settings.
 type AllSettingsResponse struct {
 	// Toggle settings
-	Registration    string `json:"registration"`      // "open" or "closed"
-	JitRegistration string `json:"jit_registration"`  // "enabled" or "disabled"
-	TurnEnabled     string `json:"turn_enabled"`      // "enabled" or "disabled"
-	IrohEnabled     string `json:"iroh_enabled"`      // "enabled" or "disabled"
-	SsEnabled       string `json:"ss_enabled"`        // "enabled" or "disabled"
+	Registration         string `json:"registration"`            // "open" or "closed"
+	JitRegistration      string `json:"jit_registration"`        // "enabled" or "disabled"
+	TurnEnabled          string `json:"turn_enabled"`            // "enabled" or "disabled"
+	IrohEnabled          string `json:"iroh_enabled"`            // "enabled" or "disabled"
+	SsEnabled            string `json:"ss_enabled"`              // "enabled" or "disabled"
 	AutoPurgeSeenEnabled string `json:"auto_purge_seen_enabled"` // "enabled" or "disabled"
-	LogDisabled     string `json:"log_disabled"`      // "enabled" or "disabled"
-	AdminWebEnabled string `json:"admin_web_enabled"` // "enabled" or "disabled"
+	LogDisabled          string `json:"log_disabled"`            // "enabled" or "disabled"
+	AdminWebEnabled      string `json:"admin_web_enabled"`       // "enabled" or "disabled"
 
 	// Port settings
 	SMTPPort       settingValueResponse `json:"smtp_port"`
@@ -185,17 +185,17 @@ type AllSettingsResponse struct {
 
 // Setting key constants for all configurable values.
 const (
-	KeyRegistrationOpen       = "__REGISTRATION_OPEN__"
-	KeyJitRegistrationEnabled = "__JIT_REGISTRATION_ENABLED__"
-	KeyTurnEnabled            = "__TURN_ENABLED__"
-	KeyLogDisabled            = "__LOG_DISABLED__"
-	KeyIrohEnabled            = "__IROH_ENABLED__"
-	KeySsEnabled              = "__SS_ENABLED__"
-	KeySsWsEnabled            = "__SS_WS_ENABLED__"
-	KeySsGrpcEnabled          = "__SS_GRPC_ENABLED__"
-	KeyAutoPurgeSeen          = "__AUTO_PURGE_SEEN__"
-	KeyHTTPProxyEnabled       = "__HTTP_PROXY_ENABLED__"
-	KeyAdminWebEnabled            = "__ADMIN_WEB_ENABLED__"
+	KeyRegistrationOpen          = "__REGISTRATION_OPEN__"
+	KeyJitRegistrationEnabled    = "__JIT_REGISTRATION_ENABLED__"
+	KeyTurnEnabled               = "__TURN_ENABLED__"
+	KeyLogDisabled               = "__LOG_DISABLED__"
+	KeyIrohEnabled               = "__IROH_ENABLED__"
+	KeySsEnabled                 = "__SS_ENABLED__"
+	KeySsWsEnabled               = "__SS_WS_ENABLED__"
+	KeySsGrpcEnabled             = "__SS_GRPC_ENABLED__"
+	KeyAutoPurgeSeen             = "__AUTO_PURGE_SEEN__"
+	KeyHTTPProxyEnabled          = "__HTTP_PROXY_ENABLED__"
+	KeyAdminWebEnabled           = "__ADMIN_WEB_ENABLED__"
 	KeyRegistrationTokenRequired = "__REGISTRATION_TOKEN_REQUIRED__"
 
 	// Port settings
