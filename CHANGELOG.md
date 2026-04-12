@@ -1,3 +1,10 @@
+# [0.36.0](https://github.com/themadorg/madmail/compare/v0.35.0...v0.36.0) (2026-04-12)
+
+
+### Features
+
+* implement background auto-purge for seen messages and add admin controls to manage blob deletion ([24f12ec](https://github.com/themadorg/madmail/commit/24f12ecedc4052c54e141c390cd47e509beb3e65))
+
 # [0.35.0](https://github.com/themadorg/madmail/compare/v0.34.0...v0.35.0) (2026-04-11)
 
 
