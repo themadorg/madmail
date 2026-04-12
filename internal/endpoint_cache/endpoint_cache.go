@@ -16,22 +16,22 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-// Package endpoint_cache implements a database-backed endpoint override cache.
+// Package endpoint_cache implements a database-backed endpoint override cache
+// with an in-memory layer for fast lookups.
 //
-// When resolving a domain or IP for outbound mail delivery, the cache is
-// consulted first. If a matching EndpointOverride row exists in the database,
-// its TargetHost is returned without performing any real DNS lookup.
+// On initialization, all EndpointOverride rows are loaded from the database
+// into a sync.RWMutex-protected map. All read operations (Resolve, ResolveMX,
+// Get, List) are served from memory — no database round-trip on the hot path.
+//
+// Write operations (Set, Delete) update memory first, then persist to the
+// database. This ensures that the running server always has instant access to
+// the latest overrides without any DB latency.
 //
 // For IP addresses without an override, the IP itself is returned (an IP is
 // already a concrete endpoint — no resolution needed).
 //
 // For domain names without an override, an empty string is returned so that
 // the caller falls through to OS DNS resolution.
-//
-// This allows operators to:
-//   - Route mail destined for a domain to a specific IP (e.g., during migration).
-//   - Override IP-literal destinations (e.g., a@[1.1.1.1] → deliver to 2.2.2.2).
-//   - Test mail flows against staging servers without touching system DNS.
 package endpoint_cache
 
 import (
@@ -39,6 +39,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/themadorg/madmail/framework/log"
 	mdb "github.com/themadorg/madmail/internal/db"
@@ -46,18 +47,40 @@ import (
 )
 
 // Cache wraps a GORM database to provide endpoint resolution with local overrides.
+// All reads are served from the in-memory map; writes go to memory first, then DB.
 type Cache struct {
 	db  *gorm.DB
 	log log.Logger
+
+	mu    sync.RWMutex
+	store map[string]mdb.EndpointOverride // key = normalized lookup_key
 }
 
 // New creates an endpoint_cache.Cache from the given GORM database connection.
-// It automatically runs AutoMigrate for the EndpointOverride table.
+// It automatically runs AutoMigrate for the EndpointOverride table, then loads
+// all existing overrides into memory.
 func New(db *gorm.DB, logger log.Logger) (*Cache, error) {
 	if err := db.AutoMigrate(&mdb.EndpointOverride{}); err != nil {
 		return nil, err
 	}
-	return &Cache{db: db, log: logger}, nil
+
+	c := &Cache{
+		db:    db,
+		log:   logger,
+		store: make(map[string]mdb.EndpointOverride),
+	}
+
+	// Hydrate the in-memory store from the database at boot time.
+	var overrides []mdb.EndpointOverride
+	if err := db.Find(&overrides).Error; err != nil {
+		return nil, err
+	}
+	for _, o := range overrides {
+		c.store[o.LookupKey] = o
+	}
+	logger.DebugMsg("endpoint cache hydrated from DB", "entries", len(overrides))
+
+	return c, nil
 }
 
 // normalizeKey strips brackets, ipv6: prefix, trailing dots, and lower-cases.
@@ -75,7 +98,7 @@ func normalizeKey(key string) string {
 // Resolve looks up the target host for the given key (domain name or IP).
 //
 // Behaviour:
-//   - If an explicit override exists in the database, its TargetHost is returned.
+//   - If an explicit override exists in memory, its TargetHost is returned.
 //   - If key is an IP address (bare or bracketed) with NO override, the IP
 //     itself is returned — an IP is already a concrete endpoint.
 //   - If key is a domain name with NO override, an empty string is returned
@@ -84,16 +107,14 @@ func normalizeKey(key string) string {
 func (c *Cache) Resolve(ctx context.Context, key string) (string, error) {
 	cleanKey := normalizeKey(key)
 
-	// Check local database override
-	var override mdb.EndpointOverride
-	err := c.db.Where("lookup_key = ?", cleanKey).First(&override).Error
-	if err == nil {
+	// Check in-memory store
+	c.mu.RLock()
+	override, ok := c.store[cleanKey]
+	c.mu.RUnlock()
+
+	if ok {
 		c.log.DebugMsg("endpoint cache hit", "key", cleanKey, "target", override.TargetHost)
 		return override.TargetHost, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		// Actual DB error
-		c.log.Error("endpoint cache DB error", err, "key", cleanKey)
 	}
 
 	// No override — if it's an IP, return the IP itself (no DNS needed).
@@ -105,23 +126,22 @@ func (c *Cache) Resolve(ctx context.Context, key string) (string, error) {
 	return "", nil
 }
 
-// ResolveMX resolves the MX host for a domain. It first checks the local
-// override database. If an override exists for the domain, it returns a
+// ResolveMX resolves the MX host for a domain. It first checks the in-memory
+// override store. If an override exists for the domain, it returns a
 // single synthetic MX record pointing to the override target with
 // cacheHit=true. Otherwise it performs a standard MX lookup via the OS
 // resolver and returns cacheHit=false.
 func (c *Cache) ResolveMX(ctx context.Context, domain string) (records []*net.MX, cacheHit bool, err error) {
 	cleanDomain := normalizeKey(domain)
 
-	// Check for override
-	var override mdb.EndpointOverride
-	dbErr := c.db.Where("lookup_key = ?", cleanDomain).First(&override).Error
-	if dbErr == nil {
+	// Check in-memory store
+	c.mu.RLock()
+	override, ok := c.store[cleanDomain]
+	c.mu.RUnlock()
+
+	if ok {
 		c.log.DebugMsg("endpoint cache MX override", "domain", cleanDomain, "target", override.TargetHost)
 		return []*net.MX{{Host: override.TargetHost, Pref: 0}}, true, nil
-	}
-	if !errors.Is(dbErr, gorm.ErrRecordNotFound) {
-		c.log.Error("endpoint cache DB error during MX lookup, falling back to OS resolver", dbErr, "domain", cleanDomain)
 	}
 
 	// Standard OS MX lookup — not from cache
@@ -132,6 +152,7 @@ func (c *Cache) ResolveMX(ctx context.Context, domain string) (records []*net.MX
 // --- CRUD Operations for managing overrides ---
 
 // Set creates or updates an endpoint override entry.
+// Memory is updated first, then persisted to the database.
 func (c *Cache) Set(lookupKey, targetHost, comment string) error {
 	lookupKey = strings.TrimSuffix(strings.ToLower(lookupKey), ".")
 	override := mdb.EndpointOverride{
@@ -139,29 +160,72 @@ func (c *Cache) Set(lookupKey, targetHost, comment string) error {
 		TargetHost: targetHost,
 		Comment:    comment,
 	}
-	return c.db.Save(&override).Error
+
+	// Update memory first
+	c.mu.Lock()
+	c.store[lookupKey] = override
+	c.mu.Unlock()
+
+	// Persist to database
+	if err := c.db.Save(&override).Error; err != nil {
+		// Rollback memory on DB failure
+		c.mu.Lock()
+		delete(c.store, lookupKey)
+		c.mu.Unlock()
+		return err
+	}
+
+	return nil
 }
 
 // Delete removes an endpoint override entry.
+// Memory is updated first, then persisted to the database.
 func (c *Cache) Delete(lookupKey string) error {
 	lookupKey = strings.TrimSuffix(strings.ToLower(lookupKey), ".")
-	return c.db.Where("lookup_key = ?", lookupKey).Delete(&mdb.EndpointOverride{}).Error
+
+	// Save old value for rollback
+	c.mu.Lock()
+	old, existed := c.store[lookupKey]
+	delete(c.store, lookupKey)
+	c.mu.Unlock()
+
+	// Persist to database
+	if err := c.db.Where("lookup_key = ?", lookupKey).Delete(&mdb.EndpointOverride{}).Error; err != nil {
+		// Rollback memory on DB failure
+		if existed {
+			c.mu.Lock()
+			c.store[lookupKey] = old
+			c.mu.Unlock()
+		}
+		return err
+	}
+
+	return nil
 }
 
-// Get retrieves a single endpoint override entry.
+// Get retrieves a single endpoint override entry from memory.
 func (c *Cache) Get(lookupKey string) (*mdb.EndpointOverride, error) {
 	lookupKey = strings.TrimSuffix(strings.ToLower(lookupKey), ".")
-	var override mdb.EndpointOverride
-	err := c.db.Where("lookup_key = ?", lookupKey).First(&override).Error
-	if err != nil {
-		return nil, err
+
+	c.mu.RLock()
+	override, ok := c.store[lookupKey]
+	c.mu.RUnlock()
+
+	if !ok {
+		return nil, errors.New("endpoint override not found: " + lookupKey)
 	}
+
 	return &override, nil
 }
 
-// List returns all endpoint override entries.
+// List returns all endpoint override entries from memory.
 func (c *Cache) List() ([]mdb.EndpointOverride, error) {
-	var overrides []mdb.EndpointOverride
-	err := c.db.Find(&overrides).Error
-	return overrides, err
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	overrides := make([]mdb.EndpointOverride, 0, len(c.store))
+	for _, o := range c.store {
+		overrides = append(overrides, o)
+	}
+	return overrides, nil
 }

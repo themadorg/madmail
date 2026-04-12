@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/themadorg/madmail/framework/config"
 	"github.com/themadorg/madmail/framework/log"
 )
 
@@ -48,6 +49,7 @@ type Response struct {
 	Resource string      `json:"resource"`
 	Body     interface{} `json:"body"`
 	Error    *string     `json:"error"`
+	Version  string      `json:"version"`
 }
 
 // ResourceHandler is the signature for individual resource handlers.
@@ -291,6 +293,11 @@ func extractIP(addr string) string {
 }
 
 func writeResponse(w http.ResponseWriter, resp Response) {
+	// Automatically fill in the version if not set
+	if resp.Version == "" {
+		resp.Version = config.Version
+	}
+
 	// Always return HTTP 200 — the real status is inside the JSON body.
 	// This prevents network observers from distinguishing auth failures,
 	// errors, and successes by HTTP status code alone.

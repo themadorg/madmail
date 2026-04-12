@@ -79,6 +79,7 @@ import (
 	"github.com/xtls/xray-core/transport/internet/websocket"
 
 	mdb "github.com/themadorg/madmail/internal/db"
+	"github.com/themadorg/madmail/internal/endpoint_cache"
 	"gorm.io/gorm"
 )
 
@@ -2670,9 +2671,14 @@ func (e *Endpoint) setupAdminAPI() {
 
 	// Endpoint cache (if GORM DB available)
 	if gormDB != nil {
-		handler.Register("/admin/dns", resources.DNSCacheHandler(resources.DNSCacheDeps{
-			DB: gormDB,
-		}))
+		epCache, epCacheErr := endpoint_cache.New(gormDB, e.logger)
+		if epCacheErr != nil {
+			e.logger.Error("failed to initialize endpoint cache for admin API", epCacheErr)
+		} else {
+			handler.Register("/admin/dns", resources.DNSCacheHandler(resources.DNSCacheDeps{
+				Cache: epCache,
+			}))
+		}
 	}
 
 	// Exchangers (if exchanger GORM DB available)

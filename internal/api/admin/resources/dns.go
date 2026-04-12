@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	mdb "github.com/themadorg/madmail/internal/db"
-	"gorm.io/gorm"
+	"github.com/themadorg/madmail/internal/endpoint_cache"
 )
 
 // EndpointCacheDeps are the dependencies needed by the endpoint cache handler.
 type EndpointCacheDeps struct {
-	DB *gorm.DB
+	Cache *endpoint_cache.Cache
 }
 
 // DNSCacheDeps is an alias for backward compatibility.
@@ -28,21 +27,18 @@ type endpointListResponse struct {
 }
 
 // EndpointCacheHandler creates a handler for /admin/endpoint-cache (and /admin/dns for backward compat).
+// All reads and writes go through the in-memory Cache so changes are
+// immediately visible to the running server without a DB round-trip.
 func EndpointCacheHandler(deps EndpointCacheDeps) func(string, json.RawMessage) (interface{}, int, error) {
-	// Ensure the dns_overrides table exists
-	if deps.DB != nil {
-		_ = deps.DB.AutoMigrate(&mdb.EndpointOverride{})
-	}
-
 	return func(method string, body json.RawMessage) (interface{}, int, error) {
-		if deps.DB == nil {
-			return nil, 503, fmt.Errorf("endpoint cache database not available")
+		if deps.Cache == nil {
+			return nil, 503, fmt.Errorf("endpoint cache not available")
 		}
 
 		switch method {
 		case "GET":
-			var overrides []mdb.EndpointOverride
-			if err := deps.DB.Find(&overrides).Error; err != nil {
+			overrides, err := deps.Cache.List()
+			if err != nil {
 				return nil, 500, fmt.Errorf("failed to list endpoint overrides: %v", err)
 			}
 			entries := make([]endpointEntry, len(overrides))
@@ -67,12 +63,7 @@ func EndpointCacheHandler(deps EndpointCacheDeps) func(string, json.RawMessage) 
 			if req.LookupKey == "" || req.TargetHost == "" {
 				return nil, 400, fmt.Errorf("lookup_key and target_host are required")
 			}
-			override := mdb.EndpointOverride{
-				LookupKey:  req.LookupKey,
-				TargetHost: req.TargetHost,
-				Comment:    req.Comment,
-			}
-			if err := deps.DB.Save(&override).Error; err != nil {
+			if err := deps.Cache.Set(req.LookupKey, req.TargetHost, req.Comment); err != nil {
 				return nil, 500, fmt.Errorf("failed to save endpoint override: %v", err)
 			}
 			return endpointEntry{
@@ -91,12 +82,12 @@ func EndpointCacheHandler(deps EndpointCacheDeps) func(string, json.RawMessage) 
 			if req.LookupKey == "" {
 				return nil, 400, fmt.Errorf("lookup_key is required")
 			}
-			result := deps.DB.Where("lookup_key = ?", req.LookupKey).Delete(&mdb.EndpointOverride{})
-			if result.Error != nil {
-				return nil, 500, fmt.Errorf("failed to delete endpoint override: %v", result.Error)
-			}
-			if result.RowsAffected == 0 {
+			// Check existence first
+			if _, err := deps.Cache.Get(req.LookupKey); err != nil {
 				return nil, 404, fmt.Errorf("endpoint override not found: %s", req.LookupKey)
+			}
+			if err := deps.Cache.Delete(req.LookupKey); err != nil {
+				return nil, 500, fmt.Errorf("failed to delete endpoint override: %v", err)
 			}
 			return map[string]string{"deleted": req.LookupKey}, 200, nil
 

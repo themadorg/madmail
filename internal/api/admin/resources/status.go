@@ -20,6 +20,7 @@ import (
 
 // StatusResponse is the response body for /admin/status.
 type StatusResponse struct {
+	Version          string         `json:"version"`
 	IMAP             *ServiceStatus `json:"imap,omitempty"`
 	TURN             *TurnStatus    `json:"turn,omitempty"`
 	Shadowsocks      *ServiceStatus `json:"shadowsocks,omitempty"`
@@ -68,7 +69,9 @@ func StatusHandler(deps StatusDeps) func(method string, body json.RawMessage) (i
 			return nil, 405, fmt.Errorf("method %s not allowed, use GET", method)
 		}
 
-		resp := StatusResponse{}
+		resp := StatusResponse{
+			Version: frameworkconfig.Version,
+		}
 
 		// User count
 		if deps.GetUserCount != nil {
