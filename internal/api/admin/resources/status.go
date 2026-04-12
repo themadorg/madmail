@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"syscall"
@@ -251,6 +252,12 @@ type StorageDeps struct {
 	DBDSN    string
 }
 
+var (
+	cachedStateDirSize int64
+	lastStateDirUpdate time.Time
+	stateDirSizeMu     sync.Mutex
+)
+
 // StorageHandler creates a handler for /admin/storage.
 func StorageHandler(deps StorageDeps) func(method string, body json.RawMessage) (interface{}, int, error) {
 	return func(method string, body json.RawMessage) (interface{}, int, error) {
@@ -283,19 +290,28 @@ func StorageHandler(deps StorageDeps) func(method string, body json.RawMessage) 
 			}
 		}
 
-		// State directory size
+		// State directory size - cached for 10 minutes to avoid heavy I/O
 		resp.StateDir = &StateDirInfo{Path: stateDir}
-		var dirSize int64
-		_ = filepath.Walk(stateDir, func(_ string, info os.FileInfo, err error) error {
-			if err != nil {
+
+		stateDirSizeMu.Lock()
+		if time.Since(lastStateDirUpdate) > 10*time.Minute {
+			var dirSize int64
+			_ = filepath.WalkDir(stateDir, func(_ string, d os.DirEntry, err error) error {
+				if err != nil {
+					return nil
+				}
+				if !d.IsDir() {
+					if info, err := d.Info(); err == nil {
+						dirSize += info.Size()
+					}
+				}
 				return nil
-			}
-			if !info.IsDir() {
-				dirSize += info.Size()
-			}
-			return nil
-		})
-		resp.StateDir.SizeBytes = dirSize
+			})
+			cachedStateDirSize = dirSize
+			lastStateDirUpdate = time.Now()
+		}
+		resp.StateDir.SizeBytes = cachedStateDirSize
+		stateDirSizeMu.Unlock()
 
 		// Database size (for sqlite, the file size)
 		if deps.DBDriver == "sqlite3" || deps.DBDriver == "sqlite" {

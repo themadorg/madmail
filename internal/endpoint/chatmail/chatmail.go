@@ -153,6 +153,7 @@ type Endpoint struct {
 		registrationOpen       bool
 		jitRegistrationEnabled bool
 		tokenRequired          bool
+		autoPurgeSeen          bool
 		defaultQuota           int64
 		hydrated               bool
 		lastChecked            time.Time
@@ -367,6 +368,20 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 		return fmt.Errorf("%s: storage must implement ManageableStorage interface", modName)
 	}
 
+	// Start the background loop for purging seen messages
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		e.logger.Printf("auto purge background loop started")
+		for range ticker.C {
+			if e.isAutoPurgeEnabled() {
+				e.logger.Debugf("auto purge: triggered")
+				if err := e.storage.PurgeReadIMAPMsgs(); err != nil {
+					e.logger.Error("auto purge seen messages failed", err)
+				}
+			}
+		}
+	}()
+
 	// Log any settings overridden by the database
 	e.applyDBOverrides()
 	e.logDBOverrides()
@@ -558,6 +573,11 @@ func (e *Endpoint) hydrateCache() {
 		} else {
 			e.cache.tokenRequired = false
 		}
+		if val, ok, err := e.authDB.GetSetting("__AUTO_PURGE_SEEN__"); err == nil && ok {
+			e.cache.autoPurgeSeen = val == "true"
+		} else {
+			e.cache.autoPurgeSeen = false
+		}
 	}
 	if e.storage != nil {
 		e.cache.defaultQuota = e.storage.GetDefaultQuota()
@@ -598,6 +618,19 @@ func (e *Endpoint) isTokenRequired() bool {
 	required := e.cache.tokenRequired
 	e.cache.RUnlock()
 	return required
+}
+
+// isAutoPurgeEnabled returns the cached auto-purge setting.
+func (e *Endpoint) isAutoPurgeEnabled() bool {
+	e.cache.RLock()
+	if !e.cache.hydrated || time.Since(e.cache.lastChecked) > 10*time.Second {
+		e.cache.RUnlock()
+		e.hydrateCache()
+		e.cache.RLock()
+	}
+	enabled := e.cache.autoPurgeSeen
+	e.cache.RUnlock()
+	return enabled
 }
 
 // generateRandomString generates a random string of specified length using alphanumeric characters
@@ -2516,7 +2549,15 @@ func (e *Endpoint) setupAdminAPI() {
 		if err != nil {
 			return 0, err
 		}
-		return len(users), nil
+		count := 0
+		for _, u := range users {
+			// Skip internal settings keys stored in the same DB (e.g. __SMTP_PORT__)
+			if strings.HasPrefix(u, "__") && strings.HasSuffix(u, "__") {
+				continue
+			}
+			count++
+		}
+		return count, nil
 	}
 
 	// Register resource handlers
@@ -2537,6 +2578,7 @@ func (e *Endpoint) setupAdminAPI() {
 	handler.Register("/admin/services/turn", resources.TurnHandler(settingsDeps))
 	handler.Register("/admin/services/iroh", resources.IrohHandler(settingsDeps))
 	handler.Register("/admin/services/shadowsocks", resources.ShadowsocksHandler(settingsDeps))
+	handler.Register("/admin/services/auto_purge_seen", resources.AutoPurgeSeenHandler(settingsDeps))
 	handler.Register("/admin/services/ss_ws", resources.SsWsHandler(settingsDeps))
 	handler.Register("/admin/services/ss_grpc", resources.SsGrpcHandler(settingsDeps))
 	handler.Register("/admin/services/http_proxy", resources.HTTPProxyHandler(settingsDeps))

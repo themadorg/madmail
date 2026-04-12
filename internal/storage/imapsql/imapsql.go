@@ -98,6 +98,8 @@ type Storage struct {
 	// QuotaCache is the in-memory quota cache for fast per-user lookups.
 	// Exported so the IMAP endpoint, admin API, and CLI can access it.
 	QuotaCache *quota.Cache
+
+	blobStore module.BlobStore
 }
 
 func (store *Storage) Name() string {
@@ -314,6 +316,7 @@ func (store *Storage) Init(cfg *config.Map) error {
 	if err != nil {
 		return fmt.Errorf("imapsql: %s", err)
 	}
+	store.blobStore = blobStore
 
 	store.Log.Debugln("go-imap-sql version", imapsql.VersionStr)
 

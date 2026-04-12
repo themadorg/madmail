@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package imapsql
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -74,7 +75,91 @@ func (store *Storage) PurgeAllIMAPMsgs() error {
 }
 
 func (store *Storage) PurgeReadIMAPMsgs() error {
-	return store.GORMDB.Table("msgs").Where("seen = 1").Delete(nil).Error
+	store.Log.Debugf("PurgeReadIMAPMsgs: starting purge")
+	return store.GORMDB.Transaction(func(tx *gorm.DB) error {
+		// 1. Find all blob keys for seen messages and their current reference counts.
+		var items []struct {
+			Key  string `gorm:"column:extBodyKey"`
+			Refs int    `gorm:"column:refs"`
+		}
+		// Use LEFT JOIN to find messages regardless of whether extKeys entry exists
+		err := tx.Table("msgs").
+			Select("msgs.extBodyKey, extKeys.refs").
+			Joins("LEFT JOIN extKeys ON msgs.extBodyKey = extKeys.id").
+			Where("msgs.seen = 1").
+			Scan(&items).Error
+		if err != nil {
+			return err
+		}
+
+		store.Log.Debugf("PurgeReadIMAPMsgs: found messages count=%d", len(items))
+
+		if len(items) == 0 {
+			return tx.Exec("DELETE FROM msgs WHERE seen = 1").Error
+		}
+
+		// 2. Track which keys should be physically deleted.
+		seenCounts := make(map[string]int)
+		for _, item := range items {
+			if item.Key != "" {
+				seenCounts[item.Key]++
+			}
+		}
+
+		var keysToDelete []string
+		for key, count := range seenCounts {
+			// Find current ref count
+			currentRefs := 0
+			for _, item := range items {
+				if item.Key == key {
+					currentRefs = item.Refs
+					break
+				}
+			}
+
+			if currentRefs <= count {
+				keysToDelete = append(keysToDelete, key)
+			}
+		}
+
+		// 3. Decrement refs or delete from extKeys
+		for key, count := range seenCounts {
+			if contains(keysToDelete, key) {
+				if err := tx.Exec("DELETE FROM extKeys WHERE id = ?", key).Error; err != nil {
+					return err
+				}
+			} else {
+				if err := tx.Exec("UPDATE extKeys SET refs = refs - ? WHERE id = ?", count, key).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		// 4. Delete the messages
+		if err := tx.Exec("DELETE FROM msgs WHERE seen = 1").Error; err != nil {
+			return err
+		}
+
+		store.Log.Printf("PurgeReadIMAPMsgs: purged seen messages blobsDeleted=%d", len(keysToDelete))
+
+		// 5. Physically delete the files
+		if len(keysToDelete) > 0 && store.blobStore != nil {
+			if err := store.blobStore.Delete(context.TODO(), keysToDelete); err != nil {
+				store.Log.Error("failed to delete blob files during seen purge", err, "keys")
+			}
+		}
+
+		return nil
+	})
+}
+
+func contains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func (store *Storage) PruneUnreadIMAPMsgs(retention time.Duration) error {

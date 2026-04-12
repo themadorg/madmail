@@ -121,7 +121,6 @@ func QueueHandler(deps QueueDeps) func(string, json.RawMessage) (interface{}, in
 					Action:  "purge_read",
 					Message: "purged read messages from database",
 				}, 200, nil
-
 			case "purge_older":
 				if req.Retention == "" {
 					return nil, 400, fmt.Errorf("retention is required for purge_older (e.g. \"72h\", \"168h\")")
@@ -139,6 +138,15 @@ func QueueHandler(deps QueueDeps) func(string, json.RawMessage) (interface{}, in
 				return purgeResponse{
 					Action:  "purge_older",
 					Message: fmt.Sprintf("pruned database messages older than %v", retention),
+				}, 200, nil
+
+			case "purge_read_blobs":
+				if err := deps.Storage.PurgeReadIMAPMsgs(); err != nil {
+					return nil, 500, fmt.Errorf("failed to purge read message blobs: %v", err)
+				}
+				return purgeResponse{
+					Action:  "purge_read_blobs",
+					Message: "purged read messages and their physical files",
 				}, 200, nil
 
 			case "purge_blobs":

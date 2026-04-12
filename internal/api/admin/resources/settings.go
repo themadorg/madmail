@@ -129,6 +129,7 @@ type AllSettingsResponse struct {
 	TurnEnabled     string `json:"turn_enabled"`      // "enabled" or "disabled"
 	IrohEnabled     string `json:"iroh_enabled"`      // "enabled" or "disabled"
 	SsEnabled       string `json:"ss_enabled"`        // "enabled" or "disabled"
+	AutoPurgeSeenEnabled string `json:"auto_purge_seen_enabled"` // "enabled" or "disabled"
 	LogDisabled     string `json:"log_disabled"`      // "enabled" or "disabled"
 	AdminWebEnabled string `json:"admin_web_enabled"` // "enabled" or "disabled"
 
@@ -192,6 +193,7 @@ const (
 	KeySsEnabled              = "__SS_ENABLED__"
 	KeySsWsEnabled            = "__SS_WS_ENABLED__"
 	KeySsGrpcEnabled          = "__SS_GRPC_ENABLED__"
+	KeyAutoPurgeSeen          = "__AUTO_PURGE_SEEN__"
 	KeyHTTPProxyEnabled       = "__HTTP_PROXY_ENABLED__"
 	KeyAdminWebEnabled            = "__ADMIN_WEB_ENABLED__"
 	KeyRegistrationTokenRequired = "__REGISTRATION_TOKEN_REQUIRED__"
@@ -431,6 +433,52 @@ func HTTPProxyHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (in
 	return genericDBToggleHandler(KeyHTTPProxyEnabled, deps)
 }
 
+// genericDBToggleDisabledDefaultHandler creates a handler for DB-backed boolean settings that default to disabled.
+func genericDBToggleDisabledDefaultHandler(settingKey string, deps SettingsToggleDeps) func(string, json.RawMessage) (interface{}, int, error) {
+	return func(method string, body json.RawMessage) (interface{}, int, error) {
+		switch method {
+		case "GET":
+			val, ok, err := deps.GetSetting(settingKey)
+			if err != nil {
+				return nil, 500, fmt.Errorf("failed to get setting: %v", err)
+			}
+			status := "disabled" // Default to disabled if not set
+			if ok && val == "true" {
+				status = "enabled"
+			}
+			return toggleStatusResponse{Status: status}, 200, nil
+
+		case "POST":
+			var req actionRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				return nil, 400, fmt.Errorf("invalid request body: %v", err)
+			}
+			switch req.Action {
+			case "enable":
+				if err := deps.SetSetting(settingKey, "true"); err != nil {
+					return nil, 500, fmt.Errorf("failed to enable: %v", err)
+				}
+				return toggleStatusResponse{Status: "enabled"}, 200, nil
+			case "disable":
+				if err := deps.SetSetting(settingKey, "false"); err != nil {
+					return nil, 500, fmt.Errorf("failed to disable: %v", err)
+				}
+				return toggleStatusResponse{Status: "disabled"}, 200, nil
+			default:
+				return nil, 400, fmt.Errorf("invalid action: %s (expected enable|disable)", req.Action)
+			}
+
+		default:
+			return nil, 405, fmt.Errorf("method %s not allowed", method)
+		}
+	}
+}
+
+// AutoPurgeSeenHandler creates a handler for /admin/services/auto_purge_seen.
+func AutoPurgeSeenHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (interface{}, int, error) {
+	return genericDBToggleDisabledDefaultHandler(KeyAutoPurgeSeen, deps)
+}
+
 // LogHandler creates a handler for /admin/services/log.
 func LogHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (interface{}, int, error) {
 	return genericDBToggleHandler(KeyLogDisabled, deps)
@@ -544,6 +592,19 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		resp.SsEnabled = getToggle(KeySsEnabled)
 		resp.SsWsEnabled = getToggle(KeySsWsEnabled)
 		resp.SsGrpcEnabled = getToggle(KeySsGrpcEnabled)
+
+		getToggleDisabledDefault := func(key string) string {
+			val, ok, err := deps.GetSetting(key)
+			if err != nil || !ok {
+				return "disabled" // default
+			}
+			if val == "true" {
+				return "enabled"
+			}
+			return "disabled"
+		}
+		resp.AutoPurgeSeenEnabled = getToggleDisabledDefault(KeyAutoPurgeSeen)
+
 		resp.HTTPProxyEnabled = getToggle(KeyHTTPProxyEnabled)
 		resp.LogDisabled = getToggle(KeyLogDisabled)
 		resp.AdminWebEnabled = getToggle(KeyAdminWebEnabled)
