@@ -17,7 +17,8 @@ import (
 // ---- mock types ----
 
 type mockAuthDB struct {
-	users map[string]string // email -> password
+	users    map[string]string // email -> password
+	settings map[string]string
 }
 
 func (m *mockAuthDB) AuthPlain(username, password string) error {
@@ -38,9 +39,23 @@ func (m *mockAuthDB) IsTurnEnabled() (bool, error)                      { return
 func (m *mockAuthDB) SetTurnEnabled(enabled bool) error                 { return nil }
 func (m *mockAuthDB) IsLoggingDisabled() (bool, error)                  { return false, nil }
 func (m *mockAuthDB) SetLoggingDisabled(disabled bool) error            { return nil }
-func (m *mockAuthDB) GetSetting(key string) (string, bool, error)       { return "", false, nil }
-func (m *mockAuthDB) SetSetting(key, value string) error                { return nil }
-func (m *mockAuthDB) DeleteSetting(key string) error                    { return nil }
+func (m *mockAuthDB) GetSetting(key string) (string, bool, error) {
+	if v, ok := m.settings[key]; ok {
+		return v, true, nil
+	}
+	return "", false, nil
+}
+func (m *mockAuthDB) SetSetting(key, value string) error {
+	if m.settings == nil {
+		m.settings = make(map[string]string)
+	}
+	m.settings[key] = value
+	return nil
+}
+func (m *mockAuthDB) DeleteSetting(key string) error {
+	delete(m.settings, key)
+	return nil
+}
 
 type mockStorage struct {
 	users map[string]*mockUser
@@ -255,10 +270,14 @@ func newTestHandler() (*Handler, *http.ServeMux) {
 		},
 	}
 	h := &Handler{
-		AuthDB:  authDB,
-		Storage: storage,
-		Logger:  log.Logger{Name: "webimap-test"},
+		AuthDB:            authDB,
+		Storage:           storage,
+		Logger:            log.Logger{Name: "webimap-test"},
+		WebIMAPEnabledKey: "webimap_enabled",
+		WebSMTPEnabledKey: "websmtp_enabled",
 	}
+	authDB.SetSetting("webimap_enabled", "true")
+	authDB.SetSetting("websmtp_enabled", "true")
 	mux := http.NewServeMux()
 	h.Register(mux, "/webimap")
 	return h, mux

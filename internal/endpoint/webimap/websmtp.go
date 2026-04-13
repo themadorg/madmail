@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"github.com/emersion/go-message/textproto"
@@ -72,9 +73,13 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 
 	// Parse JSON body with raw message
 	var req SendRequest
-	rawBody, err := io.ReadAll(r.Body)
+	bodyReader := r.Body
+	if h.MaxMsgSize > 0 {
+		bodyReader = http.MaxBytesReader(w, r.Body, h.MaxMsgSize)
+	}
+	rawBody, err := io.ReadAll(bodyReader)
 	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "failed to read body")
+		h.writeError(w, http.StatusBadRequest, "failed to read body or body too large")
 		return
 	}
 	if err := json.Unmarshal(rawBody, &req); err != nil {
@@ -82,17 +87,11 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.From == "" {
-		req.From = email
-	}
+	// Always use the authenticated user as the sender
+	req.From = email
+
 	if len(req.To) == 0 {
 		h.writeError(w, http.StatusBadRequest, "missing recipients")
-		return
-	}
-
-	// Ensure the authenticated user is the sender
-	if !strings.EqualFold(req.From, email) {
-		h.writeError(w, http.StatusForbidden, "sender must match authenticated user")
 		return
 	}
 
@@ -124,6 +123,35 @@ func (h *Handler) deliverMessage(ctx context.Context, from string, to []string, 
 	header, err := textproto.ReadHeader(bufio.NewReader(bytes.NewReader([]byte(rawBody))))
 	if err != nil {
 		return fmt.Errorf("failed to parse email headers")
+	}
+
+	// Verify that the From header address matches the authenticated sender
+	fromHdr := header.Get("From")
+	if fromHdr != "" {
+		list, err := mail.ParseAddressList(fromHdr)
+		if err != nil {
+			return fmt.Errorf("malformed From header: %w", err)
+		}
+		if len(list) == 0 {
+			return fmt.Errorf("empty From header")
+		}
+		if len(list) > 1 {
+			return fmt.Errorf("multiple addresses in From header are not allowed")
+		}
+		if !strings.EqualFold(list[0].Address, from) {
+			return fmt.Errorf("From header in message (%s) does not match authenticated user (%s)", list[0].Address, from)
+		}
+	}
+
+	// Also check Sender header if present
+	if senderHdr := header.Get("Sender"); senderHdr != "" {
+		sender, err := mail.ParseAddress(senderHdr)
+		if err != nil {
+			return fmt.Errorf("malformed Sender header: %w", err)
+		}
+		if !strings.EqualFold(sender.Address, from) {
+			return fmt.Errorf("Sender header in message (%s) does not match authenticated user (%s)", sender.Address, from)
+		}
 	}
 
 	rawMsg := []byte(rawBody)

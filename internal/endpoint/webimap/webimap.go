@@ -61,6 +61,9 @@ type Handler struct {
 	// When the corresponding setting is "true", the /send endpoint and
 	// WebSocket "send" action are active. Defaults to disabled.
 	WebSMTPEnabledKey string
+
+	// MaxMsgSize is the maximum allowed size for an email message.
+	MaxMsgSize int64
 }
 
 // isEnabled checks whether a feature is enabled via the DB setting.

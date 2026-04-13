@@ -159,6 +159,9 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	if h.MaxMsgSize > 0 {
+		conn.SetReadLimit(h.MaxMsgSize)
+	}
 
 	watchMailbox := r.URL.Query().Get("mailbox")
 	if watchMailbox == "" {
@@ -288,13 +291,8 @@ func (h *Handler) dispatchWSCommand(
 			respondErr("invalid send payload: " + err.Error())
 			return
 		}
-		if d.From == "" {
-			d.From = email
-		}
-		if !strings.EqualFold(d.From, email) {
-			respondErr("sender must match authenticated user")
-			return
-		}
+		// Always use the authenticated user as the sender
+		d.From = email
 		if len(d.To) == 0 {
 			respondErr("missing recipients")
 			return

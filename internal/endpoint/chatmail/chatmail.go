@@ -400,6 +400,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 	e.mux.HandleFunc("/inv/", e.handleInvite)
 
 	// WebIMAP REST API: HTTP interface for IMAP operations
+	maxMsgSize, _ := config.ParseDataSize(e.maxMessageSize)
 	webimapHandler := &webimap.Handler{
 		AuthDB:            e.authDB,
 		Storage:           e.storage,
@@ -407,6 +408,7 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 		MailDomain:        e.mailDomain,
 		WebIMAPEnabledKey: resources.KeyWebIMAPEnabled,
 		WebSMTPEnabledKey: resources.KeyWebSMTPEnabled,
+		MaxMsgSize:        int64(maxMsgSize),
 	}
 	// Try to discover the outbound delivery module so WebIMAP can send
 	// to external domains (not just local recipients).
