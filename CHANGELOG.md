@@ -1,3 +1,10 @@
+# [0.39.0](https://github.com/themadorg/madmail/compare/v0.38.0...v0.39.0) (2026-04-13)
+
+
+### Features
+
+* implement federation management system with policy-based domain filtering and traffic diagnostics ([5de3c3e](https://github.com/themadorg/madmail/commit/5de3c3e2bed7d13033734543e8ea96fb403fd97e))
+
 # [0.38.0](https://github.com/themadorg/madmail/compare/v0.37.0...v0.38.0) (2026-04-13)
 
 
