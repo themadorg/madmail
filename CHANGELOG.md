@@ -1,3 +1,10 @@
+# [0.40.0](https://github.com/themadorg/madmail/compare/v0.39.0...v0.40.0) (2026-04-13)
+
+
+### Features
+
+* implement in-memory federation management system with administrative API and real-time traffic tracking ([1cdf3cd](https://github.com/themadorg/madmail/commit/1cdf3cd007bbabec81b2d84e32c64fc24f454179))
+
 # [0.39.0](https://github.com/themadorg/madmail/compare/v0.38.0...v0.39.0) (2026-04-13)
 
 
