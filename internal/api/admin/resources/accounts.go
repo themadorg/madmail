@@ -49,6 +49,7 @@ type bulkRequest struct {
 
 type exportEntry struct {
 	Username string `json:"username"`
+	Hash     string `json:"hash,omitempty"`
 }
 
 type exportResponse struct {
@@ -58,7 +59,8 @@ type exportResponse struct {
 
 type importUser struct {
 	Username string `json:"username"`
-	Password string `json:"password"`
+	Password string `json:"password,omitempty"`
+	Hash     string `json:"hash,omitempty"`
 }
 
 type importResponse struct {
@@ -217,7 +219,8 @@ func handleExport(deps AccountsDeps) (interface{}, int, error) {
 		if strings.HasPrefix(u, "__") && strings.HasSuffix(u, "__") {
 			continue
 		}
-		entries = append(entries, exportEntry{Username: u})
+		hash, _, _ := deps.AuthDB.GetUserPasswordHash(u)
+		entries = append(entries, exportEntry{Username: u, Hash: hash})
 	}
 
 	return exportResponse{Users: entries, Total: len(entries)}, 200, nil
@@ -262,13 +265,24 @@ func handleImport(deps AccountsDeps, usersRaw json.RawMessage) (interface{}, int
 		}
 
 		// Create user in auth DB
-		if err := deps.AuthDB.CreateUser(u.Username, password); err != nil {
-			if strings.Contains(err.Error(), "already exist") {
-				result.Skipped++
+		if u.Hash != "" {
+			if err := deps.AuthDB.SetUserPasswordHash(u.Username, u.Hash); err != nil {
+				if strings.Contains(err.Error(), "already exist") {
+					result.Skipped++
+					continue
+				}
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", u.Username, err))
 				continue
 			}
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", u.Username, err))
-			continue
+		} else {
+			if err := deps.AuthDB.CreateUser(u.Username, password); err != nil {
+				if strings.Contains(err.Error(), "already exist") {
+					result.Skipped++
+					continue
+				}
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", u.Username, err))
+				continue
+			}
 		}
 
 		// Create IMAP account

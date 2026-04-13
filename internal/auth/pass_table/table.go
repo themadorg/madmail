@@ -100,6 +100,10 @@ func (a *Auth) Lookup(ctx context.Context, username string) (string, bool, error
 	return a.table.Lookup(ctx, key)
 }
 
+func (a *Auth) GetUserPasswordHash(username string) (string, bool, error) {
+	return a.Lookup(context.TODO(), username)
+}
+
 func (a *Auth) AuthPlain(username, password string) error {
 	username = auth.NormalizeUsername(username)
 	key, err := precis.UsernameCaseMapped.CompareKey(username)
@@ -262,6 +266,24 @@ func (a *Auth) SetUserPassword(username, password string) error {
 
 	if err := tbl.SetKey(key, DefaultHash+":"+hash); err != nil {
 		return fmt.Errorf("%s: set password %s: %w", a.modName, key, err)
+	}
+	return nil
+}
+
+func (a *Auth) SetUserPasswordHash(username, hash string) error {
+	tbl, ok := a.table.(module.MutableTable)
+	if !ok {
+		return fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
+	}
+
+	username = auth.NormalizeUsername(username)
+	key, err := precis.UsernameCaseMapped.CompareKey(username)
+	if err != nil {
+		return fmt.Errorf("%s: set password hash %s (raw): %w", a.modName, username, err)
+	}
+
+	if err := tbl.SetKey(key, hash); err != nil {
+		return fmt.Errorf("%s: set password hash %s: %w", a.modName, key, err)
 	}
 	return nil
 }

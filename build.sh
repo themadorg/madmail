@@ -173,6 +173,13 @@ copy_admin_web() {
 		fi
 	fi
 
+	# Stamp version.json with the current build version so the service worker
+	# can detect new deployments and invalidate its cache.
+	if [ -d "$ADMIN_WEB_BUILD" ]; then
+		echo "{\"version\":\"${version}\"}" > "$ADMIN_WEB_BUILD/version.json"
+		echo "-- Stamped admin-web version.json with ${version}" >&2
+	fi
+
 	# Copy the build output for go:embed
 	if [ -d "$ADMIN_WEB_BUILD" ] && [ -f "$ADMIN_WEB_BUILD/index.html" ]; then
 		echo "-- Copying admin-web build to $ADMIN_WEB_DEST..." >&2

@@ -178,6 +178,7 @@ type FederationServerEntry struct {
 	SuccessHTTP          int64   `json:"success_http"`
 	SuccessHTTPS         int64   `json:"success_https"`
 	SuccessSMTP          int64   `json:"success_smtp"`
+	InboundDeliveries    int64   `json:"inbound_deliveries"`
 	SuccessfulDeliveries int64   `json:"successful_deliveries"`
 	MeanLatencyMs        float64 `json:"mean_latency_ms"`
 	LastActive           int64   `json:"last_active"`
@@ -207,6 +208,7 @@ func FederationServersHandler() func(string, json.RawMessage) (interface{}, int,
 				SuccessHTTP:          s.SuccessHTTP,
 				SuccessHTTPS:         s.SuccessHTTPS,
 				SuccessSMTP:          s.SuccessSMTP,
+				InboundDeliveries:    s.InboundDeliveries,
 				SuccessfulDeliveries: s.SuccessfulDeliveries,
 				MeanLatencyMs:        meanLatency,
 				LastActive:           s.LastActive,

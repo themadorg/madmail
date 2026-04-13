@@ -1189,6 +1189,9 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		if atIdx := strings.LastIndex(mailFrom, "@"); atIdx >= 0 {
 			senderDomain = mailFrom[atIdx+1:]
 		}
+		// Track the sender domain for federation diagnostics immediately
+		federationtracker.Global().Touch(senderDomain)
+
 		// Read policy from DB setting
 		policy := "ACCEPT"
 		if e.authDB != nil {

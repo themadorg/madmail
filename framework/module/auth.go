@@ -38,8 +38,10 @@ type PlainAuth interface {
 type PlainUserDB interface {
 	PlainAuth
 	ListUsers() ([]string, error)
+	GetUserPasswordHash(username string) (string, bool, error)
 	CreateUser(username, password string) error
 	SetUserPassword(username, password string) error
+	SetUserPasswordHash(username, hash string) error
 	DeleteUser(username string) error
 	IsRegistrationOpen() (bool, error)
 	SetRegistrationOpen(open bool) error

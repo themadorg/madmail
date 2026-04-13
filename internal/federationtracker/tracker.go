@@ -28,6 +28,7 @@ type ServerStat struct {
 	SuccessHTTP          int64  `json:"success_http"`
 	SuccessHTTPS         int64  `json:"success_https"`
 	SuccessSMTP          int64  `json:"success_smtp"`
+	InboundDeliveries    int64  `json:"inbound_deliveries"`
 	SuccessfulDeliveries int64  `json:"successful_deliveries"`
 	TotalLatencyMs       int64  `json:"total_latency_ms"`
 	LastActive           int64  `json:"last_active"`
@@ -70,6 +71,13 @@ func (t *FederationTracker) getOrCreate(domain string) *ServerStat {
 	return s
 }
 
+// Touch ensures a domain entry exists in the tracker and updates its last active timestamp.
+func (t *FederationTracker) Touch(domain string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.getOrCreate(domain)
+}
+
 // IncrementQueue adds 1 to the queued message count for a domain.
 func (t *FederationTracker) IncrementQueue(domain string) {
 	t.mu.Lock()
@@ -109,15 +117,19 @@ func (t *FederationTracker) RecordSuccess(domain string, latencyMs int64, transp
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s := t.getOrCreate(domain)
-	s.SuccessfulDeliveries++
-	s.TotalLatencyMs += latencyMs
-	switch strings.ToUpper(transport) {
-	case "HTTP":
-		s.SuccessHTTP++
-	case "HTTPS":
-		s.SuccessHTTPS++
-	case "SMTP":
-		s.SuccessSMTP++
+	if transport != "" {
+		s.SuccessfulDeliveries++
+		s.TotalLatencyMs += latencyMs
+		switch strings.ToUpper(transport) {
+		case "HTTP":
+			s.SuccessHTTP++
+		case "HTTPS":
+			s.SuccessHTTPS++
+		case "SMTP":
+			s.SuccessSMTP++
+		}
+	} else {
+		s.InboundDeliveries++
 	}
 }
 
@@ -170,7 +182,7 @@ func (t *FederationTracker) flush(db *gorm.DB) {
 		Columns: []clause.Column{{Name: "domain"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"queued_messages", "failed_http", "failed_https", "failed_smtp",
-			"success_http", "success_https", "success_smtp",
+			"success_http", "success_https", "success_smtp", "inbound_deliveries",
 			"successful_deliveries", "total_latency_ms", "last_active",
 		}),
 	}).Create(&snapshot)

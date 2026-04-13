@@ -57,8 +57,6 @@ func (e *Endpoint) serveAdminWeb(prefix string) http.HandlerFunc {
 	patchedIndex = strings.ReplaceAll(patchedIndex, `href="/`, `href="`+prefixWithSlash)
 	patchedIndex = strings.ReplaceAll(patchedIndex, `src="/`, `src="`+prefixWithSlash)
 	patchedIndex = strings.ReplaceAll(patchedIndex, `import("/`, `import("`+prefixWithSlash)
-	patchedIndex = strings.ReplaceAll(patchedIndex, `register('/`, `register('`+prefixWithSlash)
-	patchedIndex = strings.ReplaceAll(patchedIndex, `scope: '/'`, `scope: '`+prefixWithSlash+`'`)
 	// Set SvelteKit base path so client-side routing works
 	cleanPrefix := strings.TrimSuffix(prefix, "/")
 	patchedIndex = strings.ReplaceAll(patchedIndex, `base: ""`, `base: "`+cleanPrefix+`"`)
@@ -138,6 +136,9 @@ func (e *Endpoint) serveAdminWeb(prefix string) http.HandlerFunc {
 		// Immutable assets get aggressive caching (fingerprinted filenames)
 		if strings.Contains(path, "/immutable/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else if path == "version.json" || path == "sw.js" {
+			// version.json and sw.js must never be cached so updates are detected
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		} else {
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 		}

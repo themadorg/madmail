@@ -282,8 +282,9 @@ func (s *Session) startDelivery(ctx context.Context, from string, opts smtp.Mail
 		return "", err
 	}
 
-	// Track unique server IP and domain for the online command.
+	// Track unique server IP and domain for the online command and federation diagnostics.
 	servertracker.Global().RecordServer(remoteIP.IP.String(), domain)
+	federationtracker.Global().Touch(domain)
 
 	s.msgCtx, s.msgTask = trace.NewTask(ctx, "Incoming Message")
 
