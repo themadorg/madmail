@@ -1,3 +1,10 @@
+# [0.38.0](https://github.com/themadorg/madmail/compare/v0.37.0...v0.38.0) (2026-04-13)
+
+
+### Features
+
+* enforce message size limits and validate From/Sender headers for WebSMTP and WebSocket endpoints ([2929d7a](https://github.com/themadorg/madmail/commit/2929d7a0dcdb009e036930e8ad2110f824dd9f23))
+
 # [0.37.0](https://github.com/themadorg/madmail/compare/v0.36.0...v0.37.0) (2026-04-13)
 
 
