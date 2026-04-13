@@ -48,6 +48,7 @@ import (
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/endpoint_cache"
+	"github.com/themadorg/madmail/internal/federationtracker"
 	"github.com/themadorg/madmail/internal/limits"
 	"github.com/themadorg/madmail/internal/smtpconn/pool"
 	"github.com/themadorg/madmail/internal/target"
@@ -60,6 +61,11 @@ func moduleError(err error) error {
 	return exterrors.WithFields(err, map[string]interface{}{
 		"target": "remote",
 	})
+}
+
+// getFederationSetting reads a federation-related setting from the global settings provider.
+func getFederationSetting(key string) (string, bool, error) {
+	return module.GetGlobalSetting(key)
 }
 
 type Target struct {
@@ -381,6 +387,17 @@ func (rd *remoteDelivery) AddRcpt(ctx context.Context, to string, opts smtp.Rcpt
 		}
 	}
 
+	// Federation policy enforcement: check if the target domain is allowed.
+	if !federationtracker.CheckFederationPolicy(domain, "", "", getFederationSetting) {
+		rd.Log.Msg("[federation] BLOCKED outbound delivery", "domain", domain, "rcpt", to)
+		return &exterrors.SMTPError{
+			Code:         550,
+			EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
+			Message:      "Federation policy rejection",
+			TargetName:   "remote",
+		}
+	}
+
 	rd.rcptsByDomain[domain] = append(rd.rcptsByDomain[domain], to)
 	rd.recipients = append(rd.recipients, to)
 	return nil
@@ -479,9 +496,17 @@ func (rd *remoteDelivery) BodyNonAtomic(ctx context.Context, c module.StatusColl
 		go func() {
 			defer wg.Done()
 
+			// ── Federation traffic tracking ──
+			ft := federationtracker.Global()
+			ft.IncrementQueue(domain)
+			deliveryStart := time.Now()
+
 			// Try HTTP delivery first as requested.
 			httpMethod, err := rd.tryHTTP(ctx, domain, rcpts, header, b)
 			if err == nil {
+				latencyMs := time.Since(deliveryStart).Milliseconds()
+				ft.RecordSuccess(domain, latencyMs, httpMethod)
+				ft.DecrementQueue(domain)
 				rd.Log.Msg("[federation] delivery OK", "method", httpMethod, "domain", domain, "rcpts", rcpts)
 				for _, rcpt := range rcpts {
 					c.SetStatus(rcpt, nil)
@@ -489,11 +514,16 @@ func (rd *remoteDelivery) BodyNonAtomic(ctx context.Context, c module.StatusColl
 				return
 			}
 
+			// Record the HTTP failure transport type
+			ft.RecordFailure(domain, "HTTP")
+
 			rd.Log.Msg("[federation] HTTP delivery failed, falling back to SMTP", "err", err, "domain", domain)
 
 			// Traditional SMTP fallback
 			conn, err := rd.connectionForDomain(ctx, domain)
 			if err != nil {
+				ft.RecordFailure(domain, "SMTP")
+				ft.DecrementQueue(domain)
 				for _, rcpt := range rcpts {
 					c.SetStatus(rcpt, err)
 				}
@@ -508,6 +538,8 @@ func (rd *remoteDelivery) BodyNonAtomic(ctx context.Context, c module.StatusColl
 
 			bodyR, err := b.Open()
 			if err != nil {
+				ft.RecordFailure(domain, "SMTP")
+				ft.DecrementQueue(domain)
 				for _, rcpt := range conn.Rcpts() {
 					c.SetStatus(rcpt, err)
 				}
@@ -520,10 +552,14 @@ func (rd *remoteDelivery) BodyNonAtomic(ctx context.Context, c module.StatusColl
 				c.SetStatus(rcpt, err)
 			}
 			if err == nil {
+				latencyMs := time.Since(deliveryStart).Milliseconds()
+				ft.RecordSuccess(domain, latencyMs, "SMTP")
 				rd.Log.Msg("[federation] delivery OK", "method", "SMTP", "domain", domain, "rcpts", conn.Rcpts())
 			} else {
+				ft.RecordFailure(domain, "SMTP")
 				rd.Log.Msg("[federation] SMTP delivery failed", "err", err, "domain", domain)
 			}
+			ft.DecrementQueue(domain)
 			conn.errored = err != nil
 			conn.lastUseAt = time.Now()
 		}()

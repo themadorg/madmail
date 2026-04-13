@@ -429,6 +429,13 @@ func (endp *Endpoint) ConnectionCount() int {
 	return int(endp.sessionCnt.Load())
 }
 
+// getFederationSetting reads a federation-related setting from the global
+// settings provider. This allows the federation policy checker to access
+// DB settings without a direct authDB reference.
+func (endp *Endpoint) getFederationSetting(key string) (string, bool, error) {
+	return module.GetGlobalSetting(key)
+}
+
 func (endp *Endpoint) Close() error {
 	endp.serv.Close()
 	endp.listenersWg.Wait()

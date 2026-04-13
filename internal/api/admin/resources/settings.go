@@ -134,6 +134,8 @@ type AllSettingsResponse struct {
 	AdminWebEnabled      string `json:"admin_web_enabled"`       // "enabled" or "disabled"
 	WebIMAPEnabled       string `json:"webimap_enabled"`         // "enabled" or "disabled"
 	WebSMTPEnabled       string `json:"websmtp_enabled"`         // "enabled" or "disabled"
+	FederationEnabled    bool   `json:"federation_enabled"`
+	FederationPolicy     string `json:"federation_policy"`       // "ACCEPT" or "REJECT"
 
 	// Port settings
 	SMTPPort       settingValueResponse `json:"smtp_port"`
@@ -201,6 +203,8 @@ const (
 	KeyRegistrationTokenRequired = "__REGISTRATION_TOKEN_REQUIRED__"
 	KeyWebIMAPEnabled            = "__WEBIMAP_ENABLED__"
 	KeyWebSMTPEnabled            = "__WEBSMTP_ENABLED__"
+	KeyFederationPolicy          = "__FEDERATION_POLICY__"
+	KeyFederationEnabled         = "__FEDERATION_ENABLED__"
 
 	// Port settings
 	KeySMTPPort       = "__SMTP_PORT__"
@@ -626,6 +630,16 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		resp.AdminWebEnabled = getToggle(KeyAdminWebEnabled)
 		resp.WebIMAPEnabled = getToggleDisabledDefault(KeyWebIMAPEnabled)
 		resp.WebSMTPEnabled = getToggleDisabledDefault(KeyWebSMTPEnabled)
+
+		// Federation
+		if val, ok, err := deps.GetSetting(KeyFederationEnabled); err == nil && ok {
+			resp.FederationEnabled = val == "true"
+		}
+		if val, ok, err := deps.GetSetting(KeyFederationPolicy); err == nil && ok && val != "" {
+			resp.FederationPolicy = val
+		} else {
+			resp.FederationPolicy = "ACCEPT" // default
+		}
 
 		// String settings helper
 		getSetting := func(key string, activeVal string) settingValueResponse {

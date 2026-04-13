@@ -40,6 +40,7 @@ import (
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth"
+	"github.com/themadorg/madmail/internal/federationtracker"
 	"github.com/themadorg/madmail/internal/pgp_verify"
 	"github.com/themadorg/madmail/internal/servertracker"
 )
@@ -260,6 +261,19 @@ func (s *Session) startDelivery(ctx context.Context, from string, opts smtp.Mail
 			return "", err
 		}
 	}
+
+	// Federation policy enforcement: check if the sender domain is allowed.
+	if domain != "" && !s.endp.submission {
+		if !federationtracker.CheckFederationPolicy(domain, "", "", s.endp.getFederationSetting) {
+			s.log.Msg("[federation] REJECTED inbound SMTP", "sender_domain", domain, "msg_id", msgMeta.ID)
+			return msgMeta.ID, &exterrors.SMTPError{
+				Code:         554,
+				EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
+				Message:      "Policy Rejection",
+			}
+		}
+	}
+
 	remoteIP, ok := msgMeta.Conn.RemoteAddr.(*net.TCPAddr)
 	if !ok {
 		remoteIP = &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}
@@ -540,6 +554,13 @@ func (s *Session) Data(r io.Reader) error {
 	if !s.endp.submission {
 		module.IncrementReceivedMessages()
 		s.log.Msg("[federation] received via SMTP", "msg_id", s.msgMeta.ID, "from", s.mailFrom, "rcpts", s.rcpts)
+
+		// Track the sender domain for federation diagnostics
+		if s.mailFrom != "" {
+			if _, senderDomain, splitErr := address.Split(s.mailFrom); splitErr == nil && senderDomain != "" {
+				federationtracker.Global().RecordSuccess(senderDomain, 0, "")
+			}
+		}
 	}
 
 	return nil

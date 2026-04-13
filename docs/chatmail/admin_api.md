@@ -393,6 +393,81 @@ Example response for GET:
     }
 }
 ```
+---
+
+## Federation Management
+
+Federation controls determine which remote domains can send to or receive from this server.
+
+### `/admin/settings/federation` — Policy Toggle
+- **GET**: Returns `{"enabled": true/false, "policy": "ACCEPT|REJECT"}`
+- **POST**: `{"enabled": true}` and/or `{"policy": "REJECT"}`
+
+Policy modes:
+| Policy | Rules Act As | Default Behavior |
+|--------|-------------|------------------|
+| `ACCEPT` | **Blocklist** | Allow all except listed domains |
+| `REJECT` | **Allowlist** | Deny all except listed domains |
+
+Example — enable federation with REJECT policy:
+```json
+{"method": "POST", "resource": "/admin/settings/federation",
+ "headers": {"Authorization": "Bearer TOKEN"},
+ "body": {"enabled": true, "policy": "REJECT"}}
+```
+
+### `/admin/federation/rules` — Domain Exception CRUD
+- **GET**: List all rules
+- **POST**: `{"domain": "bad.com"}` — Add a domain to the exception list
+- **DELETE**: `{"domain": "bad.com"}` — Remove a domain from the exception list
+
+Example — add a domain rule:
+```json
+{"method": "POST", "resource": "/admin/federation/rules",
+ "headers": {"Authorization": "Bearer TOKEN"},
+ "body": {"domain": "spammer.com"}}
+```
+
+GET response:
+```json
+{
+    "status": 200,
+    "body": {
+        "rules": [
+            {"domain": "spammer.com", "created_at": 1712000000}
+        ],
+        "total": 1
+    }
+}
+```
+
+### `/admin/federation/servers` — Traffic Diagnostics
+- **GET**: Returns per-domain delivery statistics from RAM (no DB hit)
+
+Response:
+```json
+{
+    "status": 200,
+    "body": {
+        "servers": [
+            {
+                "domain": "remote.example.com",
+                "queued_messages": 2,
+                "failed_http": 0,
+                "failed_https": 1,
+                "failed_smtp": 0,
+                "success_http": 0,
+                "success_https": 15,
+                "success_smtp": 3,
+                "successful_deliveries": 18,
+                "mean_latency_ms": 245.5,
+                "last_active": 1712345678
+            }
+        ],
+        "total": 1
+    }
+}
+```
 
 ---
 
@@ -408,6 +483,7 @@ All Admin API resources are also accessible through a built-in web interface at 
 | **Accounts** | List all accounts with storage usage, delete accounts (with confirmation modal) |
 | **Blocked** | View blocked usernames, unblock users (with confirmation modal) |
 | **DNS** | View, add, search, and delete DNS overrides (with confirmation modal) |
+| **Federation** | Toggle federation enforcement (ACCEPT/REJECT), manage domain rules (add/delete), view per-domain traffic diagnostics with transport breakdown (HTTPS/HTTP/SMTP) |
 | **Exchangers** | Manage pull-based email relay exchangers |
 | **Notice** | Send admin notice emails to one or all users |
 

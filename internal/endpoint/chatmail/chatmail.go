@@ -81,6 +81,7 @@ import (
 
 	mdb "github.com/themadorg/madmail/internal/db"
 	"github.com/themadorg/madmail/internal/endpoint_cache"
+	"github.com/themadorg/madmail/internal/federationtracker"
 	"gorm.io/gorm"
 )
 
@@ -1181,6 +1182,27 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── Federation Policy Enforcement ──
+	// Check if the sender's domain is allowed by the current federation policy.
+	if mailFrom != "" {
+		senderDomain := mailFrom
+		if atIdx := strings.LastIndex(mailFrom, "@"); atIdx >= 0 {
+			senderDomain = mailFrom[atIdx+1:]
+		}
+		// Read policy from DB setting
+		policy := "ACCEPT"
+		if e.authDB != nil {
+			if val, ok, err := e.authDB.GetSetting(resources.KeyFederationPolicy); err == nil && ok && val != "" {
+				policy = val
+			}
+		}
+		if !federationtracker.CheckFederationPolicy(senderDomain, policy, e.mailDomain, nil) {
+			e.logger.Msg("[federation] BLOCKED inbound HTTP delivery", "from_domain", senderDomain, "policy", policy)
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+	}
+
 	// ── Security Check #2 & #3: Validate recipients ──
 	// Reject recipients that don't belong to this server or target admin accounts.
 	validDomains := NormalizeMailDomain(e.mailDomain)
@@ -1277,6 +1299,15 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	module.IncrementReceivedMessages()
+
+	// Track the sender domain for federation diagnostics
+	if mailFrom != "" {
+		senderDomain := mailFrom
+		if atIdx := strings.LastIndex(mailFrom, "@"); atIdx >= 0 {
+			senderDomain = mailFrom[atIdx+1:]
+		}
+		federationtracker.Global().RecordSuccess(senderDomain, 0, "")
+	}
 
 	e.logger.Msg("[federation] received via https", "from", mailFrom, "to", validatedTo)
 	w.WriteHeader(http.StatusOK)
@@ -2577,6 +2608,11 @@ func (e *Endpoint) setupAdminAPI() {
 		_ = gormDB.AutoMigrate(&mdb.TableEntry{})
 		// Ensure RegistrationToken table exists for the invitation system
 		_ = gormDB.AutoMigrate(&mdb.RegistrationToken{})
+
+		// Initialize Federation tracking and policy enforcement
+		federationtracker.GlobalPolicy().Init(gormDB)
+		federationtracker.Global().Hydrate(gormDB)
+		federationtracker.Global().StartFlusher(gormDB)
 	}
 
 	// User count helper
@@ -2724,6 +2760,11 @@ func (e *Endpoint) setupAdminAPI() {
 			DB: e.exchangerGORM,
 		}))
 	}
+
+	// Federation policy and rules management
+	handler.Register("/admin/settings/federation", resources.FederationPolicyHandler(settingsDeps))
+	handler.Register("/admin/federation/rules", resources.FederationRulesHandler())
+	handler.Register("/admin/federation/servers", resources.FederationServersHandler())
 
 	// Reload / restart endpoint — regenerates config from DB overrides and restarts
 	handler.Register("/admin/reload", resources.ReloadHandler(resources.ReloadDeps{
