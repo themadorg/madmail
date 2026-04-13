@@ -1,3 +1,12 @@
+# [0.37.0](https://github.com/themadorg/madmail/compare/v0.36.0...v0.37.0) (2026-04-13)
+
+
+### Features
+
+* add admin toggles for WebIMAP and WebSMTP services and refactor WebSocket and SMTP logic into separate files ([ab1b329](https://github.com/themadorg/madmail/commit/ab1b3292f3d6faa61d6c98384b1f49e9f3b0f3e8))
+* add web access (WebIMAP) endpoint and client ([e4aaad6](https://github.com/themadorg/madmail/commit/e4aaad62861854429be5e87ae48a230d36dac012))
+* **webimap:** enable outbound delivery via target.remote ([1d65afb](https://github.com/themadorg/madmail/commit/1d65afb68e06ae3fff32bb182975f6395c0d9440))
+
 # [0.36.0](https://github.com/themadorg/madmail/compare/v0.35.0...v0.36.0) (2026-04-12)
 
 
