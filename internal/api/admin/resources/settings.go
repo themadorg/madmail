@@ -132,6 +132,8 @@ type AllSettingsResponse struct {
 	AutoPurgeSeenEnabled string `json:"auto_purge_seen_enabled"` // "enabled" or "disabled"
 	LogDisabled          string `json:"log_disabled"`            // "enabled" or "disabled"
 	AdminWebEnabled      string `json:"admin_web_enabled"`       // "enabled" or "disabled"
+	WebIMAPEnabled       string `json:"webimap_enabled"`         // "enabled" or "disabled"
+	WebSMTPEnabled       string `json:"websmtp_enabled"`         // "enabled" or "disabled"
 
 	// Port settings
 	SMTPPort       settingValueResponse `json:"smtp_port"`
@@ -197,6 +199,8 @@ const (
 	KeyHTTPProxyEnabled          = "__HTTP_PROXY_ENABLED__"
 	KeyAdminWebEnabled           = "__ADMIN_WEB_ENABLED__"
 	KeyRegistrationTokenRequired = "__REGISTRATION_TOKEN_REQUIRED__"
+	KeyWebIMAPEnabled            = "__WEBIMAP_ENABLED__"
+	KeyWebSMTPEnabled            = "__WEBSMTP_ENABLED__"
 
 	// Port settings
 	KeySMTPPort       = "__SMTP_PORT__"
@@ -433,6 +437,18 @@ func HTTPProxyHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (in
 	return genericDBToggleHandler(KeyHTTPProxyEnabled, deps)
 }
 
+// WebIMAPHandler creates a handler for /admin/services/webimap.
+// WebIMAP is disabled by default.
+func WebIMAPHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (interface{}, int, error) {
+	return genericDBToggleDisabledDefaultHandler(KeyWebIMAPEnabled, deps)
+}
+
+// WebSMTPHandler creates a handler for /admin/services/websmtp.
+// WebSMTP is disabled by default.
+func WebSMTPHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (interface{}, int, error) {
+	return genericDBToggleDisabledDefaultHandler(KeyWebSMTPEnabled, deps)
+}
+
 // genericDBToggleDisabledDefaultHandler creates a handler for DB-backed boolean settings that default to disabled.
 func genericDBToggleDisabledDefaultHandler(settingKey string, deps SettingsToggleDeps) func(string, json.RawMessage) (interface{}, int, error) {
 	return func(method string, body json.RawMessage) (interface{}, int, error) {
@@ -608,6 +624,8 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		resp.HTTPProxyEnabled = getToggle(KeyHTTPProxyEnabled)
 		resp.LogDisabled = getToggle(KeyLogDisabled)
 		resp.AdminWebEnabled = getToggle(KeyAdminWebEnabled)
+		resp.WebIMAPEnabled = getToggleDisabledDefault(KeyWebIMAPEnabled)
+		resp.WebSMTPEnabled = getToggleDisabledDefault(KeyWebSMTPEnabled)
 
 		// String settings helper
 		getSetting := func(key string, activeVal string) settingValueResponse {

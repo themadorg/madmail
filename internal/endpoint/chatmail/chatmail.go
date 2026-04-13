@@ -401,10 +401,12 @@ func (e *Endpoint) Init(cfg *config.Map) error {
 
 	// WebIMAP REST API: HTTP interface for IMAP operations
 	webimapHandler := &webimap.Handler{
-		AuthDB:     e.authDB,
-		Storage:    e.storage,
-		Logger:     log.Logger{Name: modName + "/webimap", Debug: e.logger.Debug},
-		MailDomain: e.mailDomain,
+		AuthDB:            e.authDB,
+		Storage:           e.storage,
+		Logger:            log.Logger{Name: modName + "/webimap", Debug: e.logger.Debug},
+		MailDomain:        e.mailDomain,
+		WebIMAPEnabledKey: resources.KeyWebIMAPEnabled,
+		WebSMTPEnabledKey: resources.KeyWebSMTPEnabled,
 	}
 	// Try to discover the outbound delivery module so WebIMAP can send
 	// to external domains (not just local recipients).
@@ -2615,6 +2617,8 @@ func (e *Endpoint) setupAdminAPI() {
 	handler.Register("/admin/services/ss_grpc", resources.SsGrpcHandler(settingsDeps))
 	handler.Register("/admin/services/http_proxy", resources.HTTPProxyHandler(settingsDeps))
 	handler.Register("/admin/services/log", resources.LogHandler(settingsDeps))
+	handler.Register("/admin/services/webimap", resources.WebIMAPHandler(settingsDeps))
+	handler.Register("/admin/services/websmtp", resources.WebSMTPHandler(settingsDeps))
 
 	// Bulk settings endpoint
 	handler.Register("/admin/settings", resources.AllSettingsHandler(settingsDeps))
