@@ -4,7 +4,6 @@ go 1.25.7
 
 require (
 	blitiri.com.ar/go/spf v1.5.1
-	github.com/GehirnInc/crypt v0.0.0-20230320061759-8cc1b52080c5
 	github.com/c0va23/go-proxyprotocol v0.9.1
 	github.com/caddyserver/certmagic v0.21.7
 	github.com/emersion/go-imap v1.2.2-0.20220928192137-6fac715be9cf
@@ -15,7 +14,6 @@ require (
 	github.com/emersion/go-msgauth v0.6.8
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.21.3
-	github.com/foxcpp/go-dovecot-sasl v0.0.0-20200522223722-c4699d7a24bf
 	github.com/foxcpp/go-imap-backend-tests v0.0.0-20220105184719-e80aa29a5e16
 	github.com/foxcpp/go-imap-i18nlevel v0.0.0-20200208001533-d6ec88553005
 	github.com/foxcpp/go-imap-mess v0.0.0-20230108134257-b7ec3a649613
@@ -23,12 +21,10 @@ require (
 	github.com/foxcpp/go-imap-sql v0.5.1-0.20250124140007-8da5567429d5
 	github.com/foxcpp/go-mockdns v1.1.0
 	github.com/foxcpp/go-mtasts v0.0.0-20240130093538-1438da2e5932
-	github.com/go-ldap/ldap/v3 v3.4.10
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/golangci/golangci-lint v1.64.8
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/hashicorp/go-hclog v1.6.3
 	github.com/johannesboyne/gofakes3 v0.0.0-20210704111953-6a9f95c2941c
 	github.com/lib/pq v1.10.9
 	github.com/libdns/acmedns v0.2.0
@@ -50,7 +46,6 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/miekg/dns v1.1.72
 	github.com/minio/minio-go/v7 v7.0.84
-	github.com/netauth/netauth v0.6.2
 	github.com/pion/logging v0.2.4
 	github.com/pion/stun/v3 v3.1.1
 	github.com/pion/turn/v4 v4.1.4
@@ -84,7 +79,6 @@ require (
 	github.com/Antonboom/errname v1.0.0 // indirect
 	github.com/Antonboom/nilnil v1.0.1 // indirect
 	github.com/Antonboom/testifylint v1.5.2 // indirect
-	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
 	github.com/Crocmagnon/fatcontext v0.7.1 // indirect
 	github.com/Djarvur/go-err113 v0.0.0-20210108212216-aea10b59be24 // indirect
@@ -146,7 +140,6 @@ require (
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/fzipp/gocyclo v0.6.0 // indirect
 	github.com/ghostiam/protogetter v0.3.9 // indirect
-	github.com/go-asn1-ber/asn1-ber v1.5.7 // indirect
 	github.com/go-critic/go-critic v0.12.0 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -233,7 +226,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nakabonne/nestif v0.3.1 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
-	github.com/netauth/protocol v0.0.0-20210918062754-7fee492ffcbd // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/nunnatsa/ginkgolinter v0.19.1 // indirect

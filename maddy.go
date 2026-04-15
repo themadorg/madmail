@@ -42,14 +42,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	// Import packages for side-effect of module registration.
-	_ "github.com/themadorg/madmail/internal/auth/dovecot_sasl"
-	_ "github.com/themadorg/madmail/internal/auth/external"
-	_ "github.com/themadorg/madmail/internal/auth/ldap"
-	_ "github.com/themadorg/madmail/internal/auth/netauth"
-	_ "github.com/themadorg/madmail/internal/auth/pam"
 	_ "github.com/themadorg/madmail/internal/auth/pass_table"
-	_ "github.com/themadorg/madmail/internal/auth/plain_separate"
-	_ "github.com/themadorg/madmail/internal/auth/shadow"
 	_ "github.com/themadorg/madmail/internal/check/authorize_sender"
 	_ "github.com/themadorg/madmail/internal/check/command"
 	_ "github.com/themadorg/madmail/internal/check/dkim"
@@ -61,7 +54,6 @@ import (
 	_ "github.com/themadorg/madmail/internal/check/rspamd"
 	_ "github.com/themadorg/madmail/internal/check/spf"
 	_ "github.com/themadorg/madmail/internal/endpoint/chatmail"
-	_ "github.com/themadorg/madmail/internal/endpoint/dovecot_sasld"
 	_ "github.com/themadorg/madmail/internal/endpoint/imap"
 	_ "github.com/themadorg/madmail/internal/endpoint/openmetrics"
 	_ "github.com/themadorg/madmail/internal/endpoint/smtp"
