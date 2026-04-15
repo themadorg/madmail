@@ -38,7 +38,6 @@ linters:
           - errcheck
         text: "Error return value of .*(Close|Flush|Remove|RemoveAll|Setenv|Write|Fprintf|Fprintln|Fprint).*is not checked"
     paths:
-      - cmd/maddy-pam-helper
       - _test.go
 
 formatters:
@@ -46,7 +45,6 @@ formatters:
     - gofmt
   exclusions:
     paths:
-      - cmd/maddy-pam-helper
       - _test.go
 
 run:
