@@ -168,11 +168,11 @@ submission tls://0.0.0.0:{{.SubmissionTLS}} tcp://0.0.0.0:{{.SubmissionPort}} {
     max_message_size {{.MaxMessageSize}}
 
     auth &local_authdb
-    insecure_auth {{if .AllowInsecureAuth}}yes{{else}}no{{end}}
+    insecure_auth {{if .TurnOffTLS}}yes{{else}}no{{end}}
 
     source $(local_domains) {
         check {
-            require_tls
+            {{if not .TurnOffTLS}}require_tls{{end}}
             authorize_sender {
                 prepare_email &local_rewrites
                 user_to_email identity
@@ -256,7 +256,7 @@ target.queue remote_queue {
 imap tls://0.0.0.0:{{.IMAPTLS}} tcp://0.0.0.0:{{.IMAPPort}} {
     auth &local_authdb
     storage &local_mailboxes
-    insecure_auth {{if .AllowInsecureAuth}}yes{{else}}no{{end}}
+    insecure_auth {{if .TurnOffTLS}}yes{{else}}no{{end}}
 {{if .EnableTURN}}
     turn_enable yes
     turn_server {{.PublicIP}}

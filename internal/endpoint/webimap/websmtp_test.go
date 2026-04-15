@@ -44,7 +44,7 @@ func TestHandleSend_ForceAuthenticatedUser(t *testing.T) {
 	t.Run("Valid request", func(t *testing.T) {
 		body := `{"to":["bob@example.com"],"body":"Content-Type: text/plain\r\nFrom: alice@example.com\r\nTo: bob@example.com\r\nSubject: Test\r\n\r\nHello"}`
 		resp := doRequestWithSettings(mux, "POST", "/webimap/send", strings.NewReader(body), "alice@example.com", "secret123")
-		
+
 		// It should fail with "Encryption Needed" because it's text/plain
 		if !strings.Contains(resp.Body.String(), "Encryption Needed") {
 			t.Errorf("Expected 'Encryption Needed' error, got %d: %s", resp.Code, resp.Body.String())
@@ -54,7 +54,7 @@ func TestHandleSend_ForceAuthenticatedUser(t *testing.T) {
 	t.Run("Spoofing 'from' in JSON", func(t *testing.T) {
 		body := `{"from":"bob@example.com","to":["bob@example.com"],"body":"Content-Type: text/plain\r\nFrom: alice@example.com\r\nTo: bob@example.com\r\nSubject: Test\r\n\r\nHello"}`
 		resp := doRequestWithSettings(mux, "POST", "/webimap/send", strings.NewReader(body), "alice@example.com", "secret123")
-		
+
 		if !strings.Contains(resp.Body.String(), "Encryption Needed") {
 			t.Errorf("Expected 'Encryption Needed' error (meaning 'from' check passed), got %d: %s", resp.Code, resp.Body.String())
 		}
@@ -63,7 +63,7 @@ func TestHandleSend_ForceAuthenticatedUser(t *testing.T) {
 	t.Run("Spoofing 'From' header in body", func(t *testing.T) {
 		body := `{"to":["bob@example.com"],"body":"Content-Type: text/plain\r\nFrom: bob@example.com\r\nTo: bob@example.com\r\nSubject: Spoofed\r\n\r\nHello"}`
 		resp := doRequestWithSettings(mux, "POST", "/webimap/send", strings.NewReader(body), "alice@example.com", "secret123")
-		
+
 		if !strings.Contains(resp.Body.String(), "From header in message (bob@example.com) does not match authenticated user (alice@example.com)") {
 			t.Errorf("Expected From header mismatch error, got %d: %s", resp.Code, resp.Body.String())
 		}

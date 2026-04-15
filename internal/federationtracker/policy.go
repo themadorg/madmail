@@ -22,8 +22,8 @@ type FederationRule struct {
 // by sync.RWMutex is checked on every message — no DB SELECT per delivery.
 type PolicyStore struct {
 	mu    sync.RWMutex
-	rules map[string]struct{}            // normalized domain -> exists
-	times map[string]int64               // domain -> created_at timestamp
+	rules map[string]struct{} // normalized domain -> exists
+	times map[string]int64    // domain -> created_at timestamp
 	db    *gorm.DB
 }
 

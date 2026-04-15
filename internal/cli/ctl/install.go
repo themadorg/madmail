@@ -143,8 +143,7 @@ type InstallConfig struct {
 	PublicIP      string
 
 	// Security configuration
-	AllowInsecureAuth bool
-	TurnOffTLS        bool
+	TurnOffTLS bool
 
 	// System configuration
 	MaddyUser      string
@@ -204,7 +203,6 @@ func defaultConfig() *InstallConfig {
 		SubmissionTLS:            "465",
 		IMAPPort:                 "143",
 		IMAPTLS:                  "993",
-		AllowInsecureAuth:        false,
 		EnableChatmail:           false,
 		ChatmailHTTPPort:         "80",
 		ChatmailHTTPSPort:        "443",
@@ -668,8 +666,10 @@ func installCommand(ctx *cli.Context) error {
 			// IP-based installs use self-signed certs with no real DNS.
 			// DANE and strict TLS enforcement would always fail, so relax them
 			// automatically to allow SMTP as a fallback federation path.
+			// Relax DANE and strict TLS federation enforcement for IP-based
+			// installs as real DNS is not available.
 			if net.ParseIP(config.PublicIP) != nil {
-				config.TurnOffTLS = true
+				config.A = config.PublicIP
 			}
 		}
 	} else {
@@ -905,10 +905,6 @@ func runInteractiveConfig(config *InstallConfig) error {
 		config.EnableChatmail = true
 		config.GenerateCerts = true
 
-		if config.PrimaryDomain == "localhost" || config.PrimaryDomain == "127.0.0.1" {
-			config.AllowInsecureAuth = true
-		}
-
 		config.A = config.PublicIP
 
 		return nil
@@ -1014,9 +1010,6 @@ func runInteractiveConfig(config *InstallConfig) error {
 	config.SubmissionTLS = promptString("Submission TLS port", config.SubmissionTLS)
 	config.IMAPPort = promptString("IMAP port", config.IMAPPort)
 	config.IMAPTLS = promptString("IMAP TLS port", config.IMAPTLS)
-
-	// Insecure auth toggle
-	config.AllowInsecureAuth = clitools2.Confirmation("Allow insecure (plain text) authentication?", config.AllowInsecureAuth)
 
 	// Chatmail configuration
 	fmt.Println("\n💬 Chatmail Configuration")

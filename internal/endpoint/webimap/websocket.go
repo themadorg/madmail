@@ -41,16 +41,16 @@ var wsUpgrader = websocket.Upgrader{
 
 // wsRequest is the JSON envelope the client sends over the WebSocket.
 type wsRequest struct {
-	ReqID  string          `json:"req_id"`  // Client-generated correlation ID
-	Action string          `json:"action"`  // Command name
-	Data   json.RawMessage `json:"data"`    // Action-specific payload
+	ReqID  string          `json:"req_id"` // Client-generated correlation ID
+	Action string          `json:"action"` // Command name
+	Data   json.RawMessage `json:"data"`   // Action-specific payload
 }
 
 // wsResponse is the JSON envelope the server sends back.
 type wsResponse struct {
-	ReqID  string      `json:"req_id,omitempty"`  // Echoed from the request (empty for push)
-	Action string      `json:"action"`            // "result", "error", or push action name
-	Data   interface{} `json:"data"`              // Payload
+	ReqID  string      `json:"req_id,omitempty"` // Echoed from the request (empty for push)
+	Action string      `json:"action"`           // "result", "error", or push action name
+	Data   interface{} `json:"data"`             // Payload
 }
 
 // wsSendData is the payload for the "send" action.
@@ -178,10 +178,9 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Configure keepalive: client must send a pong within 60s
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 
 	// Serialise writes — WebSocket connections are not safe for concurrent writes.
@@ -208,7 +207,7 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 			var req wsRequest
 			if err := json.Unmarshal(raw, &req); err != nil {

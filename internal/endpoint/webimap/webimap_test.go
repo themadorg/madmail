@@ -27,18 +27,22 @@ func (m *mockAuthDB) AuthPlain(username, password string) error {
 	}
 	return imapbackend.ErrInvalidCredentials
 }
-func (m *mockAuthDB) ListUsers() ([]string, error)                     { return nil, nil }
-func (m *mockAuthDB) CreateUser(username, password string) error        { return nil }
-func (m *mockAuthDB) SetUserPassword(username, password string) error   { return nil }
-func (m *mockAuthDB) DeleteUser(username string) error                  { return nil }
-func (m *mockAuthDB) IsRegistrationOpen() (bool, error)                 { return true, nil }
-func (m *mockAuthDB) SetRegistrationOpen(open bool) error               { return nil }
-func (m *mockAuthDB) IsJitRegistrationEnabled() (bool, error)           { return false, nil }
-func (m *mockAuthDB) SetJitRegistrationEnabled(enabled bool) error      { return nil }
-func (m *mockAuthDB) IsTurnEnabled() (bool, error)                      { return false, nil }
-func (m *mockAuthDB) SetTurnEnabled(enabled bool) error                 { return nil }
-func (m *mockAuthDB) IsLoggingDisabled() (bool, error)                  { return false, nil }
-func (m *mockAuthDB) SetLoggingDisabled(disabled bool) error            { return nil }
+func (m *mockAuthDB) ListUsers() ([]string, error) { return nil, nil }
+func (m *mockAuthDB) GetUserPasswordHash(username string) (string, bool, error) {
+	return "", false, nil
+}
+func (m *mockAuthDB) CreateUser(username, password string) error      { return nil }
+func (m *mockAuthDB) SetUserPassword(username, password string) error { return nil }
+func (m *mockAuthDB) SetUserPasswordHash(username, hash string) error { return nil }
+func (m *mockAuthDB) DeleteUser(username string) error                { return nil }
+func (m *mockAuthDB) IsRegistrationOpen() (bool, error)               { return true, nil }
+func (m *mockAuthDB) SetRegistrationOpen(open bool) error             { return nil }
+func (m *mockAuthDB) IsJitRegistrationEnabled() (bool, error)         { return false, nil }
+func (m *mockAuthDB) SetJitRegistrationEnabled(enabled bool) error    { return nil }
+func (m *mockAuthDB) IsTurnEnabled() (bool, error)                    { return false, nil }
+func (m *mockAuthDB) SetTurnEnabled(enabled bool) error               { return nil }
+func (m *mockAuthDB) IsLoggingDisabled() (bool, error)                { return false, nil }
+func (m *mockAuthDB) SetLoggingDisabled(disabled bool) error          { return nil }
 func (m *mockAuthDB) GetSetting(key string) (string, bool, error) {
 	if v, ok := m.settings[key]; ok {
 		return v, true, nil
@@ -106,11 +110,11 @@ func (u *mockUser) GetMailbox(name string, readOnly bool, conn imapbackend.Conn)
 	return status, mbox, nil
 }
 
-func (u *mockUser) CreateMailbox(name string) error              { return nil }
-func (u *mockUser) DeleteMailbox(name string) error              { return nil }
-func (u *mockUser) RenameMailbox(existing, newName string) error  { return nil }
+func (u *mockUser) CreateMailbox(name string) error                  { return nil }
+func (u *mockUser) DeleteMailbox(name string) error                  { return nil }
+func (u *mockUser) RenameMailbox(existing, newName string) error     { return nil }
 func (u *mockUser) SetSubscribed(name string, subscribed bool) error { return nil }
-func (u *mockUser) Logout() error                                { return nil }
+func (u *mockUser) Logout() error                                    { return nil }
 
 func (u *mockUser) Status(name string, items []imap.StatusItem) (*imap.MailboxStatus, error) {
 	mbox, ok := u.mailboxes[name]
@@ -211,9 +215,9 @@ func (m *mockMailbox) UpdateMessagesFlags(uid bool, seqSet *imap.SeqSet, op imap
 func (m *mockMailbox) CopyMessages(uid bool, seqSet *imap.SeqSet, destName string) error {
 	return nil
 }
-func (m *mockMailbox) Expunge() error { return nil }
-func (m *mockMailbox) Close() error   { return nil }
-func (m *mockMailbox) Poll(expunge bool) error { return nil }
+func (m *mockMailbox) Expunge() error            { return nil }
+func (m *mockMailbox) Close() error              { return nil }
+func (m *mockMailbox) Poll(expunge bool) error   { return nil }
 func (m *mockMailbox) Idle(done <-chan struct{}) {}
 
 // ---- test setup ----
