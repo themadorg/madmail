@@ -48,7 +48,7 @@ jobs:
           node-version: '24'
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24.0'
+          go-version: '1.26.0'
           cache: true
       - name: Create iroh-relay placeholder for linting
         run: |
@@ -61,7 +61,7 @@ jobs:
           cp -r admin-web/build internal/adminweb/build
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.9.0
+          version: v2.11.4
           args: --timeout=30m
       - name: Build maddy
         run: |
@@ -80,7 +80,7 @@ jobs:
           node-version: '24'
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24.0'
+          go-version: '1.26.0'
           cache: true
       - name: Create iroh-relay placeholder
         run: |

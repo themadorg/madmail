@@ -1,3 +1,4 @@
+version: "2"
 linters:
   enable:
     - govet
@@ -38,14 +39,12 @@ linters:
           - errcheck
         text: "Error return value of .*(Close|Flush|Remove|RemoveAll|Setenv|Write|Fprintf|Fprintln|Fprint).*is not checked"
     paths:
-      - _test.go
+      - _test\.go
 
 formatters:
   enable:
     - gofmt
-  exclusions:
-    paths:
-      - _test.go
 
 run:
   timeout: 5m
+  go: "1.24"
