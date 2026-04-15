@@ -20,7 +20,6 @@ require (
 	github.com/foxcpp/go-imap-sql v0.5.1-0.20250124140007-8da5567429d5
 	github.com/foxcpp/go-mockdns v1.1.0
 	github.com/foxcpp/go-mtasts v0.0.0-20240130093538-1438da2e5932
-	github.com/go-sql-driver/mysql v1.8.1
 	github.com/golangci/golangci-lint v1.64.8
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
@@ -59,7 +58,6 @@ require (
 	golang.org/x/sync v0.19.0
 	golang.org/x/sys v0.41.0
 	golang.org/x/text v0.34.0
-	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
@@ -72,7 +70,6 @@ require (
 	cloud.google.com/go/auth v0.16.5 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/4meepo/tagalign v1.4.2 // indirect
 	github.com/Abirdcfly/dupword v0.1.3 // indirect
 	github.com/Antonboom/errname v1.0.0 // indirect

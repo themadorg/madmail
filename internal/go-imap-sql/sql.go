@@ -56,20 +56,6 @@ func (b *Backend) configureEngine() error {
 		}
 	}
 
-	if b.db.driver == "mysql" {
-		// Make MySQL more ANSI SQL compatible.
-		_, err := b.db.Exec(`SET SESSION sql_mode = 'ansi,no_backslash_escapes'`)
-		if err != nil {
-			return err
-		}
-
-		// Turn on strict transaction isolation by default, it is overriden
-		// by per-transaction isolation levels where necessary.
-		_, err = b.db.Exec(`SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ`)
-		if err != nil {
-			return err
-		}
-	}
 
 	return nil
 }
@@ -126,15 +112,7 @@ func (b *Backend) initSchema() error {
 	_, err = b.db.Exec(`
         CREATE UNIQUE INDEX IF NOT EXISTS extKeys_uid_id
         ON extKeys(uid, id)`)
-	// MySQL does not support "IF NOT EXISTS", but MariaDB does.
-	if err != nil && b.db.driver == "mysql" {
-		_, err = b.db.Exec(`
-			CREATE INDEX extKeys_uid_id
-			ON extKeys(uid, id)`)
-		if err != nil && strings.HasPrefix(err.Error(), "Error 1061: Duplicate key name") {
-			err = nil
-		}
-	}
+
 	if err != nil {
 		return wrapErr(err, "create index extKeys_uid_id")
 	}
@@ -178,15 +156,7 @@ func (b *Backend) initSchema() error {
 	_, err = b.db.Exec(`
         CREATE INDEX IF NOT EXISTS seen_msgs
         ON msgs(mboxId, seen)`)
-	// MySQL does not support "IF NOT EXISTS", but MariaDB does.
-	if err != nil && b.db.driver == "mysql" {
-		_, err = b.db.Exec(`
-			CREATE INDEX seen_msgs
-			ON msgs(mboxId, seen)`)
-		if err != nil && strings.HasPrefix(err.Error(), "Error 1061: Duplicate key name") {
-			err = nil
-		}
-	}
+
 	if err != nil {
 		return wrapErr(err, "create index seen_msgs")
 	}
@@ -263,15 +233,9 @@ func (b *Backend) prepareStmts() error {
 	if err != nil {
 		return wrapErr(err, "renameMbox prep")
 	}
-	if b.db.driver == "mysql" {
-		b.renameMboxChilds, err = b.db.Prepare(`
-		UPDATE mboxes SET name = concat(?, substr(name, ?+1))
-		WHERE name LIKE ? AND uid = ?`)
-	} else {
-		b.renameMboxChilds, err = b.db.Prepare(`
+	b.renameMboxChilds, err = b.db.Prepare(`
 		UPDATE mboxes SET name = ? || substr(name, ?+1)
 		WHERE name LIKE ? AND uid = ?`)
-	}
 	if err != nil {
 		return wrapErr(err, "renameMboxChilds prep")
 	}

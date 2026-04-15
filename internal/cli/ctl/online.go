@@ -503,7 +503,7 @@ func statusAction(ctx *cli.Context) error {
 }
 
 // getUserCount queries the database for the number of registered users.
-// Uses the project's GORM layer to support sqlite3, postgres, and mysql.
+// Uses the project's GORM layer to support sqlite3 and postgres.
 func getUserCount(driver, dsn, stateDir string) (int, error) {
 	if driver == "" || dsn == "" {
 		return 0, fmt.Errorf("database not configured")

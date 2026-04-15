@@ -69,15 +69,7 @@ func (d db) rewriteSQL(req string) (res string) {
 			res = strings.Replace(res, "LONGTEXT", "BYTEA", -1)
 			res = strings.Replace(res, "AUTOINCREMENT", "", -1)
 		}
-	} else if d.driver == "mysql" {
-		if strings.HasPrefix(res, "CREATE TABLE") || strings.HasPrefix(res, "ALTER TABLE") {
-			res = strings.Replace(res, "BIGSERIAL", "BIGINT", -1)
-			res = strings.Replace(res, "AUTOINCREMENT", "AUTO_INCREMENT", -1)
-		}
-		if strings.HasSuffix(res, "ON CONFLICT DO NOTHING") && strings.HasPrefix(res, "INSERT") {
-			res = strings.Replace(res, "ON CONFLICT DO NOTHING", "", -1)
-			res = strings.Replace(res, "INSERT", "INSERT IGNORE", 1)
-		}
+
 	} else if d.driver == "sqlite3" || d.driver == "sqlite" {
 		if strings.HasPrefix(res, "CREATE TABLE") || strings.HasPrefix(res, "ALTER TABLE") {
 			res = strings.Replace(res, "BIGSERIAL", "INTEGER", -1)
@@ -99,15 +91,7 @@ func (d db) rewriteSQL(req string) (res string) {
 
 func (db db) valuesSubquery(flagsCount int) string {
 	sqlList := ""
-	if db.driver == "mysql" {
 
-		sqlList += "SELECT ? AS column1"
-		for i := 1; i < flagsCount; i++ {
-			sqlList += " UNION ALL SELECT ? "
-		}
-
-		return sqlList
-	}
 
 	for i := 0; i < flagsCount; i++ {
 		if db.driver == "postgres" {
@@ -131,8 +115,6 @@ func (db db) aggrValuesSet(expr, separator string) string {
 	if db.driver == "postgres" {
 		return "coalesce(string_agg(" + expr + ",'" + separator + "'), '')"
 	}
-	if db.driver == "mysql" {
-		return "coalesce(group_concat(" + expr + " SEPARATOR '" + separator + "'), '')"
-	}
+
 	panic("Unsupported driver")
 }
