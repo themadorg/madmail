@@ -60,7 +60,6 @@ import (
 	_ "github.com/themadorg/madmail/internal/modify"
 	_ "github.com/themadorg/madmail/internal/modify/dkim"
 	_ "github.com/themadorg/madmail/internal/storage/blob/fs"
-	_ "github.com/themadorg/madmail/internal/storage/blob/s3"
 	_ "github.com/themadorg/madmail/internal/storage/imapsql"
 	_ "github.com/themadorg/madmail/internal/table"
 	_ "github.com/themadorg/madmail/internal/target/queue"
