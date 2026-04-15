@@ -349,11 +349,8 @@ github.com/emersion/go-imap-sortthread v1.2.0 h1:EMVEJXPWAhXMWECjR82Rn/tza6Mddcv
 github.com/emersion/go-imap-sortthread v1.2.0/go.mod h1:UhenCBupR+vSYRnqJkpjSq84INUCsyAK1MLpogv14pE=
 github.com/emersion/go-message v0.15.0/go.mod h1:wQUEfE+38+7EW8p8aZ96ptg6bAb1iwdgej19uXASlE4=
 github.com/emersion/go-message v0.18.0/go.mod h1:Zi69ACvzaoV/MBnrxfVBPV3xWEuCmC2nEN39oJF4B8A=
-github.com/emersion/go-message v0.18.1/go.mod h1:XpJyL70LwRvq2a8rVbHXikPgKj8+aI0kGdHlg16ibYA=
 github.com/emersion/go-message v0.18.2 h1:rl55SQdjd9oJcIoQNhubD2Acs1E6IzlZISRTK7x/Lpg=
 github.com/emersion/go-message v0.18.2/go.mod h1:XpJyL70LwRvq2a8rVbHXikPgKj8+aI0kGdHlg16ibYA=
-github.com/emersion/go-milter v0.4.1 h1:gLs9QD0zEHF8omgEw8M+aGz6iwBNpWLAcwgSur0ra4M=
-github.com/emersion/go-milter v0.4.1/go.mod h1:erCQVl0mH4SX9jEvwe+wyndit0rQtmvMLH86V6NGtkI=
 github.com/emersion/go-msgauth v0.6.8 h1:kW/0E9E8Zx5CdKsERC/WnAvnXvX7q9wTHia1OA4944A=
 github.com/emersion/go-msgauth v0.6.8/go.mod h1:YDwuyTCUHu9xxmAeVj0eW4INnwB6NNZoPdLerpSxRrc=
 github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21/go.mod h1:iL2twTeMvZnrg54ZoPDNfJaJaqy0xIQFuBdrLsmspwQ=

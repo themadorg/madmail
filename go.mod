@@ -10,7 +10,6 @@ require (
 	github.com/emersion/go-imap-compress v0.0.0-20201103190257-14809af1d1b9
 	github.com/emersion/go-imap-sortthread v1.2.0
 	github.com/emersion/go-message v0.18.2
-	github.com/emersion/go-milter v0.4.1
 	github.com/emersion/go-msgauth v0.6.8
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.21.3
