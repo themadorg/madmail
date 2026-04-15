@@ -1,3 +1,15 @@
+# [0.41.0](https://github.com/themadorg/madmail/compare/v0.40.0...v0.41.0) (2026-04-15)
+
+
+### Bug Fixes
+
+* **webimap:** add missing PlainUserDB methods to test mock ([4b93311](https://github.com/themadorg/madmail/commit/4b93311f0d402c8d887cc9c2ff665655135385ee))
+
+
+### Features
+
+* **cli:** link insecure auth to TLS state and update submission port to 587 ([4212bfa](https://github.com/themadorg/madmail/commit/4212bfa4742fe92f518464cfbb006a1470b87a86))
+
 # [0.40.0](https://github.com/themadorg/madmail/compare/v0.39.0...v0.40.0) (2026-04-13)
 
 
