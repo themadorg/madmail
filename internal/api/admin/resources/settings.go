@@ -135,7 +135,7 @@ type AllSettingsResponse struct {
 	WebIMAPEnabled       string `json:"webimap_enabled"`         // "enabled" or "disabled"
 	WebSMTPEnabled       string `json:"websmtp_enabled"`         // "enabled" or "disabled"
 	FederationEnabled    bool   `json:"federation_enabled"`
-	FederationPolicy     string `json:"federation_policy"`       // "ACCEPT" or "REJECT"
+	FederationPolicy     string `json:"federation_policy"` // "ACCEPT" or "REJECT"
 
 	// Port settings
 	SMTPPort       settingValueResponse `json:"smtp_port"`

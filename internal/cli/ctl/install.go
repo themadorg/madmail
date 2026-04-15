@@ -905,7 +905,6 @@ func runInteractiveConfig(config *InstallConfig) error {
 		config.EnableChatmail = true
 		config.GenerateCerts = true
 
-
 		config.A = config.PublicIP
 
 		return nil
