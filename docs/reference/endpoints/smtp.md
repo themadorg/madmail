@@ -16,7 +16,7 @@ smtp tcp://0.0.0.0:25 {
     write_timeout 1m
     max_message_size 32M
     max_header_size 1M
-    auth pam
+    auth pass_table
     defer_sender_reject yes
     dmarc yes
     smtp_max_line_length 4000

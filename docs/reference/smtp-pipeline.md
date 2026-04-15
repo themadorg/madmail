@@ -7,8 +7,8 @@ describe how to handle messages.
 
 The pipeline is responsible for
 
-- Running message filters (called "checks"), (e.g. DKIM signature verification,
-  DNSBL lookup, and so on).
+- Running message filters (called "checks"), (e.g. DKIM signature verification
+  and so on).
 - Running message modifiers (e.g. DKIM signature creation).
 - Associating each message recipient with one or more delivery targets.
   Delivery target is a module that does the final processing (delivery) of the

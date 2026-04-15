@@ -9,7 +9,6 @@ database operations across multiple backends. The implementation lives in `inter
 |------------|------------------------|----------------|--------------------------------------------------|
 | SQLite     | `gorm.io/driver/sqlite`   | `sqlite3`      | `imapsql.db` (filename, can be relative)         |
 | PostgreSQL | `gorm.io/driver/postgres` | `postgres`     | `host=localhost user=maddy dbname=maddy sslmode=disable` |
-| MySQL      | `gorm.io/driver/mysql`    | `mysql`        | `maddy:password@tcp(127.0.0.1:3306)/maddy`       |
 
 The driver and DSN are configured in the `storage.imapsql` block of `maddy.conf`:
 
@@ -39,9 +38,9 @@ func New(driver string, dsn []string, debug bool) (*gorm.DB, error)
 Creates a new GORM database connection. The `dsn` parts are joined with spaces
 before passing to the GORM dialector.
 
-- **`driver`**: One of `sqlite3`, `sqlite`, `postgres`, or `mysql`.
+- **`driver`**: One of `sqlite3`, `sqlite`, or `postgres`.
 - **`dsn`**: DSN string parts (joined with spaces). For SQLite, this is typically
-  a filename. For PostgreSQL/MySQL, it's the connection string.
+  a filename. For PostgreSQL, it's the connection string.
 - **`debug`**: When `false`, GORM logging is suppressed (Silent mode).
   This is important for the [No Log Policy](../chatmail/nolog.md).
 

@@ -139,21 +139,6 @@ before giving up on DB lock.
 
 ---
 
-### imap_filter { ... }
-Default: not set
-
-Specifies IMAP filters to apply for messages delivered from SMTP pipeline.
-
-Ex.
-
-```
-imap_filter {
-	command /etc/maddy/sieve.sh {account_name}
-}
-```
-
----
-
 ### delivery_map _table_
 Default: `identity`
 

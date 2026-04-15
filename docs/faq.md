@@ -100,10 +100,6 @@ are fine with alpha-quality but extremely easy to deploy webmail.
 No. maddy moves email messages around, it does not classify
 them as bad or good with the notable exception of sender policies.
 
-It is possible to integrate rspamd using 'rspamd' module. Just add
-`rspamd` line to `checks` in `local_routing`, it should just work
-in most cases.
-
 ## Is it production-ready?
 
 maddy is considered "beta" quality. Several people use it for personal email.
