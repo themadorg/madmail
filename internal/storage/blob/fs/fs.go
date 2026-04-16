@@ -65,7 +65,11 @@ func (s *FSStore) Open(_ context.Context, key string) (io.ReadCloser, error) {
 }
 
 func (s *FSStore) Create(_ context.Context, key string, blobSize int64) (module.Blob, error) {
-	f, err := os.Create(filepath.Join(s.root, key))
+	path := filepath.Join(s.root, key)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	f, err := os.Create(path)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +91,15 @@ func (s *FSStore) Delete(_ context.Context, keys []string) error {
 		}
 	}
 	return nil
+}
+
+func (s *FSStore) Link(_ context.Context, srcKey, destKey string) error {
+	oldPath := filepath.Join(s.root, srcKey)
+	newPath := filepath.Join(s.root, destKey)
+	if err := os.MkdirAll(filepath.Dir(newPath), 0700); err != nil {
+		return err
+	}
+	return os.Link(oldPath, newPath)
 }
 
 func init() {

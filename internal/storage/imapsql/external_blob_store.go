@@ -5,6 +5,7 @@ import (
 	"io"
 
 	imapsql "github.com/foxcpp/go-imap-sql"
+	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 )
 
@@ -30,6 +31,7 @@ func (w WriteExtBlob) Read(p []byte) (n int, err error) {
 
 type ExtBlobStore struct {
 	Base module.BlobStore
+	Log  log.Logger
 }
 
 func (e ExtBlobStore) Create(key string, objSize int64) (imapsql.ExtStoreObj, error) {
@@ -61,6 +63,18 @@ func (e ExtBlobStore) Delete(keys []string) error {
 	if err != nil {
 		return imapsql.ExternalError{
 			Key: "",
+			Err: err,
+		}
+	}
+	return nil
+}
+
+func (e ExtBlobStore) Link(srcKey, destKey string) error {
+	e.Log.Debugf("creating hardlink for deduplication: %s -> %s", srcKey, destKey)
+	err := e.Base.Link(context.TODO(), srcKey, destKey)
+	if err != nil {
+		return imapsql.ExternalError{
+			Key: srcKey,
 			Err: err,
 		}
 	}
