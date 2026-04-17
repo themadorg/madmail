@@ -82,7 +82,7 @@ To actively support the Federation Policy Dashboard UI, expose a new handler com
     - Action: Iterates the `FederationTracker` memory pointer and returns the mapped domain list natively as a pure JSON array string without a DB query.
   - **Create Rule (POST)**
     - Payload: `{ "method": "POST", "resource": "/admin/federation/rules", "body": {"domain": "spam.com"} }`
-    - Action: Adds `spam.com` structurally to the `FederationRule` MySQL/SQLite persistence table and seamlessly commits it to the hot RAM memory map instantly.
+    - Action: Adds `spam.com` structurally to the `FederationRule` SQLite persistence table and seamlessly commits it to the hot RAM memory map instantly.
   - **Destroy Rule (DELETE)**
     - Payload: `{ "method": "DELETE", "resource": "/admin/federation/rules", "body": {"domain": "spam.com"} }`
     - Action: Drops the row utilizing standard GORM where statements, then locks the memory map via `sync.RWMutex` and pops the domain reference perfectly transparently.

@@ -179,4 +179,4 @@ profile-cmping-multi:
 	echo "✅ All cmping subprocesses finished."
 
 clean:
-	rm -rf build coverage.out coverage.html
+	rm -rf build coverage.out coverage.html internal/adminweb/build admin-web/build

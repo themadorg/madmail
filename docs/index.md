@@ -30,7 +30,6 @@ Welcome to the Madmail documentation. This page serves as a central hub for all 
 
 ## 📚 Advanced Tutorials
 - **[Remote MX Forwarding](./tutorials/alias-to-remote.md)** - How to (and why you shouldn't) forward messages to remote servers.
-- **[PAM Authentication](./tutorials/pam.md)** - Using the host's PAM infrastructure for user authentication.
 
 ## 💻 Internals & References
 - **[Followed Specifications](./internals/specifications.md)** - List of RFCs and standards implemented by maddy.

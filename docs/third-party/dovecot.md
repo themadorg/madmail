@@ -34,26 +34,7 @@ target.lmtp local_mailboxes {
 ### Authentication
 
 In addition to MTA service, maddy also provides Submission service, but it
-needs authentication provider data to work correctly, maddy can use Dovecot
-SASL authentication protocol for it.
-
-You need the following in Dovecot's `10-master.conf`:
-```
-service auth {
-  unix_listener auth-maddy-client {
-    mode = 0660
-    user = maddy
-  }
-}
-```
-
-Then just configure `dovecot_sasl` module for `submission`:
-```
-submission ... {
-    auth dovecot_sasl unix:///var/run/dovecot/auth-maddy-client
-    ... other configuration ...
-}
-```
+needs authentication provider data to work correctly.
 
 ## Other IMAP servers
 

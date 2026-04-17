@@ -164,10 +164,10 @@ copy_admin_web() {
 	if [ -f "$ADMIN_WEB_SRC/package.json" ]; then
 		if command -v bun >/dev/null 2>&1; then
 			echo "-- Building admin-web (bun)..." >&2
-			(cd "$ADMIN_WEB_SRC" && bun run build) >&2
+			(cd "$ADMIN_WEB_SRC" && bun install && bun run build) >&2
 		elif command -v npm >/dev/null 2>&1; then
 			echo "-- Building admin-web (npm)..." >&2
-			(cd "$ADMIN_WEB_SRC" && npm run build) >&2
+			(cd "$ADMIN_WEB_SRC" && npm install && npm run build) >&2
 		else
 			echo "-- [!] No bun or npm found. Skipping admin-web build." >&2
 		fi

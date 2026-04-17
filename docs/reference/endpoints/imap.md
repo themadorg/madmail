@@ -19,7 +19,7 @@ imap tcp://0.0.0.0:143 tls://0.0.0.0:993 {
     debug no
     insecure_auth no
     sasl_login no
-    auth pam
+    auth pass_table
     storage &local_mailboxes
     auth_map identity
     auth_map_normalize auto

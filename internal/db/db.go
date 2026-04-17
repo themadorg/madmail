@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -21,8 +20,6 @@ func New(driver string, dsn []string, debug bool) (*gorm.DB, error) {
 		dialector = sqlite.Open(dsnStr)
 	case "postgres":
 		dialector = postgres.Open(dsnStr)
-	case "mysql":
-		dialector = mysql.Open(dsnStr)
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", driver)
 	}
