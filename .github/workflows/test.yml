@@ -22,13 +22,18 @@ jobs:
     with:
       cmlxc_commands: |
         cmlxc init
-        cmlxc deploy-madmail --source ./repo -v mad0
-        cmlxc deploy-madmail --source ./repo -v mad1
-        cmlxc test-mini mad0 mad1
-        cmlxc test-madmail -v mad0 mad1
-        cmlxc deploy-madmail --source ./repo -v mad2 --with-webadmin
-        cmlxc test-mini mad2
-        cmlxc deploy-cmdeploy cm0
-        cmlxc test-mini -v cm0 mad1
-        cmlxc test-cmdeploy -v cm0 mad1
-        cmlxc test-mini -v mad1 cm0
+        # two-madmail tests 
+        cmlxc -v deploy-madmail --source ./repo mad0
+        cmlxc -v deploy-madmail --source @main mad1
+        cmlxc -v test-mini mad0 mad1
+        cmlxc -v test-madmail mad0 mad1
+
+        # cross-relay type tests
+        cmlxc -v deploy-cmdeploy --source @main cm0
+        cmlxc -v test-mini cm0 mad0
+        cmlxc -v test-cmdeploy cm0 mad0
+        cmlxc -v test-mini mad0 cm0
+
+        # also build madmail with webadmin interface
+        cmlxc -v deploy-madmail --source ./repo mad2 --with-webadmin
+        cmlxc -v test-mini mad2
