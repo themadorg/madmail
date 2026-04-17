@@ -820,7 +820,7 @@ func (e *Endpoint) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 				dclogin = fmt.Sprintf("dclogin:%s/?p=%s&v=1&ih=%s&ip=143&sh=%s&sp=25&is=plain&ss=plain&sc=3",
 					email, url.QueryEscape(password), host, host)
 			} else {
-				dclogin = fmt.Sprintf("dclogin:%s/?p=%s&v=1&ih=%s&ip=993&sh=%s&sp=465&ic=3&ss=default",
+				dclogin = fmt.Sprintf("dclogin:%s/?p=%s&v=1&ih=%s&ip=993&is=ssl&sh=%s&sp=465&ss=ssl&ic=3",
 					email, url.QueryEscape(password), host, host)
 			}
 			http.Redirect(w, r, dclogin, http.StatusFound)
