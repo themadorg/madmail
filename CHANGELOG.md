@@ -1,3 +1,15 @@
+# [0.42.0](https://github.com/themadorg/madmail/compare/v0.41.0...v0.42.0) (2026-04-17)
+
+
+### Bug Fixes
+
+* properly use bracketed envelope-from, RFC 5321 Compliance ([6b809fd](https://github.com/themadorg/madmail/commit/6b809fd66f6786d0275055b8d379cbd44c7d8026))
+
+
+### Features
+
+* add new cmlxc-based build + test ([0ea4198](https://github.com/themadorg/madmail/commit/0ea41986a785ac8e5b548b65a1cafb888151f5fa))
+
 # [0.41.0](https://github.com/themadorg/madmail/compare/v0.40.0...v0.41.0) (2026-04-15)
 
 
