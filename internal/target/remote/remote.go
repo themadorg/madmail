@@ -47,6 +47,7 @@ import (
 	"github.com/themadorg/madmail/framework/exterrors"
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
+	"github.com/themadorg/madmail/internal/auth"
 	"github.com/themadorg/madmail/internal/endpoint_cache"
 	"github.com/themadorg/madmail/internal/federationtracker"
 	"github.com/themadorg/madmail/internal/limits"
@@ -346,6 +347,7 @@ func (rt *Target) Start(ctx context.Context, msgMeta *module.MsgMetadata, mailFr
 	}
 	region.End()
 
+	mailFrom = auth.NormalizeUsername(mailFrom)
 	rt.Log.Msg("Start called", "from", mailFrom, "msg_id", msgMeta.ID)
 
 	return &remoteDelivery{
@@ -372,6 +374,7 @@ func (rd *remoteDelivery) AddRcpt(ctx context.Context, to string, opts smtp.Rcpt
 		}
 	}
 
+	to = auth.NormalizeUsername(to)
 	_, domain, err := address.Split(to)
 	if err != nil {
 		return err

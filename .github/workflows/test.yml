@@ -1,0 +1,39 @@
+name: Full madmail deploy and cross-cmdeploy tests
+
+on:
+  # Triggers when a PR is merged into main or a direct push occurs
+  push:
+    branches: [ "main" ]
+    
+  # Triggers for any PR (and its subsequent commits) targeting the main branch
+  pull_request:
+    branches: [ "main" ]
+
+# Newest push wins: Prevents multiple runs from clashing and wasting runner efforts
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+
+jobs:
+  lxc-test:
+    name: cmlxc deploy and run tests
+    uses: chatmail/cmlxc/.github/workflows/lxc-test.yml@main
+    with:
+      cmlxc_commands: |
+        cmlxc init
+        # two-madmail tests 
+        cmlxc -v deploy-madmail --source ./repo mad0
+        cmlxc -v deploy-madmail --source @main mad1
+        cmlxc -v test-mini mad0 mad1
+        cmlxc -v test-madmail mad0 mad1
+
+        # cross-relay type tests
+        cmlxc -v deploy-cmdeploy --source @main cm0
+        cmlxc -v test-mini cm0 mad0
+        cmlxc -v test-cmdeploy cm0 mad0
+        cmlxc -v test-mini mad0 cm0
+
+        # also build madmail with webadmin interface
+        cmlxc -v deploy-madmail --source ./repo mad2 --with-webadmin
+        cmlxc -v test-mini mad2
