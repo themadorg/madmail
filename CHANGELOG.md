@@ -1,3 +1,11 @@
+## [0.42.1](https://github.com/themadorg/madmail/compare/v0.42.0...v0.42.1) (2026-04-17)
+
+
+### Bug Fixes
+
+* for admin web interface do run build before install ([880ad2a](https://github.com/themadorg/madmail/commit/880ad2a04229a728368aad496d1e895eb52be796))
+* make clean also removes admin-web builds ([51b97ae](https://github.com/themadorg/madmail/commit/51b97ae1720bab458ee9606cc04bc7f281e17555))
+
 # [0.42.0](https://github.com/themadorg/madmail/compare/v0.41.0...v0.42.0) (2026-04-17)
 
 
