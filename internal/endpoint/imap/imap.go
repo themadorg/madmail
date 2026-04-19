@@ -82,6 +82,51 @@ type Endpoint struct {
 	Log log.Logger
 }
 
+type deadlineCapListener struct {
+	net.Listener
+	maxIdle time.Duration
+}
+
+func (l *deadlineCapListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &deadlineCapConn{
+		Conn:    c,
+		maxIdle: l.maxIdle,
+	}, nil
+}
+
+type deadlineCapConn struct {
+	net.Conn
+	maxIdle time.Duration
+}
+
+func (c *deadlineCapConn) capDeadline(t time.Time) time.Time {
+	if t.IsZero() || c.maxIdle <= 0 {
+		return t
+	}
+
+	maxT := time.Now().Add(c.maxIdle)
+	if t.After(maxT) {
+		return maxT
+	}
+	return t
+}
+
+func (c *deadlineCapConn) SetDeadline(t time.Time) error {
+	return c.Conn.SetDeadline(c.capDeadline(t))
+}
+
+func (c *deadlineCapConn) SetReadDeadline(t time.Time) error {
+	return c.Conn.SetReadDeadline(c.capDeadline(t))
+}
+
+func (c *deadlineCapConn) SetWriteDeadline(t time.Time) error {
+	return c.Conn.SetWriteDeadline(c.capDeadline(t))
+}
+
 func New(modName string, addrs []string) (module.Module, error) {
 	endp := &Endpoint{
 		addrs: addrs,
@@ -99,6 +144,7 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 		insecureAuth bool
 		ioDebug      bool
 		ioErrors     bool
+		autoLogout   time.Duration
 	)
 
 	cfg.Callback("auth", func(m *config.Map, node config.Node) error {
@@ -111,6 +157,9 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 	cfg.Bool("insecure_auth", false, false, &insecureAuth)
 	cfg.Bool("io_debug", false, false, &ioDebug)
 	cfg.Bool("io_errors", false, false, &ioErrors)
+	// Apply read/write deadlines for idle/broken sessions to avoid holding
+	// half-open connections forever when no EOF/RST is delivered.
+	cfg.Duration("auto_logout", false, false, 30*time.Minute, &autoLogout)
 	cfg.Bool("debug", true, false, &endp.Log.Debug)
 	config.EnumMapped(cfg, "storage_map_normalize", false, false, authz.NormalizeFuncs, authz.NormalizeAuto,
 		&endp.storageNormalize)
@@ -160,6 +209,7 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 	endp.serv = imapserver.New(endp)
 	endp.serv.AllowInsecureAuth = insecureAuth
 	endp.serv.TLSConfig = endp.tlsConfig
+	endp.serv.AutoLogout = autoLogout
 	if ioErrors {
 		endp.serv.ErrorLog = &endp.Log
 	} else {
@@ -204,6 +254,15 @@ func (endp *Endpoint) setupListeners(addresses []config.Endpoint) error {
 
 		if endp.proxyProtocol != nil {
 			l = proxy_protocol.NewListener(l, endp.proxyProtocol, endp.Log)
+		}
+		// go-imap enforces RFC MinAutoLogout (30m). For values below that,
+		// cap deadlines at the listener connection level so operators can set
+		// tighter idle disconnects for dead/half-open sessions.
+		if endp.serv.AutoLogout > 0 && endp.serv.AutoLogout < imapserver.MinAutoLogout {
+			l = &deadlineCapListener{
+				Listener: l,
+				maxIdle:  endp.serv.AutoLogout,
+			}
 		}
 
 		endp.listeners = append(endp.listeners, l)
@@ -370,6 +429,22 @@ func (endp *Endpoint) enableExtensions() error {
 		endp.serv.Enable(&metadataExtension{endp: endp})
 	}
 
+	// Always advertise XCHATMAIL so Delta Chat / chatmail-core can detect a
+	// chatmail-compatible IMAP server without extra configuration.
+	endp.serv.Enable(xchatmailExtension{})
+
+	return nil
+}
+
+// xchatmailExtension implements the non-standard XCHATMAIL IMAP capability used by
+// chatmail-core / Delta Chat to detect chatmail-compatible servers.
+type xchatmailExtension struct{}
+
+func (xchatmailExtension) Capabilities(imapserver.Conn) []string {
+	return []string{"XCHATMAIL"}
+}
+
+func (xchatmailExtension) Command(string) imapserver.HandlerFactory {
 	return nil
 }
 

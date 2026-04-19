@@ -27,6 +27,9 @@ _testmain.go
 cmd/maddy/maddy
 cmd/maddy-*-helper/maddy-*-helper
 /maddy
+/tests/test-client/test-client
+# Mistaken local copy (ar archive); real binary is repo-root ./maddy or integration.executable
+/tests/maddy
 
 # Man pages
 docs/man/*.1

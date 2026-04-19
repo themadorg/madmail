@@ -101,7 +101,19 @@ func (t *T) DNS(zones map[string]mockdns.Zone) {
 		t.dnsServ.Close()
 	}
 
-	dnsServ, err := mockdns.NewServer(zones, false)
+	var dnsServ *mockdns.Server
+	var err error
+	for i := 0; i < 5; i++ {
+		dnsServ, err = mockdns.NewServer(zones, false)
+		if err == nil {
+			break
+		}
+		if !strings.Contains(err.Error(), "address already in use") {
+			break
+		}
+		// Retry transient bind conflicts from parallel test workers.
+		time.Sleep(30 * time.Millisecond)
+	}
 	if err != nil {
 		t.Fatal("Test configuration failed:", err)
 	}
@@ -120,11 +132,21 @@ func (t *T) Port(name string) uint16 {
 		return port
 	}
 
-	// TODO: Try to bind on port to test its usability.
-	port := rand.Int31n(45536) + 20000
-	t.ports[name] = uint16(port)
-	t.portsRev[uint16(port)] = name
-	return uint16(port)
+	// Reserve an ephemeral port from kernel to avoid collisions.
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err == nil {
+		port := uint16(l.Addr().(*net.TCPAddr).Port)
+		l.Close()
+		t.ports[name] = port
+		t.portsRev[port] = name
+		return port
+	}
+
+	// Fallback (should be rare): random high port.
+	port := uint16(rand.Int31n(45536) + 20000)
+	t.ports[name] = port
+	t.portsRev[port] = name
+	return port
 }
 
 func (t *T) Env(kv string) {
@@ -478,6 +500,7 @@ func (t *T) Subtest(name string, f func(t *T)) {
 }
 
 func init() {
+	rand.Seed(time.Now().UnixNano())
 	flag.StringVar(&TestBinary, "integration.executable", "./maddy", "executable to test")
 	flag.StringVar(&CoverageOut, "integration.coverprofile", "", "write coverage stats to file (requires special maddy executable)")
 	flag.BoolVar(&DebugLog, "integration.debug", false, "pass -debug to maddy executable")
