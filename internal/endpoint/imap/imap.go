@@ -197,11 +197,15 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 		addresses = append(addresses, saddr)
 	}
 
-	// Port access control: if IMAP is set to local-only,
-	// rewrite 0.0.0.0 to 127.0.0.1 so it's only reachable via Shadowsocks.
-	if module.IsLocalOnly("__IMAP_LOCAL_ONLY__") {
-		endp.Log.Printf("local-only mode active, binding to 127.0.0.1 only")
-		for i, addr := range addresses {
+	// Port access control: apply local-only per listener address so IMAP
+	// STARTTLS (tcp) and IMAP implicit TLS (tls) can be controlled separately.
+	for i, addr := range addresses {
+		localOnlyKey := "__IMAP_LOCAL_ONLY__"
+		if addr.IsTLS() {
+			localOnlyKey = "__IMAP_TLS_LOCAL_ONLY__"
+		}
+		if module.IsLocalOnly(localOnlyKey) {
+			endp.Log.Printf("local-only mode active for %s, binding to 127.0.0.1 only", addr)
 			addresses[i] = addr.WithLocalHost()
 		}
 	}

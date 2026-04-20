@@ -182,8 +182,10 @@ var API_DOCS = {
             desc: { en: "Each service port is configurable via a dedicated path. Values are stored in the database and override config file values.", fa: "هر پورت سرویسی از طریق یک مسیر اختصاصی قابل تنظیم است. مقادیر در دیتابیس ذخیره می‌شوند و بر مقادیر فایل پیکربندی اولویت دارند.", ru: "Каждый порт сервиса настраивается через отдельный путь. Значения хранятся в БД и имеют приоритет над конфигурационным файлом." },
             port_table: [
                 { endpoint: "/admin/settings/smtp_port", desc: "SMTP server port" },
-                { endpoint: "/admin/settings/submission_port", desc: "Submission server port" },
-                { endpoint: "/admin/settings/imap_port", desc: "IMAP server port" },
+                { endpoint: "/admin/settings/submission_port", desc: "Submission STARTTLS server port" },
+                { endpoint: "/admin/settings/submission_tls_port", desc: "Submission implicit TLS server port" },
+                { endpoint: "/admin/settings/imap_port", desc: "IMAP STARTTLS server port" },
+                { endpoint: "/admin/settings/imap_tls_port", desc: "IMAP implicit TLS server port" },
                 { endpoint: "/admin/settings/turn_port", desc: "TURN relay port" },
                 { endpoint: "/admin/settings/dovecot_port", desc: "Dovecot SASL port" },
                 { endpoint: "/admin/settings/iroh_port", desc: "Iroh relay port" },

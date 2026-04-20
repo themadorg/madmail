@@ -72,6 +72,23 @@ func TestApplyPortOverride_SubmissionPort(t *testing.T) {
 	t.Fatal("KeySubmissionPort mapping not found")
 }
 
+func TestApplyPortOverride_SubmissionTLSPort(t *testing.T) {
+	for _, m := range configOverrides {
+		if m.dbKey == resources.KeySubmissionTLSPort {
+			result := applyPortOverride(sampleConfig, m, "1465")
+			if !strings.Contains(result, "submission tls://0.0.0.0:1465 tcp://0.0.0.0:587") {
+				t.Errorf("Submission TLS port not updated. Got:\n%s", result)
+			}
+			// STARTTLS port should remain unchanged
+			if !strings.Contains(result, "tcp://0.0.0.0:587") {
+				t.Errorf("Submission STARTTLS port was incorrectly modified")
+			}
+			return
+		}
+	}
+	t.Fatal("KeySubmissionTLSPort mapping not found")
+}
+
 func TestApplyPortOverride_IMAPPort(t *testing.T) {
 	for _, m := range configOverrides {
 		if m.dbKey == resources.KeyIMAPPort {
@@ -87,6 +104,23 @@ func TestApplyPortOverride_IMAPPort(t *testing.T) {
 		}
 	}
 	t.Fatal("KeyIMAPPort mapping not found")
+}
+
+func TestApplyPortOverride_IMAPTLSPort(t *testing.T) {
+	for _, m := range configOverrides {
+		if m.dbKey == resources.KeyIMAPTLSPort {
+			result := applyPortOverride(sampleConfig, m, "1994")
+			if !strings.Contains(result, "imap tls://0.0.0.0:1994 tcp://0.0.0.0:143") {
+				t.Errorf("IMAP TLS port not updated. Got:\n%s", result)
+			}
+			// STARTTLS port should remain unchanged
+			if !strings.Contains(result, "tcp://0.0.0.0:143") {
+				t.Errorf("IMAP STARTTLS port was incorrectly modified")
+			}
+			return
+		}
+	}
+	t.Fatal("KeyIMAPTLSPort mapping not found")
 }
 
 func TestApplyPortOverride_TURNPort(t *testing.T) {
@@ -188,7 +222,9 @@ func TestConfigOverrideKeysComplete(t *testing.T) {
 	expected := []string{
 		resources.KeySMTPPort,
 		resources.KeySubmissionPort,
+		resources.KeySubmissionTLSPort,
 		resources.KeyIMAPPort,
+		resources.KeyIMAPTLSPort,
 		resources.KeyTurnPort,
 		resources.KeyIrohPort,
 		resources.KeySsPort,

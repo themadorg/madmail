@@ -360,7 +360,14 @@ func TestAllSettingKeys(t *testing.T) {
 		KeySsEnabled,
 		KeySMTPPort,
 		KeySubmissionPort,
+		KeySubmissionTLSPort,
 		KeyIMAPPort,
+		KeyIMAPTLSPort,
+		KeySMTPLocalOnly,
+		KeySubmissionLocalOnly,
+		KeySubmissionTLSLocalOnly,
+		KeyIMAPLocalOnly,
+		KeyIMAPTLSLocalOnly,
 		KeyTurnPort,
 		KeySaslPort,
 		KeyIrohPort,
@@ -373,6 +380,8 @@ func TestAllSettingKeys(t *testing.T) {
 		KeyIrohRelayURL,
 		KeySsCipher,
 		KeySsPassword,
+		KeyDcloginIMAPSecurity,
+		KeyDcloginSMTPSecurity,
 	}
 
 	for _, k := range keys {
@@ -420,7 +429,9 @@ func TestPortSettingsRoundTrip(t *testing.T) {
 	portKeys := []string{
 		KeySMTPPort,
 		KeySubmissionPort,
+		KeySubmissionTLSPort,
 		KeyIMAPPort,
+		KeyIMAPTLSPort,
 		KeyTurnPort,
 		KeySaslPort,
 		KeyIrohPort,
@@ -474,14 +485,16 @@ func TestPortSettingsRoundTrip(t *testing.T) {
 // TestConfigSettingsRoundTrip tests set/get/reset for all config setting keys.
 func TestConfigSettingsRoundTrip(t *testing.T) {
 	configKeys := map[string]string{
-		KeySMTPHostname: "mail.example.com",
-		KeyTurnRealm:    "example.com",
-		KeyTurnSecret:   "super-secret-key",
-		KeyTurnRelayIP:  "203.0.113.1",
-		KeyTurnTTL:      "3600",
-		KeyIrohRelayURL: "https://iroh.example.com",
-		KeySsCipher:     "AEAD_CHACHA20_POLY1305",
-		KeySsPassword:   "my-password-123",
+		KeySMTPHostname:        "mail.example.com",
+		KeyTurnRealm:           "example.com",
+		KeyTurnSecret:          "super-secret-key",
+		KeyTurnRelayIP:         "203.0.113.1",
+		KeyTurnTTL:             "3600",
+		KeyIrohRelayURL:        "https://iroh.example.com",
+		KeySsCipher:            "AEAD_CHACHA20_POLY1305",
+		KeySsPassword:          "my-password-123",
+		KeyDcloginIMAPSecurity: "ssl",
+		KeyDcloginSMTPSecurity: "starttls",
 	}
 
 	for key, testValue := range configKeys {
@@ -563,6 +576,9 @@ func TestValidateSettingValue_Injection(t *testing.T) {
 		{"invalid TTL zero", KeyTurnTTL, "0", true},
 		{"invalid TTL negative", KeyTurnTTL, "-10", true},
 		{"invalid TTL non-numeric", KeyTurnTTL, "abc", true},
+		{"valid dclogin imap security", KeyDcloginIMAPSecurity, "default", false},
+		{"valid dclogin smtp security", KeyDcloginSMTPSecurity, "starttls", false},
+		{"invalid dclogin security", KeyDcloginSMTPSecurity, "plain", true},
 	}
 
 	for _, tt := range tests {

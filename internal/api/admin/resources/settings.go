@@ -64,6 +64,7 @@ func (r *settingValueRequest) UnmarshalJSON(data []byte) error {
 // portKeys is the set of setting keys that must be valid port numbers.
 var portKeys = map[string]bool{
 	KeySMTPPort: true, KeySubmissionPort: true, KeyIMAPPort: true,
+	KeySubmissionTLSPort: true, KeyIMAPTLSPort: true,
 	KeyTurnPort: true, KeySaslPort: true, KeyIrohPort: true, KeySsPort: true,
 	KeyHTTPPort: true, KeyHTTPSPort: true,
 	KeySsWsPort: true, KeySsGrpcPort: true,
@@ -98,6 +99,16 @@ func validateSettingValue(key, value string) error {
 			return fmt.Errorf("invalid TTL: must be a positive integer")
 		}
 		return nil
+	}
+
+	// DCLOGIN security mode for IMAP/SMTP must be one of supported enum values.
+	if key == KeyDcloginIMAPSecurity || key == KeyDcloginSMTPSecurity {
+		switch value {
+		case "starttls", "ssl", "default":
+			return nil
+		default:
+			return fmt.Errorf("invalid dclogin security mode: expected starttls|ssl|default")
+		}
 	}
 
 	// All other config values: must match safe character set
@@ -138,27 +149,31 @@ type AllSettingsResponse struct {
 	FederationPolicy     string `json:"federation_policy"` // "ACCEPT" or "REJECT"
 
 	// Port settings
-	SMTPPort       settingValueResponse `json:"smtp_port"`
-	SubmissionPort settingValueResponse `json:"submission_port"`
-	IMAPPort       settingValueResponse `json:"imap_port"`
-	TurnPort       settingValueResponse `json:"turn_port"`
-	SaslPort       settingValueResponse `json:"sasl_port"`
-	IrohPort       settingValueResponse `json:"iroh_port"`
-	SsPort         settingValueResponse `json:"ss_port"`
-	SsWsPort       settingValueResponse `json:"ss_ws_port"`
-	SsGrpcPort     settingValueResponse `json:"ss_grpc_port"`
-	HTTPPort       settingValueResponse `json:"http_port"`
-	HTTPSPort      settingValueResponse `json:"https_port"`
+	SMTPPort          settingValueResponse `json:"smtp_port"`
+	SubmissionPort    settingValueResponse `json:"submission_port"`
+	SubmissionTLSPort settingValueResponse `json:"submission_tls_port"`
+	IMAPPort          settingValueResponse `json:"imap_port"`
+	IMAPTLSPort       settingValueResponse `json:"imap_tls_port"`
+	TurnPort          settingValueResponse `json:"turn_port"`
+	SaslPort          settingValueResponse `json:"sasl_port"`
+	IrohPort          settingValueResponse `json:"iroh_port"`
+	SsPort            settingValueResponse `json:"ss_port"`
+	SsWsPort          settingValueResponse `json:"ss_ws_port"`
+	SsGrpcPort        settingValueResponse `json:"ss_grpc_port"`
+	HTTPPort          settingValueResponse `json:"http_port"`
+	HTTPSPort         settingValueResponse `json:"https_port"`
 
 	// Per-port access control: "public" (default) or "local" (Shadowsocks only)
-	SMTPAccess       string `json:"smtp_access"`
-	SubmissionAccess string `json:"submission_access"`
-	IMAPAccess       string `json:"imap_access"`
-	TurnAccess       string `json:"turn_access"`
-	SaslAccess       string `json:"sasl_access"`
-	IrohAccess       string `json:"iroh_access"`
-	HTTPAccess       string `json:"http_access"`
-	HTTPSAccess      string `json:"https_access"`
+	SMTPAccess          string `json:"smtp_access"`
+	SubmissionAccess    string `json:"submission_access"`
+	SubmissionTLSAccess string `json:"submission_tls_access"`
+	IMAPAccess          string `json:"imap_access"`
+	IMAPTLSAccess       string `json:"imap_tls_access"`
+	TurnAccess          string `json:"turn_access"`
+	SaslAccess          string `json:"sasl_access"`
+	IrohAccess          string `json:"iroh_access"`
+	HTTPAccess          string `json:"http_access"`
+	HTTPSAccess         string `json:"https_access"`
 
 	// Hostname / address settings
 	SMTPHostname   settingValueResponse `json:"smtp_hostname"`
@@ -182,9 +197,11 @@ type AllSettingsResponse struct {
 	HTTPProxyUsername settingValueResponse `json:"http_proxy_username"`
 	HTTPProxyPassword settingValueResponse `json:"http_proxy_password"`
 
-	AdminPath    settingValueResponse `json:"admin_path"`
-	AdminWebPath settingValueResponse `json:"admin_web_path"`
-	Language     settingValueResponse `json:"language"`
+	AdminPath           settingValueResponse `json:"admin_path"`
+	AdminWebPath        settingValueResponse `json:"admin_web_path"`
+	DcloginIMAPSecurity settingValueResponse `json:"dclogin_imap_security"`
+	DcloginSMTPSecurity settingValueResponse `json:"dclogin_smtp_security"`
+	Language            settingValueResponse `json:"language"`
 }
 
 // Setting key constants for all configurable values.
@@ -207,44 +224,52 @@ const (
 	KeyFederationEnabled         = "__FEDERATION_ENABLED__"
 
 	// Port settings
-	KeySMTPPort       = "__SMTP_PORT__"
+	KeySMTPPort = "__SMTP_PORT__"
+	// SubmissionPort is the normal SMTP Submission STARTTLS listener (tcp://..., default 587).
 	KeySubmissionPort = "__SUBMISSION_PORT__"
-	KeyIMAPPort       = "__IMAP_PORT__"
-	KeyTurnPort       = "__TURN_PORT__"
-	KeySaslPort       = "__SASL_PORT__"
-	KeyIrohPort       = "__IROH_PORT__"
-	KeySsPort         = "__SS_PORT__"
-	KeySsWsPort       = "__SS_WS_PORT__"
-	KeySsGrpcPort     = "__SS_GRPC_PORT__"
-	KeyHTTPPort       = "__HTTP_PORT__"
-	KeyHTTPSPort      = "__HTTPS_PORT__"
-	KeyHTTPProxyPort  = "__HTTP_PROXY_PORT__"
+	// SubmissionTLSPort is the implicit TLS Submission listener (tls://..., default 465).
+	KeySubmissionTLSPort = "__SUBMISSION_TLS_PORT__"
+	KeyIMAPPort          = "__IMAP_PORT__"
+	KeyIMAPTLSPort       = "__IMAP_TLS_PORT__"
+	KeyTurnPort          = "__TURN_PORT__"
+	KeySaslPort          = "__SASL_PORT__"
+	KeyIrohPort          = "__IROH_PORT__"
+	KeySsPort            = "__SS_PORT__"
+	KeySsWsPort          = "__SS_WS_PORT__"
+	KeySsGrpcPort        = "__SS_GRPC_PORT__"
+	KeyHTTPPort          = "__HTTP_PORT__"
+	KeyHTTPSPort         = "__HTTPS_PORT__"
+	KeyHTTPProxyPort     = "__HTTP_PROXY_PORT__"
 
 	// Per-port access control ("true" = local only, default unset = public)
-	KeySMTPLocalOnly       = "__SMTP_LOCAL_ONLY__"
-	KeySubmissionLocalOnly = "__SUBMISSION_LOCAL_ONLY__"
-	KeyIMAPLocalOnly       = "__IMAP_LOCAL_ONLY__"
-	KeyTurnLocalOnly       = "__TURN_LOCAL_ONLY__"
-	KeySaslLocalOnly       = "__SASL_LOCAL_ONLY__"
-	KeyIrohLocalOnly       = "__IROH_LOCAL_ONLY__"
-	KeyHTTPLocalOnly       = "__HTTP_LOCAL_ONLY__"
-	KeyHTTPSLocalOnly      = "__HTTPS_LOCAL_ONLY__"
+	KeySMTPLocalOnly          = "__SMTP_LOCAL_ONLY__"
+	KeySubmissionLocalOnly    = "__SUBMISSION_LOCAL_ONLY__"
+	KeySubmissionTLSLocalOnly = "__SUBMISSION_TLS_LOCAL_ONLY__"
+	KeyIMAPLocalOnly          = "__IMAP_LOCAL_ONLY__"
+	KeyIMAPTLSLocalOnly       = "__IMAP_TLS_LOCAL_ONLY__"
+	KeyTurnLocalOnly          = "__TURN_LOCAL_ONLY__"
+	KeySaslLocalOnly          = "__SASL_LOCAL_ONLY__"
+	KeyIrohLocalOnly          = "__IROH_LOCAL_ONLY__"
+	KeyHTTPLocalOnly          = "__HTTP_LOCAL_ONLY__"
+	KeyHTTPSLocalOnly         = "__HTTPS_LOCAL_ONLY__"
 
 	// Configuration settings
-	KeySMTPHostname      = "__SMTP_HOSTNAME__"
-	KeyTurnRealm         = "__TURN_REALM__"
-	KeyTurnSecret        = "__TURN_SECRET__"
-	KeyTurnRelayIP       = "__TURN_RELAY_IP__"
-	KeyTurnTTL           = "__TURN_TTL__"
-	KeyIrohRelayURL      = "__IROH_RELAY_URL__"
-	KeySsCipher          = "__SS_CIPHER__"
-	KeySsPassword        = "__SS_PASSWORD__"
-	KeyHTTPProxyPath     = "__HTTP_PROXY_PATH__"
-	KeyHTTPProxyUsername = "__HTTP_PROXY_USERNAME__"
-	KeyHTTPProxyPassword = "__HTTP_PROXY_PASSWORD__"
-	KeyAdminPath         = "__ADMIN_PATH__"
-	KeyAdminWebPath      = "__ADMIN_WEB_PATH__"
-	KeyLanguage          = "__LANGUAGE__"
+	KeySMTPHostname        = "__SMTP_HOSTNAME__"
+	KeyTurnRealm           = "__TURN_REALM__"
+	KeyTurnSecret          = "__TURN_SECRET__"
+	KeyTurnRelayIP         = "__TURN_RELAY_IP__"
+	KeyTurnTTL             = "__TURN_TTL__"
+	KeyIrohRelayURL        = "__IROH_RELAY_URL__"
+	KeySsCipher            = "__SS_CIPHER__"
+	KeySsPassword          = "__SS_PASSWORD__"
+	KeyHTTPProxyPath       = "__HTTP_PROXY_PATH__"
+	KeyHTTPProxyUsername   = "__HTTP_PROXY_USERNAME__"
+	KeyHTTPProxyPassword   = "__HTTP_PROXY_PASSWORD__"
+	KeyAdminPath           = "__ADMIN_PATH__"
+	KeyAdminWebPath        = "__ADMIN_WEB_PATH__"
+	KeyDcloginIMAPSecurity = "__DCLOGIN_IMAP_SECURITY__"
+	KeyDcloginSMTPSecurity = "__DCLOGIN_SMTP_SECURITY__"
+	KeyLanguage            = "__LANGUAGE__"
 )
 
 // RegistrationHandler creates a handler for /admin/registration.
@@ -661,7 +686,9 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		// Port settings
 		resp.SMTPPort = getSetting(KeySMTPPort, "")
 		resp.SubmissionPort = getSetting(KeySubmissionPort, "")
+		resp.SubmissionTLSPort = getSetting(KeySubmissionTLSPort, "")
 		resp.IMAPPort = getSetting(KeyIMAPPort, "")
+		resp.IMAPTLSPort = getSetting(KeyIMAPTLSPort, "")
 		resp.TurnPort = getSetting(KeyTurnPort, "")
 		resp.SaslPort = getSetting(KeySaslPort, "")
 		resp.IrohPort = getSetting(KeyIrohPort, "")
@@ -681,7 +708,9 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		}
 		resp.SMTPAccess = getAccess(KeySMTPLocalOnly)
 		resp.SubmissionAccess = getAccess(KeySubmissionLocalOnly)
+		resp.SubmissionTLSAccess = getAccess(KeySubmissionTLSLocalOnly)
 		resp.IMAPAccess = getAccess(KeyIMAPLocalOnly)
+		resp.IMAPTLSAccess = getAccess(KeyIMAPTLSLocalOnly)
 		resp.TurnAccess = getAccess(KeyTurnLocalOnly)
 		resp.SaslAccess = getAccess(KeySaslLocalOnly)
 		resp.IrohAccess = getAccess(KeyIrohLocalOnly)
@@ -703,6 +732,8 @@ func AllSettingsHandler(deps SettingsToggleDeps) func(string, json.RawMessage) (
 		resp.HTTPProxyPassword = getSetting(KeyHTTPProxyPassword, "")
 		resp.AdminPath = getSetting(KeyAdminPath, "")
 		resp.AdminWebPath = getSetting(KeyAdminWebPath, "")
+		resp.DcloginIMAPSecurity = getSetting(KeyDcloginIMAPSecurity, "ssl")
+		resp.DcloginSMTPSecurity = getSetting(KeyDcloginSMTPSecurity, "ssl")
 		resp.Language = getSetting(KeyLanguage, "en") // default to English
 
 		return resp, 200, nil

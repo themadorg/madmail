@@ -49,6 +49,12 @@ type TemplateData struct {
 	RegistrationOpen       bool
 	JitRegistrationEnabled bool
 	TurnEnabled            bool
+	ImapPortTLS            string
+	ImapPortStartTLS       string
+	SmtpPortTLS            string
+	SmtpPortStartTLS       string
+	DcloginImapSecurity    string
+	DcloginSmtpSecurity    string
 	Custom                 *CustomData
 }
 
@@ -149,6 +155,12 @@ func main() {
 		RegistrationOpen:       true,
 		JitRegistrationEnabled: true,
 		TurnEnabled:            true,
+		ImapPortTLS:            "993",
+		ImapPortStartTLS:       "143",
+		SmtpPortTLS:            "465",
+		SmtpPortStartTLS:       "587",
+		DcloginImapSecurity:    "ssl",
+		DcloginSmtpSecurity:    "ssl",
 		Custom: &CustomData{
 			Name: "علی",
 			URL:  "https://i.delta.chat/#C0FFEEBABE",

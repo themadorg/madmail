@@ -113,13 +113,18 @@
 
         function createDcloginLink(email, password) {
             const host = "{{.MXDomain | cleanDomain}}" || "{{.PublicIP | cleanDomain}}";
-            const turnOffTLS = ("{{if .TurnOffTLS}}true{{else}}false{{end}}" === "true");
+            const imapMode = "{{.DcloginImapSecurity}}";
+            const smtpMode = "{{.DcloginSmtpSecurity}}";
 
-            if (turnOffTLS) {
-                return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=143&sh=${host}&sp=25&is=plain&ss=plain&sc=3`;
-            } else {
-                return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=993&is=ssl&sh=${host}&sp=465&ss=ssl&ic=3`;
+            function dcloginEndpoint(mode, starttlsPort, tlsPort) {
+                if (mode === "starttls") return { security: "starttls", port: starttlsPort };
+                if (mode === "default") return { security: "default", port: starttlsPort };
+                return { security: "ssl", port: tlsPort };
             }
+
+            const imap = dcloginEndpoint(imapMode, "{{.ImapPortStartTLS}}", "{{.ImapPortTLS}}");
+            const smtp = dcloginEndpoint(smtpMode, "{{.SmtpPortStartTLS}}", "{{.SmtpPortTLS}}");
+            return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=${imap.port}&is=${imap.security}&sh=${host}&sp=${smtp.port}&ss=${smtp.security}&ic=3`;
         }
 
         function createWithToken() {

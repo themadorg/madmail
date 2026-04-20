@@ -158,8 +158,16 @@ type Endpoint struct {
 		tokenRequired          bool
 		autoPurgeSeen          bool
 		defaultQuota           int64
-		hydrated               bool
-		lastChecked            time.Time
+		// Mail listener ports cached for dclogin/template generation.
+		// Defaults come from install.go and can be overridden via admin DB settings.
+		imapPortStartTLS    string
+		imapPortTLS         string
+		smtpPortStartTLS    string
+		smtpPortTLS         string
+		dcloginImapSecurity string
+		dcloginSmtpSecurity string
+		hydrated            bool
+		lastChecked         time.Time
 	}
 
 	// Shadowsocks QUIC transport (v2ray-plugin)
@@ -608,11 +616,74 @@ func (e *Endpoint) hydrateCache() {
 			e.cache.autoPurgeSeen = false
 		}
 	}
+	// Defaults align with internal/cli/ctl/install.go (IMAPTLS, IMAPPort, SubmissionTLS, SubmissionPort).
+	e.cache.imapPortTLS = "993"
+	e.cache.imapPortStartTLS = "143"
+	e.cache.smtpPortTLS = "465"
+	e.cache.smtpPortStartTLS = "587"
+	e.cache.dcloginImapSecurity = "ssl"
+	e.cache.dcloginSmtpSecurity = "ssl"
+	if e.authDB != nil {
+		if v, ok, err := e.authDB.GetSetting(resources.KeyIMAPPort); err == nil && ok && v != "" {
+			e.cache.imapPortStartTLS = v
+		}
+		if v, ok, err := e.authDB.GetSetting(resources.KeySubmissionPort); err == nil && ok && v != "" {
+			e.cache.smtpPortStartTLS = v
+		}
+		if v, ok, err := e.authDB.GetSetting(resources.KeyIMAPTLSPort); err == nil && ok && v != "" {
+			e.cache.imapPortTLS = v
+		}
+		if v, ok, err := e.authDB.GetSetting(resources.KeySubmissionTLSPort); err == nil && ok && v != "" {
+			e.cache.smtpPortTLS = v
+		}
+		if v, ok, err := e.authDB.GetSetting(resources.KeyDcloginIMAPSecurity); err == nil && ok && v != "" {
+			e.cache.dcloginImapSecurity = v
+		}
+		if v, ok, err := e.authDB.GetSetting(resources.KeyDcloginSMTPSecurity); err == nil && ok && v != "" {
+			e.cache.dcloginSmtpSecurity = v
+		}
+	}
 	if e.storage != nil {
 		e.cache.defaultQuota = e.storage.GetDefaultQuota()
 	}
 	e.cache.hydrated = true
 	e.cache.lastChecked = time.Now()
+}
+
+func (e *Endpoint) templateMailPorts() (imapTLS, imapStartTLS, smtpTLS, smtpStartTLS string) {
+	e.cache.RLock()
+	stale := !e.cache.hydrated || time.Since(e.cache.lastChecked) > 5*time.Second
+	e.cache.RUnlock()
+	if stale {
+		e.hydrateCache()
+	}
+	e.cache.RLock()
+	defer e.cache.RUnlock()
+	return e.cache.imapPortTLS, e.cache.imapPortStartTLS, e.cache.smtpPortTLS, e.cache.smtpPortStartTLS
+}
+
+func (e *Endpoint) templateDcloginSecurity() (imapSecurity, smtpSecurity string) {
+	e.cache.RLock()
+	stale := !e.cache.hydrated || time.Since(e.cache.lastChecked) > 5*time.Second
+	e.cache.RUnlock()
+	if stale {
+		e.hydrateCache()
+	}
+	e.cache.RLock()
+	defer e.cache.RUnlock()
+	return e.cache.dcloginImapSecurity, e.cache.dcloginSmtpSecurity
+}
+
+func dcloginTransport(security, starttlsPort, tlsPort string) (socket, port string) {
+	switch security {
+	case "starttls":
+		return "starttls", starttlsPort
+	case "default":
+		// Use the STARTTLS listener as transport baseline while letting clients auto-select.
+		return "default", starttlsPort
+	default:
+		return "ssl", tlsPort
+	}
 }
 
 // getLanguage returns the active UI language from cache (fallback to DB).
@@ -815,14 +886,12 @@ func (e *Endpoint) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 			if host == "" {
 				host = strings.Trim(e.publicIP, "[]")
 			}
-			var dclogin string
-			if e.turnOffTLS {
-				dclogin = fmt.Sprintf("dclogin:%s/?p=%s&v=1&ih=%s&ip=143&sh=%s&sp=25&is=plain&ss=plain&sc=3",
-					email, url.QueryEscape(password), host, host)
-			} else {
-				dclogin = fmt.Sprintf("dclogin:%s/?p=%s&v=1&ih=%s&ip=993&is=ssl&sh=%s&sp=465&ss=ssl&ic=3",
-					email, url.QueryEscape(password), host, host)
-			}
+			imapTLS, imapStartTLS, smtpTLS, smtpStartTLS := e.templateMailPorts()
+			imapSecurity, smtpSecurity := e.templateDcloginSecurity()
+			imapSocket, imapPort := dcloginTransport(imapSecurity, imapStartTLS, imapTLS)
+			smtpSocket, smtpPort := dcloginTransport(smtpSecurity, smtpStartTLS, smtpTLS)
+			dclogin := fmt.Sprintf("dclogin:%s/?p=%s&v=1&ih=%s&ip=%s&is=%s&sh=%s&sp=%s&ss=%s&ic=3",
+				email, url.QueryEscape(password), host, imapPort, imapSocket, host, smtpPort, smtpSocket)
 			http.Redirect(w, r, dclogin, http.StatusFound)
 			return
 		}
@@ -987,6 +1056,9 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		imapTLS, imapStartTLS, smtpTLS, smtpStartTLS := e.templateMailPorts()
+		dcloginImapSecurity, dcloginSmtpSecurity := e.templateDcloginSecurity()
+
 		// Template data
 		data := struct {
 			MailDomain             string
@@ -1007,6 +1079,12 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 			JitRegistrationEnabled bool
 			TurnEnabled            bool
 			Language               string
+			ImapPortTLS            string
+			ImapPortStartTLS       string
+			SmtpPortTLS            string
+			SmtpPortStartTLS       string
+			DcloginImapSecurity    string
+			DcloginSmtpSecurity    string
 		}{
 			MailDomain:             e.mailDomain,
 			MXDomain:               e.mxDomain,
@@ -1026,6 +1104,12 @@ func (e *Endpoint) handleStaticFiles(w http.ResponseWriter, r *http.Request) {
 			JitRegistrationEnabled: func() bool { enabled, _ := e.authDB.IsJitRegistrationEnabled(); return enabled }(),
 			TurnEnabled:            func() bool { enabled, _ := e.authDB.IsTurnEnabled(); return enabled }(),
 			Language:               e.getLanguage(),
+			ImapPortTLS:            imapTLS,
+			ImapPortStartTLS:       imapStartTLS,
+			SmtpPortTLS:            smtpTLS,
+			SmtpPortStartTLS:       smtpStartTLS,
+			DcloginImapSecurity:    dcloginImapSecurity,
+			DcloginSmtpSecurity:    dcloginSmtpSecurity,
 		}
 
 		w.Header().Set("Content-Type", contentType)
@@ -2442,6 +2526,12 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 		RegistrationOpen       bool
 		JitRegistrationEnabled bool
 		Language               string
+		ImapPortTLS            string
+		ImapPortStartTLS       string
+		SmtpPortTLS            string
+		SmtpPortStartTLS       string
+		DcloginImapSecurity    string
+		DcloginSmtpSecurity    string
 		Custom                 interface{}
 	}{
 		MailDomain:             e.mailDomain,
@@ -2473,6 +2563,12 @@ func (e *Endpoint) serveTemplate(w http.ResponseWriter, r *http.Request, name st
 	data.RegistrationOpen = e.cache.registrationOpen
 	data.JitRegistrationEnabled = e.cache.jitRegistrationEnabled
 	data.Language = e.cache.language
+	data.ImapPortTLS = e.cache.imapPortTLS
+	data.ImapPortStartTLS = e.cache.imapPortStartTLS
+	data.SmtpPortTLS = e.cache.smtpPortTLS
+	data.SmtpPortStartTLS = e.cache.smtpPortStartTLS
+	data.DcloginImapSecurity = e.cache.dcloginImapSecurity
+	data.DcloginSmtpSecurity = e.cache.dcloginSmtpSecurity
 	e.cache.RUnlock()
 
 	// Fallback for language if cache is empty
@@ -2567,6 +2663,24 @@ func (e *Endpoint) setupAdminAPI() {
 			if key == resources.KeyRegistrationTokenRequired {
 				e.cache.tokenRequired = value == "true"
 			}
+			if key == resources.KeyIMAPPort {
+				e.cache.imapPortStartTLS = value
+			}
+			if key == resources.KeyIMAPTLSPort {
+				e.cache.imapPortTLS = value
+			}
+			if key == resources.KeySubmissionPort {
+				e.cache.smtpPortStartTLS = value
+			}
+			if key == resources.KeySubmissionTLSPort {
+				e.cache.smtpPortTLS = value
+			}
+			if key == resources.KeyDcloginIMAPSecurity {
+				e.cache.dcloginImapSecurity = value
+			}
+			if key == resources.KeyDcloginSMTPSecurity {
+				e.cache.dcloginSmtpSecurity = value
+			}
 			e.cache.Unlock()
 		}
 		return err
@@ -2580,6 +2694,24 @@ func (e *Endpoint) setupAdminAPI() {
 			}
 			if key == resources.KeyRegistrationTokenRequired {
 				e.cache.tokenRequired = false
+			}
+			if key == resources.KeyIMAPPort {
+				e.cache.imapPortStartTLS = "143"
+			}
+			if key == resources.KeyIMAPTLSPort {
+				e.cache.imapPortTLS = "993"
+			}
+			if key == resources.KeySubmissionPort {
+				e.cache.smtpPortStartTLS = "587"
+			}
+			if key == resources.KeySubmissionTLSPort {
+				e.cache.smtpPortTLS = "465"
+			}
+			if key == resources.KeyDcloginIMAPSecurity {
+				e.cache.dcloginImapSecurity = "ssl"
+			}
+			if key == resources.KeyDcloginSMTPSecurity {
+				e.cache.dcloginSmtpSecurity = "ssl"
 			}
 			e.cache.Unlock()
 		}
@@ -2667,7 +2799,9 @@ func (e *Endpoint) setupAdminAPI() {
 	// Port settings
 	handler.Register("/admin/settings/smtp_port", resources.GenericSettingHandler(resources.KeySMTPPort, settingsDeps))
 	handler.Register("/admin/settings/submission_port", resources.GenericSettingHandler(resources.KeySubmissionPort, settingsDeps))
+	handler.Register("/admin/settings/submission_tls_port", resources.GenericSettingHandler(resources.KeySubmissionTLSPort, settingsDeps))
 	handler.Register("/admin/settings/imap_port", resources.GenericSettingHandler(resources.KeyIMAPPort, settingsDeps))
+	handler.Register("/admin/settings/imap_tls_port", resources.GenericSettingHandler(resources.KeyIMAPTLSPort, settingsDeps))
 	handler.Register("/admin/settings/turn_port", resources.GenericSettingHandler(resources.KeyTurnPort, settingsDeps))
 	handler.Register("/admin/settings/sasl_port", resources.GenericSettingHandler(resources.KeySaslPort, settingsDeps))
 	handler.Register("/admin/settings/iroh_port", resources.GenericSettingHandler(resources.KeyIrohPort, settingsDeps))
@@ -2678,7 +2812,9 @@ func (e *Endpoint) setupAdminAPI() {
 	// Per-port access control (local-only toggles)
 	handler.Register("/admin/settings/smtp_local_only", resources.GenericSettingHandler(resources.KeySMTPLocalOnly, settingsDeps))
 	handler.Register("/admin/settings/submission_local_only", resources.GenericSettingHandler(resources.KeySubmissionLocalOnly, settingsDeps))
+	handler.Register("/admin/settings/submission_tls_local_only", resources.GenericSettingHandler(resources.KeySubmissionTLSLocalOnly, settingsDeps))
 	handler.Register("/admin/settings/imap_local_only", resources.GenericSettingHandler(resources.KeyIMAPLocalOnly, settingsDeps))
+	handler.Register("/admin/settings/imap_tls_local_only", resources.GenericSettingHandler(resources.KeyIMAPTLSLocalOnly, settingsDeps))
 	handler.Register("/admin/settings/turn_local_only", resources.GenericSettingHandler(resources.KeyTurnLocalOnly, settingsDeps))
 	handler.Register("/admin/settings/iroh_local_only", resources.GenericSettingHandler(resources.KeyIrohLocalOnly, settingsDeps))
 	handler.Register("/admin/settings/http_local_only", resources.GenericSettingHandler(resources.KeyHTTPLocalOnly, settingsDeps))
@@ -2693,6 +2829,8 @@ func (e *Endpoint) setupAdminAPI() {
 	handler.Register("/admin/settings/iroh_relay_url", resources.GenericSettingHandler(resources.KeyIrohRelayURL, settingsDeps))
 	handler.Register("/admin/settings/ss_cipher", resources.GenericSettingHandler(resources.KeySsCipher, settingsDeps))
 	handler.Register("/admin/settings/ss_password", resources.GenericSettingHandler(resources.KeySsPassword, settingsDeps))
+	handler.Register("/admin/settings/dclogin_imap_security", resources.GenericSettingHandler(resources.KeyDcloginIMAPSecurity, settingsDeps))
+	handler.Register("/admin/settings/dclogin_smtp_security", resources.GenericSettingHandler(resources.KeyDcloginSMTPSecurity, settingsDeps))
 	handler.Register("/admin/settings/http_port", resources.GenericSettingHandler(resources.KeyHTTPPort, settingsDeps))
 	handler.Register("/admin/settings/https_port", resources.GenericSettingHandler(resources.KeyHTTPSPort, settingsDeps))
 	handler.Register("/admin/settings/http_proxy_port", resources.GenericSettingHandler(resources.KeyHTTPProxyPort, settingsDeps))

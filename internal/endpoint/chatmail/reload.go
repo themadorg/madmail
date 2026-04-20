@@ -33,18 +33,29 @@ var configOverrides = []portMapping{
 		pattern:    regexp.MustCompile(`(smtp\s+tcp://0\.0\.0\.0:)\d+`),
 		replaceFmt: "${1}%s",
 	},
-	// Submission TLS port: matches first "tls://0.0.0.0:<port>" in submission line
-	// Note: submission has both tls:// and tcp:// — we handle the tcp:// separately
+	// Submission STARTTLS (tcp://) port in submission line.
 	{
 		dbKey:      resources.KeySubmissionPort,
 		pattern:    regexp.MustCompile(`(submission\s+tls://0\.0\.0\.0:\d+\s+tcp://0\.0\.0\.0:)\d+`),
 		replaceFmt: "${1}%s",
 	},
-	// IMAP TLS port + plain port: matches "imap tls://0.0.0.0:<port> tcp://0.0.0.0:<port>"
+	// Submission implicit TLS (tls://) port in submission line.
+	{
+		dbKey:      resources.KeySubmissionTLSPort,
+		pattern:    regexp.MustCompile(`(submission\s+tls://0\.0\.0\.0:)\d+(\s+tcp://0\.0\.0\.0:\d+)`),
+		replaceFmt: "${1}%s${2}",
+	},
+	// IMAP STARTTLS (tcp://) port in imap line.
 	{
 		dbKey:      resources.KeyIMAPPort,
 		pattern:    regexp.MustCompile(`(imap\s+tls://0\.0\.0\.0:\d+\s+tcp://0\.0\.0\.0:)\d+`),
 		replaceFmt: "${1}%s",
+	},
+	// IMAP implicit TLS (tls://) port in imap line.
+	{
+		dbKey:      resources.KeyIMAPTLSPort,
+		pattern:    regexp.MustCompile(`(imap\s+tls://0\.0\.0\.0:)\d+(\s+tcp://0\.0\.0\.0:\d+)`),
+		replaceFmt: "${1}%s${2}",
 	},
 	// TURN port: matches "turn udp://0.0.0.0:<port> tcp://0.0.0.0:<port>" plus "turn_port <port>"
 	{
