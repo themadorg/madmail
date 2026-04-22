@@ -181,8 +181,8 @@ func (t *FederationTracker) flush(db *gorm.DB) {
 	db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "domain"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"queued_messages", "failed_http", "failed_https", "failed_smtp",
-			"success_http", "success_https", "success_smtp", "inbound_deliveries",
+			"queued_messages", "failed_http", "failed_http_s", "failed_smtp",
+			"success_http", "success_http_s", "success_smtp", "inbound_deliveries",
 			"successful_deliveries", "total_latency_ms", "last_active",
 		}),
 	}).Create(&snapshot)
