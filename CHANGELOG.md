@@ -1,3 +1,12 @@
+# [0.43.0](https://github.com/themadorg/madmail/compare/v0.42.2...v0.43.0) (2026-04-22)
+
+
+### Features
+
+* **cli:** add port management and submission access commands ([7edcc04](https://github.com/themadorg/madmail/commit/7edcc047615f7338084da9fb090e9a523b2bc0f0))
+* **config:** add separate TLS/STARTTLS ports and dclogin security settings ([ef351f0](https://github.com/themadorg/madmail/commit/ef351f07ce3fc1f4e02a8240702fdd2e50fb60df))
+* implement deadline capping for IMAP connections and enhance test reliability ([e46b9df](https://github.com/themadorg/madmail/commit/e46b9dfc3fe69f93c6f8e6cbd2704a3b299b7a91))
+
 ## [0.42.2](https://github.com/themadorg/madmail/compare/v0.42.1...v0.42.2) (2026-04-17)
 
 
