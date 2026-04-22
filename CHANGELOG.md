@@ -1,3 +1,10 @@
+## [0.42.2](https://github.com/themadorg/madmail/compare/v0.42.1...v0.42.2) (2026-04-17)
+
+
+### Bug Fixes
+
+* update dclogin URL parameters to use SSL in chatmail endpoint and HTML files ([435b139](https://github.com/themadorg/madmail/commit/435b139620beec5a428151577878d4f165444369))
+
 ## [0.42.1](https://github.com/themadorg/madmail/compare/v0.42.0...v0.42.1) (2026-04-17)
 
 
