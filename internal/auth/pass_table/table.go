@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/themadorg/madmail/framework/config"
 	modconfig "github.com/themadorg/madmail/framework/config/module"
@@ -40,6 +41,13 @@ type Auth struct {
 	settingsTable module.Table
 	autoCreate    bool
 	jitDomain     string // If set, JIT registration is restricted to this domain
+
+	// credCache mirrors a.table when it implements MutableTable: compare-key → stored value.
+	// Populated at Init; reads use RAM first. Mutations update DB and cache together.
+	// A cache miss falls back to the backing table once so CLI tools (maddy creds) can
+	// change the DB on disk without restarting the server.
+	credMu    sync.RWMutex
+	credCache map[string]string
 }
 
 func New(modName, instName string, _, inlineArgs []string) (module.Module, error) {
@@ -67,6 +75,10 @@ func (a *Auth) Init(cfg *config.Map) error {
 		return err
 	}
 
+	if err := a.hydrateCredCache(); err != nil {
+		return err
+	}
+
 	// Check if logging is disabled dynamically.
 	// However, if debug mode is enabled, keep the log output alive
 	// so the administrator can see debug messages.
@@ -90,6 +102,104 @@ func (a *Auth) InstanceName() string {
 	return a.instName
 }
 
+func (a *Auth) primaryTableMutable() (module.MutableTable, bool) {
+	t, ok := a.table.(module.MutableTable)
+	return t, ok
+}
+
+// ReloadCredentialsCache implements module.CredentialsCacheReloader.
+func (a *Auth) ReloadCredentialsCache() error {
+	return a.hydrateCredCache()
+}
+
+func (a *Auth) hydrateCredCache() error {
+	mtbl, ok := a.primaryTableMutable()
+	if !ok {
+		a.credMu.Lock()
+		a.credCache = nil
+		a.credMu.Unlock()
+		return nil
+	}
+	keys, err := mtbl.Keys()
+	if err != nil {
+		return fmt.Errorf("%s: credentials cache hydrate (keys): %w", a.modName, err)
+	}
+	ctx := context.TODO()
+	newMap := make(map[string]string, len(keys))
+	for _, k := range keys {
+		v, has, err := mtbl.Lookup(ctx, k)
+		if err != nil {
+			return fmt.Errorf("%s: credentials cache hydrate (lookup %q): %w", a.modName, k, err)
+		}
+		if has {
+			newMap[k] = v
+		}
+	}
+	a.credMu.Lock()
+	a.credCache = newMap
+	a.credMu.Unlock()
+	return nil
+}
+
+func (a *Auth) lookupCred(ctx context.Context, key string) (string, bool, error) {
+	if _, ok := a.primaryTableMutable(); !ok {
+		return a.table.Lookup(ctx, key)
+	}
+	a.credMu.RLock()
+	cc := a.credCache
+	if cc != nil {
+		v, ok := cc[key]
+		a.credMu.RUnlock()
+		if ok {
+			return v, true, nil
+		}
+	} else {
+		a.credMu.RUnlock()
+		return a.table.Lookup(ctx, key)
+	}
+	val, found, err := a.table.Lookup(ctx, key)
+	if err != nil || !found {
+		return val, found, err
+	}
+	a.credMu.Lock()
+	if a.credCache != nil {
+		a.credCache[key] = val
+	}
+	a.credMu.Unlock()
+	return val, true, nil
+}
+
+func (a *Auth) readFromPrimaryOrSettings(ctx context.Context, key string) (string, bool, error) {
+	if a.settingsTable != nil {
+		return a.settingsTable.Lookup(ctx, key)
+	}
+	return a.lookupCred(ctx, key)
+}
+
+func (a *Auth) credCachePut(k, v string) {
+	if _, ok := a.primaryTableMutable(); !ok {
+		return
+	}
+	a.credMu.Lock()
+	defer a.credMu.Unlock()
+	if a.credCache == nil {
+		return
+	}
+	a.credCache[k] = v
+}
+
+func (a *Auth) credCacheDelete(k string) {
+	if _, ok := a.primaryTableMutable(); !ok {
+		return
+	}
+	a.credMu.Lock()
+	defer a.credMu.Unlock()
+	if a.credCache == nil {
+		return
+	}
+	delete(a.credCache, k)
+}
+
 func (a *Auth) Lookup(ctx context.Context, username string) (string, bool, error) {
 	username = auth.NormalizeUsername(username)
 	key, err := precis.UsernameCaseMapped.CompareKey(username)
@@ -97,7 +207,7 @@ func (a *Auth) Lookup(ctx context.Context, username string) (string, bool, error
 		return "", false, err
 	}
 
-	return a.table.Lookup(ctx, key)
+	return a.lookupCred(ctx, key)
 }
 
 func (a *Auth) GetUserPasswordHash(username string) (string, bool, error) {
@@ -111,7 +221,7 @@ func (a *Auth) AuthPlain(username, password string) error {
 		return err
 	}
 
-	hash, ok, err := a.table.Lookup(context.TODO(), key)
+	hash, ok, err := a.lookupCred(context.TODO(), key)
 	if !ok {
 		// Check JIT registration flag instead of general registration flag
 		// This allows /new API to work while disabling automatic account creation on login
@@ -167,6 +277,17 @@ func (a *Auth) ListUsers() ([]string, error) {
 		return nil, fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
 	}
 
+	a.credMu.RLock()
+	cc := a.credCache
+	a.credMu.RUnlock()
+	if cc != nil {
+		l := make([]string, 0, len(cc))
+		for k := range cc {
+			l = append(l, k)
+		}
+		return l, nil
+	}
+
 	l, err := tbl.Keys()
 	if err != nil {
 		return nil, fmt.Errorf("%s: list users: %w", a.modName, err)
@@ -208,6 +329,7 @@ func (a *Auth) CreateUserIfNotExists(username, password string) error {
 	if err := tbl.SetKey(key, DefaultHash+":"+hash); err != nil {
 		return fmt.Errorf("%s: create user %s: %w", a.modName, key, err)
 	}
+	a.credCachePut(key, DefaultHash+":"+hash)
 	return nil
 }
 
@@ -227,7 +349,7 @@ func (a *Auth) CreateUserHash(username, password string, hashAlgo string, opts H
 		return fmt.Errorf("%s: create user %s (raw): %w", a.modName, username, err)
 	}
 
-	_, ok, err = tbl.Lookup(context.TODO(), key)
+	_, ok, err = a.lookupCred(context.TODO(), key)
 	if err != nil {
 		return fmt.Errorf("%s: create user %s: %w", a.modName, key, err)
 	}
@@ -243,6 +365,7 @@ func (a *Auth) CreateUserHash(username, password string, hashAlgo string, opts H
 	if err := tbl.SetKey(key, hashAlgo+":"+hash); err != nil {
 		return fmt.Errorf("%s: create user %s: %w", a.modName, key, err)
 	}
+	a.credCachePut(key, hashAlgo+":"+hash)
 	return nil
 }
 
@@ -267,6 +390,7 @@ func (a *Auth) SetUserPassword(username, password string) error {
 	if err := tbl.SetKey(key, DefaultHash+":"+hash); err != nil {
 		return fmt.Errorf("%s: set password %s: %w", a.modName, key, err)
 	}
+	a.credCachePut(key, DefaultHash+":"+hash)
 	return nil
 }
 
@@ -285,6 +409,7 @@ func (a *Auth) SetUserPasswordHash(username, hash string) error {
 	if err := tbl.SetKey(key, hash); err != nil {
 		return fmt.Errorf("%s: set password hash %s: %w", a.modName, key, err)
 	}
+	a.credCachePut(key, hash)
 	return nil
 }
 
@@ -303,16 +428,12 @@ func (a *Auth) DeleteUser(username string) error {
 	if err := tbl.RemoveKey(key); err != nil {
 		return fmt.Errorf("%s: del user %s: %w", a.modName, key, err)
 	}
+	a.credCacheDelete(key)
 	return nil
 }
 
 func (a *Auth) IsRegistrationOpen() (bool, error) {
-	tbl := a.table
-	if a.settingsTable != nil {
-		tbl = a.settingsTable
-	}
-
-	val, ok, err := tbl.Lookup(context.TODO(), "__REGISTRATION_OPEN__")
+	val, ok, err := a.readFromPrimaryOrSettings(context.TODO(), "__REGISTRATION_OPEN__")
 	if err != nil {
 		return false, err
 	}
@@ -337,16 +458,17 @@ func (a *Auth) SetRegistrationOpen(open bool) error {
 	if open {
 		val = "true"
 	}
-	return mtbl.SetKey("__REGISTRATION_OPEN__", val)
+	if err := mtbl.SetKey("__REGISTRATION_OPEN__", val); err != nil {
+		return err
+	}
+	if a.settingsTable == nil {
+		a.credCachePut("__REGISTRATION_OPEN__", val)
+	}
+	return nil
 }
 
 func (a *Auth) IsTurnEnabled() (bool, error) {
-	tbl := a.table
-	if a.settingsTable != nil {
-		tbl = a.settingsTable
-	}
-
-	val, ok, err := tbl.Lookup(context.TODO(), "__TURN_ENABLED__")
+	val, ok, err := a.readFromPrimaryOrSettings(context.TODO(), "__TURN_ENABLED__")
 	if err != nil {
 		return false, err
 	}
@@ -371,16 +493,17 @@ func (a *Auth) SetTurnEnabled(enabled bool) error {
 	if enabled {
 		val = "true"
 	}
-	return mtbl.SetKey("__TURN_ENABLED__", val)
+	if err := mtbl.SetKey("__TURN_ENABLED__", val); err != nil {
+		return err
+	}
+	if a.settingsTable == nil {
+		a.credCachePut("__TURN_ENABLED__", val)
+	}
+	return nil
 }
 
 func (a *Auth) IsLoggingDisabled() (bool, error) {
-	tbl := a.table
-	if a.settingsTable != nil {
-		tbl = a.settingsTable
-	}
-
-	val, ok, err := tbl.Lookup(context.TODO(), "__LOG_DISABLED__")
+	val, ok, err := a.readFromPrimaryOrSettings(context.TODO(), "__LOG_DISABLED__")
 	if err != nil {
 		return false, err
 	}
@@ -410,16 +533,17 @@ func (a *Auth) SetLoggingDisabled(disabled bool) error {
 			log.DefaultLogger.Out = log.NopOutput{}
 		}
 	}
-	return mtbl.SetKey("__LOG_DISABLED__", val)
+	if err := mtbl.SetKey("__LOG_DISABLED__", val); err != nil {
+		return err
+	}
+	if a.settingsTable == nil {
+		a.credCachePut("__LOG_DISABLED__", val)
+	}
+	return nil
 }
 
 func (a *Auth) IsJitRegistrationEnabled() (bool, error) {
-	tbl := a.table
-	if a.settingsTable != nil {
-		tbl = a.settingsTable
-	}
-
-	val, ok, err := tbl.Lookup(context.TODO(), "__JIT_REGISTRATION_ENABLED__")
+	val, ok, err := a.readFromPrimaryOrSettings(context.TODO(), "__JIT_REGISTRATION_ENABLED__")
 	if err != nil {
 		return false, err
 	}
@@ -444,18 +568,19 @@ func (a *Auth) SetJitRegistrationEnabled(enabled bool) error {
 	if enabled {
 		val = "true"
 	}
-	return mtbl.SetKey("__JIT_REGISTRATION_ENABLED__", val)
+	if err := mtbl.SetKey("__JIT_REGISTRATION_ENABLED__", val); err != nil {
+		return err
+	}
+	if a.settingsTable == nil {
+		a.credCachePut("__JIT_REGISTRATION_ENABLED__", val)
+	}
+	return nil
 }
 
 // GetSetting retrieves a raw string value from the settings table.
 // Returns (value, true, nil) if found, ("", false, nil) if not set.
 func (a *Auth) GetSetting(key string) (string, bool, error) {
-	tbl := a.table
-	if a.settingsTable != nil {
-		tbl = a.settingsTable
-	}
-
-	val, ok, err := tbl.Lookup(context.TODO(), key)
+	val, ok, err := a.readFromPrimaryOrSettings(context.TODO(), key)
 	if err != nil {
 		return "", false, err
 	}
@@ -476,7 +601,13 @@ func (a *Auth) SetSetting(key, value string) error {
 	if !ok {
 		return fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
 	}
-	return mtbl.SetKey(key, value)
+	if err := mtbl.SetKey(key, value); err != nil {
+		return err
+	}
+	if a.settingsTable == nil {
+		a.credCachePut(key, value)
+	}
+	return nil
 }
 
 // DeleteSetting removes a key from the settings table.
@@ -490,7 +621,13 @@ func (a *Auth) DeleteSetting(key string) error {
 	if !ok {
 		return fmt.Errorf("%s: table is not mutable, no management functionality available", a.modName)
 	}
-	return mtbl.RemoveKey(key)
+	if err := mtbl.RemoveKey(key); err != nil {
+		return err
+	}
+	if a.settingsTable == nil {
+		a.credCacheDelete(key)
+	}
+	return nil
 }
 
 func init() {

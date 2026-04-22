@@ -136,6 +136,34 @@
             <div class="code-block">maddy creds jit status</div>
         </div>
 
+        <h2>Account commands (<code>maddy accounts</code>)</h2>
+        <p>These subcommands open your <code>maddy.conf</code> and talk to the <strong>on-disk</strong> databases directly (they do not require the server to be stopped). Use <code>--cfg-block</code> and <code>--storage-cfg-block</code> if your auth or IMAP blocks are not <code>local_authdb</code> / <code>local_mailboxes</code>.</p>
+
+        <div class="cmd-info">
+            <h3>Status and per-user info</h3>
+            <div class="code-block">maddy accounts status
+maddy accounts info user@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Create login + IMAP mailbox</h3>
+            <p>Creates credentials and an IMAP storage account (same end result as the admin panel random user).</p>
+            <div class="code-block">maddy accounts create user@example.com
+maddy accounts create-random [--json-only]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Remove or ban</h3>
+            <p>Deletes password row, removes mail storage, and blocklists the address (same as admin delete). <code>ban</code> accepts an optional reason as a second argument.</p>
+            <div class="code-block">maddy accounts delete user@example.com [--yes]
+maddy accounts ban user@example.com ["reason"] [--yes]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>After CLI changes while the server is running</h3>
+            <p>The daemon keeps in-memory copies of credentials and quotas for speed. If you used CLI tools against the live database, call <strong>POST</strong> <code>/admin/cache/reload</code> once (same admin token as other API calls) so the running process re-reads those tables. See the <a href="/docs/api">Admin API docs</a> for the exact JSON envelope.</p>
+        </div>
+
         <h2>Call Server Management (TURN/STUN)</h2>
         <p>You can enable or disable the call server (TURN) for all users. When disabled, call information is not shown on the info page.</p>
 

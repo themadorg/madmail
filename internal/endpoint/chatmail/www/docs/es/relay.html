@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dominio y TLS - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <style>
+        .doc-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: var(--card);
+            border-radius: 12px;
+            border: 1px solid var(--card-border);
+        }
+
+        h2 {
+            margin-top: 30px;
+            border-bottom: 2px solid var(--link);
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        h3 {
+            margin-top: 25px;
+            color: var(--link);
+        }
+
+        .code-box {
+            direction: ltr;
+            background: var(--code-bg);
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            text-align: left;
+            margin: 10px 0;
+            word-break: break-all;
+            white-space: pre-wrap;
+            border: 1px solid var(--card-border);
+            color: var(--foreground);
+            line-height: 1.6;
+        }
+
+        .tip-box {
+            background: color-mix(in srgb, var(--link) 10%, transparent);
+            border-left: 4px solid var(--link);
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .warn-box {
+            background: color-mix(in srgb, var(--warning) 10%, transparent);
+            border-left: 4px solid var(--warning);
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .success-box {
+            background: color-mix(in srgb, var(--success) 10%, transparent);
+            border-left: 4px solid var(--success);
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .warn-box strong,
+        .success-box strong {
+            display: block;
+            margin-bottom: 10px;
+            color: var(--link);
+        }
+
+        .warn-box ol, .warn-box ul, .success-box ul {
+            padding-left: 25px;
+            margin: 0;
+        }
+
+        .warn-box li, .success-box li {
+            margin-bottom: 8px;
+        }
+
+        .mode-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 25px 0;
+            background: var(--card);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--card-border);
+        }
+
+        .mode-table th, .mode-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .mode-table th {
+            background: var(--code-bg);
+            color: var(--link);
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+
+        .mode-table tr:last-child td { border-bottom: none; }
+        .mode-table tr:hover td { background: var(--code-bg); }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .status-yes { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+        .status-no { background: color-mix(in srgb, var(--destructive) 15%, transparent); color: var(--destructive); }
+        .status-na { background: var(--code-bg); color: var(--muted); }
+
+        .mode-card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+            position: relative;
+        }
+
+        .mode-card:hover {
+            background: var(--code-bg);
+            border-color: var(--link);
+        }
+
+        .code-box {
+            margin-top: 0 !important;
+            border-top-left-radius: 0 !important;
+            border: 1px solid var(--card-border) !important;
+        }
+
+        .code-container {
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .code-header {
+            background: var(--code-bg);
+            color: var(--link);
+            padding: 5px 15px;
+            font-size: 0.8em;
+            font-family: monospace;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            border: 1px solid var(--card-border);
+            border-bottom: none;
+            display: inline-block;
+        }
+
+        .dns-records {
+            direction: ltr;
+            background: var(--code-bg);
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            text-align: left;
+            margin: 10px 0;
+            border: 1px solid var(--card-border);
+            color: var(--foreground);
+            line-height: 1.8;
+        }
+
+        .dns-records .comment {
+            color: var(--muted);
+        }
+
+        .badge {
+            font-size: 0.7em;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 5px;
+        }
+
+        .badge-recommended {
+            background: color-mix(in srgb, var(--success) 15%, transparent);
+            color: var(--success);
+        }
+
+        .badge-advanced {
+            background: color-mix(in srgb, var(--warning) 15%, transparent);
+            color: var(--warning);
+        }
+    </style>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menú">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">Inicio</a></li>
+            <li><a href="/docs">Documentación</a></li>
+        </ul>
+    </header>
+
+    <div class="doc-container">
+        <h1>🌐 Dominio y configuración TLS</h1>
+
+        <h2>Paso 1: registros DNS</h2>
+        <p>Configure los siguientes registros DNS en el panel de su dominio:</p>
+
+        <div class="dns-records">
+            <span class="comment"># Registro A — el dominio apunta a la IP del servidor</span><br>
+            chat.example.org. A 203.0.113.50<br>
+        </div>
+
+        <div class="tip-box">
+            <strong>Nota:</strong> Tras crear los registros, la propagación puede tardar entre minutos y 24 horas.
+            Para comprobar: <code>dig +short chat.example.org A</code>
+        </div>
+
+        <h2>Paso 2: modo TLS</h2>
+        <p>Madmail admite cuatro modos TLS. La tabla resume las diferencias:</p>
+
+        <table class="mode-table">
+            <thead>
+                <tr>
+                    <th>Modo</th>
+                    <th>Desafío</th>
+                    <th>API DNS</th>
+                    <th>Puerto 80</th>
+                    <th>Caso de uso</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>autocert</strong></td>
+                    <td>HTTP-01</td>
+                    <td><span class="status-badge status-no">No</span></td>
+                    <td><span class="status-badge status-yes">Necesario</span></td>
+                    <td>Servidor en producción</td>
+                </tr>
+                <tr>
+                    <td><strong>acme</strong></td>
+                    <td>DNS-01</td>
+                    <td><span class="status-badge status-yes">Sí</span></td>
+                    <td><span class="status-badge status-no">No</span></td>
+                    <td>Servidor tras cortafuegos</td>
+                </tr>
+                <tr>
+                    <td><strong>file</strong></td>
+                    <td>—</td>
+                    <td><span class="status-badge status-na">—</span></td>
+                    <td><span class="status-badge status-na">—</span></td>
+                    <td>Certificado existente</td>
+                </tr>
+                <tr>
+                    <td><strong>self_signed</strong></td>
+                    <td>—</td>
+                    <td><span class="status-badge status-na">—</span></td>
+                    <td><span class="status-badge status-na">—</span></td>
+                    <td>Pruebas y desarrollo</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="mode-card">
+            <h3>🏆 modo autocert <span class="badge badge-recommended">Recomendado</span></h3>
+            <div class="code-container">
+                <div class="code-header">Instalación (maddy install)</div>
+                <pre class="code-box">sudo maddy install \
+  --domain chat.example.org \
+  --tls-mode autocert \
+  --acme-email admin@example.org \
+  --enable-chatmail \
+  --non-interactive</pre>
+            </div>
+            <p>Cómo funciona:</p>
+            <ol style="padding-left: 20px;">
+                <li>Madmail sirve HTTP en el puerto 80 para el desafío ACME</li>
+                <li>Let's Encrypt comprueba el dominio contactando el puerto 80</li>
+                <li>Se emite un certificado (90 días, renovación automática)</li>
+                <li>Los certificados se guardan en <code>/var/lib/maddy/autocert/</code></li>
+            </ol>
+
+            <p>En el archivo de configuración (maddy.conf):</p>
+            <div class="code-container">
+                <div class="code-header">maddy.conf</div>
+                <pre class="code-box">tls {
+    loader autocert {
+        hostname chat.example.org
+        email admin@example.org
+        cache_dir /var/lib/maddy/autocert
+        agreed
+    }
+}</pre>
+            </div>
+        </div>
+
+        <div class="mode-card">
+            <h3>🔐 modo acme (DNS-01) <span class="badge badge-advanced">Avanzado</span></h3>
+            <div class="code-container">
+                <div class="code-header">Instalación (maddy install)</div>
+                <pre class="code-box">sudo maddy install \
+  --domain chat.example.org \
+  --tls-mode acme \
+  --acme-email admin@example.org \
+  --acme-dns-provider cloudflare \
+  --acme-dns-token "YOUR_CLOUDFLARE_TOKEN" \
+  --enable-chatmail \
+  --non-interactive</pre>
+            </div>
+            <p>Proveedores DNS admitidos: <code>cloudflare</code>, <code>gandi</code>,
+                <code>digitalocean</code>, <code>vultr</code>, <code>hetzner</code>, <code>route53</code>
+        </div>
+
+        <div class="mode-card">
+            <h3>📄 modo file (certificado existente)</h3>
+            <div class="code-container">
+                <div class="code-header">Instalación (maddy install)</div>
+                <pre class="code-box">sudo maddy install \
+  --domain chat.example.org \
+  --tls-mode file \
+  --cert-path /etc/letsencrypt/live/chat.example.org/fullchain.pem \
+  --key-path /etc/letsencrypt/live/chat.example.org/privkey.pem \
+  --enable-chatmail</pre>
+            </div>
+
+            <p>Formato en el archivo de configuración:</p>
+            <div class="code-box">tls file /path/to/fullchain.pem /path/to/privkey.pem</div>
+
+            <div class="tip-box">
+                <strong>Renovación:</strong> configure un hook de certbot para reiniciar maddy tras renovar:
+                <div class="code-box" style="margin-top: 5px;">systemctl restart maddy</div>
+            </div>
+        </div>
+
+        <div class="mode-card">
+            <h3>🧪 modo self_signed (pruebas)</h3>
+            <div class="code-container">
+                <div class="code-header">Instalación (maddy install)</div>
+                <pre class="code-box">sudo maddy install \
+  --simple --ip YOUR_SERVER_IP \
+  --tls-mode self_signed \
+  --turn-off-tls</pre>
+            </div>
+            <p>Los certificados se guardan en <code>/var/lib/maddy/certs/</code> y se reutilizan al reiniciar.</p>
+        </div>
+
+        <h2>Paso 3: verificar el certificado</h2>
+        <p>Tras la configuración, compruebe el certificado con:</p>
+        <div class="code-box">echo | openssl s_client -connect chat.example.org:443 \
+    -servername chat.example.org 2>&1 | \
+    openssl x509 -noout -subject -issuer -dates</div>
+
+        <p>Salida esperada:</p>
+        <div class="code-box">subject=CN=chat.example.org
+issuer=C=US, O=Let's Encrypt, CN=E7
+notBefore=Feb 21 15:41:47 2026 GMT
+notAfter=May 22 15:41:46 2026 GMT</div>
+
+        <h2>Cambiar de modo TLS</h2>
+        <h3>De self_signed a autocert</h3>
+        <div class="code-container">
+            <div class="code-header">Eliminar certificados antiguos</div>
+            <pre class="code-box">sudo rm /var/lib/maddy/certs/fullchain.pem /var/lib/maddy/certs/privkey.pem</pre>
+        </div>
+
+        <div class="code-container">
+            <div class="code-header">Reinstalar con autocert</div>
+            <pre class="code-box">sudo maddy install \
+  --domain chat.example.org \
+  --tls-mode autocert \
+  --acme-email admin@example.org \
+  --enable-chatmail \
+  --non-interactive</pre>
+        </div>
+
+        <div class="code-container">
+            <div class="code-header">Reinicio final</div>
+            <pre class="code-box">sudo systemctl restart maddy</pre>
+        </div>
+
+        <h2>Resolución de problemas</h2>
+
+        <div class="warn-box">
+            <strong>🔑 file: ¿error «Permission denied»?</strong>
+            <p>Ejecute lo siguiente para corregir propietario y permisos:</p>
+            <div class="code-container">
+                <div class="code-header">Corregir permisos</div>
+                <pre class="code-box">sudo chown root:maddy /path/to/cert.pem /path/to/key.pem
+sudo chmod 640 /path/to/cert.pem /path/to/key.pem</pre>
+            </div>
+        </div>
+
+        <div class="success-box">
+            <strong>🛡️ Notas de seguridad:</strong>
+            <ul>
+                <li>Las claves privadas suelen tener permisos <code>600</code> (solo el propietario)</li>
+                <li>Los certificados suelen tener permisos <code>640</code> (propietario y grupo)</li>
+                <li>El directorio de caché de autocert suele tener <code>700</code> (solo el propietario)</li>
+                <li>Los certificados de Let's Encrypt duran 90 días y se renuevan unas semanas antes de caducar</li>
+            </ul>
+        </div>
+
+    </div>
+</body>
+
+</html>

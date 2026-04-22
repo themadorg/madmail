@@ -101,3 +101,9 @@ type ManageableStorage interface {
 type GORMProvider interface {
 	GetGORMDB() *gorm.DB
 }
+
+// QuotaCacheReloader is optionally implemented by storage backends that cache
+// per-user quota in memory. ReloadQuotaCache rebuilds that cache from the database.
+type QuotaCacheReloader interface {
+	ReloadQuotaCache() error
+}

@@ -238,4 +238,3 @@ func serviceMode(settings map[string]string, spec portAccessSpec) string {
 	}
 	return "public"
 }
-

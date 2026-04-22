@@ -136,6 +136,34 @@
             <div class="code-block">maddy creds jit status</div>
         </div>
 
+        <h2>Команды аккаунтов (<code>maddy accounts</code>)</h2>
+        <p>Эти подкоманды читают <code>maddy.conf</code> и обращаются <strong>напрямую</strong> к файлам базы на диске (останавливать сервер не нужно). Укажите <code>--cfg-block</code> и <code>--storage-cfg-block</code>, если блоки не <code>local_authdb</code> / <code>local_mailboxes</code>.</p>
+
+        <div class="cmd-info">
+            <h3>Сводка и информация о пользователе</h3>
+            <div class="code-block">maddy accounts status
+maddy accounts info user@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Создать учётную запись и IMAP</h3>
+            <p>Создаёт пароль в БД учётных данных и почтовый ящик в хранилище (как случайный пользователь в веб-панели).</p>
+            <div class="code-block">maddy accounts create user@example.com
+maddy accounts create-random [--json-only]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Удалить или заблокировать</h3>
+            <p>Удаляет пароль, очищает IMAP и добавляет адрес в чёрный список. У <code>ban</code> второй аргумент — необязательная причина.</p>
+            <div class="code-block">maddy accounts delete user@example.com [--yes]
+maddy accounts ban user@example.com ["причина"] [--yes]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>После правок через CLI на работающем сервере</h3>
+            <p>Сервер держит копии учётных данных и квот в памяти. После изменения БД через CLI выполните один раз <strong>POST</strong> <code>/admin/cache/reload</code> (тот же admin-токен). Формат запроса — в <a href="/docs/api">документации Admin API</a>.</p>
+        </div>
+
         <h2>Управление сервером вызовов (TURN/STUN)</h2>
         <p>Вы можете включить или отключить сервер вызовов (TURN) для всех пользователей. При отключении информация о вызовах не отображается на странице информации.</p>
 

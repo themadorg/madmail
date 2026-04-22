@@ -267,11 +267,11 @@
             card.appendChild(h('p', { html: L(ep.desc) }));
 
             if (ep.request) {
-                card.appendChild(h('strong', { html: (LANG === 'fa' ? 'درخواست:' : LANG === 'ru' ? 'Запрос:' : 'Request:') }));
+                card.appendChild(h('strong', { html: (LANG === 'fa' ? 'درخواست:' : LANG === 'ru' ? 'Запрос:' : LANG === 'es' ? 'Solicitud:' : 'Request:') }));
                 card.appendChild(codeBlock(ep.request));
             }
             if (ep.response) {
-                card.appendChild(h('strong', { html: (LANG === 'fa' ? 'پاسخ:' : LANG === 'ru' ? 'Ответ:' : 'Response:') }));
+                card.appendChild(h('strong', { html: (LANG === 'fa' ? 'پاسخ:' : LANG === 'ru' ? 'Ответ:' : LANG === 'es' ? 'Respuesta:' : 'Response:') }));
                 card.appendChild(codeBlock(ep.response));
             }
             if (ep.fields) card.appendChild(fieldsTable(ep.fields));
@@ -298,9 +298,9 @@
         root.appendChild(h('h2', { id: wp.id, text: L(wp.title) }));
         var wpCard = h('div', { cls: 'endpoint-card' });
         wpCard.appendChild(h('p', { html: L(wp.desc) }));
-        var wpLabel = h('strong', { text: (LANG === 'fa' ? 'صفحات مدیریتی:' : LANG === 'ru' ? 'Административные страницы:' : 'Admin pages:') });
+        var wpLabel = h('strong', { text: (LANG === 'fa' ? 'صفحات مدیریتی:' : LANG === 'ru' ? 'Административные страницы:' : LANG === 'es' ? 'Páginas de administración:' : 'Admin pages:') });
         wpCard.appendChild(wpLabel);
-        var wpRows = '<tr><th>' + (LANG === 'fa' ? 'صفحه' : LANG === 'ru' ? 'Страница' : 'Page') + '</th><th>' + (LANG === 'fa' ? 'امکانات' : LANG === 'ru' ? 'Возможности' : 'Features') + '</th></tr>';
+        var wpRows = '<tr><th>' + (LANG === 'fa' ? 'صفحه' : LANG === 'ru' ? 'Страница' : LANG === 'es' ? 'Página' : 'Page') + '</th><th>' + (LANG === 'fa' ? 'امکانات' : LANG === 'ru' ? 'Возможности' : LANG === 'es' ? 'Funciones' : 'Features') + '</th></tr>';
         for (var pi = 0; pi < wp.pages.length; pi++) {
             wpRows += '<tr><td><strong>' + wp.pages[pi].name + '</strong></td><td>' + L(wp.pages[pi].desc) + '</td></tr>';
         }
@@ -313,7 +313,8 @@
         root.appendChild(h('hr', { cls: 'separator' }));
         root.appendChild(h('h2', { id: ec.id, text: L(ec.title) }));
         root.appendChild(h('p', { html: L(ec.desc) }));
-        var ecRows = '<tr><th>Code</th><th>Meaning</th><th>When</th></tr>';
+        var ecHdr = LANG === 'fa' ? ['Code', 'Meaning', 'When'] : LANG === 'ru' ? ['Код', 'Значение', 'Когда'] : LANG === 'es' ? ['Código', 'Significado', 'Cuándo'] : ['Code', 'Meaning', 'When'];
+        var ecRows = '<tr><th>' + ecHdr[0] + '</th><th>' + ecHdr[1] + '</th><th>' + ecHdr[2] + '</th></tr>';
         for (var ci = 0; ci < ec.codes.length; ci++) {
             ecRows += '<tr><td><code>' + ec.codes[ci].code + '</code></td><td>' + ec.codes[ci].meaning + '</td><td>' + ec.codes[ci].when + '</td></tr>';
         }

@@ -60,6 +60,10 @@
     dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
 }</code></pre>
 
+        <h2>In-memory caches vs on-disk state</h2>
+        <p>For performance, the running server may keep a copy of credential rows (<code>auth.pass_table</code>) and per-user quota totals (<code>storage.imapsql</code>) in RAM. The authoritative data remains in the database files.</p>
+        <p>If you change those databases with the CLI (for example <code>maddy creds</code>, <code>maddy accounts</code>, or <code>maddy imap-acct</code>) while the daemon stays up, call the Admin API resource <code>POST /admin/cache/reload</code> once so the process re-reads the tables. Alternatively, restart the service.</p>
+
         <h2>Migration</h2>
         <p>The service automatically creates or updates required tables on first run. There is no need to run manual SQL
             commands to create the <code>quotas</code> or <code>contacts</code> tables.</p>
@@ -103,6 +107,10 @@
         <pre><code>storage.imapsql local_mail {
     dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
 }</code></pre>
+
+        <h2>کش حافظه در برابر دیتابیس روی دیسک</h2>
+        <p>برای سرعت، سرور در حال اجرا ممکن است ردیف‌های اعتبارنامه (<code>auth.pass_table</code>) و مجموع سهمیه هر کاربر (<code>storage.imapsql</code>) را در RAM نگه دارد. منبع حقیقی همچنان فایل‌های دیتابیس است.</p>
+        <p>اگر با CLI (مثلاً <code>maddy creds</code>، <code>maddy accounts</code> یا <code>maddy imap-acct</code>) در حالی که سرویس روشن است دیتابیس را عوض کردید، یک بار Admin API را با <code>POST /admin/cache/reload</code> صدا بزنید تا فرآیند دوباره جداول را بخواند؛ یا سرویس را ری‌استارت کنید.</p>
 
         <h2>مهاجرت (Migration)</h2>
         <p>سرویس به صورت خودکار جداول مورد نیاز را در اولین اجرا ایجاد یا به‌روزرسانی می‌کند. نیازی به اجرای دستورات SQL

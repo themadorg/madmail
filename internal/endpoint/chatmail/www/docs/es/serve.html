@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personalización HTML - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menú">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">Inicio</a></li>
+            <li><a href="/docs/">Documentación</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide">
+        <h1>Guía de personalización del servidor (HTML propio)</h1>
+        <p class="mt-md">Puede cambiar el aspecto de todas las páginas web del servidor sin modificar el código fuente ni recompilar.</p>
+
+        <h3 class="mt-lg">Paso 1 — Extraer los archivos originales</h3>
+        <p>Primero extraiga los archivos por defecto en una carpeta. Recomendamos <code>/var/lib/maddy/www</code>.</p>
+        <div class="code-block">sudo maddy extract-www /var/lib/maddy/www</div>
+
+        <h3 class="mt-lg">Paso 2 — Permisos</h3>
+        <p>Para que el servidor pueda leer los archivos, asigne la carpeta al usuario <code>maddy</code>.</p>
+        <div class="code-block">sudo chown -R maddy:maddy /var/lib/maddy/www</div>
+
+        <h3 class="mt-lg">Paso 3 — Activar en el servidor</h3>
+        <p>Actualice <code>maddy.conf</code> para usar la nueva carpeta.</p>
+        <div class="code-block">sudo sed -i '/chatmail.*{/a\    www_dir /var/lib/maddy/www' /etc/maddy/maddy.conf</div>
+
+        <h3 class="mt-lg">Paso 4 — Aplicar cambios</h3>
+        <p>Reinicie el servicio para que surtan efecto los cambios.</p>
+        <div class="code-block">sudo systemctl restart maddy</div>
+
+        <div class="alert alert--warning mt-lg">
+            <strong>Importante:</strong> después de estos pasos puede editar los archivos en <code>/var/lib/maddy/www</code> con un editor. Los cambios se aplican al recargar la página.
+        </div>
+
+        <h3 class="mt-lg">Nota sobre el registro JIT</h3>
+        <p>Si personaliza la página principal (<code>index.html</code>), tenga en cuenta que la lógica de registro depende del estado de JIT:</p>
+        <ul>
+            <li>Si <strong>JIT está activado</strong>, las credenciales se generan al azar en el navegador.</li>
+            <li>Si <strong>JIT está desactivado</strong> (pero el registro está abierto), el navegador usa la API <code>/new</code> para crear cuentas.</li>
+        </ul>
+        <p class="text-sm text-muted mt-sm">Recomendamos revisar el JavaScript de la función <code>generateAccount</code> en el archivo por defecto.</p>
+
+        <h3 class="mt-lg">Volver al predeterminado</h3>
+        <p>Para usar de nuevo los archivos integrados en el binario:</p>
+        <div class="code-block">sudo sed -i '/www_dir/d' /etc/maddy/maddy.conf
+sudo systemctl restart maddy</div>
+    </div>
+</body>
+
+</html>

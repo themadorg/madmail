@@ -119,4 +119,3 @@ func accessLabel(local bool) string {
 	}
 	return "public"
 }
-

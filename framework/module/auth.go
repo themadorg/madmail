@@ -56,3 +56,11 @@ type PlainUserDB interface {
 	SetSetting(key, value string) error
 	DeleteSetting(key string) error
 }
+
+// CredentialsCacheReloader is optionally implemented by PlainUserDB backends that
+// mirror credential rows in RAM. ReloadCredentialsCache re-reads the database
+// (e.g. after maddy creds / maddy accounts changed the DB on disk while the
+// server is running).
+type CredentialsCacheReloader interface {
+	ReloadCredentialsCache() error
+}

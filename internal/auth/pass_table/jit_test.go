@@ -89,7 +89,40 @@ func setupAuthForJIT(t *testing.T) *Auth {
 	a.settingsTable = &mockMutableTable{data: make(map[string]string)}
 	a.autoCreate = true // Default to true for testing
 
+	if err := a.hydrateCredCache(); err != nil {
+		t.Fatalf("hydrate credentials cache: %v", err)
+	}
+
 	return a
+}
+
+func TestReloadCredentialsCache(t *testing.T) {
+	a := setupAuthForJIT(t)
+	mt := a.table.(*mockMutableTable)
+	mt.SetKey("user1", "bcrypt:fakehash")
+
+	if err := a.ReloadCredentialsCache(); err != nil {
+		t.Fatalf("ReloadCredentialsCache: %v", err)
+	}
+	v, ok, err := a.lookupCred(context.Background(), "user1")
+	if err != nil || !ok || v != "bcrypt:fakehash" {
+		t.Fatalf("lookup after reload: ok=%v v=%q err=%v", ok, v, err)
+	}
+
+	// Simulate external DB change: update backing table only, cache stale until reload.
+	mt.SetKey("user1", "bcrypt:newhash")
+	v, ok, err = a.lookupCred(context.Background(), "user1")
+	if err != nil || !ok || v != "bcrypt:fakehash" {
+		t.Fatalf("expected stale cache hit before reload, got ok=%v v=%q err=%v", ok, v, err)
+	}
+
+	if err := a.ReloadCredentialsCache(); err != nil {
+		t.Fatalf("second ReloadCredentialsCache: %v", err)
+	}
+	v, ok, err = a.lookupCred(context.Background(), "user1")
+	if err != nil || !ok || v != "bcrypt:newhash" {
+		t.Fatalf("after second reload want newhash, got ok=%v v=%q err=%v", ok, v, err)
+	}
 }
 
 func TestIsJitRegistrationEnabled(t *testing.T) {

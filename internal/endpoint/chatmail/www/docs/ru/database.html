@@ -59,6 +59,10 @@
     dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
 }</code></pre>
 
+        <h2>Кэши в памяти и данные на диске</h2>
+        <p>Для производительности сервер может хранить в RAM копию строк учётных данных (<code>auth.pass_table</code>) и агрегаты квот (<code>storage.imapsql</code>). Источник истины — файлы базы данных.</p>
+        <p>Если вы меняете БД через CLI (<code>maddy creds</code>, <code>maddy accounts</code>, <code>maddy imap-acct</code> и т.д.) при работающем демоне, один раз вызовите Admin API <code>POST /admin/cache/reload</code>, чтобы процесс перечитал таблицы, либо перезапустите сервис.</p>
+
         <h2>Миграция</h2>
         <p>Сервис автоматически создает или обновляет необходимые таблицы при первом запуске. Нет необходимости выполнять SQL-команды вручную для создания таблиц <code>quotas</code> или <code>contacts</code>.</p>
     </div>

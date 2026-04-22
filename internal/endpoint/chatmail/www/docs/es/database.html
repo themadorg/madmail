@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuración de la base de datos - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menú">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">Inicio</a></li>
+            <li><a href="/docs">Documentación</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide">
+        <h1>Configuración de la base de datos</h1>
+        <p><strong>Madmail</strong> admite <strong>GORM</strong>, lo que permite
+            usar distintos motores de base de datos y migración automática.</p>
+
+        <div class="alert alert--warning">
+            <p><strong>Importante:</strong> SQLite es el valor por defecto, pero para mayor escalabilidad
+                se recomienda PostgreSQL.</p>
+        </div>
+
+        <h2>SQLite (predeterminado)</h2>
+        <p>La opción más simple para despliegues rápidos. El archivo de base de datos se guarda en la ruta indicada.</p>
+        <pre><code>storage.imapsql local_mail {
+    driver sqlite3
+    dsn ./madmail.db
+}</code></pre>
+
+        <h2>PostgreSQL</h2>
+        <p>Para usar PostgreSQL, cree primero una base en su servidor (puede usar el
+            <code>docker-compose.yml</code> incluido en el proyecto).</p>
+        <p>Ejemplo en <code>maddy.conf</code>:</p>
+        <pre><code>storage.imapsql local_mail {
+    driver postgres
+    dsn "host=localhost user=test password=test dbname=test port=5432 sslmode=disable"
+}</code></pre>
+        <p>Credenciales por defecto en Docker:</p>
+        <ul>
+            <li>Usuario: <code>test</code></li>
+            <li>Contraseña: <code>test</code></li>
+            <li>Base de datos: <code>test</code></li>
+        </ul>
+
+        <h2>MySQL</h2>
+        <p>El formato DSN para MySQL es el siguiente:</p>
+        <pre><code>storage.imapsql local_mail {
+    dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+}</code></pre>
+
+        <h2>Cachés en memoria frente al estado en disco</h2>
+        <p>Por rendimiento, el servidor en ejecución puede mantener en RAM una copia de las filas de credenciales (<code>auth.pass_table</code>) y los totales de cuota por usuario (<code>storage.imapsql</code>). Los datos autoritativos siguen estando en los archivos de la base.</p>
+        <p>Si modifica esas bases con la CLI (por ejemplo <code>maddy creds</code>, <code>maddy accounts</code> o <code>maddy imap-acct</code>) mientras el demonio sigue en marcha, invoque una vez el recurso de la API de administración <code>POST /admin/cache/reload</code> para que el proceso vuelva a leer las tablas. También puede reiniciar el servicio.</p>
+
+        <h2>Migración</h2>
+        <p>El servicio crea o actualiza las tablas necesarias en el primer arranque. No hace falta ejecutar SQL
+            manual para crear las tablas <code>quotas</code> o <code>contacts</code>.</p>
+    </div>
+</body>
+
+</html>

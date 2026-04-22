@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="docs_admin">Documentación del administrador del sistema</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menú">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Inicio</a></li>
+            <li><a href="/docs" data-i18n="nav_docs">Documentación</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide">
+        <h1>Documentación del administrador del sistema</h1>
+        <p>Esta guía explica cómo gestionar cuotas de usuario y ver estadísticas del servidor con los comandos <code>maddy</code>.</p>
+
+        <div class="info-note"
+            style="background: color-mix(in srgb, var(--link) 5%, transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
+            <strong>💡 Consejo:</strong> todas estas operaciones también están disponibles en la <a href="/docs/api"
+                style="color: var(--link);">interfaz web de administración</a> en <code>/admin/</code>
+            — no hace falta usar la línea de órdenes.
+        </div>
+
+        <h2>Gestión de cuotas</h2>
+        <p>Puede administrar las cuotas de almacenamiento con los subcomandos <code>maddy imap-acct quota</code>.</p>
+
+        <div class="cmd-info">
+            <h3>Ver la cuota de un usuario</h3>
+            <p>Muestra el espacio usado y el límite máximo de un usuario concreto.</p>
+            <div class="code-block">maddy imap-acct quota get usuario@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Fijar cuota de usuario</h3>
+            <p>Establece un límite personalizado (p. ej. 1GB, 500MB o 10KB).</p>
+            <div class="code-block">maddy imap-acct quota set usuario@example.com 1GB</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Restablecer cuota de usuario</h3>
+            <p>Quita la cuota personalizada y vuelve al valor por defecto del sistema. Se conserva la fecha de creación de la cuenta.</p>
+            <div class="code-block">maddy imap-acct quota reset usuario@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Cuota por defecto global</h3>
+            <p>Define el límite por defecto para todos los usuarios sin cuota propia. El valor se guarda en la base de datos y tiene prioridad sobre <code>maddy.conf</code>.</p>
+            <div class="code-block">maddy imap-acct quota set-default 2GB</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Listar todas las cuotas</h3>
+            <p>Muestra todos los usuarios con espacio usado y límites. Indica si la cuota es personalizada o heredada del valor por defecto.</p>
+            <div class="code-block">maddy imap-acct quota list</div>
+        </div>
+
+        <h2>Mantenimiento y limpieza</h2>
+        <p>Órdenes para aliviar la carga del servidor y liberar espacio eliminando datos de usuario.</p>
+
+        <div class="cmd-info">
+            <h3>Vaciar la cola de envío</h3>
+            <p>Elimina los mensajes pendientes en la cola de envío relacionados con un usuario (remitente o destinatario). Útil si hay atascos por spam o mensajes grandes.</p>
+            <div class="code-block">maddy queue purge usuario@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Borrar correo IMAP de un usuario</h3>
+            <p>Elimina todos los correos de un usuario en todas las carpetas (Bandeja de entrada, Enviados, etc.) sin borrar la cuenta ni la cuota. Útil para liberar disco rápidamente.</p>
+            <div class="code-block">maddy imap-acct purge-msgs usuario@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Borrar todo el correo de todos los usuarios</h3>
+            <p>Elimina el correo de todo el servidor manteniendo cuentas, contraseñas y cuotas.</p>
+            <div class="code-block">maddy imap-acct purge-all</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Borrar todos los mensajes leídos</h3>
+            <p>Elimina los mensajes marcados como leídos (Seen) en todo el servidor. Los no leídos se conservan.</p>
+            <div class="code-block">maddy imap-acct purge-read [--yes]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Podar mensajes no leídos antiguos</h3>
+            <p>Elimina mensajes no leídos más antiguos que la duración indicada (p. ej. 30 días).</p>
+            <div class="code-block">maddy imap-acct prune-unread 720h [--yes]</div>
+        </div>
+
+        <h2>Gestión del registro</h2>
+        <p>Puede abrir o cerrar el registro de nuevos usuarios. Si está cerrado, solo pueden entrar quienes ya tienen cuenta.</p>
+
+        <div class="cmd-info">
+            <h3>Abrir registro</h3>
+            <div class="code-block">maddy creds registration open</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Cerrar registro</h3>
+            <div class="code-block">maddy creds registration close</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Ver estado actual</h3>
+            <div class="code-block">maddy creds registration status</div>
+        </div>
+
+        <h2>Registro Just-In-Time (JIT)</h2>
+        <p>JIT permite crear cuentas automáticamente en el primer inicio de sesión. Se gestiona aparte del registro general.</p>
+
+        <div class="cmd-info">
+            <h3>Activar JIT</h3>
+            <p>Con JIT activo, las cuentas se crean en el primer login o al recibir el primer correo.</p>
+            <div class="code-block">maddy creds jit enable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Desactivar JIT</h3>
+            <p>Sin JIT, las cuentas solo se crean vía API (interfaz web) y se rechaza el login con credenciales no registradas.</p>
+            <div class="code-block">maddy creds jit disable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Ver estado de JIT</h3>
+            <div class="code-block">maddy creds jit status</div>
+        </div>
+
+        <h2>Comandos de cuentas (<code>maddy accounts</code>)</h2>
+        <p>Estos subcomandos leen su <code>maddy.conf</code> y acceden a las bases de datos <strong>en disco</strong> directamente (no hace falta parar el servidor). Use <code>--cfg-block</code> y <code>--storage-cfg-block</code> si sus bloques de autenticación o IMAP no son <code>local_authdb</code> / <code>local_mailboxes</code>.</p>
+
+        <div class="cmd-info">
+            <h3>Estado e información por usuario</h3>
+            <div class="code-block">maddy accounts status
+maddy accounts info usuario@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Crear acceso e IMAP</h3>
+            <p>Crea credenciales y buzón IMAP (equivalente al usuario aleatorio del panel de administración).</p>
+            <div class="code-block">maddy accounts create usuario@example.com
+maddy accounts create-random [--json-only]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Eliminar o vetar</h3>
+            <p>Borra la fila de contraseña, el almacenamiento de correo y bloquea la dirección (como «eliminar» en el admin). <code>ban</code> admite un motivo opcional como segundo argumento.</p>
+            <div class="code-block">maddy accounts delete usuario@example.com [--yes]
+maddy accounts ban usuario@example.com ["motivo"] [--yes]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Tras cambios por CLI con el servidor en marcha</h3>
+            <p>El demonio mantiene copias en memoria de credenciales y cuotas por rendimiento. Si modificó la base en vivo con la CLI, invoque una vez <strong>POST</strong> <code>/admin/cache/reload</code> (mismo token de admin que el resto de la API) para que el proceso vuelva a leer las tablas. Véase la <a href="/docs/api">documentación de la Admin API</a> para el sobre JSON exacto.</p>
+        </div>
+
+        <h2>Servidor de llamadas (TURN/STUN)</h2>
+        <p>Puede activar o desactivar TURN para todos los usuarios. Si está desactivado, la página de información no muestra datos de llamadas.</p>
+
+        <div class="cmd-info">
+            <h3>Activar servidor de llamadas</h3>
+            <div class="code-block">maddy creds turn on</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Desactivar servidor de llamadas</h3>
+            <div class="code-block">maddy creds turn off</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Ver estado</h3>
+            <div class="code-block">maddy creds turn status</div>
+        </div>
+
+        <h2>Registros (política sin logs)</h2>
+        <p>Puede activar o desactivar el registro de actividad del servidor. Si está desactivado, no se guarda información de uso.</p>
+
+        <div class="cmd-info">
+            <h3>Desactivar logging</h3>
+            <p>Por privacidad y para no almacenar actividad de usuarios.</p>
+            <div class="code-block">maddy creds log disable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Activar logging</h3>
+            <div class="code-block">maddy creds log enable</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Ver estado</h3>
+            <div class="code-block">maddy creds log status</div>
+        </div>
+
+        <h2>Idioma del sitio web</h2>
+        <p>Puede cambiar el idioma de la interfaz. Idiomas admitidos: inglés (en), farsi (fa), ruso (ru), español (es). Los cambios son inmediatos sin reiniciar.</p>
+
+        <div class="cmd-info">
+            <h3>Ver idioma actual</h3>
+            <div class="code-block">maddy language</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Fijar idioma</h3>
+            <p>Cambia el idioma del sitio.</p>
+            <div class="code-block">maddy language set es</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Volver al valor por defecto</h3>
+            <p>Quita la sobrescritura en la base de datos y usa el idioma de <code>maddy.conf</code>.</p>
+            <div class="code-block">maddy language reset</div>
+        </div>
+
+        <h2>Puertos y parámetros de servicio</h2>
+        <p>Puertos y ajustes (hostname, secret, IP del relé, etc.) se gestionan por la Admin API. Se guardan en la base de datos y sustituyen a los valores del archivo de configuración.</p>
+
+        <div class="cmd-info">
+            <h3>Parámetros gestionables</h3>
+            <ul>
+                <li><strong>Puertos:</strong> SMTP, Submission, IMAP, TURN, Dovecot, Iroh, Shadowsocks</li>
+                <li><strong>Configuración:</strong> hostname SMTP, realm/secret/IP/TTL de TURN, URL del relé Iroh,
+                    cifrado y contraseña de Shadowsocks</li>
+            </ul>
+            <p>Use la <a href="/docs/api" style="color: var(--link);">Admin API</a>.
+                Los extremos están en las secciones «Port Settings» y «Configuration Settings» de la documentación de la API.</p>
+        </div>
+
+        <h2>Modo sigiloso</h2>
+        <p>Madmail puede operar en modo sigiloso: solo quedan expuestos los puertos imprescindibles.</p>
+        <div class="cmd-info">
+            <p><strong>Puertos esenciales:</strong></p>
+            <ul>
+                <li>80 y 443 (HTTP/HTTPS): registro e interfaz web.</li>
+                <li>8388 (Shadowsocks): conexiones seguras y rápidas desde la app Delta Chat.</li>
+            </ul>
+            <p>Otros puertos (25, 143, 587, 993) pueden cerrarse al tráfico público con el cortafuegos. Los usuarios enlazan los servicios a través del proxy Shadowsocks en la app, reduciendo la huella frente a escaneos.</p>
+        </div>
+
+        <h2>Desactivar la Admin API</h2>
+        <p>La Admin API está activada por defecto. Para desactivarla por completo en <code>maddy.conf</code>, en el bloque <code>chatmail</code>:</p>
+        <div class="cmd-info">
+            <h3>Ajuste en maddy.conf</h3>
+            <p>Ponga <code>admin_token</code> en <code>disabled</code>:</p>
+            <div class="code-block">chatmail tls://0.0.0.0:443 {
+    # ... otros ajustes ...
+
+    # Desactivar por completo la Admin API:
+    admin_token disabled
+}</div>
+            <p>Guarde el archivo y reinicie maddy. Se deshabilitan el panel web y la Admin API.</p>
+        </div>
+
+        <h2>Caché DNS y reescritura de direcciones</h2>
+        <p>El sistema interno de caché DNS permite redirigir el enrutado del correo saliente sin cambiar el DNS del sistema operativo. Las reglas están en la base del programa (almacenamiento). Los cambios son inmediatos sin reiniciar.</p>
+
+        <div class="cmd-info">
+            <h3>Ver todas las reescrituras</h3>
+            <p>Muestra las reglas DNS guardadas en la base.</p>
+            <div class="code-block">maddy dns-cache list</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Crear o editar reescritura</h3>
+            <p>Define una regla. Si ya existe para esa dirección, se actualiza.</p>
+            <div class="code-block">maddy dns-cache set CLAVE_BÚSQUEDA HOST_DESTINO [COMENTARIO]</div>
+            <p><strong>Ejemplos:</strong></p>
+            <div class="code-block"># Enrutar dominio a servidor interno
+maddy dns-cache set nine.testrun.org 10.0.0.5 "Entorno de pruebas"
+
+# Reescribir IP
+maddy dns-cache set 1.1.1.1 2.2.2.2 "Redirigir IP"
+
+# Migración a nuevo servidor
+maddy dns-cache set example.com new-mx.example.com "Migración"</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Ver una reescritura concreta</h3>
+            <p>Muestra origen, destino, comentarios y fecha de creación.</p>
+            <div class="code-block">maddy dns-cache get nine.testrun.org</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Borrar reescritura</h3>
+            <p>Elimina la regla. El correo vuelve a usar el DNS normal del SO.</p>
+            <div class="code-block">maddy dns-cache remove nine.testrun.org</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Cómo funciona</h3>
+            <ul>
+                <li><strong>Prioridad:</strong> primero la base interna; si no hay regla, DNS del SO.</li>
+                <li><strong>Sin distinguir mayúsculas:</strong> las direcciones coinciden sin importar capitalización.</li>
+                <li><strong>Dominios e IP:</strong> se pueden reescribir nombres (p. ej. example.com) e IP (p. ej. 1.1.1.1).</li>
+                <li><strong>Sin reinicio:</strong> afecta de inmediato al correo nuevo.</li>
+                <li><strong>Reserva:</strong> si la base no está disponible, se usa DNS normal.</li>
+            </ul>
+        </div>
+
+        <h2>Estadísticas del servidor</h2>
+        <div class="cmd-info">
+            <h3>Resumen global</h3>
+            <p>Muestra el almacenamiento total usado y el número de cuentas activas.</p>
+            <div class="code-block">maddy imap-acct stat</div>
+        </div>
+
+        <h2>Monitorización de conexiones</h2>
+        <p>El comando <code>maddy status</code> muestra el estado en tiempo real: conexiones IMAP, relés TURN (llamadas), Shadowsocks, usuarios registrados y tiempo activo.</p>
+
+        <div class="cmd-info">
+            <h3>Ver conexiones activas</h3>
+            <p>Resumen con conexiones, usuarios, arranque y uptime.</p>
+            <div class="code-block">maddy status</div>
+            <p>Ejemplo de salida:</p>
+            <pre class="code-block">IMAP            connections: 27     unique IPs: 7
+TURN            relays: 1
+Shadowsocks     connections: 0      unique IPs: 0
+
+Registered users:   42
+Boot time:          2026-02-16 20:56:19 (up 5m 24s)
+
+Email servers seen (since last restart):
+  Connection IPs:   1
+  Domain servers:   1
+  IP servers:       0</pre>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Detalle por puerto</h3>
+            <p>Use la opción <code>--details</code> (o <code>-d</code>) para desglosar por puerto.</p>
+            <div class="code-block">maddy status --details</div>
+            <p>Ejemplo de salida:</p>
+            <pre class="code-block">PORT   PROTO   TYPE              CONNECTIONS   UNIQUE IPs
+993    tcp     IMAP TLS          25            7
+143    tcp     IMAP              0             0
+3478   udp     TURN UDP          1 relays      -
+3478   tcp     TURN TCP          0             0
+8388   tcp     Shadowsocks       0             0
+443    tcp     ALPN (chatmail)   3             1</pre>
+        </div>
+
+        <div class="cmd-info">
+            <h3>Significado de los campos</h3>
+            <ul>
+                <li><strong>IMAP:</strong> conexiones activas de usuarios al servidor de correo.</li>
+                <li><strong>Relés TURN:</strong> relés de voz/vídeo activos; cada uno suele ser una llamada.</li>
+                <li><strong>Shadowsocks:</strong> conexiones activas a través del proxy.</li>
+                <li><strong>Hora de arranque:</strong> inicio del servidor y duración del uptime.</li>
+                <li><strong>Servidores de correo vistos:</strong> servidores únicos que han enviado correo desde el último reinicio; los datos se guardan con resúmenes criptográficos sin exponer información privada.</li>
+            </ul>
+        </div>
+
+    </div>
+
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            document.title = t('docs_admin') + ' — {{.WebDomain}}';
+        };
+    </script>
+</body>
+
+</html>

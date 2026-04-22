@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentación general - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menú">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/">Inicio</a></li>
+            <li><a href="/docs">Documentación</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide">
+        <h1>Documentación general</h1>
+        <p>Bienvenido a la documentación general del servidor <strong>Madmail</strong>.</p>
+
+        <h2>Introducción a Madmail</h2>
+        <p><strong>Madmail</strong> es una aplicación de correo basada en el proyecto <strong>Maddy</strong>.
+            Funciona como un único binario <strong>Go</strong> y su objetivo es ofrecer
+            una plataforma de comunicación segura y rápida.</p>
+
+        <h2>Integración con Delta Chat</h2>
+        <p>La característica principal de Madmail es que crea un servidor de chat
+            <strong>cifrado de extremo a extremo</strong>.
+            Puede usar este servicio con la aplicación <strong>Delta Chat</strong> y
+            disfrutar de un mensajero moderno en una plataforma privada y descentralizada.</p>
+
+        <h2>Registro simple e instantáneo (JIT)</h2>
+        <p>Una de las funciones inteligentes de <strong>Madmail</strong> es el registro instantáneo
+            o <strong>Just-In-Time (JIT)</strong>.
+            No necesita pasos largos de alta: en el primer inicio de sesión con credenciales nuevas
+            la cuenta se crea sola si JIT está activado. También puede usar el botón de registro en la página principal para obtener rápidamente un código QR con su configuración.</p>
+
+        <h2>Llamadas de voz y vídeo (TURN)</h2>
+        <p>El servidor incluye un servicio <strong>TURN</strong> dedicado para mejorar
+            la calidad de las llamadas en Delta Chat.
+            Actúa como relé cuando dos usuarios no pueden conectarse en directo (P2P),
+            de modo que la llamada pasa por el servidor con buena estabilidad.</p>
+
+        <h2>Cuota de almacenamiento</h2>
+        <p>Para repartir recursos de forma equitativa, el servidor aplica límites de almacenamiento. Puede
+            ver su uso y su cuota en cualquier cliente de correo que soporte la extensión QUOTA.</p>
+
+        <h2>Administración del servidor (Admin API)</h2>
+        <p>
+            Desde la versión <span class="highlight">v0.15.3</span>, el servidor incorpora una API de control (Admin API)
+            para gestionar el servidor con facilidad.
+            La ruta de la API y el token de administrador son configurables en el archivo
+            de configuración.
+        </p>
+        <p>
+            Para obtener el token por defecto, ejecute en el servidor <code>maddy admin-token</code>.
+        </p>
+        <p>
+            Además de esta API, existe el proyecto <span class="highlight">Web Admin</span> para gestión gráfica.
+            El código fuente está en <a href="https://github.com/themadorg/madmail-admin-web/" target="_blank"
+                style="color: var(--link);">github.com/themadorg/madmail-admin-web</a> y se construye y publica en
+            <a href="https://admin.madmail.chat/" target="_blank"
+                style="color: var(--link);">https://admin.madmail.chat/</a>.
+            Abra ese enlace, introduzca la dirección de su servidor y el token para administrarlo.
+        </p>
+
+        <h2>Recomendaciones de seguridad</h2>
+        <div class="alert alert--info">
+            <p><strong>Seguridad de los mensajes:</strong> el servicio es seguro por defecto. En Delta Chat, un
+                <strong>icono gris</strong> junto a los mensajes indica que el cifrado está desactivado; no envíe datos sensibles en ese caso.</p>
+            <p><strong>Actualizaciones:</strong> mantenga Delta Chat actualizado para beneficiarse de las últimas mejoras de seguridad.</p>
+        </div>
+
+        <h2>Soporte</h2>
+        <p>Para soporte, contacte con el administrador de su servidor.</p>
+    </div>
+</body>
+
+</html>

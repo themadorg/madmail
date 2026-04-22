@@ -67,6 +67,9 @@ func newTestAuth(tb testing.TB) (*Auth, *mutableTable) {
 	a := mod.(*Auth)
 	tbl := newMutableTable()
 	a.table = tbl
+	if err := a.hydrateCredCache(); err != nil {
+		tb.Fatal(err)
+	}
 	return a, tbl
 }
 

@@ -421,6 +421,15 @@ func (store *Storage) initQuotaTable() error {
 	return nil
 }
 
+// ReloadQuotaCache implements module.QuotaCacheReloader. It rebuilds the
+// in-memory quota view from the database (e.g. after CLI quota edits).
+func (store *Storage) ReloadQuotaCache() error {
+	if store.QuotaCache == nil {
+		return nil
+	}
+	return store.populateQuotaCache()
+}
+
 // populateQuotaCache bulk-loads per-user storage usage and quota limits
 // into the in-memory cache. Called once at startup.
 func (store *Storage) populateQuotaCache() error {

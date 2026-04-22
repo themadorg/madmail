@@ -2907,6 +2907,12 @@ func (e *Endpoint) setupAdminAPI() {
 	handler.Register("/admin/federation/rules", resources.FederationRulesHandler())
 	handler.Register("/admin/federation/servers", resources.FederationServersHandler())
 
+	// Reload in-memory caches after CLI (or other tools) changed SQLite/Postgres on disk
+	handler.Register("/admin/cache/reload", resources.CacheReloadHandler(resources.CacheReloadDeps{
+		AuthDB:  e.authDB,
+		Storage: e.storage,
+	}))
+
 	// Reload / restart endpoint — regenerates config from DB overrides and restarts
 	handler.Register("/admin/reload", resources.ReloadHandler(resources.ReloadDeps{
 		ReloadConfig: e.reloadConfig,

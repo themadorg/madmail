@@ -40,7 +40,8 @@ func closeIfNeeded(i interface{}) {
 	}
 }
 
-func getCfgBlockModule(ctx *cli.Context) (map[string]interface{}, *maddy.ModInfo, error) {
+// getCfgBlockModuleFor loads the module instance for a named top-level configuration block.
+func getCfgBlockModuleFor(ctx *cli.Context, cfgBlock string) (map[string]interface{}, *maddy.ModInfo, error) {
 	cfgPath := ctx.String("config")
 	if cfgPath == "" {
 		return nil, nil, cli.Exit("Error: config is required", 2)
@@ -71,7 +72,6 @@ func getCfgBlockModule(ctx *cli.Context) (map[string]interface{}, *maddy.ModInfo
 	}
 	defer hooks.RunHooks(hooks.EventShutdown)
 
-	cfgBlock := ctx.String("cfg-block")
 	if cfgBlock == "" {
 		return nil, nil, cli.Exit("Error: cfg-block is required", 2)
 	}
@@ -90,14 +90,18 @@ func getCfgBlockModule(ctx *cli.Context) (map[string]interface{}, *maddy.ModInfo
 }
 
 func openStorage(ctx *cli.Context) (module.Storage, error) {
-	globals, mod, err := getCfgBlockModule(ctx)
+	return openStorageForBlock(ctx, ctx.String("cfg-block"))
+}
+
+func openStorageForBlock(ctx *cli.Context, cfgBlock string) (module.Storage, error) {
+	globals, mod, err := getCfgBlockModuleFor(ctx, cfgBlock)
 	if err != nil {
 		return nil, err
 	}
 
 	storage, ok := mod.Instance.(module.Storage)
 	if !ok {
-		return nil, cli.Exit(fmt.Sprintf("Error: configuration block %s is not an IMAP storage", ctx.String("cfg-block")), 2)
+		return nil, cli.Exit(fmt.Sprintf("Error: configuration block %s is not an IMAP storage", cfgBlock), 2)
 	}
 
 	if err := mod.Instance.Init(config.NewMap(globals, mod.Cfg)); err != nil {
@@ -116,14 +120,18 @@ func openStorage(ctx *cli.Context) (module.Storage, error) {
 }
 
 func openUserDB(ctx *cli.Context) (module.PlainUserDB, error) {
-	globals, mod, err := getCfgBlockModule(ctx)
+	return openUserDBForBlock(ctx, ctx.String("cfg-block"))
+}
+
+func openUserDBForBlock(ctx *cli.Context, cfgBlock string) (module.PlainUserDB, error) {
+	globals, mod, err := getCfgBlockModuleFor(ctx, cfgBlock)
 	if err != nil {
 		return nil, err
 	}
 
 	userDB, ok := mod.Instance.(module.PlainUserDB)
 	if !ok {
-		return nil, cli.Exit(fmt.Sprintf("Error: configuration block %s is not a local credentials store", ctx.String("cfg-block")), 2)
+		return nil, cli.Exit(fmt.Sprintf("Error: configuration block %s is not a local credentials store", cfgBlock), 2)
 	}
 
 	if err := mod.Instance.Init(config.NewMap(globals, mod.Cfg)); err != nil {
@@ -133,7 +141,7 @@ func openUserDB(ctx *cli.Context) (module.PlainUserDB, error) {
 	return userDB, nil
 }
 func openQueueTarget(ctx *cli.Context) (*queue.Queue, error) {
-	globals, mod, err := getCfgBlockModule(ctx)
+	globals, mod, err := getCfgBlockModuleFor(ctx, ctx.String("cfg-block"))
 	if err != nil {
 		return nil, err
 	}

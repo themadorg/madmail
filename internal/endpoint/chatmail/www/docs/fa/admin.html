@@ -150,6 +150,34 @@
             <div class="code-block">maddy creds jit status</div>
         </div>
 
+        <h2>دستورات حساب (<code>maddy accounts</code>)</h2>
+        <p>این زیر-دستورها <code>maddy.conf</code> را می‌خوانند و <strong>مستقیماً</strong> با فایل‌های دیتابیس روی دیسک کار می‌کنند (نیازی به خاموش کردن سرور نیست). اگر نام بلوک‌های شما پیش‌فرض نیست، از <code>--cfg-block</code> و <code>--storage-cfg-block</code> استفاده کنید.</p>
+
+        <div class="cmd-info">
+            <h3>وضعیت کلی و اطلاعات یک کاربر</h3>
+            <div class="code-block">maddy accounts status
+maddy accounts info user@example.com</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>ساخت ورود + صندوق IMAP</h3>
+            <p>اعتبارنامه و حساب ذخیرهٔ IMAP را می‌سازد (همان نتیجهٔ ساخت کاربر تصادفی در پنل).</p>
+            <div class="code-block">maddy accounts create user@example.com
+maddy accounts create-random [--json-only]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>حذف یا مسدودسازی</h3>
+            <p>ردیف رمز را حذف می‌کند، محتوای IMAP را پاک می‌کند و آدرس را در لیست مسدودی می‌گذارد. <code>ban</code> می‌تواند دلیل را به‌صورت آرگومان دوم بگیرد.</p>
+            <div class="code-block">maddy accounts delete user@example.com [--yes]
+maddy accounts ban user@example.com ["دلیل"] [--yes]</div>
+        </div>
+
+        <div class="cmd-info">
+            <h3>پس از تغییر CLI هنگام روشن بودن سرور</h3>
+            <p>سرور برای سرعت نسخه‌ای از اعتبارنامه‌ها و سهمیه‌ها را در حافظه نگه می‌دارد. اگر با CLI دیتابیس زنده را عوض کردید، یک بار <strong>POST</strong> به <code>/admin/cache/reload</code> بزنید (همان توکن admin). جزئیات در <a href="/docs/api">مستندات Admin API</a>.</p>
+        </div>
+
         <h2>مدیریت سرور تماس (TURN/STUN)</h2>
         <p>شما می‌توانید سرور تماس (TURN) را برای تمام کاربران فعال یا غیرفعال کنید. در صورت غیرفعال بودن، اطلاعات مربوط
             به تماس در صفحه راهنما نمایش داده نمی‌شود.</p>

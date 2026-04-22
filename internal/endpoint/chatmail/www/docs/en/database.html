@@ -59,6 +59,10 @@
     dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
 }</code></pre>
 
+        <h2>In-memory caches vs on-disk state</h2>
+        <p>For performance, the running server may keep a copy of credential rows (<code>auth.pass_table</code>) and per-user quota totals (<code>storage.imapsql</code>) in RAM. The authoritative data remains in the database files.</p>
+        <p>If you change those databases with the CLI (for example <code>maddy creds</code>, <code>maddy accounts</code>, or <code>maddy imap-acct</code>) while the daemon stays up, call the Admin API resource <code>POST /admin/cache/reload</code> once so the process re-reads the tables. Alternatively, restart the service.</p>
+
         <h2>Migration</h2>
         <p>The service automatically creates or updates required tables on first run. There is no need to run manual SQL
             commands to create <code>quotas</code> or <code>contacts</code> tables.</p>

@@ -500,7 +500,6 @@ func (t *T) Subtest(name string, f func(t *T)) {
 }
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
 	flag.StringVar(&TestBinary, "integration.executable", "./maddy", "executable to test")
 	flag.StringVar(&CoverageOut, "integration.coverprofile", "", "write coverage stats to file (requires special maddy executable)")
 	flag.BoolVar(&DebugLog, "integration.debug", false, "pass -debug to maddy executable")
