@@ -150,7 +150,12 @@ func TestIMAPConnectionLifecycle_DebugCounters(tt *testing.T) {
 	}
 }
 
-func TestIMAPConnectionAutoLogout_ClosesIdleConn(tt *testing.T) {
+// TestIMAP_AutoLogoutBelowMin_DoesNotDropIdleConnection asserts that
+// auto_logout shorter than the IMAP server minimum (30m) is not used to cap
+// TCP deadlines below that floor. Otherwise IMAP IDLE (e.g. Delta Chat)
+// breaks: connections time out, clients show endless "updating", reconnect
+// thrash. See imap.deadlineCapConn.capDeadline and go-imap MinAutoLogout.
+func TestIMAP_AutoLogoutBelowMin_DoesNotDropIdleConnection(tt *testing.T) {
 	t := tests.NewT(tt)
 	t.DNS(nil)
 	imapPort := t.Port("imap")
@@ -190,16 +195,16 @@ func TestIMAPConnectionAutoLogout_ClosesIdleConn(tt *testing.T) {
 		t.Fatalf("expected connection count to increase after open: baseline=%d now=%d", baselineConns, afterOpenConns)
 	}
 
-	// Stay idle; with auto_logout=2s the server should close this connection.
-	err = waitUntil(8*time.Second, 200*time.Millisecond, func() (bool, error) {
-		cur, err := establishedConnCountForPort(int(imapPort))
-		if err != nil {
-			return false, err
-		}
-		return cur <= baselineConns, nil
-	})
+	// If deadlines were naively capped at 2s, the connection would vanish
+	// within a few seconds of idle. It must stay up long enough for IMAP IDLE
+	// (go-imap enforces 30m minimum for session activity).
+	time.Sleep(4 * time.Second)
+	cur, err := establishedConnCountForPort(int(imapPort))
 	if err != nil {
-		t.Fatalf("idle connection did not close by auto_logout deadline: %v", err)
+		t.Fatalf("connection count: %v", err)
+	}
+	if cur <= baselineConns {
+		t.Fatalf("expected idle IMAP connection to still be open after 4s (auto_logout 2s must not break IDLE); baseline=%d now=%d", baselineConns, cur)
 	}
 }
 

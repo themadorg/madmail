@@ -39,6 +39,7 @@ import (
 	tls2 "github.com/themadorg/madmail/framework/config/tls"
 	"github.com/themadorg/madmail/framework/dns"
 	"github.com/themadorg/madmail/framework/future"
+	"github.com/themadorg/madmail/framework/hooks"
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth"
@@ -73,6 +74,12 @@ type Endpoint struct {
 	sessionCnt atomic.Int32
 
 	listenersWg sync.WaitGroup
+
+	// smtpAuthed tracks connections that have completed SMTP AUTH, keyed by
+	// auth.NormalizeUsername, so we can close them on SIGUSR2 when the user
+	// is blocklisted (same policy as IMAP after `accounts ban` / `delete`).
+	smtpAuthedMu sync.Mutex
+	smtpAuthed   map[string]map[*smtp.Conn]struct{}
 
 	Log log.Logger
 }
@@ -163,7 +170,74 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 		endp.serv.AllowInsecureAuth = true
 	}
 
+	hooks.AddHook(hooks.EventReload, func() {
+		endp.closeConnsForBlocklistedSMTPAuthed()
+	})
+
 	return nil
+}
+
+func (endp *Endpoint) registerSMTPAuthedUserConn(key string, c *smtp.Conn) {
+	if c == nil || key == "" {
+		return
+	}
+	endp.smtpAuthedMu.Lock()
+	defer endp.smtpAuthedMu.Unlock()
+	if endp.smtpAuthed == nil {
+		endp.smtpAuthed = make(map[string]map[*smtp.Conn]struct{})
+	}
+	m := endp.smtpAuthed[key]
+	if m == nil {
+		m = make(map[*smtp.Conn]struct{})
+		endp.smtpAuthed[key] = m
+	}
+	m[c] = struct{}{}
+}
+
+func (endp *Endpoint) unregisterSMTPAuthedUserConn(key string, c *smtp.Conn) {
+	if c == nil {
+		return
+	}
+	endp.smtpAuthedMu.Lock()
+	defer endp.smtpAuthedMu.Unlock()
+	if endp.smtpAuthed == nil {
+		return
+	}
+	if key == "" {
+		return
+	}
+	if m, ok := endp.smtpAuthed[key]; ok {
+		delete(m, c)
+		if len(m) == 0 {
+			delete(endp.smtpAuthed, key)
+		}
+	}
+}
+
+// closeConnsForBlocklistedSMTPAuthed drops authenticated submission/smtp
+// sessions for addresses on the imapsql blocklist after a CLI ban/delete
+// (SIGUSR2 reload).
+func (endp *Endpoint) closeConnsForBlocklistedSMTPAuthed() {
+	var toClose []*smtp.Conn
+	endp.smtpAuthedMu.Lock()
+	for key, m := range endp.smtpAuthed {
+		blocked, err := module.IsUsernameBlocked(key)
+		if err != nil {
+			endp.Log.Error("blocklist check while closing SMTP sessions after reload", err, "username", key)
+			continue
+		}
+		if !blocked {
+			continue
+		}
+		for c := range m {
+			toClose = append(toClose, c)
+		}
+	}
+	endp.smtpAuthedMu.Unlock()
+
+	for _, c := range toClose {
+		_ = c.Close() // session.Logout unregisters from smtpAuthed
+	}
 }
 
 func autoBufferMode(maxSize int, dir string) func(io.Reader) (buffer.Buffer, error) {
@@ -397,6 +471,7 @@ func (endp *Endpoint) newSession(conn *smtp.Conn) *Session {
 	if conn == nil {
 		return s
 	}
+	s.smtpC = conn
 
 	s.connState = module.ConnState{
 		Hostname:   conn.Hostname(),

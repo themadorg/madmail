@@ -98,6 +98,16 @@ func (s *SASLAuth) usernameForAuth(ctx context.Context, saslUsername string) (st
 	return mapped, nil
 }
 
+// AuthMappedIdentity returns the login string passed to PlainAuth (e.g. pass_table)
+// after auth_map and auth_map_normalize. This is the same identity
+// `pass_table.AuthPlain` applies `auth.NormalizeUsername` to, and the same
+// string family used for the blocklist when banning a user. Callers that
+// track sessions (e.g. submission) must key by NormalizeUsername of this
+// value, not by the raw SASL username, when auth_map is in use.
+func (s *SASLAuth) AuthMappedIdentity(clientSASLUsername string) (string, error) {
+	return s.usernameForAuth(context.TODO(), clientSASLUsername)
+}
+
 func (s *SASLAuth) AuthPlain(username, password string) error {
 	if len(s.Plain) == 0 {
 		return ErrUnsupportedMech

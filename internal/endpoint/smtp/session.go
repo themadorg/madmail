@@ -76,6 +76,12 @@ func (l *limitedReader) Read(p []byte) (n int, err error) {
 type Session struct {
 	endp *Endpoint
 
+	// smtpC is the server connection; set for every non-test session. Used to
+	// track AUTH'd connections so SIGUSR2 can close blocklisted users' SMTP
+	// sessions (see Endpoint.registerSMTPAuthedUserConn).
+	smtpC       *smtp.Conn
+	smtpAuthKey string
+
 	// Specific for this session.
 	// sessionCtx is not used for cancellation or timeouts, only for tracing.
 	sessionCtx       context.Context
@@ -193,6 +199,22 @@ func (s *Session) AuthPlain(username, password string) error {
 
 	s.connState.AuthUser = username
 	s.connState.AuthPassword = password
+
+	// Register this authenticated connection so a later SIGUSR2 (ban/delete)
+	// can close it. Key must match pass_table + blocklist: auth_map–resolved
+	// identity + auth.NormalizeUsername (not the raw SASL string).
+	if s.smtpC != nil {
+		mapped, err := s.endp.saslAuth.AuthMappedIdentity(username)
+		if err != nil {
+			return err
+		}
+		key := auth.NormalizeUsername(mapped)
+		if s.smtpAuthKey != "" {
+			s.endp.unregisterSMTPAuthedUserConn(s.smtpAuthKey, s.smtpC)
+		}
+		s.smtpAuthKey = key
+		s.endp.registerSMTPAuthedUserConn(key, s.smtpC)
+	}
 
 	return nil
 }
@@ -433,6 +455,11 @@ func (s *Session) rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) e
 }
 
 func (s *Session) Logout() error {
+	if s.smtpAuthKey != "" && s.smtpC != nil {
+		s.endp.unregisterSMTPAuthedUserConn(s.smtpAuthKey, s.smtpC)
+		s.smtpAuthKey = ""
+	}
+
 	s.msgLock.Lock()
 	defer s.msgLock.Unlock()
 

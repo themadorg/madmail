@@ -26,6 +26,7 @@ import (
 
 	"github.com/themadorg/madmail/framework/config"
 	modconfig "github.com/themadorg/madmail/framework/config/module"
+	"github.com/themadorg/madmail/framework/hooks"
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth"
@@ -90,6 +91,16 @@ func (a *Auth) Init(cfg *config.Map) error {
 	// Register this auth DB as the global settings provider so other
 	// modules (smtp, imap, turn) can read port access control settings.
 	module.RegisterSettingsProvider(a.GetSetting)
+
+	// Rehydrate credCache on SIGUSR2 (EventReload). This is what makes
+	// `maddy accounts ban / delete` take effect on the running daemon
+	// without a restart: the CLI mutates SQL on disk and signals the
+	// daemon, which drops stale password rows from the in-memory cache.
+	hooks.AddHook(hooks.EventReload, func() {
+		if err := a.ReloadCredentialsCache(); err != nil {
+			log.DefaultLogger.Error("pass_table: reload credentials cache on SIGUSR2 failed", err)
+		}
+	})
 
 	return nil
 }
@@ -236,6 +247,16 @@ func (a *Auth) AuthPlain(username, password string) error {
 			if err := auth.ValidateLoginDomain(username, a.jitDomain); err != nil {
 				return module.ErrUnknownCredentials
 			}
+			// Refuse to resurrect banned usernames through SMTP/IMAP AUTH.
+			// Without this check, `maddy accounts ban alice@host` would
+			// remove credentials + mail but the next AUTH attempt would
+			// JIT-create the account again with the supplied password.
+			// The storage.imapsql GetUser path already does the same
+			// check; this mirrors it at the auth layer so SMTP submission
+			// (which doesn't go through GetUser) is equally protected.
+			if blocked, _ := module.IsUsernameBlocked(username); blocked {
+				return module.ErrUnknownCredentials
+			}
 			// Use CreateUserIfNotExists which uses upsert to avoid race conditions
 			// when multiple concurrent logins try to create the same user
 			if err := a.CreateUserIfNotExists(username, password); err != nil {
@@ -315,6 +336,14 @@ func (a *Auth) CreateUserIfNotExists(username, password string) error {
 	key, err := precis.UsernameCaseMapped.CompareKey(username)
 	if err != nil {
 		return fmt.Errorf("%s: create user %s (raw): %w", a.modName, username, err)
+	}
+
+	// Defence in depth: AuthPlain already gates JIT on the blocklist, but
+	// other call sites (future admin tooling, replay from queues) could
+	// reach CreateUserIfNotExists directly. Refuse banned usernames here
+	// so "create on first login" is always blocklist-aware.
+	if blocked, _ := module.IsUsernameBlocked(username); blocked {
+		return fmt.Errorf("%s: create user %s: username is blocklisted", a.modName, key)
 	}
 
 	// Compute the password hash first (this is CPU-intensive but doesn't hold any locks)

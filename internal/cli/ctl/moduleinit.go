@@ -23,11 +23,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	maddy "github.com/themadorg/madmail"
 	parser "github.com/themadorg/madmail/framework/cfgparser"
 	"github.com/themadorg/madmail/framework/config"
-	"github.com/themadorg/madmail/framework/hooks"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/target/queue"
 	"github.com/themadorg/madmail/internal/updatepipe"
@@ -40,53 +40,79 @@ func closeIfNeeded(i interface{}) {
 	}
 }
 
+// Module registration is a process-global side effect: maddy.RegisterModules
+// refuses to register the same instance twice. Commands that open more than
+// one config block in the same process (e.g. "maddy accounts status" opens
+// both local_authdb and local_mailboxes) would otherwise fail on the second
+// call with "config block named X already exists". We parse and register
+// once, then look up blocks from the cached result.
+var (
+	modulesOnce   sync.Once
+	cachedGlobals map[string]interface{}
+	cachedMods    []maddy.ModInfo
+	cachedModErr  error
+)
+
+func loadModules(ctx *cli.Context) (map[string]interface{}, []maddy.ModInfo, error) {
+	modulesOnce.Do(func() {
+		cfgPath := ctx.String("config")
+		if cfgPath == "" {
+			cachedModErr = cli.Exit("Error: config is required", 2)
+			return
+		}
+		cfgFile, err := os.Open(cfgPath)
+		if err != nil {
+			cachedModErr = cli.Exit(fmt.Sprintf("Error: failed to open config: %v", err), 2)
+			return
+		}
+		defer cfgFile.Close()
+		cfgNodes, err := parser.Read(cfgFile, cfgFile.Name())
+		if err != nil {
+			cachedModErr = cli.Exit(fmt.Sprintf("Error: failed to parse config: %v", err), 2)
+			return
+		}
+
+		globals, cfgNodes, err := maddy.ReadGlobals(cfgNodes)
+		if err != nil {
+			cachedModErr = err
+			return
+		}
+
+		if err := maddy.InitDirs(); err != nil {
+			cachedModErr = err
+			return
+		}
+
+		module.NoRun = true
+		_, mods, err := maddy.RegisterModules(globals, cfgNodes)
+		if err != nil {
+			cachedModErr = err
+			return
+		}
+
+		cachedGlobals = globals
+		cachedMods = mods
+	})
+	return cachedGlobals, cachedMods, cachedModErr
+}
+
 // getCfgBlockModuleFor loads the module instance for a named top-level configuration block.
 func getCfgBlockModuleFor(ctx *cli.Context, cfgBlock string) (map[string]interface{}, *maddy.ModInfo, error) {
-	cfgPath := ctx.String("config")
-	if cfgPath == "" {
-		return nil, nil, cli.Exit("Error: config is required", 2)
-	}
-	cfgFile, err := os.Open(cfgPath)
-	if err != nil {
-		return nil, nil, cli.Exit(fmt.Sprintf("Error: failed to open config: %v", err), 2)
-	}
-	defer cfgFile.Close()
-	cfgNodes, err := parser.Read(cfgFile, cfgFile.Name())
-	if err != nil {
-		return nil, nil, cli.Exit(fmt.Sprintf("Error: failed to parse config: %v", err), 2)
-	}
-
-	globals, cfgNodes, err := maddy.ReadGlobals(cfgNodes)
+	globals, mods, err := loadModules(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	if err := maddy.InitDirs(); err != nil {
-		return nil, nil, err
-	}
-
-	module.NoRun = true
-	_, mods, err := maddy.RegisterModules(globals, cfgNodes)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer hooks.RunHooks(hooks.EventShutdown)
 
 	if cfgBlock == "" {
 		return nil, nil, cli.Exit("Error: cfg-block is required", 2)
 	}
-	var mod maddy.ModInfo
 	for _, m := range mods {
 		if m.Instance.InstanceName() == cfgBlock {
-			mod = m
-			break
+			mod := m
+			return globals, &mod, nil
 		}
 	}
-	if mod.Instance == nil {
-		return nil, nil, cli.Exit(fmt.Sprintf("Error: unknown configuration block: %s", cfgBlock), 2)
-	}
-
-	return globals, &mod, nil
+	return nil, nil, cli.Exit(fmt.Sprintf("Error: unknown configuration block: %s", cfgBlock), 2)
 }
 
 func openStorage(ctx *cli.Context) (module.Storage, error) {
@@ -104,8 +130,11 @@ func openStorageForBlock(ctx *cli.Context, cfgBlock string) (module.Storage, err
 		return nil, cli.Exit(fmt.Sprintf("Error: configuration block %s is not an IMAP storage", cfgBlock), 2)
 	}
 
-	if err := mod.Instance.Init(config.NewMap(globals, mod.Cfg)); err != nil {
-		return nil, fmt.Errorf("Error: module initialization failed: %w", err)
+	if !module.Initialized[mod.Instance.InstanceName()] {
+		if err := mod.Instance.Init(config.NewMap(globals, mod.Cfg)); err != nil {
+			return nil, fmt.Errorf("Error: module initialization failed: %w", err)
+		}
+		module.Initialized[mod.Instance.InstanceName()] = true
 	}
 
 	if updStore, ok := mod.Instance.(updatepipe.Backend); ok {
@@ -134,8 +163,11 @@ func openUserDBForBlock(ctx *cli.Context, cfgBlock string) (module.PlainUserDB, 
 		return nil, cli.Exit(fmt.Sprintf("Error: configuration block %s is not a local credentials store", cfgBlock), 2)
 	}
 
-	if err := mod.Instance.Init(config.NewMap(globals, mod.Cfg)); err != nil {
-		return nil, fmt.Errorf("Error: module initialization failed: %w", err)
+	if !module.Initialized[mod.Instance.InstanceName()] {
+		if err := mod.Instance.Init(config.NewMap(globals, mod.Cfg)); err != nil {
+			return nil, fmt.Errorf("Error: module initialization failed: %w", err)
+		}
+		module.Initialized[mod.Instance.InstanceName()] = true
 	}
 
 	return userDB, nil
@@ -151,8 +183,11 @@ func openQueueTarget(ctx *cli.Context) (*queue.Queue, error) {
 		return nil, cli.Exit(fmt.Sprintf("Error: configuration block %s is not a delivery queue", ctx.String("cfg-block")), 2)
 	}
 
-	if err := mod.Instance.Init(config.NewMap(globals, mod.Cfg)); err != nil {
-		return nil, fmt.Errorf("Error: module initialization failed: %w", err)
+	if !module.Initialized[mod.Instance.InstanceName()] {
+		if err := mod.Instance.Init(config.NewMap(globals, mod.Cfg)); err != nil {
+			return nil, fmt.Errorf("Error: module initialization failed: %w", err)
+		}
+		module.Initialized[mod.Instance.InstanceName()] = true
 	}
 
 	return q, nil

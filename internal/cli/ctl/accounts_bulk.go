@@ -50,18 +50,28 @@ local_authdb / local_mailboxes.`,
 			{
 				Name:  "status",
 				Usage: "Show credentials and storage summary",
+				Description: `Prints per-block counts for login accounts, IMAP mailboxes, and
+blocklist entries by reading the configured SQL databases directly
+(no module framework spin-up, no debug log output — see docs/chatmail/nolog.md).
+
+Sizes are always rendered in human-readable form (e.g. 1.0 GB).`,
 				Flags: accountsAuthStorageFlags(),
 				Action: func(ctx *cli.Context) error {
-					return accountsStatus(ctx)
+					return accountsStatusDirect(ctx)
 				},
 			},
 			{
 				Name:      "info",
 				Usage:     "Show one account (credentials, IMAP, quota, blocklist)",
 				ArgsUsage: "USERNAME",
-				Flags:     accountsAuthStorageFlags(),
+				Description: `Reads the configured auth and storage databases directly — no
+module framework is loaded, so no [debug] lines are emitted
+(see docs/chatmail/nolog.md).
+
+Sizes are shown as KB/MB/GB and unix timestamps as RFC3339 dates.`,
+				Flags: accountsAuthStorageFlags(),
 				Action: func(ctx *cli.Context) error {
-					return accountsInfo(ctx)
+					return accountsInfoDirect(ctx)
 				},
 			},
 			{
@@ -139,6 +149,37 @@ Optional second argument sets the blocklist reason.`,
 						reason = "banned via maddy accounts ban"
 					}
 					return accountsRemoveFull(ctx, reason, "Banned")
+				},
+			},
+			{
+				Name:      "unban",
+				Usage:     "Remove a username from the blocklist (allow re-registration)",
+				ArgsUsage: "USERNAME",
+				Description: `Removes the blocklist entry for USERNAME so the address can be
+registered again via /new or JIT account creation. It does NOT restore the
+old credentials or mailbox — those were deleted by ban/delete.
+
+Reads the configured storage database directly (no module framework,
+no debug log output — see docs/chatmail/nolog.md) and then signals any
+running madmail daemon (SIGUSR2) so the change takes effect immediately.`,
+				Flags: append(accountsAuthStorageFlags(),
+					&cli.BoolFlag{Name: "yes", Aliases: []string{"y"}, Usage: "Skip confirmation"},
+				),
+				Action: func(ctx *cli.Context) error {
+					return accountsUnbanDirect(ctx)
+				},
+			},
+			{
+				Name:  "ban-list",
+				Usage: "List blocklisted usernames (who is currently banned)",
+				Description: `Reads the blocked_users table directly (no module framework
+spin-up, no debug log output — see docs/chatmail/nolog.md) and prints each
+blocked username with its blocked-at timestamp and reason.
+
+Newest entries first. Pipe through less / grep for long lists.`,
+				Flags: accountsAuthStorageFlags(),
+				Action: func(ctx *cli.Context) error {
+					return accountsBanListDirect(ctx)
 				},
 			},
 			{
@@ -406,127 +447,6 @@ func generateCLIPassword(length int) (string, error) {
 	return string(b), nil
 }
 
-func accountsStatus(ctx *cli.Context) error {
-	be, err := openUserDBForBlock(ctx, ctx.String("cfg-block"))
-	if err != nil {
-		return err
-	}
-	defer closeIfNeeded(be)
-
-	st, err := openStorageForBlock(ctx, ctx.String("storage-cfg-block"))
-	if err != nil {
-		return err
-	}
-	defer closeIfNeeded(st)
-
-	mbe, ok := st.(module.ManageableStorage)
-	if !ok {
-		return fmt.Errorf("storage backend does not implement ManageableStorage")
-	}
-
-	users, err := be.ListUsers()
-	if err != nil {
-		return err
-	}
-	nCreds := 0
-	for _, u := range users {
-		if isInternalSettingsKey(u) {
-			continue
-		}
-		nCreds++
-	}
-
-	regOpen, _ := be.IsRegistrationOpen()
-	jitOn, _ := be.IsJitRegistrationEnabled()
-
-	total, nIMAP, err := mbe.GetStat()
-	if err != nil {
-		return err
-	}
-	blocked, err := mbe.ListBlockedUsers()
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Auth (%s):\n", ctx.String("cfg-block"))
-	fmt.Printf("  Login accounts:     %d\n", nCreds)
-	fmt.Printf("  Registration open:  %v\n", regOpen)
-	fmt.Printf("  JIT registration:   %v\n", jitOn)
-	fmt.Printf("Storage (%s):\n", ctx.String("storage-cfg-block"))
-	fmt.Printf("  IMAP accounts:      %d\n", nIMAP)
-	fmt.Printf("  Total storage (B):  %d\n", total)
-	fmt.Printf("  Blocklisted users:  %d\n", len(blocked))
-	return nil
-}
-
-func accountsInfo(ctx *cli.Context) error {
-	username := auth.NormalizeUsername(ctx.Args().First())
-	if username == "" {
-		return cli.Exit("Error: USERNAME is required", 2)
-	}
-
-	be, err := openUserDBForBlock(ctx, ctx.String("cfg-block"))
-	if err != nil {
-		return err
-	}
-	defer closeIfNeeded(be)
-
-	st, err := openStorageForBlock(ctx, ctx.String("storage-cfg-block"))
-	if err != nil {
-		return err
-	}
-	defer closeIfNeeded(st)
-
-	mbe, ok := st.(module.ManageableStorage)
-	if !ok {
-		return fmt.Errorf("storage backend does not implement ManageableStorage")
-	}
-
-	_, hasCreds, err := be.GetUserPasswordHash(username)
-	if err != nil {
-		return err
-	}
-
-	blocked, err := mbe.IsBlocked(username)
-	if err != nil {
-		return err
-	}
-
-	used, max, isDef, err := mbe.GetQuota(username)
-	if err != nil {
-		return err
-	}
-
-	infoMap, err := mbe.GetAllAccountInfo()
-	if err != nil {
-		return err
-	}
-	accInfo := infoMap[username]
-
-	hasIMAP := false
-	list, err := mbe.ListIMAPAccts()
-	if err != nil {
-		return err
-	}
-	for _, u := range list {
-		if u == username {
-			hasIMAP = true
-			break
-		}
-	}
-
-	fmt.Printf("Username:           %s\n", username)
-	fmt.Printf("Has credentials:    %v\n", hasCreds)
-	fmt.Printf("IMAP mailbox:       %v\n", hasIMAP)
-	fmt.Printf("Blocklisted:          %v\n", blocked)
-	fmt.Printf("Quota used / max:     %d / %d bytes\n", used, max)
-	fmt.Printf("Default quota flag: %v\n", isDef)
-	fmt.Printf("Created at (unix):  %d\n", accInfo.CreatedAt)
-	fmt.Printf("First login (unix): %d\n", accInfo.FirstLoginAt)
-	fmt.Printf("Last login (unix):  %d\n", accInfo.LastLoginAt)
-	return nil
-}
-
 func accountsCreateFull(ctx *cli.Context) error {
 	be, err := openUserDBForBlock(ctx, ctx.String("cfg-block"))
 	if err != nil {
@@ -675,5 +595,24 @@ func accountsRemoveFull(ctx *cli.Context, reason, pastVerb string) error {
 		return err
 	}
 	fmt.Printf("%s %s (credentials cleared, mail removed, user blocklisted)\n", pastVerb, username)
+
+	// Tell any running madmail daemon to drop cached creds / quota for
+	// this user. Without this the server keeps authenticating the banned
+	// address until the next restart (see pass_table.credCache,
+	// imapsql.QuotaCache). On Linux we locate sibling `madmail run`
+	// processes via /proc and send SIGUSR2; on other platforms this is a
+	// no-op and the operator must reload manually.
+	pids, err := reloadRunningDaemons()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not enumerate running daemons: %v\n", err)
+	}
+	switch len(pids) {
+	case 0:
+		fmt.Println("No running madmail daemon found to notify — changes will apply on next start.")
+	case 1:
+		fmt.Printf("Signalled running madmail daemon (pid %d) to reload credentials and quota caches.\n", pids[0])
+	default:
+		fmt.Printf("Signalled %d running madmail daemons (pids %v) to reload credentials and quota caches.\n", len(pids), pids)
+	}
 	return nil
 }

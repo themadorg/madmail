@@ -47,6 +47,7 @@ import (
 	"github.com/themadorg/madmail/framework/config"
 	modconfig "github.com/themadorg/madmail/framework/config/module"
 	tls2 "github.com/themadorg/madmail/framework/config/tls"
+	"github.com/themadorg/madmail/framework/hooks"
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth"
@@ -107,8 +108,17 @@ func (c *deadlineCapConn) capDeadline(t time.Time) time.Time {
 	if t.IsZero() || c.maxIdle <= 0 {
 		return t
 	}
-
-	maxT := time.Now().Add(c.maxIdle)
+	// go-imap enforces a minimum of MinAutoLogout (30m) for inactivity. If we
+	// let operators cap deadlines below that, SetDeadline is truncated (e.g.
+	// 2m) and IMAP IDLE (RFC 2177) and keep-alives for clients like Delta Chat
+	// break: repeated timeouts, "updating" with no real progress, reconnect
+	// thrash. Never shorten a deadline to less than the IMAP server minimum.
+	now := time.Now()
+	floorT := now.Add(imapserver.MinAutoLogout)
+	maxT := now.Add(c.maxIdle)
+	if maxT.Before(floorT) {
+		maxT = floorT
+	}
 	if t.After(maxT) {
 		return maxT
 	}
@@ -214,6 +224,10 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 	endp.serv.AllowInsecureAuth = insecureAuth
 	endp.serv.TLSConfig = endp.tlsConfig
 	endp.serv.AutoLogout = autoLogout
+	if autoLogout > 0 && autoLogout < imapserver.MinAutoLogout {
+		endp.Log.Printf("imap: auto_logout %v is below IMAP minimum %v; connection deadlines are not capped shorter than %v (IDLE and clients like Delta Chat require this).",
+			autoLogout, imapserver.MinAutoLogout, imapserver.MinAutoLogout)
+	}
 	if ioErrors {
 		endp.serv.ErrorLog = &endp.Log
 	} else {
@@ -236,7 +250,42 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 		})
 	}
 
+	// After `maddy accounts ban|delete` (or unban) the CLI signals SIGUSR2 so
+	// pass_table and imapsql reload in-memory state. That does not by itself
+	// tear down already-authenticated IMAP sessions — close those that belong
+	// to blocklisted addresses so clients cannot keep using a banned account
+	// until auto_logout.
+	hooks.AddHook(hooks.EventReload, func() {
+		endp.closeConnsForBlocklistedIMAPUsers()
+	})
+
 	return endp.setupListeners(addresses)
+}
+
+// closeConnsForBlocklistedIMAPUsers closes authenticated connections whose
+// storage usernames are on the imapsql blocklist (e.g. after a ban).
+func (endp *Endpoint) closeConnsForBlocklistedIMAPUsers() {
+	if endp.serv == nil {
+		return
+	}
+	endp.serv.ForEachConn(func(c imapserver.Conn) {
+		ctx := c.Context()
+		if ctx == nil || ctx.User == nil {
+			return
+		}
+		name := auth.NormalizeUsername(ctx.User.Username())
+		if name == "" {
+			return
+		}
+		blocked, err := module.IsUsernameBlocked(name)
+		if err != nil {
+			endp.Log.Error("blocklist check while closing IMAP sessions after reload", err, "username", name)
+			return
+		}
+		if blocked {
+			_ = c.Close()
+		}
+	})
 }
 
 func (endp *Endpoint) setupListeners(addresses []config.Endpoint) error {

@@ -370,6 +370,36 @@ func TestAuthPlain_WithJIT(t *testing.T) {
 			t.Errorf("AuthPlain failed with JIT disabled: %v", err)
 		}
 	})
+
+	t.Run("refuses to JIT-create a blocklisted user", func(t *testing.T) {
+		a := setupAuthForJIT(t)
+		_ = a.settingsTable.(*mockMutableTable).SetKey("__JIT_REGISTRATION_ENABLED__", "true")
+
+		// Simulate the storage module having registered its blocklist provider
+		// and `banned@example.com` being on it.
+		banned := "banned@example.com"
+		module.RegisterBlocklistChecker(func(u string) (bool, error) {
+			return u == banned, nil
+		})
+		// Restore the nil provider so other tests in this file aren't
+		// affected by a leaked global.
+		defer module.RegisterBlocklistChecker(nil)
+
+		err := a.AuthPlain(banned, "whatever")
+		if !errors.Is(err, module.ErrUnknownCredentials) {
+			t.Fatalf("banned user AuthPlain: want ErrUnknownCredentials, got %v", err)
+		}
+
+		key, _ := precis.UsernameCaseMapped.CompareKey(auth.NormalizeUsername(banned))
+		if _, ok := a.table.(*mockMutableTable).data[key]; ok {
+			t.Fatalf("banned user was JIT-created anyway — blocklist gate is broken")
+		}
+
+		// Non-blocked user still gets created.
+		if err := a.AuthPlain("fresh@example.com", "pw"); err != nil {
+			t.Fatalf("fresh user AuthPlain: %v", err)
+		}
+	})
 }
 
 func TestAuthPlain_WithJITDomain(t *testing.T) {

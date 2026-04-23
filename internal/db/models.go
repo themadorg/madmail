@@ -59,6 +59,9 @@ type BlockedUser struct {
 	BlockedAt time.Time `gorm:"autoCreateTime"`
 }
 
+// TableName returns the IMAP storage table name used by imapsql and the admin API.
+func (BlockedUser) TableName() string { return "blocked_users" }
+
 // MessageStat stores server-wide message counters.
 // Each row is identified by a stat name (e.g., "sent_messages").
 type MessageStat struct {

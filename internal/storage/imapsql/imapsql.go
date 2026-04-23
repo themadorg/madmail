@@ -37,6 +37,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/emersion/go-imap"
@@ -47,6 +48,7 @@ import (
 	"github.com/themadorg/madmail/framework/config"
 	modconfig "github.com/themadorg/madmail/framework/config/module"
 	"github.com/themadorg/madmail/framework/dns"
+	"github.com/themadorg/madmail/framework/hooks"
 	"github.com/themadorg/madmail/framework/log"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/authz"
@@ -97,6 +99,13 @@ type Storage struct {
 	// QuotaCache is the in-memory quota cache for fast per-user lookups.
 	// Exported so the IMAP endpoint, admin API, and CLI can access it.
 	QuotaCache *quota.Cache
+
+	// blockedSet mirrors blocked_users (username only) for O(1) IsBlocked
+	// without a DB query on the hot path. Refreshed at startup, on SIGUSR2
+	// (EventReload), and write-through on BlockUser/UnblockUser. If reload
+	// never succeeded (nil), IsBlocked falls back to the database.
+	blockedMu  sync.RWMutex
+	blockedSet map[string]struct{}
 
 	blobStore module.BlobStore
 }
@@ -415,6 +424,28 @@ func (store *Storage) initQuotaTable() error {
 		store.Log.Error("failed to populate quota cache, will use DB fallback", err)
 	}
 
+	// Blocked-user cache: load before RegisterBlocklistChecker.
+	if err := store.reloadBlockedCache(); err != nil {
+		store.Log.Error("imapsql: load blocklist cache failed (IsBlocked will use DB until reload)", err)
+	}
+
+	// Rehydrate the quota and blocklist caches on SIGUSR2 (EventReload) so
+	// that CLI mutations (ban, delete, quota edits) picked up from disk
+	// without restarting the daemon.
+	hooks.AddHook(hooks.EventReload, func() {
+		if err := store.ReloadQuotaCache(); err != nil {
+			store.Log.Error("imapsql: reload quota cache on SIGUSR2 failed", err)
+		}
+		if err := store.reloadBlockedCache(); err != nil {
+			store.Log.Error("imapsql: reload blocklist cache on SIGUSR2 failed", err)
+		}
+	})
+
+	// Expose this storage's blocklist to other modules (notably
+	// pass_table.AuthPlain) so JIT account creation on SMTP/IMAP auth
+	// cannot silently resurrect a banned user.
+	module.RegisterBlocklistChecker(store.IsBlocked)
+
 	// Background goroutine to flush counters to DB every 30s.
 	go store.flushMessageCounters()
 
@@ -492,7 +523,14 @@ func (store *Storage) GetQuota(username string) (used, max int64, isDefault bool
 	if store.QuotaCache != nil {
 		entry, miss := store.QuotaCache.Get(username)
 		if !miss {
-			return entry.UsedBytes, entry.MaxBytes, entry.IsDefault, nil
+			max = entry.MaxBytes
+			// "Default" cap with 0 max means the cache was loaded with a bad
+			// global (e.g. __GLOBAL_DEFAULT__ row had max=0) — report the real
+			// effective default from config/DB, not 0 B.
+			if entry.IsDefault && max == 0 {
+				max = store.GetDefaultQuota()
+			}
+			return entry.UsedBytes, max, entry.IsDefault, nil
 		}
 		// Cache miss — fall through to DB and populate cache.
 	}
@@ -518,39 +556,43 @@ func (store *Storage) GetQuota(username string) (used, max int64, isDefault bool
 	var q mdb.Quota
 	err = store.GORMDB.Where("username = ?", username).First(&q).Error
 	if err == nil {
-		// Populate cache on miss.
-		if store.QuotaCache != nil {
-			store.QuotaCache.SetMax(username, q.MaxStorage)
-			store.QuotaCache.UpdateUsed(username, used)
+		// MaxStorage==0 in the quotas table means "no per-user override — use
+		// the global default" (same as quota.Cache.Load). It is not "0 B limit".
+		if q.MaxStorage > 0 {
+			if store.QuotaCache != nil {
+				store.QuotaCache.SetMax(username, q.MaxStorage)
+				store.QuotaCache.UpdateUsed(username, used)
+			}
+			return used, q.MaxStorage, false, nil
 		}
-		return used, q.MaxStorage, false, nil
+		def := store.GetDefaultQuota()
+		if store.QuotaCache != nil {
+			store.QuotaCache.UpdateUsed(username, used)
+			store.QuotaCache.ResetMax(username)
+		}
+		return used, def, true, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, 0, false, err
 	}
 
-	// Try to get global default override from DB
-	var globalDef mdb.Quota
-	err = store.GORMDB.Where("username = ?", "__GLOBAL_DEFAULT__").First(&globalDef).Error
-	if err == nil {
-		// Populate cache with default.
-		if store.QuotaCache != nil {
-			store.QuotaCache.UpdateUsed(username, used)
-		}
-		return used, globalDef.MaxStorage, true, nil
-	}
-
-	// Populate cache with config default.
+	// No per-user quotas row: use the same default as quota.Cache (global
+	// override if positive, else default_quota from storage.imapsql).
+	def := store.GetDefaultQuota()
 	if store.QuotaCache != nil {
 		store.QuotaCache.UpdateUsed(username, used)
 	}
-	return used, store.defaultQuota, true, nil
+	return used, def, true, nil
 }
 
+// GetDefaultQuota returns the server-wide default limit: a positive
+// __GLOBAL_DEFAULT__ row in the quotas table, otherwise default_quota from
+// config. A __GLOBAL_DEFAULT__ or per-user row with MaxStorage==0 is treated
+// as "unset" and does not override the imapsql default_quota.
 func (store *Storage) GetDefaultQuota() int64 {
 	var globalDef mdb.Quota
 	err := store.GORMDB.Where("username = ?", "__GLOBAL_DEFAULT__").First(&globalDef).Error
-	if err == nil {
+	if err == nil && globalDef.MaxStorage > 0 {
 		return globalDef.MaxStorage
 	}
 	return store.defaultQuota
@@ -591,19 +633,64 @@ func (store *Storage) SetQuota(username string, max int64) error {
 
 // BlockUser adds a username to the blocklist, preventing re-registration.
 func (store *Storage) BlockUser(username, reason string) error {
-	return store.GORMDB.Save(&mdb.BlockedUser{Username: username, Reason: reason}).Error
+	if err := store.GORMDB.Save(&mdb.BlockedUser{Username: username, Reason: reason}).Error; err != nil {
+		return err
+	}
+	store.blockedMu.Lock()
+	if store.blockedSet == nil {
+		store.blockedSet = make(map[string]struct{})
+	}
+	store.blockedSet[username] = struct{}{}
+	store.blockedMu.Unlock()
+	return nil
 }
 
 // UnblockUser removes a username from the blocklist.
 func (store *Storage) UnblockUser(username string) error {
-	return store.GORMDB.Where("username = ?", username).Delete(&mdb.BlockedUser{}).Error
+	if err := store.GORMDB.Where("username = ?", username).Delete(&mdb.BlockedUser{}).Error; err != nil {
+		return err
+	}
+	store.blockedMu.Lock()
+	if store.blockedSet != nil {
+		delete(store.blockedSet, username)
+	}
+	store.blockedMu.Unlock()
+	return nil
 }
 
-// IsBlocked checks if a username is in the blocklist.
-func (store *Storage) IsBlocked(username string) (bool, error) {
+func (store *Storage) reloadBlockedCache() error {
+	var names []string
+	if err := store.GORMDB.Model(&mdb.BlockedUser{}).Pluck("username", &names).Error; err != nil {
+		return err
+	}
+	nm := make(map[string]struct{}, len(names))
+	for _, u := range names {
+		nm[u] = struct{}{}
+	}
+	store.blockedMu.Lock()
+	store.blockedSet = nm
+	store.blockedMu.Unlock()
+	return nil
+}
+
+func (store *Storage) isBlockedDB(username string) (bool, error) {
 	var count int64
 	err := store.GORMDB.Model(&mdb.BlockedUser{}).Where("username = ?", username).Count(&count).Error
 	return count > 0, err
+}
+
+// IsBlocked checks if a username is in the blocklist. Uses an in-memory set
+// filled at startup, on EventReload, and on BlockUser/UnblockUser, so the
+// common path does not query the database.
+func (store *Storage) IsBlocked(username string) (bool, error) {
+	store.blockedMu.RLock()
+	set := store.blockedSet
+	store.blockedMu.RUnlock()
+	if set == nil {
+		return store.isBlockedDB(username)
+	}
+	_, ok := set[username]
+	return ok, nil
 }
 
 // ListBlockedUsers returns all blocked usernames.
