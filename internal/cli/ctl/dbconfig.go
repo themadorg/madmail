@@ -92,16 +92,6 @@ func getDBConfig(c *cli.Context) dbConfig {
 	return cfg
 }
 
-// parseAuthTableDriverDSN extracts the driver and dsn from the first
-// `table sql_table { ... }` block inside an `auth.pass_table` block in
-// the maddy config. It also checks for a `settings_table sql_table` block
-// inside the same auth.pass_table, and if found, returns its driver/dsn
-// instead (since that's where settings keys are stored).
-func parseAuthTableDriverDSN(conf string) (driver, dsn string) {
-	d, s, _ := parseAuthTableKVStore(conf)
-	return d, s
-}
-
 // parseAuthTableKVStore returns the driver, DSN, and table_name used for
 // key-value __*__ settings in the first auth.pass_table block. It prefers
 // settings_table when present, otherwise the main table block (same as
@@ -180,55 +170,6 @@ func settingsKVTable(cfg dbConfig) string {
 		return cfg.TableName
 	}
 	return "passwords"
-}
-
-// extractSQLTableBlock finds a `<prefix> sql_table { ... }` block within the
-// given lines and extracts the driver and dsn directives.
-func extractSQLTableBlock(lines []string, prefix string) (driver, dsn string) {
-	inBlock := false
-	braceDepth := 0
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Skip comments
-		if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
-			continue
-		}
-
-		if !inBlock {
-			// Match e.g. "table sql_table {" or "settings_table sql_table {"
-			if strings.HasPrefix(trimmed, prefix+" sql_table") {
-				inBlock = true
-				braceDepth = 0
-				if strings.Contains(trimmed, "{") {
-					braceDepth++
-				}
-			}
-			continue
-		}
-
-		braceDepth += strings.Count(trimmed, "{") - strings.Count(trimmed, "}")
-		if braceDepth <= 0 {
-			break
-		}
-
-		// Parse directives within the sql_table block
-		fields := strings.Fields(trimmed)
-		if len(fields) >= 2 {
-			switch fields[0] {
-			case "driver":
-				driver = fields[1]
-			case "dsn":
-				// DSN may be a quoted string or a bare word
-				rest := strings.TrimPrefix(trimmed, "dsn")
-				rest = strings.TrimSpace(rest)
-				dsn = strings.Trim(rest, `"'`)
-			}
-		}
-	}
-
-	return driver, dsn
 }
 
 // openDB opens a GORM database connection using the driver/DSN from the

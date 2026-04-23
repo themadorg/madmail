@@ -267,27 +267,6 @@ func restartService() error {
 	return nil
 }
 
-// configOverrideKeys returns the list of DB setting keys that affect the config file.
-// This is used by the admin API to determine which settings require a restart.
-func configOverrideKeys() map[string]bool {
-	keys := make(map[string]bool, len(configOverrides))
-	for _, m := range configOverrides {
-		keys[m.dbKey] = true
-	}
-	return keys
-}
-
-// For testing: allow the replacer to work on arbitrary text
-func applyPortOverride(content string, mapping portMapping, value string) string {
-	var replacement string
-	if strings.Count(mapping.replaceFmt, "%s") == 2 {
-		replacement = fmt.Sprintf(mapping.replaceFmt, value, value)
-	} else {
-		replacement = fmt.Sprintf(mapping.replaceFmt, value)
-	}
-	return mapping.pattern.ReplaceAllString(content, replacement)
-}
-
 // logDBOverrides logs all settings that have been overridden in the database.
 // Called at startup so users know which config values are being superseded by DB values.
 func (e *Endpoint) logDBOverrides() {
