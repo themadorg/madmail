@@ -118,6 +118,29 @@ func isTerminal(f *os.File) bool {
 	return err == nil
 }
 
+// loadAdminTokenForCLI returns the current admin API token (config or state file)
+// without generating a new one. Used by madmail reload and similar commands.
+func loadAdminTokenForCLI(c *cli.Context) (string, error) {
+	confToken := getTokenFromConfig(frameworkconfig.ConfigFile())
+	if confToken == "disabled" {
+		return "", fmt.Errorf("admin API is disabled in config (admin_token disabled)")
+	}
+	if confToken != "" {
+		return confToken, nil
+	}
+	stateDir := getStateDir(c)
+	tokenPath := filepath.Join(stateDir, "admin_token")
+	data, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return "", fmt.Errorf("read admin token from %s: %w (set admin_token in config or run the server to create one)", tokenPath, err)
+	}
+	t := strings.TrimSpace(string(data))
+	if t == "" {
+		return "", fmt.Errorf("admin token file is empty: %s", tokenPath)
+	}
+	return t, nil
+}
+
 // buildAdminURL constructs the admin API URL by reading host from
 // maddy.conf and overriding with DB-stored settings via GORM.
 func buildAdminURL(cfg dbConfig) string {
@@ -164,9 +187,9 @@ func readSettingsFromDB(cfg dbConfig) map[string]string {
 	}
 	defer closeDB(database)
 
-	// Query settings keys from the passwords table
+	// Query settings keys from the KV table (passwords or settings_table.table_name)
 	var entries []db.TableEntry
-	err = database.Table("passwords").
+	err = database.Table(settingsKVTable(cfg)).
 		Where("\"key\" LIKE ?", "__%__").
 		Find(&entries).Error
 	if err != nil && err != gorm.ErrRecordNotFound {

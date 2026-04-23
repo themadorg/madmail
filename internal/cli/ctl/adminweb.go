@@ -167,7 +167,7 @@ func setSetting(cfg dbConfig, key, value string) error {
 	defer closeDB(database)
 
 	entry := db.TableEntry{Key: key, Value: value}
-	result := database.Table("passwords").Where("\"key\" = ?", key).Assign(entry).FirstOrCreate(&entry)
+	result := database.Table(settingsKVTable(cfg)).Where("\"key\" = ?", key).Assign(entry).FirstOrCreate(&entry)
 	return result.Error
 }
 
@@ -179,6 +179,6 @@ func deleteSetting(cfg dbConfig, key string) error {
 	}
 	defer closeDB(database)
 
-	result := database.Table("passwords").Where("\"key\" = ?", key).Delete(&db.TableEntry{})
+	result := database.Table(settingsKVTable(cfg)).Where("\"key\" = ?", key).Delete(&db.TableEntry{})
 	return result.Error
 }
