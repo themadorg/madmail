@@ -29,14 +29,42 @@ def run_ssh_command(remote, command):
 def random_string(length=9):
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
+
+def _addr_with_remote(localpart, remote):
+    """Use bracketed host only for bare IPv4 literals."""
+    if remote.replace(".", "").isdigit():
+        return f"{localpart}@[{remote}]"
+    return f"{localpart}@{remote}"
+
 def set_jit(remote, enabled):
     state = "enable" if enabled else "disable"
     print(f"  Setting JIT to {state} on {remote}...")
-    cmd = f"maddy creds jit {state}"
+    cmd = f"madmail creds jit {state}"
     returncode, stdout, stderr = run_ssh_command(remote, cmd)
     if returncode != 0:
         raise Exception(f"Failed to set JIT on {remote}: {stderr}")
     print(f"    {stdout.strip()}")
+    # Apply credential setting changes to running auth handlers.
+    rc, _, err = run_ssh_command(remote, "systemctl restart madmail.service")
+    if rc != 0:
+        raise Exception(f"Failed to restart madmail.service on {remote}: {err}")
+    time.sleep(1)
+
+
+def set_registration(remote, enabled):
+    state = "open" if enabled else "close"
+    print(f"  Setting registration to {state} on {remote}...")
+    cmd = f"madmail creds registration {state}"
+    returncode, stdout, stderr = run_ssh_command(remote, cmd)
+    if returncode != 0:
+        raise Exception(f"Failed to set registration on {remote}: {stderr}")
+    print(f"    {stdout.strip()}")
+    # Apply setting changes to running auth handlers.
+    rc, _, err = run_ssh_command(remote, "systemctl restart madmail.service")
+    if rc != 0:
+        raise Exception(f"Failed to restart madmail.service on {remote}: {err}")
+    time.sleep(1)
+
 
 def run(dc, remotes):
     REMOTE1, REMOTE2 = remotes
@@ -52,7 +80,7 @@ def run(dc, remotes):
         
         username1 = random_string(8)
         password1 = random_string(16)
-        email1 = f"{username1}@[{REMOTE1}]"
+        email1 = _addr_with_remote(username1, REMOTE1)
         
         print(f"  Attempting login for {email1} (JIT enabled)...")
         acc1 = dc.add_account()
@@ -80,11 +108,14 @@ def run(dc, remotes):
         # Step 2: Disable JIT on REMOTE1
         print("\nStep 2: Testing with JIT DISABLED")
         set_jit(REMOTE1, False)
+        # Keep registration closed here so account creation can only happen
+        # via JIT (which we just disabled).
+        set_registration(REMOTE1, False)
         
         # Try to create NEW account on REMOTE1 (should fail)
         username2 = random_string(8)
         password2 = random_string(16)
-        email2 = f"{username2}@[{REMOTE1}]"
+        email2 = _addr_with_remote(username2, REMOTE1)
         
         print(f"  Attempting login for {email2} (JIT disabled)...")
         acc2 = dc.add_account()
@@ -133,7 +164,7 @@ def run(dc, remotes):
         # Step 4: Verify /new API still works even if JIT is disabled
         print("\nStep 4: Testing /new API with JIT DISABLED")
         # Registration must be open for /new to work
-        run_ssh_command(REMOTE1, "maddy creds registration open")
+        set_registration(REMOTE1, True)
         
         api_url = f"http://{REMOTE1}/new"
         print(f"  Calling {api_url}...")
@@ -178,6 +209,7 @@ def run(dc, remotes):
         return True
 
     finally:
-        # Clean up: Ensure JIT is re-enabled for other tests to work normally
-        print("\nCleaning up: Restoring JIT to ENABLED...")
+        # Clean up: restore defaults so subsequent tests behave normally.
+        print("\nCleaning up: Restoring JIT ENABLED + registration OPEN...")
         set_jit(REMOTE1, True)
+        set_registration(REMOTE1, True)

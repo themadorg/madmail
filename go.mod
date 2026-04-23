@@ -24,7 +24,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.10.9
-	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/miekg/dns v1.1.72
 	github.com/pion/logging v0.2.4
 	github.com/pion/stun/v3 v3.1.1
@@ -41,7 +40,6 @@ require (
 	golang.org/x/sys v0.41.0
 	golang.org/x/text v0.34.0
 	gorm.io/driver/postgres v1.6.0
-	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 	modernc.org/sqlite v1.34.5
 )

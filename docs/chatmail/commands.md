@@ -99,7 +99,8 @@ maddy install [options]
 |------|---------|-------------|
 | `--enable-chatmail` | `false` | Enable chatmail endpoint for automatic user registration |
 | `--enable-contact-sharing` | `true` | Enable DeltaChat contact sharing feature |
-| `--require-pgp-encryption` | `false` | Require PGP encryption for outbound messages |
+| `--require-pgp-encryption` | `true` | Require PGP on submission (`require_encryption yes` in config). Set `false` only for debugging |
+| `--allow-unencrypted-submission` | `false` | Explicit opt-out: permit cleartext on submission (same as `--require-pgp-encryption=false`) |
 | `--allow-secure-join` | `true` | Allow SecureJoin requests without encryption |
 | `--pgp-passthrough-senders ADDR...` | — | Sender addresses that bypass PGP requirements |
 | `--pgp-passthrough-recipients ADDR...` | — | Recipient addresses that bypass PGP requirements |

@@ -46,6 +46,22 @@ const testMsg = "From: <sender@example.org>\r\n" +
 	"\r\n" +
 	"foobar\r\n"
 
+// testSecureJoinMsg is an RFC 822 message that passes the chatmail
+// PGP-only submission gate (pgp_verify.EnforceEncryption) via the
+// Secure-Join v[cg]-request exception. It is used by tests that only
+// care about SMTP plumbing — not PGP payload shape — and would
+// otherwise fail with 523 "Encryption Needed" on the submission path.
+const testSecureJoinMsg = "From: <sender@example.org>\r\n" +
+	"Subject: Secure-Join vc-request\r\n" +
+	"Secure-Join: vc-request\r\n" +
+	"Content-Type: multipart/mixed; boundary=\"bnd\"\r\n" +
+	"\r\n" +
+	"--bnd\r\n" +
+	"Content-Type: text/plain\r\n" +
+	"\r\n" +
+	"secure-join: vc-request\r\n" +
+	"--bnd--\r\n"
+
 func testEndpoint(t *testing.T, modName string, authMod module.PlainAuth, tgt module.DeliveryTarget, checks []module.Check, cfg []config.Node) *Endpoint {
 	t.Helper()
 
@@ -551,7 +567,10 @@ func TestSMTPDelivery_SubmissionAuthOK(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := submitMsg(t, cl, "sender@example.org", []string{"rcpt@example.org"}, testMsg); err != nil {
+	// The submission path enforces the PGP-only policy
+	// unconditionally, so the test body has to be either PGP/MIME
+	// or a Secure-Join handshake message. See testSecureJoinMsg.
+	if err := submitMsg(t, cl, "sender@example.org", []string{"rcpt@example.org"}, testSecureJoinMsg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -559,7 +578,17 @@ func TestSMTPDelivery_SubmissionAuthOK(t *testing.T) {
 		t.Fatal("Expected a message, got", len(tgt.Messages))
 	}
 	msg := tgt.Messages[0]
-	msgID := testutils.CheckMsgID(t, &msg, "sender@example.org", []string{"rcpt@example.org"}, "")
+	// CheckMsgID hard-codes "foobar\r\n" as the expected body, which
+	// does not make it past the PGP-only policy gate. Spot-check the
+	// envelope ourselves; the body is covered by the Secure-Join
+	// handshake unit tests.
+	if msg.MailFrom != "sender@example.org" {
+		t.Errorf("wrong sender, got %s", msg.MailFrom)
+	}
+	if len(msg.RcptTo) != 1 || msg.RcptTo[0] != "rcpt@example.org" {
+		t.Errorf("wrong recipients, got %v", msg.RcptTo)
+	}
+	msgID := msg.MsgMeta.ID
 
 	if msg.MsgMeta.Conn.AuthUser != "user" {
 		t.Error("Wrong AuthUser:", msg.MsgMeta.Conn.AuthUser)

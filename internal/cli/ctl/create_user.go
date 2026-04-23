@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	frameworkconfig "github.com/themadorg/madmail/framework/config"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth/pass_table"
 	maddycli "github.com/themadorg/madmail/internal/cli"
@@ -53,8 +54,8 @@ Examples:
 }
 
 func createRandomUser(be module.PlainUserDB, ctx *cli.Context) error {
-	// Read hostname from maddy.conf to build the email domain
-	hostname := getHostnameFromConfig("/etc/maddy/maddy.conf")
+	// Read hostname from the active config to build the email domain.
+	hostname := getHostnameFromConfig(frameworkconfig.ConfigFile())
 	if hostname == "" {
 		return fmt.Errorf("could not determine hostname from config")
 	}

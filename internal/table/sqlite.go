@@ -1,6 +1,3 @@
-//go:build nosqlite3
-// +build nosqlite3
-
 /*
 Maddy Mail Server - Composable all-in-one email server.
 Copyright © 2019-2020 Max Mazurov <fox.cpp@disroot.org>, Maddy Mail Server contributors
@@ -19,6 +16,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-package imapsql
+package table
 
-const sqliteImpl = "missing"
+// Register the pure-Go modernc.org/sqlite driver so `sql_query sqlite ...`
+// table configurations work with CGO_ENABLED=0 builds. The previous
+// cgo-gated mattn/go-sqlite3 import has been removed: madmail is pure-Go
+// end-to-end.
+import _ "modernc.org/sqlite"

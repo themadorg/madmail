@@ -168,12 +168,16 @@ func (h *Handler) deliverMessage(ctx context.Context, from string, to []string, 
 		remainingBody = rawMsg[offset:]
 	}
 
-	accepted, pgpErr := pgp_verify.IsAcceptedMessage(header, bytes.NewReader(remainingBody))
-	if pgpErr != nil {
-		return fmt.Errorf("PGP verification error: %s", pgpErr.Error())
-	}
-	if !accepted {
-		return fmt.Errorf("Encryption Needed: only PGP-encrypted messages and SecureJoin handshakes are accepted")
+	// Shared PGP-only gate — identical to SMTP submission, HTTP
+	// MX-Deliv, IMAP APPEND, CLI imap-msgs add, and
+	// check.pgp_encryption. WebIMAP sessions are authenticated
+	// users sending from their own account, so we seed MailFrom
+	// with the authenticated address.
+	if err := pgp_verify.EnforceEncryption(header, bytes.NewReader(remainingBody), pgp_verify.Options{
+		MailFrom:   from,
+		Recipients: to,
+	}); err != nil {
+		return fmt.Errorf("Encryption Needed: only PGP-encrypted messages and SecureJoin handshakes are accepted: %w", err)
 	}
 
 	// ---- Split recipients into local vs remote ----

@@ -1,5 +1,6 @@
-//go:build integration && cgo && !nosqlite3
-// +build integration,cgo,!nosqlite3
+//go:build integration
+// +build integration
+
 
 /*
 Maddy Mail Server - Composable all-in-one email server.

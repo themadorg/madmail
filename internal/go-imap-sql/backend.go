@@ -283,6 +283,11 @@ func New(driver, dsn string, extStore ExternalStore, opts Opts) (*Backend, error
 
 	if driver == "sqlite3" {
 		dsn = b.addSqlite3Params(dsn)
+	} else if driver == "sqlite" {
+		// modernc.org/sqlite (pure-Go) uses a different URL-param syntax
+		// than mattn/go-sqlite3. Apply the modernc equivalents so the
+		// backend gets the same busy_timeout / WAL / foreign_keys defaults.
+		dsn = b.addModerncSqliteParams(dsn)
 	}
 
 	b.db.driver = driver
@@ -332,7 +337,7 @@ func New(driver, dsn string, extStore ExternalStore, opts Opts) (*Backend, error
 		}
 	}
 
-	if b.db.driver == "sqlite3" {
+	if b.db.driver == "sqlite3" || b.db.driver == "sqlite" {
 		go b.sqliteOptimizeLoop()
 	}
 
@@ -359,7 +364,7 @@ func (b *Backend) sqliteOptimizeLoop() {
 }
 
 func (b *Backend) Close() error {
-	if b.db.driver == "sqlite3" {
+	if b.db.driver == "sqlite3" || b.db.driver == "sqlite" {
 		// These operations are not critical, so it's not a problem if they fail.
 		if b.Opts.MinimizeOnClose {
 			b.db.Exec(`VACUUM`)

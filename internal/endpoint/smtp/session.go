@@ -541,21 +541,28 @@ func (s *Session) Data(r io.Reader) error {
 	}
 	defer rBody.Close()
 
-	if s.endp.requirePgp {
-		isEncrypted, err := pgp_verify.IsAcceptedMessage(header, rBody)
-		if err != nil {
-			s.log.Error("PGP verification error", err, "msg_id", s.msgMeta.ID)
-			return wrapErr(fmt.Errorf("PGP verification failed: %w", err))
+	// PGP-only policy gate. For submission (authenticated local users)
+	// it runs unconditionally: the whole point of a chatmail relay is
+	// that it does not accept cleartext from its own users. For
+	// inbound SMTP (port 25) it runs only when the endpoint is flagged
+	// with `require_pgp`, so non-chatmail relays that use this code
+	// path keep their old semantics.
+	//
+	// Both paths call pgp_verify.EnforceEncryption, the single shared
+	// decision point used by every message-accepting surface of
+	// madmail (SMTP submission, HTTP MX-Deliv, IMAP APPEND, CLI
+	// imap-msgs add, check.pgp_encryption).
+	if s.endp.submission {
+		if err := s.submissionCheckBody(header, rBody); err != nil {
+			return wrapErr(err)
 		}
-
-		if !isEncrypted {
+	} else if s.endp.requirePgp {
+		if err := pgp_verify.EnforceEncryption(header, rBody, pgp_verify.Options{
+			MailFrom:   s.mailFrom,
+			Recipients: s.rcpts,
+		}); err != nil {
 			s.log.Msg("REJECTED: unencrypted message", "msg_id", s.msgMeta.ID)
-			return wrapErr(&exterrors.SMTPError{
-				Code:         523,
-				EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
-				Message:      "Encryption Needed: Invalid Unencrypted Mail",
-				Reason:       "unencrypted message",
-			})
+			return wrapErr(err)
 		}
 	}
 
@@ -633,23 +640,19 @@ func (s *Session) LMTPData(r io.Reader, sc smtp.StatusCollector) error {
 	}
 	defer rBody.Close()
 
+	// Same policy as the SMTP DATA path above — see the comment there.
+	// LMTP is never submission mode, but we still honour require_pgp
+	// so a chatmail MX configured with `require_pgp yes` rejects
+	// cleartext uniformly across SMTP and LMTP.
 	if s.endp.requirePgp {
-		isAccepted, err := pgp_verify.IsAcceptedMessage(header, rBody)
-		if err != nil {
-			s.log.Error("PGP verification error", err, "msg_id", s.msgMeta.ID)
-			return wrapErr(fmt.Errorf("PGP verification failed: %w", err))
-		}
-
-		if !isAccepted {
+		if err := pgp_verify.EnforceEncryption(header, rBody, pgp_verify.Options{
+			MailFrom:   s.mailFrom,
+			Recipients: s.rcpts,
+		}); err != nil {
 			s.log.Msg("REJECTED: unencrypted message (LMTP)", "msg_id", s.msgMeta.ID)
-			err := &exterrors.SMTPError{
-				Code:         523,
-				EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
-				Message:      "Encryption Needed: Invalid Unencrypted Mail",
-				Reason:       "unencrypted message",
-			}
+			wrapped := wrapErr(err)
 			for _, rcpt := range s.rcpts {
-				sc.SetStatus(rcpt, wrapErr(err))
+				sc.SetStatus(rcpt, wrapped)
 			}
 			return nil
 		}

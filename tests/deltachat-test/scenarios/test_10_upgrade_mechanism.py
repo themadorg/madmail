@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import shutil
 import http.server
@@ -7,7 +8,13 @@ import time
 
 def run_test(maddy_bin, private_key_path, test_dir):
     print("Testing Upgrade Mechanism...")
-    
+
+    # Run upgrade/update tests against a disposable copy so we do not mutate
+    # the real build/maddy used by subsequent scenarios.
+    maddy_under_test = os.path.join(test_dir, "maddy_under_test")
+    shutil.copy2(maddy_bin, maddy_under_test)
+    os.chmod(maddy_under_test, 0o755)
+
     # Path to the dummy binary in test directory
     dummy_path = os.path.join(test_dir, "maddy_v2")
     with open(dummy_path, "wb") as f:
@@ -16,7 +23,7 @@ def run_test(maddy_bin, private_key_path, test_dir):
     # 1. Try to upgrade without signature (should fail)
     print("Attempting upgrade with unsigned binary...")
     # NOTE: We expect it to fail verification before it even checks for root/systemd
-    result = subprocess.run([maddy_bin, "upgrade", dummy_path], capture_output=True, text=True)
+    result = subprocess.run([maddy_under_test, "upgrade", dummy_path], capture_output=True, text=True)
     if "INVALID SIGNATURE" in result.stderr or "INVALID SIGNATURE" in result.stdout:
         print("✓ Success: Unsigned binary correctly rejected")
     else:
@@ -25,12 +32,20 @@ def run_test(maddy_bin, private_key_path, test_dir):
 
     # 2. Sign the binary
     print(f"Signing binary using {private_key_path}...")
-    subprocess.run(["uv", "run", "internal/cli/clitools/sign.py", dummy_path, private_key_path], check=True)
+    repo_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    )
+    sign_script = os.path.join(repo_root, "internal", "cli", "clitools", "sign.py")
+    subprocess.run(
+        [sys.executable, sign_script, dummy_path, private_key_path],
+        check=True,
+        cwd=repo_root,
+    )
     
     # 3. Verify signature using maddy's upgrade logic
     print("Attempting upgrade with signed binary (checking verification stage)...")
     # Even if it fails later due to lack of root, the 'Signature verification successful' message should appear
-    result = subprocess.run([maddy_bin, "upgrade", dummy_path], capture_output=True, text=True)
+    result = subprocess.run([maddy_under_test, "upgrade", dummy_path], capture_output=True, text=True)
     if "Signature verification successful" in result.stdout:
         print("✓ Success: Signed binary verification passed")
     else:
@@ -58,10 +73,7 @@ def run_test(maddy_bin, private_key_path, test_dir):
     
     try:
         url = f"http://localhost:{PORT}/maddy_v2"
-        # We must run maddy from its original location or absolute path
-        maddy_abs = os.path.abspath(os.path.join(original_cwd, maddy_bin))
-        
-        result = subprocess.run([maddy_abs, "update", url], capture_output=True, text=True)
+        result = subprocess.run([maddy_under_test, "update", url], capture_output=True, text=True)
         if "Signature verification successful" in result.stdout:
             print("✓ Success: Update from URL (download + verify) passed")
         else:
@@ -75,7 +87,7 @@ def run_test(maddy_bin, private_key_path, test_dir):
 
     return True
 
-def ensure_keys_exist(private_key_path, maddy_bin):
+def ensure_keys_exist(private_key_path, repo_root):
     """
     If the private key is missing, generate a new key pair and update the binary's public key.
     """
@@ -117,7 +129,7 @@ def ensure_keys_exist(private_key_path, maddy_bin):
     print(f"✅ Generated new keys in {imp_dir}")
 
     # Update Go source code
-    sig_key_path = "internal/auth/signature_key.go"
+    sig_key_path = os.path.join(repo_root, "internal", "auth", "signature_key.go")
     if os.path.exists(sig_key_path):
         print(f"🛠️ Updating {sig_key_path} with new public key...")
         with open(sig_key_path, "r") as f:
@@ -131,7 +143,7 @@ def ensure_keys_exist(private_key_path, maddy_bin):
             f.write(new_content)
         
         print("🔨 Rebuilding maddy to embed the new public key...")
-        subprocess.run(["make", "build"], check=True)
+        subprocess.run(["make", "build"], check=True, cwd=repo_root)
     else:
         print(f"⚠️ Could not find {sig_key_path} to update.")
 
@@ -139,11 +151,14 @@ def run(dc, remote, test_dir):
     """
     E2E scenario for verifying the binary signature & upgrade mechanism.
     """
-    private_key_path = "../imp/private_key.hex"
+    repo_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    )
+    private_key_path = os.path.join(repo_root, "imp", "private_key.hex")
     maddy_bin = "build/maddy"
     
     # Ensure keys exist before running tests
-    ensure_keys_exist(private_key_path, maddy_bin)
+    ensure_keys_exist(private_key_path, repo_root)
     
     # Check if necessary files exist
     if not os.path.exists(maddy_bin):

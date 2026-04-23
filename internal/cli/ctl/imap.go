@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package ctl
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -28,11 +29,13 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap"
+	"github.com/emersion/go-message/textproto"
 	imapsql "github.com/foxcpp/go-imap-sql"
 	"github.com/themadorg/madmail/framework/module"
 	"github.com/themadorg/madmail/internal/auth"
 	maddycli "github.com/themadorg/madmail/internal/cli"
 	clitools2 "github.com/themadorg/madmail/internal/cli/clitools"
+	"github.com/themadorg/madmail/internal/pgp_verify"
 	"github.com/urfave/cli/v2"
 )
 
@@ -570,6 +573,22 @@ func msgsAdd(be module.Storage, ctx *cli.Context) error {
 
 	if buf.Len() == 0 {
 		return cli.Exit("Error: Empty message, refusing to continue", 2)
+	}
+
+	// PGP-only policy. `imap-msgs add` writes messages into a
+	// mailbox the same way an IMAP APPEND would, so it must go
+	// through the same gate. We use the single shared function to
+	// stay consistent with SMTP submission, HTTP MX-Deliv, IMAP
+	// APPEND, and check.pgp_encryption.
+	br := bufio.NewReader(bytes.NewReader(buf.Bytes()))
+	header, err := textproto.ReadHeader(br)
+	if err != nil {
+		return cli.Exit(fmt.Sprintf("Error: cannot parse message header: %v", err), 2)
+	}
+	if err := pgp_verify.EnforceEncryption(header, br, pgp_verify.Options{
+		Recipients: []string{username},
+	}); err != nil {
+		return cli.Exit(fmt.Sprintf("Error: message rejected by PGP-only policy: %v", err), 2)
 	}
 
 	status, err := u.Status(name, []imap.StatusItem{imap.StatusUidNext})

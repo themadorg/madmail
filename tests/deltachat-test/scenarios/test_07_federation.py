@@ -20,8 +20,12 @@ Parts:
       method used (HTTPS, HTTP, or SMTP).
 """
 
+import os
 import time
 import subprocess
+
+# Journal: chatmail `maddy install` may use `madmail.service` or `maddy.service` — query both.
+_JOURNAL_MADDY = "journalctl -u maddy.service -u madmail.service"
 
 
 # ---------------------------------------------------------------------------
@@ -49,13 +53,24 @@ def _ensure_iptables(remote):
     """Make sure iptables and conntrack are available inside the server."""
     r = _ssh(remote, "which iptables")
     if r.returncode != 0:
-        print(f"    Installing iptables on {remote}...")
-        _ssh(remote, "apt-get update -qq && apt-get install -y -qq iptables conntrack", timeout=60)
+        print(
+            f"    Installing iptables on {remote} (apt may take 1–3 min; no output is normal)…",
+            flush=True,
+        )
+        _ssh(
+            remote,
+            "apt-get update -qq && apt-get install -y -qq iptables conntrack",
+            timeout=180,
+        )
     else:
         # Ensure conntrack is also present even if iptables was already installed
         r2 = _ssh(remote, "which conntrack")
         if r2.returncode != 0:
-            _ssh(remote, "apt-get install -y -qq conntrack", timeout=60)
+            print(
+                f"    Installing conntrack on {remote} (apt may take 1–2 min)…",
+                flush=True,
+            )
+            _ssh(remote, "apt-get install -y -qq conntrack", timeout=180)
 
 
 def _block_ports(remotes, ports):
@@ -87,10 +102,10 @@ def _flush_iptables(remotes):
 
 def _get_all_federation_logs(remote):
     """
-    Fetch ALL journalctl lines from the maddy service that contain 'federation'.
+    Fetch ALL journalctl lines from the mail stack units that contain 'federation'.
     Returns a list of matching lines.
     """
-    cmd = "journalctl -u maddy.service --no-pager -o cat 2>&1 | grep -F federation || true"
+    cmd = f"{_JOURNAL_MADDY} --no-pager -o cat 2>&1 | grep -F federation || true"
     r = _ssh(remote, cmd, timeout=10)
     return [l.strip() for l in (r.stdout or "").splitlines() if l.strip()]
 
@@ -304,104 +319,118 @@ def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp, server_info=None):
     # ==================================================================
     # Part C: Port-Based Federation Analysis
     # ==================================================================
-    print("\n── Part C: Port-Based Federation Analysis ──")
-    print("  Testing which ports are used for cross-server message delivery")
-    print("  by selectively blocking ports with iptables on both servers.\n")
+    if os.environ.get("DCTEST_SKIP_FEDERATION_IPTABLES", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        print(
+            "\n── Part C: Port-Based Federation Analysis ──\n"
+            "  ⏭ Skipped (DCTEST_SKIP_FEDERATION_IPTABLES is set; saves several minutes of apt/iptables).",
+        )
+    else:
+        print("\n── Part C: Port-Based Federation Analysis ──")
+        print("  Testing which ports are used for cross-server message delivery")
+        print("  by selectively blocking ports with iptables on both servers.\n")
+        print(
+            "  (First run may install iptables via apt on both servers — can take 2–4 minutes total.)\n",
+            flush=True,
+        )
 
-    remotes = [remote1, remote2]
+        remotes = [remote1, remote2]
 
-    # Ensure iptables is available
-    for r in remotes:
-        _ensure_iptables(r)
+        # Ensure iptables is available
+        for r in remotes:
+            _ensure_iptables(r)
 
-    scenarios = [
-        {
-            "name": "HTTPS Only (443)",
-            "desc": "Block SMTP (25) + HTTP (80) → only HTTPS (443) available",
-            "block": [25, 80],
-            "expected_method": "HTTPS",
-        },
-        {
-            "name": "HTTP Only (80)",
-            "desc": "Block SMTP (25) + HTTPS (443) → only HTTP (80) available",
-            "block": [25, 443],
-            "expected_method": "HTTP",
-        },
-        {
-            "name": "SMTP Only (25)",
-            "desc": "Block HTTP (80) + HTTPS (443) → only SMTP (25) available",
-            "block": [80, 443],
-            "expected_method": "SMTP",
-        },
-    ]
-
-    results = []
-
-    for i, scenario in enumerate(scenarios, 1):
-        name = scenario["name"]
-        desc = scenario["desc"]
-        ports_to_block = scenario["block"]
-        expected_method = scenario["expected_method"]
-
-        print(f"  Scenario {i}/3: {name}")
-        print(f"    {desc}")
-
-        # 1. Flush — start from a clean slate
+        scenarios = [
+            {
+                "name": "HTTPS Only (443)",
+                "desc": "Block SMTP (25) + HTTP (80) → only HTTPS (443) available",
+                "block": [25, 80],
+                "expected_method": "HTTPS",
+            },
+            {
+                "name": "HTTP Only (80)",
+                "desc": "Block SMTP (25) + HTTPS (443) → only HTTP (80) available",
+                "block": [25, 443],
+                "expected_method": "HTTP",
+            },
+            {
+                "name": "SMTP Only (25)",
+                "desc": "Block HTTP (80) + HTTPS (443) → only SMTP (25) available",
+                "block": [80, 443],
+                "expected_method": "SMTP",
+            },
+        ]
+    
+        results = []
+    
+        for i, scenario in enumerate(scenarios, 1):
+            name = scenario["name"]
+            desc = scenario["desc"]
+            ports_to_block = scenario["block"]
+            expected_method = scenario["expected_method"]
+    
+            print(f"  Scenario {i}/3: {name}")
+            print(f"    {desc}")
+    
+            # 1. Flush — start from a clean slate
+            _flush_iptables(remotes)
+            time.sleep(3)  # let any queued messages drain
+    
+            # 2. Block the specified ports on both servers
+            _block_ports(remotes, ports_to_block)
+            print(f"    Blocked ports {ports_to_block} on both servers")
+            time.sleep(5)  # wait for maddy to detect dead connections before sending
+    
+            # 3. Snapshot log count BEFORE sending so we only check new lines
+            baseline_count = _snapshot_log_count(remote1)
+    
+            # 4. Try to deliver a unique message acc1 → acc2
+            msg = f"PortTest [{name}]: acc1 -> acc2 [{timestamp}]"
+            print(f"    Sending: {msg}")
+            delivered = _try_deliver(acc1, acc2, msg, max_wait=30)
+    
+            if delivered:
+                print(f"    ✓ DELIVERED — federation works via {name}")
+            else:
+                print(f"    ✗ NOT DELIVERED — federation does NOT work via {name}")
+    
+            # 5. Verify the actual transport method from server logs
+            transport_ok = False
+            if delivered:
+                # Give a moment for journald to flush
+                time.sleep(1)
+                transport_ok = _verify_transport(remote1, baseline_count, expected_method, name)
+    
+            results.append({
+                "name": name,
+                "delivered": delivered,
+                "expected_method": expected_method,
+                "transport_verified": transport_ok,
+            })
+    
+        # 6. Restore — flush all rules so subsequent tests are not affected
         _flush_iptables(remotes)
-        time.sleep(3)  # let any queued messages drain
-
-        # 2. Block the specified ports on both servers
-        _block_ports(remotes, ports_to_block)
-        print(f"    Blocked ports {ports_to_block} on both servers")
-        time.sleep(5)  # wait for maddy to detect dead connections before sending
-
-        # 3. Snapshot log count BEFORE sending so we only check new lines
-        baseline_count = _snapshot_log_count(remote1)
-
-        # 4. Try to deliver a unique message acc1 → acc2
-        msg = f"PortTest [{name}]: acc1 -> acc2 [{timestamp}]"
-        print(f"    Sending: {msg}")
-        delivered = _try_deliver(acc1, acc2, msg, max_wait=30)
-
-        if delivered:
-            print(f"    ✓ DELIVERED — federation works via {name}")
-        else:
-            print(f"    ✗ NOT DELIVERED — federation does NOT work via {name}")
-
-        # 5. Verify the actual transport method from server logs
-        transport_ok = False
-        if delivered:
-            # Give a moment for journald to flush
-            time.sleep(1)
-            transport_ok = _verify_transport(remote1, baseline_count, expected_method, name)
-
-        results.append({
-            "name": name,
-            "delivered": delivered,
-            "expected_method": expected_method,
-            "transport_verified": transport_ok,
-        })
-
-    # 6. Restore — flush all rules so subsequent tests are not affected
-    _flush_iptables(remotes)
-    print("\n  iptables flushed on both servers (rules restored).")
-
-    # Summary
-    print("\n  ┌─────────────────────────┬────────────┬───────────────────┐")
-    print("  │ Scenario                │ Result     │ Transport         │")
-    print("  ├─────────────────────────┼────────────┼───────────────────┤")
-    for r in results:
-        status = "✓ WORKS " if r["delivered"] else "✗ FAILED"
-        if r["delivered"] and r["transport_verified"]:
-            transport = f"✓ {r['expected_method']:5}"
-        elif r["delivered"]:
-            transport = "⚠ unverified  "
-        else:
-            transport = "—             "
-        print(f"  │ {r['name']:<23} │ {status}  │ {transport}    │")
-    print("  └─────────────────────────┴────────────┴───────────────────┘")
-
-    print("\n✓ Part C complete: Port-based federation analysis finished!")
+        print("\n  iptables flushed on both servers (rules restored).")
+    
+        # Summary
+        print("\n  ┌─────────────────────────┬────────────┬───────────────────┐")
+        print("  │ Scenario                │ Result     │ Transport         │")
+        print("  ├─────────────────────────┼────────────┼───────────────────┤")
+        for r in results:
+            status = "✓ WORKS " if r["delivered"] else "✗ FAILED"
+            if r["delivered"] and r["transport_verified"]:
+                transport = f"✓ {r['expected_method']:5}"
+            elif r["delivered"]:
+                transport = "⚠ unverified  "
+            else:
+                transport = "—             "
+            print(f"  │ {r['name']:<23} │ {status}  │ {transport}    │")
+        print("  └─────────────────────────┴────────────┴───────────────────┘")
+    
+        print("\n✓ Part C complete: Port-based federation analysis finished!")
 
     # ==================================================================
     # Part D: Address Format Matrix

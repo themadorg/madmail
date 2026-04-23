@@ -35,11 +35,47 @@ func (b *Backend) addSqlite3Params(dsn string) string {
 	return dsn
 }
 
+// addModerncSqliteParams is the modernc.org/sqlite (pure-Go driver) equivalent
+// of addSqlite3Params. modernc does not parse mattn-style DSN keys such as
+// `_busy_timeout` or `_journal_mode`; instead it applies the `_pragma=NAME(VAL)`
+// URL parameter at connect time. Without these, concurrent IMAP+SMTP deliveries
+// for brand-new accounts (Delta Chat add_transport_from_qr) race each other and
+// trip SQLITE_BUSY (5) on addUser/addExtKey.
+func (b *Backend) addModerncSqliteParams(dsn string) string {
+	if !strings.HasPrefix(dsn, "file:") {
+		dsn = "file:" + dsn
+	}
+	if !strings.Contains(dsn, "?") {
+		dsn += "?"
+	} else {
+		dsn += "&"
+	}
+
+	dsn += "_pragma=foreign_keys(ON)&_pragma=auto_vacuum(FULL)&"
+
+	if !b.Opts.NoWAL {
+		dsn += "_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&"
+	}
+	if b.Opts.ExclusiveLock {
+		dsn += "_pragma=locking_mode(EXCLUSIVE)&"
+	}
+
+	if b.Opts.BusyTimeout == 0 {
+		b.Opts.BusyTimeout = 500000
+	}
+	if b.Opts.BusyTimeout == -1 {
+		b.Opts.BusyTimeout = 0
+	}
+	dsn += "_pragma=busy_timeout(" + strconv.Itoa(b.Opts.BusyTimeout) + ")"
+
+	return dsn
+}
+
 func (b *Backend) configureEngine() error {
-	if b.db.driver == "sqlite3" {
+	if b.db.driver == "sqlite3" || b.db.driver == "sqlite" {
 		// For testing purposes, it is important that only one memory DB will
 		// be used (otherwise each connection will get its own DB)
-		if b.db.dsn == ":memory:" {
+		if b.db.dsn == ":memory:" || strings.Contains(b.db.dsn, ":memory:") {
 			b.db.DB.SetMaxOpenConns(1)
 		}
 

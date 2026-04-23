@@ -840,13 +840,13 @@ func (u *encryptionWrapperUser) CreateMessage(mbox string, flags []string, date 
 		return fmt.Errorf("failed to parse message for PGP verification: %w", err)
 	}
 
-	isAccepted, err := pgp_verify.IsAcceptedMessage(msg.Header.Header, msg.Body)
-	if err != nil {
-		return fmt.Errorf("PGP verification failed: %w", err)
-	}
-
-	if !isAccepted {
-		return errors.New("Encryption Needed: Invalid Unencrypted Mail")
+	// IMAP APPEND has no envelope sender/recipients available at this
+	// layer, so we call EnforceEncryption with zero Options. The
+	// function still does the right thing (PGP/MIME or Secure-Join
+	// v[cg]-request). Any non-nil error signals policy rejection —
+	// the SMTPError details are captured in the returned error string.
+	if err := pgp_verify.EnforceEncryption(msg.Header.Header, msg.Body, pgp_verify.Options{}); err != nil {
+		return fmt.Errorf("Encryption Needed: Invalid Unencrypted Mail: %w", err)
 	}
 
 	return u.User.CreateMessage(mbox, flags, date, bytes.NewReader(res), mboxObj)

@@ -53,6 +53,7 @@ import (
 	"github.com/themadorg/madmail/internal/api/admin/resources"
 	"github.com/themadorg/madmail/internal/auth/pass_table"
 	"github.com/themadorg/madmail/internal/endpoint/webimap"
+	"github.com/themadorg/madmail/internal/pgp_verify"
 
 	"github.com/shadowsocks/go-shadowsocks2/core"
 	"github.com/shadowsocks/go-shadowsocks2/socks"
@@ -1362,15 +1363,56 @@ func (e *Endpoint) handleReceiveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	br := bufio.NewReader(bytes.NewReader(bodyData))
+	// Parse the header directly out of bodyData without copying the
+	// body a second time. textproto.ReadHeader only consumes header
+	// bytes; everything bufio pulled beyond that is still sitting in
+	// its own buffer or in the underlying bytes.Reader, so the byte
+	// offset of the body start is:
+	//
+	//   headerEnd = len(bodyData) - bytesReader.Len() - br.Buffered()
+	//
+	// Using that slice directly for EnforceEncryption and for the
+	// MemoryBuffer lets both share the same backing array — one full
+	// memcpy eliminated per HTTP delivery, which used to CPU-spike
+	// on large encrypted uploads.
+	bodyReader := bytes.NewReader(bodyData)
+	br := bufio.NewReader(bodyReader)
 	header, err := textproto.ReadHeader(br)
 	if err != nil {
 		e.logger.Error("failed to parse header", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
+	headerEnd := len(bodyData) - bodyReader.Len() - br.Buffered()
+	if headerEnd < 0 || headerEnd > len(bodyData) {
+		headerEnd = len(bodyData)
+	}
+	remainingBody := bodyData[headerEnd:]
 
-	remainingBody, _ := io.ReadAll(br)
+	// PGP-only policy: federated messages reaching us over MX-Deliv
+	// must either be RFC 3156 PGP/MIME or the unencrypted Secure-Join
+	// v[cg]-request handshake leg. Same decision function as SMTP
+	// submission, IMAP APPEND and the CLI imap-msgs add path — a
+	// message rejected on one surface is rejected identically here.
+	// Bounces (mailer-daemon envelope + multipart/report + Auto-
+	// Submitted) are accepted by EnforceEncryption itself.
+	if err := pgp_verify.EnforceEncryption(header, bytes.NewReader(remainingBody), pgp_verify.Options{
+		MailFrom:   mailFrom,
+		Recipients: validatedTo,
+	}); err != nil {
+		e.logger.Msg("mxdeliv: rejected unencrypted message",
+			"from", mailFrom, "rcpts", validatedTo,
+			"content_type", header.Get("Content-Type"),
+			"secure_join", header.Get("Secure-Join"),
+			"err", err.Error(),
+		)
+		// 523 is defined in SMTP (RFC 7504) but not in HTTP; the
+		// closest HTTP analogue is 403 Forbidden with an
+		// explanatory body. Remote chatmail servers log this and
+		// surface "Encryption Needed" to their users.
+		http.Error(w, "Encryption Needed: Invalid Unencrypted Mail", http.StatusForbidden)
+		return
+	}
 	b := buffer.MemoryBuffer{Slice: remainingBody}
 
 	if err := delivery.Body(r.Context(), header, b); err != nil {

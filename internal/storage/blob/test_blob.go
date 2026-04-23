@@ -1,6 +1,3 @@
-//go:build cgo && !no_sqlite3
-// +build cgo,!no_sqlite3
-
 package blob
 
 import (
@@ -39,7 +36,7 @@ func TestStore(t *testing.T, newStore func() module.BlobStore, cleanStore func(m
 		prng := rand.New(randSrc)
 		store := newStore()
 
-		b, err := imapsql.New("sqlite3", ":memory:",
+		b, err := imapsql.New("sqlite", ":memory:",
 			imapsql2.ExtBlobStore{Base: store}, imapsql.Opts{
 				PRNG: prng,
 				Log:  testutils.Logger(t, "imapsql"),

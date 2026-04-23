@@ -1,6 +1,3 @@
-//go:build !nosqlite3 && cgo
-// +build !nosqlite3,cgo
-
 /*
 Maddy Mail Server - Composable all-in-one email server.
 Copyright © 2019-2020 Max Mazurov <fox.cpp@disroot.org>, Maddy Mail Server contributors
@@ -42,7 +39,7 @@ func TestSQL(t *testing.T) {
 		Children: []config.Node{
 			{
 				Name: "driver",
-				Args: []string{"sqlite3"},
+				Args: []string{"sqlite"},
 			},
 			{
 				Name: "dsn",

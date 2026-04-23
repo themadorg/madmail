@@ -21,6 +21,7 @@ package smtp
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/mail"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/themadorg/madmail/framework/exterrors"
 	"github.com/themadorg/madmail/framework/module"
+	"github.com/themadorg/madmail/internal/pgp_verify"
 )
 
 var (
@@ -145,4 +147,34 @@ func (s *Session) submissionPrepare(msgMeta *module.MsgMetadata, header *textpro
 	}
 
 	return nil
+}
+
+// submissionCheckBody is the PGP-only policy gate for the SMTP
+// submission (port 587) path. It is invoked unconditionally: chatmail
+// users must not be able to send unencrypted mail through our relay.
+//
+// The real decision lives in pgp_verify.EnforceEncryption, the single
+// function shared with the HTTP MX-Deliv federation endpoint, IMAP
+// APPEND, CLI `imap-msgs add`, and the optional check.pgp_encryption
+// module — so a mail rejected on one surface is rejected the same way
+// on every other. The Secure-Join v[cg]-request unencrypted handshake
+// leg is the only unencrypted message this accepts.
+func (s *Session) submissionCheckBody(header textproto.Header, body io.Reader) error {
+	err := pgp_verify.EnforceEncryption(header, body, pgp_verify.Options{
+		MailFrom:   s.mailFrom,
+		Recipients: s.rcpts,
+	})
+	if err == nil {
+		return nil
+	}
+	var smtpErr *exterrors.SMTPError
+	if errors.As(err, &smtpErr) && smtpErr.Code == 523 {
+		s.log.Msg("REJECTED: unencrypted submission",
+			"msg_id", s.msgMeta.ID,
+			"mail_from", s.mailFrom,
+			"content_type", header.Get("Content-Type"),
+			"secure_join", header.Get("Secure-Join"),
+		)
+	}
+	return err
 }

@@ -1,6 +1,3 @@
-//go:build cgo && !nosqlite3
-// +build cgo,!nosqlite3
-
 /*
 Maddy Mail Server - Composable all-in-one email server.
 Copyright © 2019-2020 Max Mazurov <fox.cpp@disroot.org>, Maddy Mail Server contributors
@@ -31,7 +28,7 @@ import (
 	imapsql "github.com/foxcpp/go-imap-sql"
 	mdb "github.com/themadorg/madmail/internal/db"
 	"github.com/themadorg/madmail/internal/testutils"
-	"gorm.io/driver/sqlite"
+	sqlite "github.com/themadorg/madmail/internal/db/gormsqlite"
 	"gorm.io/gorm"
 )
 
@@ -56,7 +53,7 @@ func setupTestStorageForPruning(t *testing.T) (*Storage, func()) {
 	// Create real imapsql backend with the same database
 	randSrc := rand.NewSource(0)
 	prng := rand.New(randSrc)
-	backend, err := imapsql.New("sqlite3", dbPath,
+	backend, err := imapsql.New("sqlite", dbPath,
 		&imapsql.FSStore{Root: filepath.Join(testDir, "messages")}, imapsql.Opts{
 			PRNG: prng,
 			Log:  testutils.Logger(t, "imapsql-backend"),

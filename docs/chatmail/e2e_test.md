@@ -14,6 +14,8 @@ make test
 This command executes the test runner using `uv`:
 `uv run python3 tests/deltachat-test/main.py`
 
+**Time and tool timeouts:** A full `main.py --all` run (or `cmlxc test-madmail --all` against real relays) often takes **10–20+ minutes** because it exercises many scenarios end-to-end. If the run appears to stop partway, run it in a real terminal (not only through an editor integration with a short subprocess timeout) or increase the tool timeout. Test **#7 Part C** may sit quietly for **1–3+ minutes** on first use while `apt-get install` pulls `iptables` on both nodes.
+
 ### Unit Tests
 For internal Go logic, you can run the unit tests:
 
@@ -87,6 +89,8 @@ This is a comprehensive federation test with three parts:
 **Part C — Port-Based Federation Analysis:**
 - Uses `iptables` on both servers to selectively block ports and test which
   network protocols support cross-server message delivery.
+- On a fresh image, Part C may run `apt-get install iptables` on **both** servers (little or no log output for a long period while packages download; this is expected).
+- To **skip** Part C and still run Parts A, B, and D–…: set `DCTEST_SKIP_FEDERATION_IPTABLES=1` in the environment (saves the apt/iptables phase when you need a faster or IDE-friendly run).
 - Tests three scenarios:
   1. **HTTPS Only (443):** Block SMTP (25) + HTTP (80) → test if federation works via HTTPS.
   2. **HTTP Only (80):** Block SMTP (25) + HTTPS (443) → test if federation works via HTTP.

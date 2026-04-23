@@ -15,6 +15,7 @@ Architecture:
 """
 
 import os
+import re
 import sys
 import time
 import json
@@ -87,18 +88,58 @@ def make_rfc822_body(from_addr, to_addr, subject="Test", body_text="Hello"):
     )
 
 
+def mxdeliv_encrypted_mime_body(from_addr: str, to_addr: str) -> str:
+    """PGP/MIME sample body so /mxdeliv passes require_encryption (same as SMTP)."""
+    path = os.path.join(TEST_DIR, "mail-data", "encrypted.eml")
+    with open(path, encoding="utf-8") as f:
+        return f.read().format(
+            from_addr=from_addr,
+            to_addr=to_addr,
+            subject="Test",
+            message_id=f"<mxdeliv-t22-{int(time.time())}@test>",
+        )
+
+
+def _local_part_address(local_part: str, server_domain: str) -> str:
+    """Build user@… for the server's primary mail domain (IP bracket form vs hostname)."""
+    s = str(server_domain)
+    if s.startswith("["):
+        return f"{local_part}@{s}"
+    if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", s):
+        return f"{local_part}@[{s}]"
+    if ":" in s and s.count(":") >= 2:
+        return f"{local_part}@[{s}]"
+    return f"{local_part}@{s}"
+
+
+def _json_from_cli_output(text: str) -> dict:
+    """Parse JSON from create-user output (may be prefixed with config debug lines)."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("empty output from create-user")
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("no JSON object in create-user output")
+    data, _ = json.JSONDecoder().raw_decode(text, start)
+    return data
+
+
 def create_user_on_server(server_ip):
-    """Create a user on the remote server using 'maddy create-user' CLI.
+    """Create a user on the remote server using the installed madmail create-user CLI.
     Returns (email, password) tuple.
     """
-    result = ssh(server_ip, "/tmp/maddy create-user", timeout=15)
+    result = ssh(
+        server_ip,
+        "/usr/local/bin/madmail create-user --json-only",
+        timeout=15,
+    )
     if result.returncode != 0:
         raise Exception(f"Failed to create user on {server_ip}: {result.stderr}")
     try:
-        data = json.loads(result.stdout.strip())
+        data = _json_from_cli_output(result.stdout)
         return data["email"], data["password"]
-    except (json.JSONDecodeError, KeyError) as e:
-        raise Exception(f"Failed to parse create-user output: {result.stdout}") from e
+    except (ValueError, json.JSONDecodeError, KeyError) as e:
+        raise Exception(f"Failed to parse create-user output: {result.stdout!r}") from e
 
 
 def run(dc, remotes):
@@ -115,11 +156,16 @@ def run(dc, remotes):
     print("TEST #22: MxDeliv Security Validation")
     print("=" * 60)
 
-    # Use REMOTE2 which is the IP-only server (mailDomain = [IP]).
-    # REMOTE1 may have a domain name (s1.test) which would break IP-based tests.
+    # REMOTE2 is the /mxdeliv target (IP-primary or DNS chatmail both supported).
     server_ip = REMOTE2
-    sender = f"attacker@[{REMOTE1}]"
-    print(f"  Target server: {server_ip} (IP-only)")
+    r1 = str(REMOTE1)
+    if r1.startswith("[") or re.match(
+        r"^(\d{1,3}\.){3}\d{1,3}$", r1
+    ) or (":" in r1 and r1.count(":") >= 2):
+        sender = f"attacker@[{r1}]" if not r1.startswith("[") else f"attacker@{r1}"
+    else:
+        sender = f"attacker@{r1}"
+    print(f"  Target server: {server_ip}")
     print(f"  Sender: {sender}")
 
     # Wait for server HTTPS port to be ready
@@ -142,37 +188,45 @@ def run(dc, remotes):
     user_email, user_password = create_user_on_server(server_ip)
     print(f"  ✓ Created user: {user_email}")
 
-    # ─── Test 1: Reject delivery to admin@[server_ip] ───
-    print("\n  Test 1: Reject delivery to admin@[server_ip]")
-    body = make_rfc822_body(sender, f"admin@[{server_ip}]")
-    status, resp = mxdeliv_post(server_ip, sender, [f"admin@[{server_ip}]"], body)
+    # ─── Test 1: Reject delivery to admin@ (local domain) ───
+    print("\n  Test 1: Reject delivery to admin@ (on-server domain)")
+    a1 = _local_part_address("admin", server_ip)
+    body = make_rfc822_body(sender, a1)
+    status, resp = mxdeliv_post(server_ip, sender, [a1], body)
     if status == 404:
         print(f"  ✓ admin delivery rejected (404): {resp.strip()[:80]}")
     else:
         raise Exception(f"Test 1 FAILED: expected 404, got {status}: {resp[:200]}")
 
-    # ─── Test 2: Reject delivery to admin@server_ip (bare IP) ───
-    print("\n  Test 2: Reject delivery to admin@<bare_ip>")
-    body = make_rfc822_body(sender, f"admin@{server_ip}")
-    status, resp = mxdeliv_post(server_ip, sender, [f"admin@{server_ip}"], body)
-    if status == 404:
-        print(f"  ✓ admin@bare_ip rejected (404): {resp.strip()[:80]}")
+    # ─── Test 2: Reject admin@<bare IP> (alternate form; IP-primary domains only) ───
+    print("\n  Test 2: Reject delivery to admin@<bare_ip> (if IP primary)")
+    sdom = str(server_ip)
+    if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", sdom):
+        a2 = f"admin@{sdom}"
+        body = make_rfc822_body(sender, a2)
+        status, resp = mxdeliv_post(server_ip, sender, [a2], body)
+        if status == 404:
+            print(f"  ✓ admin@bare_ip rejected (404): {resp.strip()[:80]}")
+        else:
+            raise Exception(f"Test 2 FAILED: expected 404, got {status}: {resp[:200]}")
     else:
-        raise Exception(f"Test 2 FAILED: expected 404, got {status}: {resp[:200]}")
+        print("  (skipped: not a bare-IPv4 primary domain)")
 
     # ─── Test 3: Reject delivery to root@ ───
-    print("\n  Test 3: Reject delivery to root@[server_ip]")
-    body = make_rfc822_body(sender, f"root@[{server_ip}]")
-    status, resp = mxdeliv_post(server_ip, sender, [f"root@[{server_ip}]"], body)
+    print("\n  Test 3: Reject delivery to root@ (on-server domain)")
+    a3 = _local_part_address("root", server_ip)
+    body = make_rfc822_body(sender, a3)
+    status, resp = mxdeliv_post(server_ip, sender, [a3], body)
     if status == 404:
         print(f"  ✓ root delivery rejected (404): {resp.strip()[:80]}")
     else:
         raise Exception(f"Test 3 FAILED: expected 404, got {status}: {resp[:200]}")
 
     # ─── Test 4: Reject delivery to postmaster@ ───
-    print("\n  Test 4: Reject delivery to postmaster@[server_ip]")
-    body = make_rfc822_body(sender, f"postmaster@[{server_ip}]")
-    status, resp = mxdeliv_post(server_ip, sender, [f"postmaster@[{server_ip}]"], body)
+    print("\n  Test 4: Reject delivery to postmaster@ (on-server domain)")
+    a4 = _local_part_address("postmaster", server_ip)
+    body = make_rfc822_body(sender, a4)
+    status, resp = mxdeliv_post(server_ip, sender, [a4], body)
     if status == 404:
         print(f"  ✓ postmaster delivery rejected (404): {resp.strip()[:80]}")
     else:
@@ -207,8 +261,8 @@ def run(dc, remotes):
 
     # ─── Test 8: Accept delivery to non-existent user (200 OK but silently drop) ───
     print("\n  Test 8: Accept delivery to non-existent user (silent drop)")
-    fake_user = f"nonexistent_user_test22@[{server_ip}]"
-    body = make_rfc822_body(sender, fake_user)
+    fake_user = _local_part_address("nonexistent_user_test22", server_ip)
+    body = mxdeliv_encrypted_mime_body(sender, fake_user)
     status, resp = mxdeliv_post(server_ip, sender, [fake_user], body)
     if status == 200:
         print(f"  ✓ Non-existent user accepted silently (200 OK)")
@@ -218,7 +272,7 @@ def run(dc, remotes):
     # ─── Test 9: Mixed recipients (valid domain + invalid domain) ───
     print("\n  Test 9: Mixed recipients (real user + wrong domain)")
     invalid_rcpt = "other@2.2.2.2"
-    body = make_rfc822_body(sender, user_email)
+    body = mxdeliv_encrypted_mime_body(sender, user_email)
     status, resp = mxdeliv_post(server_ip, sender, [user_email, invalid_rcpt], body)
     if status == 200:
         print(f"  ✓ Mixed recipients: valid domain accepted, invalid ignored (200)")
@@ -236,7 +290,7 @@ def run(dc, remotes):
 
     # ─── Test 11: Delivery to real existing user succeeds ───
     print(f"\n  Test 11: Delivery to real existing user ({user_email})")
-    body = make_rfc822_body(sender, user_email)
+    body = mxdeliv_encrypted_mime_body(sender, user_email)
     status, resp = mxdeliv_post(server_ip, sender, [user_email], body)
     if status == 200:
         print(f"  ✓ Delivery to existing user accepted (200 OK)")

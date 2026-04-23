@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"strings"
 
+	// gormsqlite is our in-tree GORM dialector wired directly to
+	// modernc.org/sqlite — no mattn/go-sqlite3, no glebarez fork.
+	gormsqlite "github.com/themadorg/madmail/internal/db/gormsqlite"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	_ "modernc.org/sqlite" // registers database/sql driver name "sqlite" (pure Go; works with CGO_ENABLED=0)
 )
 
 // augmentModerncSqliteDSN appends PRAGMAs the modernc driver applies at connect time.
@@ -41,9 +42,10 @@ func New(driver string, dsn []string, debug bool) (*gorm.DB, error) {
 	switch driver {
 	case "sqlite3", "sqlite":
 		isSQLite = true
-		// gorm's sqlite.Open() defaults to driver "sqlite3" (mattn); use "sqlite" so
-		// we use modernc.org/sqlite (imported above), which works with CGO_ENABLED=0.
-		dialector = sqlite.Dialector{DSN: augmentModerncSqliteDSN(dsnStr), DriverName: "sqlite"}
+		// gormsqlite internally calls sql.Open("sqlite", …), which hits
+		// the modernc.org/sqlite driver registered by the gormsqlite
+		// package's own import — no cgo, no mattn/go-sqlite3.
+		dialector = gormsqlite.Open(augmentModerncSqliteDSN(dsnStr))
 	case "postgres":
 		dialector = postgres.Open(dsnStr)
 	default:

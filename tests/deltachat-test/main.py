@@ -10,6 +10,7 @@ Tests:
   #6 - File Transfer
   #7 - Federation (cross-server messaging)
   #8 - No Logging Test (30 messages with logging disabled)
+  #9-22 - see TEST_NAMES; #23 is big file roundtrip (SHA-256 verify)
 """
 
 import os
@@ -54,6 +55,7 @@ from scenarios import (
     test_20_exchanger,
     test_21_exchanger_php,
     test_22_mxdeliv_security,
+    test_23_bigfile_roundtrip,
 )
 from utils.lxc import LXCManager
 from stress import run_stress
@@ -68,7 +70,15 @@ def collect_server_logs(test_dir, remote1, remote2):
         for i, remote in enumerate([remote1, remote2], 1):
             try:
                 log = subprocess.check_output(
-                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", f"root@{remote}", "journalctl -u maddy.service -n 1000 --no-pager"],
+                    [
+                        "ssh",
+                        "-o",
+                        "StrictHostKeyChecking=no",
+                        "-o",
+                        "UserKnownHostsFile=/dev/null",
+                        f"root@{remote}",
+                        "journalctl -u maddy.service -u madmail.service -n 1000 --no-pager",
+                    ],
                     timeout=15
                 ).decode('utf-8', errors='ignore')
                 with open(os.path.join(test_dir, f"server{i}_debug.log"), "w") as f:
@@ -123,6 +133,7 @@ TEST_NAMES = {
     20: 'Exchanger E2E',
     21: 'PHP Exchanger E2E',
     22: 'MxDeliv Security',
+    23: 'Bigfile roundtrip (hash)',
 }
 
 
@@ -270,6 +281,9 @@ def main():
     parser.add_argument("--test-20", action="store_true", help="Run Madexchanger E2E Test (3 LXC containers)")
     parser.add_argument("--test-21", action="store_true", help="Run PHP Exchanger E2E Test (3 LXC containers)")
     parser.add_argument("--test-22", action="store_true", help="Run MxDeliv Security Validation Test")
+    parser.add_argument(
+        "--test-23", action="store_true", help="Run big encrypted file roundtrip (SHA-256) test"
+    )
     parser.add_argument("--domain", help="Specify domain/IP for tests (updates REMOTE1/REMOTE2)")
     parser.add_argument("--lxc", action="store_true", help="Run tests in local LXC containers")
     parser.add_argument("--keep-lxc", action="store_true", help="Keep LXC containers alive after test")
@@ -299,7 +313,7 @@ def main():
         args.test_5, args.test_6, args.test_7, args.test_8, args.test_9,
         args.test_10, args.test_11, args.test_12, args.test_13, args.test_14,
         args.test_15, args.test_16, args.test_17, args.test_18,
-        args.test_19, args.test_20, args.test_21, args.test_22,
+        args.test_19, args.test_20, args.test_21, args.test_22, args.test_23,
     ])
 
     def should_run(n):
@@ -430,6 +444,7 @@ def main():
                     args.test_9, args.test_10, args.test_11, args.test_12,
                     args.test_13, args.test_14, args.test_15, args.test_16,
                     args.test_17, args.test_18, args.test_19, args.test_22,
+                    args.test_23,
                 ])
                 if only_test_20:
                     if not cool:
@@ -468,6 +483,7 @@ def main():
                     args.test_9, args.test_10, args.test_11, args.test_12,
                     args.test_13, args.test_14, args.test_15, args.test_16,
                     args.test_17, args.test_18, args.test_19, args.test_20, args.test_22,
+                    args.test_23,
                 ])
                 if only_test_21:
                     if not cool:
@@ -500,6 +516,7 @@ def main():
                     args.test_9, args.test_10, args.test_11, args.test_12,
                     args.test_13, args.test_14, args.test_15, args.test_16,
                     args.test_17, args.test_18, args.test_19, args.test_20, args.test_21,
+                    args.test_23,
                 ])
                 if only_test_22:
                     if not cool:
@@ -574,7 +591,7 @@ def main():
                 # ==========================================
                 # TEST #3: Secure Join
                 # ==========================================
-                if should_run(3) or should_run(4) or should_run(5) or should_run(6) or should_run(8) or should_run(9):
+                if should_run(3) or should_run(4) or should_run(5) or should_run(6) or should_run(8) or should_run(9) or should_run(23):
                     def _t3():
                         if not cool:
                             print("\n" + "="*50)
@@ -784,7 +801,19 @@ def main():
                             print("✓ TEST #19 PASSED: Login domain validation verified")
                     _run_cool(19, _t19)
 
-
+                # ==========================================
+                # TEST #23: Big encrypted file roundtrip (hash)
+                # ==========================================
+                if should_run(23):
+                    def _t23():
+                        if not cool:
+                            print("\n" + "="*50)
+                            print("TEST #23: Big file roundtrip (SHA-256)")
+                            print("="*50)
+                        test_23_bigfile_roundtrip.run(acc1, acc2, test_dir)
+                        if not cool:
+                            print("✓ TEST #23 PASSED: Big file received with matching hash")
+                    _run_cool(23, _t23)
 
                 # ==========================================
                 # ALL TESTS COMPLETE

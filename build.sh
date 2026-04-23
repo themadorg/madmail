@@ -114,12 +114,14 @@ download_iroh_relay() {
 
 	# Use iroh-relay v0.35.0 to match client version
 	LATEST_VERSION="v0.35.0"
-	RELEASE_JSON=$(curl -s https://api.github.com/repos/n0-computer/iroh/releases/tags/${LATEST_VERSION})
-
+	# Skip the GitHub API when a synced checkout already has the right binary
+	# (avoids failing the whole build when the builder has no API access).
 	if [ -f "$ASSETS_DIR/VERSION" ] && [ "$(cat "$ASSETS_DIR/VERSION")" = "$LATEST_VERSION" ] && [ -f "$ASSETS_DIR/iroh-relay" ]; then
 		echo "-- iroh-relay is up to date ($LATEST_VERSION)." >&2
 		return
 	fi
+
+	RELEASE_JSON=$(curl -s https://api.github.com/repos/n0-computer/iroh/releases/tags/${LATEST_VERSION})
 
 	echo "-- Downloading iroh-relay $LATEST_VERSION..." >&2
 

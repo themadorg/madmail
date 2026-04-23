@@ -179,8 +179,8 @@ submission tls://0.0.0.0:{{.SubmissionTLS}} tcp://0.0.0.0:{{.SubmissionPort}} {
             }
 {{if .RequirePGPEncryption}}
             pgp_encryption {
-                require_encryption {{.RequirePGPEncryption}}
-                allow_secure_join {{.AllowSecureJoin}}
+                require_encryption yes
+                allow_secure_join {{if .AllowSecureJoin}}yes{{else}}no{{end}}
                 {{if .PGPPassthroughSenders}}
                 passthrough_senders {{range .PGPPassthroughSenders}}{{.}} {{end}}
                 {{end}}

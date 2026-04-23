@@ -216,15 +216,12 @@ func (store *Storage) Init(cfg *config.Map) error {
 		return errors.New("imapsql: driver is required")
 	}
 
+	// madmail is pure-Go: the mattn/go-sqlite3 backend is no longer compiled
+	// in, so any legacy "sqlite3" driver name gets rewritten to "sqlite"
+	// (the database/sql driver name registered by modernc.org/sqlite).
 	if driver == "sqlite3" {
-		if sqliteImpl == "modernc" {
-			store.Log.Println("using transpiled SQLite (modernc.org/sqlite), this is experimental")
-			driver = "sqlite"
-		} else if sqliteImpl == "cgo" {
-			store.Log.Debugln("using cgo SQLite")
-		} else if sqliteImpl == "missing" {
-			return errors.New("imapsql: SQLite is not supported, recompile without no_sqlite3 tag set")
-		}
+		store.Log.Debugln("driver=sqlite3 requested, using pure-Go modernc.org/sqlite (impl=" + sqliteImpl + ")")
+		driver = "sqlite"
 	}
 
 	deliveryNormFunc, ok := authz.NormalizeFuncs[deliveryNormalize]
@@ -289,13 +286,16 @@ func (store *Storage) Init(cfg *config.Map) error {
 	var err error
 
 	dsnStr := strings.Join(dsn, " ")
-	if driver == "sqlite3" && os.Getenv("MADDY_SQLITE_UNSAFE_SYNC_OFF") == "1" {
+	if driver == "sqlite" && os.Getenv("MADDY_SQLITE_UNSAFE_SYNC_OFF") == "1" {
 		// WARNING: this reduces durability and can corrupt data on crash.
+		// The DSN fragments use modernc's `_pragma=NAME(VALUE)` URL-param
+		// syntax (mattn's `_journal_mode=WAL&_synchronous=OFF` shape was
+		// dropped together with the mattn driver itself).
 		sep := "?"
 		if strings.Contains(dsnStr, "?") {
 			sep = "&"
 		}
-		dsnStr = dsnStr + sep + "_journal_mode=WAL&_synchronous=OFF"
+		dsnStr = dsnStr + sep + "_pragma=journal_mode(WAL)&_pragma=synchronous(OFF)"
 	}
 
 	if len(compression) != 0 {

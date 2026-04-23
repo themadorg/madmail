@@ -209,7 +209,7 @@ func defaultConfig() *InstallConfig {
 		ChatmailUsernameLen:      8,
 		ChatmailPasswordLen:      16,
 		EnableContactSharing:     true,
-		RequirePGPEncryption:     false,
+		RequirePGPEncryption:     true,
 		AllowSecureJoin:          true,
 		PGPPassthroughSenders:    []string{},
 		PGPPassthroughRecipients: []string{},
@@ -323,7 +323,12 @@ Examples:
 				},
 				&cli.BoolFlag{
 					Name:  "require-pgp-encryption",
-					Usage: "Require PGP encryption for outgoing messages",
+					Value: true,
+					Usage: "Require PGP encryption for outgoing SMTP submission (default: true). Set to false only for debugging. Prefer --allow-unencrypted-submission to opt out explicitly",
+				},
+				&cli.BoolFlag{
+					Name:  "allow-unencrypted-submission",
+					Usage: "Permit cleartext mail on the submission endpoint (disables require_encryption; not recommended for production)",
 				},
 				&cli.BoolFlag{
 					Name:  "allow-secure-join",
@@ -623,7 +628,12 @@ func installCommand(ctx *cli.Context) error {
 	if ctx.IsSet("enable-contact-sharing") {
 		config.EnableContactSharing = ctx.Bool("enable-contact-sharing")
 	}
-	if ctx.IsSet("require-pgp-encryption") {
+	// PGP on submission defaults to required (defaultConfig and --require-pgp-encryption
+	// default true). Opt out only explicitly via --allow-unencrypted-submission or
+	// --require-pgp-encryption=false.
+	if ctx.Bool("allow-unencrypted-submission") {
+		config.RequirePGPEncryption = false
+	} else if ctx.IsSet("require-pgp-encryption") {
 		config.RequirePGPEncryption = ctx.Bool("require-pgp-encryption")
 	}
 	if ctx.IsSet("allow-secure-join") {
@@ -672,18 +682,18 @@ func installCommand(ctx *cli.Context) error {
 				config.A = config.PublicIP
 			}
 		}
-	} else {
-		// Advanced mode
-		if ctx.Bool("turn-off-tls") {
-			config.TurnOffTLS = true
+		} else {
+			// Advanced mode
+			if ctx.Bool("turn-off-tls") {
+				config.TurnOffTLS = true
+			}
+			// Process --ip flag in advanced mode: only sets PublicIP and A record
+			if ctx.IsSet("ip") {
+				config.PublicIP = ctx.String("ip")
+				config.A = config.PublicIP
+				// Note: Domain and hostname come from their own flags or prompts
+			}
 		}
-		// Process --ip flag in advanced mode: only sets PublicIP and A record
-		if ctx.IsSet("ip") {
-			config.PublicIP = ctx.String("ip")
-			config.A = config.PublicIP
-			// Note: Domain and hostname come from their own flags or prompts
-		}
-	}
 
 	if ctx.Bool("enable-ss") {
 		config.EnableSS = true
@@ -1059,9 +1069,16 @@ func runInteractiveConfig(config *InstallConfig) error {
 		config.TURNTTL = promptInt("TURN credential TTL (seconds)", config.TURNTTL)
 	}
 
-	// PGP Encryption configuration
+	// PGP Encryption configuration — default is require_encryption yes; only opt out explicitly.
 	fmt.Println("\n🔐 PGP Encryption Configuration")
-	config.RequirePGPEncryption = clitools2.Confirmation("Require PGP encryption for outgoing messages", config.RequirePGPEncryption)
+	if clitools2.Confirmation(
+		"Allow cleartext SMTP submission (turn off require_encryption)? Not recommended for chatmail.",
+		false,
+	) {
+		config.RequirePGPEncryption = false
+	} else {
+		config.RequirePGPEncryption = true
+	}
 
 	if config.RequirePGPEncryption {
 		config.AllowSecureJoin = clitools2.Confirmation("Allow secure join requests without encryption", config.AllowSecureJoin)

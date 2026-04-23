@@ -1,21 +1,31 @@
-//go:build cgo && !nosqlite3
-// +build cgo,!nosqlite3
-
 package imapsql
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/lib/pq"
-	"github.com/mattn/go-sqlite3"
+	sqlite "modernc.org/sqlite"
+	sqlitelib "modernc.org/sqlite/lib"
 )
 
+// isSerializationErr reports whether err comes from the database as a
+// retriable conflict (SQLite BUSY/LOCKED or Postgres serialization class 40).
+// Callers wrap such errors in SerializationError so higher layers can retry.
+//
+// SQLite detection uses modernc.org/sqlite exclusively (pure-Go driver);
+// the previous mattn/go-sqlite3 detection path has been removed.
 func isSerializationErr(err error) bool {
-	if sqliteErr, ok := err.(sqlite3.Error); ok {
-		return sqliteErr.Code == sqlite3.ErrBusy ||
-			sqliteErr.Code == sqlite3.ErrLocked
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) {
+		code := sqliteErr.Code()
+		if code == sqlitelib.SQLITE_BUSY || code == sqlitelib.SQLITE_LOCKED {
+			return true
+		}
 	}
-	if pqErr, ok := err.(*pq.Error); ok {
+
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
 		return pqErr.Code.Class() == "40"
 	}
 

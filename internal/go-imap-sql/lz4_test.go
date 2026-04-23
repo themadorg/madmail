@@ -10,7 +10,7 @@ import (
 
 	backendtests "github.com/foxcpp/go-imap-backend-tests"
 	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func initTestBackendLZ4() backendtests.Backend {
@@ -18,7 +18,7 @@ func initTestBackendLZ4() backendtests.Backend {
 	dsn := TestDSN
 
 	if TestDB == "" {
-		driver = "sqlite3"
+		driver = "sqlite"
 		dsn = ":memory:"
 	}
 
@@ -32,8 +32,8 @@ func initTestBackendLZ4() backendtests.Backend {
 
 	// This is meant for DB debugging.
 	if os.Getenv("PRESERVE_SQLITE3_DB") == "1" {
-		log.Println("Using sqlite3 DB in temporary directory.")
-		driver = "sqlite3"
+		log.Println("Using pure-Go modernc sqlite DB in temporary directory.")
+		driver = "sqlite"
 		dsn = filepath.Join(tempDir, "test.db")
 	}
 

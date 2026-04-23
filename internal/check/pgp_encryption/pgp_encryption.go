@@ -20,8 +20,8 @@ package pgp_encryption
 
 import (
 	"context"
+	"errors"
 	"net/mail"
-	"slices"
 	"strings"
 
 	"github.com/emersion/go-message/textproto"
@@ -82,7 +82,6 @@ type state struct {
 	mimeFrom    string
 	rcptTos     []string
 	secureJoin  string
-	subject     string
 	contentType string
 }
 
@@ -108,38 +107,24 @@ func (s *state) CheckRcpt(ctx context.Context, rcptTo string) module.CheckResult
 	return module.CheckResult{}
 }
 
+// CheckBody defers the PGP-only policy decision to
+// pgp_verify.EnforceEncryption — the single function that every
+// message-accepting surface of madmail shares (SMTP submission, SMTP
+// relay-in, HTTP MX-Deliv, IMAP APPEND, CLI imap-msgs add).
+//
+// What stays here is envelope/header sanity checking that needs the
+// SMTP transaction context which pgp_verify does not have:
+//   - MIME From must match envelope MAIL FROM (anti-spoofing),
+//   - recipient addresses must be well-formed.
 func (s *state) CheckBody(ctx context.Context, header textproto.Header, body buffer.Buffer) module.CheckResult {
 	if !s.c.requireEncryption {
 		return module.CheckResult{}
 	}
 
-	// Extract headers
-	s.subject = header.Get("Subject")
 	s.contentType = header.Get("Content-Type")
 	s.mimeFrom = header.Get("From")
 	s.secureJoin = header.Get("Secure-Join")
-	autoSubmitted := header.Get("Auto-Submitted")
 
-	// Check if sender is in passthrough list
-	if slices.Contains(s.c.passthroughSenders, s.mailFrom) {
-		s.log.Msg("sender in passthrough list, allowing message", "sender", s.mailFrom)
-		return module.CheckResult{}
-	}
-
-	// Allow auto-submitted messages from mailer-daemon (like bounce messages)
-	if autoSubmitted != "" && autoSubmitted != "no" {
-		if s.mimeFrom != "" {
-			mimeFromAddr, err := mail.ParseAddress(s.mimeFrom)
-			if err == nil && strings.HasPrefix(strings.ToLower(mimeFromAddr.Address), "mailer-daemon@") {
-				if strings.HasPrefix(s.contentType, "multipart/report") {
-					s.log.Msg("allowing auto-submitted mailer-daemon message", "from", s.mimeFrom)
-					return module.CheckResult{}
-				}
-			}
-		}
-	}
-
-	// Validate MIME From header matches envelope sender
 	if s.mimeFrom != "" {
 		mimeFromAddr, err := mail.ParseAddress(s.mimeFrom)
 		if err != nil {
@@ -150,12 +135,16 @@ func (s *state) CheckBody(ctx context.Context, header textproto.Header, body buf
 					EnhancedCode: exterrors.EnhancedCode{5, 6, 0},
 					Message:      "Invalid From header",
 					Reason:       "invalid mime from",
-					CheckName:    "pgp_encryption",
+					CheckName:    modName,
 					Err:          err,
 				},
 			}
 		}
-		if !strings.EqualFold(mimeFromAddr.Address, s.mailFrom) {
+		autoSubmitted := strings.ToLower(strings.TrimSpace(header.Get("Auto-Submitted")))
+		daemonBounce := autoSubmitted != "" && autoSubmitted != "no" &&
+			strings.HasPrefix(strings.ToLower(mimeFromAddr.Address), "mailer-daemon@") &&
+			strings.HasPrefix(strings.ToLower(s.mailFrom), "mailer-daemon@")
+		if !daemonBounce && !strings.EqualFold(mimeFromAddr.Address, s.mailFrom) {
 			return module.CheckResult{
 				Reject: true,
 				Reason: &exterrors.SMTPError{
@@ -163,22 +152,14 @@ func (s *state) CheckBody(ctx context.Context, header textproto.Header, body buf
 					EnhancedCode: exterrors.EnhancedCode{5, 6, 0},
 					Message:      "From header does not match envelope sender",
 					Reason:       "from mismatch",
-					CheckName:    "pgp_encryption",
+					CheckName:    modName,
 				},
 			}
 		}
 	}
 
-	// Check each recipient
 	for _, recipient := range s.rcptTos {
-		// Check if recipient matches passthrough patterns
-		if s.recipientMatchesPassthrough(recipient) {
-			continue
-		}
-
-		// Parse recipient domain (for validation)
-		rcptParts := strings.Split(recipient, "@")
-		if len(rcptParts) != 2 {
+		if strings.Count(recipient, "@") != 1 {
 			return module.CheckResult{
 				Reject: true,
 				Reason: &exterrors.SMTPError{
@@ -186,102 +167,83 @@ func (s *state) CheckBody(ctx context.Context, header textproto.Header, body buf
 					EnhancedCode: exterrors.EnhancedCode{5, 6, 0},
 					Message:      "Invalid recipient address format",
 					Reason:       "invalid recipient format",
-					CheckName:    "pgp_encryption",
-				},
-			}
-		}
-
-		// For chatmail: ALL messages (same domain or different domain) must be encrypted
-		// when require_encryption is enabled, since this check runs in the submission
-		// endpoint where all senders are authenticated local users.
-		// Check if message is encrypted
-		r, err := body.Open()
-		if err != nil {
-			return module.CheckResult{
-				Reject: true,
-				Reason: &exterrors.SMTPError{
-					Code:         451,
-					EnhancedCode: exterrors.EnhancedCode{4, 0, 0},
-					Message:      "Cannot read message body",
-					Reason:       "body read error",
-					CheckName:    "pgp_encryption",
-					Err:          err,
-				},
-			}
-		}
-		defer r.Close()
-
-		isEncrypted, err := pgp_verify.IsValidEncryptedMessage(s.contentType, r)
-		if err != nil {
-			return module.CheckResult{
-				Reject: true,
-				Reason: &exterrors.SMTPError{
-					Code:         451,
-					EnhancedCode: exterrors.EnhancedCode{4, 0, 0},
-					Message:      "Error validating message encryption",
-					Reason:       "encryption validation error",
-					CheckName:    "pgp_encryption",
-					Err:          err,
-				},
-			}
-		}
-
-		if !isEncrypted {
-			s.log.DebugMsg("message not encrypted, checking for secure join", "content_type", s.contentType, "secure_join", s.secureJoin)
-			// Check if this is a secure join request - be more permissive here
-			if s.c.allowSecureJoin {
-				// Re-open body as IsValidEncryptedMessage consumed it
-				r2, err := body.Open()
-				if err == nil {
-					defer r2.Close()
-					header := textproto.Header{}
-					header.Set("Content-Type", s.contentType)
-					header.Set("Secure-Join", s.secureJoin)
-					if pgp_verify.IsSecureJoinMessage(header, r2) {
-						s.log.Msg("allowing secure join request", "recipient", recipient, "secure_join", s.secureJoin)
-						continue
-					}
-				} else {
-					s.log.Error("failed to re-open body for secure join check", err)
-				}
-			}
-
-			s.log.Msg("rejecting unencrypted message", "recipient", recipient, "sender", s.mailFrom, "content_type", s.contentType, "secure_join", s.secureJoin)
-			// Reject unencrypted message
-			return module.CheckResult{
-				Reject: true,
-				Reason: &exterrors.SMTPError{
-					Code:         523, // Use 523 like in the Python code
-					EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
-					Message:      "Encryption Needed: Invalid Unencrypted Mail",
-					Reason:       "unencrypted message",
-					CheckName:    "pgp_encryption",
-					Misc: map[string]interface{}{
-						"recipient": recipient,
-						"sender":    s.mailFrom,
-					},
+					CheckName:    modName,
 				},
 			}
 		}
 	}
 
+	r, err := body.Open()
+	if err != nil {
+		return module.CheckResult{
+			Reject: true,
+			Reason: &exterrors.SMTPError{
+				Code:         451,
+				EnhancedCode: exterrors.EnhancedCode{4, 0, 0},
+				Message:      "Cannot read message body",
+				Reason:       "body read error",
+				CheckName:    modName,
+				Err:          err,
+			},
+		}
+	}
+	defer r.Close()
+
+	opts := pgp_verify.Options{
+		MailFrom:              s.mailFrom,
+		Recipients:            s.rcptTos,
+		PassthroughSenders:    s.c.passthroughSenders,
+		PassthroughRecipients: s.c.passthroughRecipients,
+	}
+
+	// allow_secure_join=no strips the Secure-Join headers before the
+	// policy check so EnforceEncryption falls back to "PGP/MIME only".
+	// Callers get the same code paths either way.
+	effectiveHeader := header
+	if !s.c.allowSecureJoin {
+		effectiveHeader = header.Copy()
+		effectiveHeader.Del("Secure-Join")
+		effectiveHeader.Del("Secure-Join-Invitenumber")
+	}
+
+	if err := pgp_verify.EnforceEncryption(effectiveHeader, r, opts); err != nil {
+		return s.rejectResult(err)
+	}
 	return module.CheckResult{}
 }
 
-// recipientMatchesPassthrough checks if recipient matches any passthrough pattern
-func (s *state) recipientMatchesPassthrough(recipient string) bool {
-	for _, addr := range s.c.passthroughRecipients {
-		if strings.EqualFold(recipient, addr) {
-			s.log.Msg("recipient matches exact passthrough", "recipient", recipient, "pattern", addr)
-			return true
+// rejectResult stamps the shared SMTPError from pgp_verify with this
+// check's name (for log/metric attribution) and adds the envelope
+// sender to Misc for debugging.
+func (s *state) rejectResult(err error) module.CheckResult {
+	var smtpErr *exterrors.SMTPError
+	if errors.As(err, &smtpErr) {
+		stamped := *smtpErr
+		stamped.CheckName = modName
+		if stamped.Misc == nil {
+			stamped.Misc = map[string]interface{}{}
 		}
-		// Support domain-wide passthrough (e.g., "@example.com")
-		if strings.HasPrefix(addr, "@") && strings.HasSuffix(strings.ToLower(recipient), strings.ToLower(addr)) {
-			s.log.Msg("recipient matches domain passthrough", "recipient", recipient, "pattern", addr)
-			return true
+		stamped.Misc["sender"] = s.mailFrom
+		if stamped.Code == 523 {
+			s.log.Msg("rejecting unencrypted message",
+				"sender", s.mailFrom,
+				"content_type", s.contentType,
+				"secure_join", s.secureJoin,
+			)
 		}
+		return module.CheckResult{Reject: true, Reason: &stamped}
 	}
-	return false
+	return module.CheckResult{
+		Reject: true,
+		Reason: &exterrors.SMTPError{
+			Code:         451,
+			EnhancedCode: exterrors.EnhancedCode{4, 0, 0},
+			Message:      "Error validating message encryption",
+			Reason:       "encryption validation error",
+			CheckName:    modName,
+			Err:          err,
+		},
+	}
 }
 
 func (s *state) Close() error {

@@ -1,6 +1,3 @@
-//go:build cgo && !nosqlite3
-// +build cgo,!nosqlite3
-
 /*
 Maddy Mail Server - Composable all-in-one email server.
 Copyright © 2019-2020 Max Mazurov <fox.cpp@disroot.org>, Maddy Mail Server contributors
@@ -28,7 +25,7 @@ import (
 
 	mdb "github.com/themadorg/madmail/internal/db"
 	"github.com/themadorg/madmail/internal/testutils"
-	"gorm.io/driver/sqlite"
+	sqlite "github.com/themadorg/madmail/internal/db/gormsqlite"
 	"gorm.io/gorm"
 )
 

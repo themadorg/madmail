@@ -1,5 +1,6 @@
-//go:build integration && cgo && !nosqlite3
-// +build integration,cgo,!nosqlite3
+//go:build integration
+// +build integration
+
 
 package tests_test
 
