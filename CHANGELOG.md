@@ -1,3 +1,19 @@
+# [0.44.0](https://github.com/themadorg/madmail/compare/v0.43.0...v0.44.0) (2026-04-23)
+
+
+### Bug Fixes
+
+* **chatmail:** apply HTTP/HTTPS DB port overrides to listen addrs at startup ([daa99a9](https://github.com/themadorg/madmail/commit/daa99a90193f1129fdc1638a99b6f005bdd6b20e))
+* **cli:** complete uninstall of service, config, data, cache, and runtime ([0ea364f](https://github.com/themadorg/madmail/commit/0ea364f0ac129ee3a97596dd6fc1c2c9d6f4300e))
+* **cli:** use settings_table for __ key reads and writes ([b4edc13](https://github.com/themadorg/madmail/commit/b4edc13bc732ef4c8882c9f365bc62ce47019b4b))
+
+
+### Features
+
+* **auth:** implement credentials cache reloading and enhance CLI account management ([f01b11b](https://github.com/themadorg/madmail/commit/f01b11b74c97aa4b7be5559f0671e4ac056f0a4e))
+* **blocklist:** implement blocklist functionality for user management ([9fc6ba5](https://github.com/themadorg/madmail/commit/9fc6ba5163f484536a0cd1e0a32fcdaad1f23b6f))
+* **cli:** add madmail reload to trigger config apply and service restart ([e7df017](https://github.com/themadorg/madmail/commit/e7df01761119f19fcab24be340e5d3fe57cd3e27))
+
 # [0.43.0](https://github.com/themadorg/madmail/compare/v0.42.2...v0.43.0) (2026-04-22)
 
 
