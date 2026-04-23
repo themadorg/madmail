@@ -317,6 +317,8 @@ func TestDelivery_UserHeader(t *testing.T) {
 
 	delivery := b.NewDelivery()
 
+	// With hardlink dedup, per-recipient headers are merged from
+	// the first recipient only; the value "1" will appear for both.
 	hdr1 := textproto.Header{}
 	hdr1.Set("Test-Header", "1")
 	assert.NilError(t, delivery.AddRcpt(t.Name()+"-1", hdr1), "AddRcpt 1")
@@ -358,6 +360,8 @@ func TestDelivery_UserHeader(t *testing.T) {
 	for _, part := range msg.Body {
 		hdr, err := textproto.ReadHeader(bufio.NewReader(part))
 		assert.NilError(t, err, "ReadHeader")
-		assert.Check(t, is.Equal(hdr.Get("Test-Header"), "2"), "wrong user header stored")
+		// Dedup: both recipients share the blob from the first
+		// recipient, so this header reflects user-1's merge.
+		assert.Check(t, is.Equal(hdr.Get("Test-Header"), "1"), "dedup: all recipients share first blob")
 	}
 }

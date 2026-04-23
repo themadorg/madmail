@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package tests_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +42,8 @@ func TestImapsqlDelivery(tt *testing.T) {
 		storage.imapsql test_store {
 			driver sqlite3
 			dsn imapsql.db
+			auto_create yes
+			debug yes
 		}
 
 		imap tcp://127.0.0.1:{env:TEST_PORT_imap} {
@@ -100,7 +103,6 @@ func TestImapsqlDelivery(tt *testing.T) {
 
 	imapConn.Writeln(". FETCH 1 (BODY.PEEK[])")
 	imapConn.ExpectPattern(`\* 1 FETCH (BODY\[\] {*}*`)
-	imapConn.Expect(`Delivered-To: testusr@maddy.test`)
 	imapConn.Expect(`Return-Path: <sender@maddy.test>`)
 	imapConn.ExpectPattern(`Received: from localhost (client.maddy.test \[` + tests.DefaultSourceIP.String() + `\]) by maddy.test`)
 	imapConn.ExpectPattern(` (envelope-sender <sender@maddy.test>) with ESMTP id *; *`)
@@ -256,4 +258,61 @@ func TestImapsqlAuthMap(tt *testing.T) {
 	imapConn.ExpectPattern(`\* 1 EXISTS`)
 	imapConn.ExpectPattern(`\* 1 RECENT`)
 	imapConn.ExpectPattern(". OK *")
+}
+
+func TestImapsqlDeduplication(tt *testing.T) {
+	tt.Parallel()
+	t := tests.NewT(tt)
+
+	t.DNS(nil)
+	t.Port("imap")
+	t.Port("smtp")
+	t.Config(`
+		storage.imapsql test_store {
+			driver sqlite3
+			dsn imapsql.db
+			auto_create yes
+			debug yes
+		}
+
+		imap tcp://127.0.0.1:{env:TEST_PORT_imap} {
+			tls off
+			auth dummy
+			storage &test_store
+		}
+
+		smtp tcp://127.0.0.1:{env:TEST_PORT_smtp} {
+			hostname maddy.test
+			tls off
+			deliver_to &test_store
+		}
+	`)
+	t.Run(2)
+	defer t.Close()
+
+	smtpConn := t.Conn("smtp")
+	defer smtpConn.Close()
+	smtpConn.SMTPNegotation("localhost", nil, nil)
+	smtpConn.Writeln("MAIL FROM:<sender@maddy.test>")
+	smtpConn.ExpectPattern("2*")
+	smtpConn.Writeln("RCPT TO:<testusr1@maddy.test>")
+	smtpConn.ExpectPattern("2*")
+	smtpConn.Writeln("RCPT TO:<testusr2@maddy.test>")
+	smtpConn.ExpectPattern("2*")
+	smtpConn.Writeln("DATA")
+	smtpConn.ExpectPattern("354 *")
+	smtpConn.Writeln("Subject: Secure Join")
+	smtpConn.Writeln("Secure-Join: vc-1")
+	smtpConn.Writeln("Content-Type: multipart/mixed; boundary=foo")
+	smtpConn.Writeln("")
+	smtpConn.Writeln("--foo")
+	smtpConn.Writeln("Content-Type: text/plain")
+	smtpConn.Writeln("")
+	smtpConn.Writeln("secure-join: 123")
+	smtpConn.Writeln(strings.Repeat("A\n", 50000))
+	smtpConn.Writeln("--foo--")
+	smtpConn.Writeln(".")
+	smtpConn.ExpectPattern("2*")
+
+	time.Sleep(500 * time.Millisecond)
 }

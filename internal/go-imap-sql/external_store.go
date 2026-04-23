@@ -55,6 +55,10 @@ type ExternalStore interface {
 
 	// Delete removes a set of keys from store. Non-existent keys are ignored.
 	Delete(keys []string) error
+
+	// Link creates a filesystem hardlink from srcKey to destKey.
+	// Both keys may contain path separators for per-user directories.
+	Link(srcKey, destKey string) error
 }
 
 func randomKey() (string, error) {

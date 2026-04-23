@@ -352,7 +352,7 @@ func (rt *Target) Start(ctx context.Context, msgMeta *module.MsgMetadata, mailFr
 
 	return &remoteDelivery{
 		rt:            rt,
-		mailFrom:      mailFrom,
+		mailFrom:      auth.NormalizeUsername(mailFrom),
 		msgMeta:       msgMeta,
 		Log:           target.DeliveryLogger(rt.Log, msgMeta),
 		rcptsByDomain: make(map[string][]string),
@@ -401,6 +401,7 @@ func (rd *remoteDelivery) AddRcpt(ctx context.Context, to string, opts smtp.Rcpt
 		}
 	}
 
+	to = auth.NormalizeUsername(to)
 	rd.rcptsByDomain[domain] = append(rd.rcptsByDomain[domain], to)
 	rd.recipients = append(rd.recipients, to)
 	return nil
