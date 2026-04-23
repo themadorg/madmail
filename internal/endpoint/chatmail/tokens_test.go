@@ -5,13 +5,12 @@ import (
 	"time"
 
 	mdb "github.com/themadorg/madmail/internal/db"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := mdb.New("sqlite3", []string{":memory:"}, false)
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}

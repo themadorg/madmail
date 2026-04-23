@@ -6,16 +6,12 @@ import (
 
 	"github.com/themadorg/madmail/framework/log"
 	mdb "github.com/themadorg/madmail/internal/db"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 func testDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	db, err := mdb.New("sqlite3", []string{":memory:"}, false)
 	if err != nil {
 		t.Fatal("failed to open test DB:", err)
 	}

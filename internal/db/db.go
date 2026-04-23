@@ -8,6 +8,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	_ "modernc.org/sqlite" // registers database/sql driver name "sqlite" (pure Go; works with CGO_ENABLED=0)
 )
 
 // New initializes a GORM database connection based on the driver and DSN.
@@ -17,7 +18,9 @@ func New(driver string, dsn []string, debug bool) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 	switch driver {
 	case "sqlite3", "sqlite":
-		dialector = sqlite.Open(dsnStr)
+		// gorm's sqlite.Open() defaults to driver "sqlite3" (mattn); use "sqlite" so
+		// we use modernc.org/sqlite (imported above), which works with CGO_ENABLED=0.
+		dialector = sqlite.Dialector{DSN: dsnStr, DriverName: "sqlite"}
 	case "postgres":
 		dialector = postgres.Open(dsnStr)
 	default:

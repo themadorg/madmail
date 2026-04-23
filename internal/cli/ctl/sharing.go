@@ -26,7 +26,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	maddy "github.com/themadorg/madmail"
 	parser "github.com/themadorg/madmail/framework/cfgparser"
 	"github.com/themadorg/madmail/framework/config"
