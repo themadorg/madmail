@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	frameworkconfig "github.com/themadorg/madmail/framework/config"
 	maddycli "github.com/themadorg/madmail/internal/cli"
 	"github.com/urfave/cli/v2"
 )
@@ -190,7 +191,7 @@ func portServiceSetMode(c *cli.Context, spec portAccessSpec, mode string) error 
 		return fmt.Errorf("unsupported mode: %s", mode)
 	}
 
-	fmt.Printf("✅ %s set to %s (restart required)\n", spec.displayName, mode)
+	fmt.Printf("✅ %s set to %s (restart required — run: %s reload)\n", spec.displayName, mode, frameworkconfig.BinaryName())
 	return nil
 }
 
@@ -207,7 +208,7 @@ func portServiceSetPort(c *cli.Context, spec portAccessSpec, val string) error {
 	if err := setSetting(cfg, spec.portKey, strconv.Itoa(p)); err != nil {
 		return fmt.Errorf("failed to set %s: %v", spec.portKey, err)
 	}
-	fmt.Printf("✅ %s port set to %d (restart required)\n", spec.displayName, p)
+	fmt.Printf("✅ %s port set to %d (restart required — run: %s reload)\n", spec.displayName, p, frameworkconfig.BinaryName())
 	return nil
 }
 
@@ -216,7 +217,7 @@ func portServiceResetPort(c *cli.Context, spec portAccessSpec) error {
 	if err := deleteSetting(cfg, spec.portKey); err != nil {
 		return fmt.Errorf("failed to reset %s: %v", spec.portKey, err)
 	}
-	fmt.Printf("✅ %s port reset to config/default (restart required)\n", spec.displayName)
+	fmt.Printf("✅ %s port reset to config/default (restart required — run: %s reload)\n", spec.displayName, frameworkconfig.BinaryName())
 	return nil
 }
 

@@ -20,7 +20,8 @@ type reloadResponse struct {
 
 // ReloadHandler creates a handler for POST /admin/reload.
 // This endpoint regenerates the configuration file from DB-stored overrides
-// and triggers a service restart via SIGUSR2 (graceful reload).
+// and triggers a process exit so the service manager (e.g. systemd) restarts
+// the daemon. This is not the same as SIGUSR2 (which only reloads in-memory caches).
 func ReloadHandler(deps ReloadDeps) func(string, json.RawMessage) (interface{}, int, error) {
 	return func(method string, body json.RawMessage) (interface{}, int, error) {
 		if method != "POST" {
