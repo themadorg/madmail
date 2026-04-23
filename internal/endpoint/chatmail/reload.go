@@ -3,6 +3,7 @@ package chatmail
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -337,5 +338,55 @@ func (e *Endpoint) applyDBOverrides() {
 			host = "0.0.0.0"
 		}
 		e.ssAddr = host + ":" + val
+	}
+
+	// HTTP/HTTPS listener addresses: DB overrides config file (same priority as reload into maddy.conf).
+	e.applyChatmailListenAddrsFromDB()
+}
+
+// replaceAddrPort rewrites the port in a chatmail endpoint string (e.g. tls://0.0.0.0:443).
+func replaceAddrPort(addr, newPort string) (string, bool) {
+	u, err := url.Parse(addr)
+	if err != nil || u.Host == "" {
+		return "", false
+	}
+	host, _, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		return "", false
+	}
+	if u.Scheme == "" {
+		return "", false
+	}
+	// JoinHostPort brackets IPv6 correctly ([::]:port).
+	return u.Scheme + "://" + net.JoinHostPort(host, newPort), true
+}
+
+// applyChatmailListenAddrsFromDB updates e.addrs so DB __HTTPS_PORT__ / __HTTP_PORT__ win over the config
+// file listen lines at process start (not only after a reload that patches the file).
+func (e *Endpoint) applyChatmailListenAddrsFromDB() {
+	if e.authDB == nil || len(e.addrs) == 0 {
+		return
+	}
+	if val, ok, err := e.authDB.GetSetting(resources.KeyHTTPSPort); err == nil && ok && val != "" {
+		for i, a := range e.addrs {
+			if !strings.HasPrefix(a, "tls://") {
+				continue
+			}
+			if na, rok := replaceAddrPort(a, val); rok && na != a {
+				e.addrs[i] = na
+				e.logger.Printf("DB override: chatmail listen %s -> %s (HTTPS port from database)", a, na)
+			}
+		}
+	}
+	if val, ok, err := e.authDB.GetSetting(resources.KeyHTTPPort); err == nil && ok && val != "" {
+		for i, a := range e.addrs {
+			if !strings.HasPrefix(a, "tcp://") {
+				continue
+			}
+			if na, rok := replaceAddrPort(a, val); rok && na != a {
+				e.addrs[i] = na
+				e.logger.Printf("DB override: chatmail listen %s -> %s (HTTP port from database)", a, na)
+			}
+		}
 	}
 }
