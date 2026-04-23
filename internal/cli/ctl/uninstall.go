@@ -41,6 +41,9 @@ type UninstallConfig struct {
 	ConfigFiles   []string
 	StateDir      string
 	ConfigDir     string
+	RuntimeDir    string // e.g. /run/<binary> (systemd RuntimeDirectory=…)
+	LogDir        string // e.g. /var/log/<binary> (systemd LogsDirectory=…)
+	CacheDir      string // e.g. /var/cache/<binary> if used
 	BinaryPath    string
 	MaddyUser     string
 	MaddyGroup    string
@@ -67,26 +70,18 @@ func init() {
 	maddycli.AddSubcommand(
 		&cli.Command{
 			Name:  "uninstall",
-			Usage: "Uninstall maddy mail server",
-			Description: `Uninstall maddy mail server and clean up all related files and configurations.
-
-This command will:
-- Stop and disable maddy service
-- Remove systemd service files
-- Remove configuration files
-- Remove state directory and databases
-- Remove maddy user and group (optional)
-- Remove binary (optional)
-
-The command will detect the current installation by examining systemd services
-and configuration files, then prompt for confirmation before removing components.
-
-Examples:
-  maddy uninstall                    # Interactive uninstallation
-  maddy uninstall --force           # Skip confirmation prompts
-  maddy uninstall --keep-data       # Keep mail data and databases
-  maddy uninstall --keep-user       # Keep maddy user account
-`,
+			Usage: "Uninstall " + frameworkconfig.BinaryName() + " mail server",
+			Description: strings.Join([]string{
+				"Uninstall the server and remove the systemd service, config, state/DB,",
+				"runtime & log & cache dirs, and binary unless --keep-* flags are set.",
+				"Detection uses systemd units, standard paths (/etc, /var/lib, /run, /var/log), and the running executable.",
+				"",
+				"Examples:",
+				"  " + frameworkconfig.BinaryName() + " uninstall",
+				"  " + frameworkconfig.BinaryName() + " uninstall --force",
+				"  " + frameworkconfig.BinaryName() + " uninstall --keep-data",
+				"  " + frameworkconfig.BinaryName() + " uninstall --keep-user",
+			}, "\n"),
 			Action: uninstallCommand,
 			Flags: []cli.Flag{
 				&cli.BoolFlag{
@@ -116,7 +111,7 @@ Examples:
 				&cli.StringFlag{
 					Name:  "log-file",
 					Usage: "Uninstallation log file",
-					Value: "/var/log/maddy-uninstall.log",
+					Value: "/var/log/" + frameworkconfig.BinaryName() + "-uninstall.log",
 				},
 			},
 		})
@@ -129,7 +124,7 @@ func uninstallCommand(ctx *cli.Context) error {
 	}
 
 	logger.Println("Starting maddy uninstallation process")
-	fmt.Println("🗑️  Maddy Mail Server Uninstallation")
+	fmt.Println("🗑️  " + frameworkconfig.BinaryName() + " — uninstall")
 	fmt.Println("====================================")
 
 	// Check if running as root (unless dry-run)
@@ -184,7 +179,7 @@ func uninstallCommand(ctx *cli.Context) error {
 		steps = append(steps, struct {
 			name string
 			fn   func(*UninstallConfig, *cli.Context) error
-		}{"Removing state directory and databases", removeStateDir})
+		}{"Removing state, databases, runtime, logs, and cache", removeDataAndVolatile})
 	}
 
 	if !ctx.Bool("keep-binary") {
@@ -387,6 +382,9 @@ func detectInstallation() (*UninstallConfig, error) {
 	logPaths := []string{"/var/log/" + binName, "/usr/local/var/log/" + binName}
 	for _, path := range logPaths {
 		if _, err := os.Stat(path); err == nil {
+			if config.LogDir == "" {
+				config.LogDir = path
+			}
 			if err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 				if err != nil {
 					return nil
@@ -401,7 +399,65 @@ func detectInstallation() (*UninstallConfig, error) {
 		}
 	}
 
+	config.RuntimeDir = "/run/" + binName
+	if config.LogDir == "" {
+		config.LogDir = "/var/log/" + binName
+	}
+	config.CacheDir = "/var/cache/" + binName
+
+	applyUninstallPathDefaults(config)
+
 	return config, nil
+}
+
+// applyUninstallPathDefaults fills standard FHS locations and the service name
+// so uninstall can run even when systemd unit files are already gone.
+func applyUninstallPathDefaults(config *UninstallConfig) {
+	bin := frameworkconfig.BinaryName()
+	if config.RuntimeDir == "" {
+		config.RuntimeDir = "/run/" + bin
+	}
+	if config.LogDir == "" {
+		config.LogDir = "/var/log/" + bin
+	}
+	if config.CacheDir == "" {
+		config.CacheDir = "/var/cache/" + bin
+	}
+	if config.ConfigDir == "" {
+		p := "/etc/" + bin
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			config.ConfigDir = p
+		}
+	}
+	if config.ConfigPath == "" && config.ConfigDir != "" {
+		cf := filepath.Join(config.ConfigDir, bin+".conf")
+		if _, err := os.Stat(cf); err == nil {
+			config.ConfigPath = cf
+		}
+	}
+	if config.StateDir == "" {
+		p := "/var/lib/" + bin
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			config.StateDir = p
+		}
+	}
+	if ex, err := os.Executable(); err == nil {
+		base := filepath.Base(ex)
+		if (base == bin || strings.HasPrefix(base, bin)) && config.BinaryPath == "" {
+			if st, err := os.Stat(ex); err == nil && !st.IsDir() {
+				config.BinaryPath = ex
+			}
+		}
+	}
+	if config.SystemdUnit == "" {
+		config.SystemdUnit = bin
+	}
+	// We have something to remove if any standard path or the binary exists
+	if !config.InstallationFound {
+		if config.ConfigDir != "" || config.StateDir != "" || len(config.ServiceFiles) > 0 || config.BinaryPath != "" {
+			config.InstallationFound = true
+		}
+	}
 }
 
 func parseServiceFile(config *UninstallConfig, servicePath string) error {
@@ -549,6 +605,15 @@ func showUninstallPlan(config *UninstallConfig, ctx *cli.Context) {
 		for _, file := range config.DatabaseFiles {
 			fmt.Printf("   - %s\n", file)
 		}
+		if config.LogDir != "" {
+			fmt.Printf("   - %s (logs)\n", config.LogDir)
+		}
+		if config.CacheDir != "" {
+			fmt.Printf("   - %s (cache, if present)\n", config.CacheDir)
+		}
+	}
+	if config.RuntimeDir != "" {
+		fmt.Printf("\n📁 Runtime directory to clear: %s\n", config.RuntimeDir)
 	}
 
 	if !ctx.Bool("keep-binary") {
@@ -597,22 +662,21 @@ func confirmUninstall(config *UninstallConfig) bool {
 }
 
 func stopService(config *UninstallConfig, ctx *cli.Context) error {
-	if !config.ServiceRunning && !config.IrohRunning {
-		fmt.Printf("ℹ️  No services are running\n")
-		return nil
-	}
-
-	if config.ServiceRunning {
-		logger.Printf("Stopping service: %s", config.SystemdUnit)
+	// Always try to stop the main unit (covers active, failed, reloading, etc.)
+	if config.SystemdUnit != "" {
 		if ctx.Bool("dry-run") {
 			fmt.Printf("Would stop service: %s\n", config.SystemdUnit)
 		} else {
 			cmd := exec.Command("systemctl", "stop", config.SystemdUnit)
 			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to stop service %s: %v", config.SystemdUnit, err)
+				// Not necessarily loaded or already stopped; continue uninstall
+				fmt.Printf("ℹ️  systemctl stop %s: %v (continuing)\n", config.SystemdUnit, err)
+			} else {
+				fmt.Printf("✅ Stopped service: %s\n", config.SystemdUnit)
 			}
-			fmt.Printf("✅ Stopped service: %s\n", config.SystemdUnit)
 		}
+	} else {
+		fmt.Printf("ℹ️  No main systemd unit name; skip systemctl stop\n")
 	}
 
 	if config.IrohRunning {
@@ -632,16 +696,17 @@ func stopService(config *UninstallConfig, ctx *cli.Context) error {
 }
 
 func disableService(config *UninstallConfig, ctx *cli.Context) error {
-	if config.ServiceEnabled {
+	if config.SystemdUnit != "" {
 		logger.Printf("Disabling service: %s", config.SystemdUnit)
 		if ctx.Bool("dry-run") {
 			fmt.Printf("Would disable service: %s\n", config.SystemdUnit)
 		} else {
 			cmd := exec.Command("systemctl", "disable", config.SystemdUnit)
 			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to disable service %s: %v", config.SystemdUnit, err)
+				fmt.Printf("ℹ️  systemctl disable %s: %v (continuing)\n", config.SystemdUnit, err)
+			} else {
+				fmt.Printf("✅ Disabled service: %s\n", config.SystemdUnit)
 			}
-			fmt.Printf("✅ Disabled service: %s\n", config.SystemdUnit)
 		}
 	}
 
@@ -731,25 +796,65 @@ func removeConfigFiles(config *UninstallConfig, ctx *cli.Context) error {
 	return nil
 }
 
-func removeStateDir(config *UninstallConfig, ctx *cli.Context) error {
-	if config.StateDir == "" {
-		fmt.Printf("ℹ️  No state directory found\n")
-		return nil
+func removeDataAndVolatile(config *UninstallConfig, ctx *cli.Context) error {
+	// 1) State (mail, SQLite DBs, DKIM, etc.) — optional with --keep-data
+	if !ctx.Bool("keep-data") {
+		if config.StateDir == "" {
+			fmt.Printf("ℹ️  No state directory to remove\n")
+		} else {
+			logger.Printf("Removing state directory: %s", config.StateDir)
+			if ctx.Bool("dry-run") {
+				fmt.Printf("Would remove state directory: %s\n", config.StateDir)
+			} else {
+				if err := os.RemoveAll(config.StateDir); err != nil {
+					return fmt.Errorf("failed to remove state directory %s: %v", config.StateDir, err)
+				}
+				fmt.Printf("✅ Removed state directory: %s\n", config.StateDir)
+				logger.Printf("Successfully removed state directory: %s", config.StateDir)
+			}
+		}
+	} else {
+		fmt.Printf("ℹ️  Keeping state directory and databases (--keep-data)\n")
 	}
 
-	logger.Printf("Removing state directory: %s", config.StateDir)
-
-	if ctx.Bool("dry-run") {
-		fmt.Printf("Would remove state directory: %s\n", config.StateDir)
-		return nil
+	// 2) Logs and /var/cache — part of a full uninstall unless --keep-data
+	if !ctx.Bool("keep-data") {
+		for _, p := range []struct {
+			path  string
+			label string
+		}{
+			{config.LogDir, "log directory"},
+			{config.CacheDir, "cache directory"},
+		} {
+			if p.path == "" {
+				continue
+			}
+			if ctx.Bool("dry-run") {
+				fmt.Printf("Would remove %s: %s\n", p.label, p.path)
+				continue
+			}
+			if err := os.RemoveAll(p.path); err != nil {
+				if !os.IsNotExist(err) {
+					logger.Printf("Warning: failed to remove %s: %v", p.path, err)
+					fmt.Printf("⚠️  Warning: failed to remove %s: %s — %v\n", p.label, p.path, err)
+				}
+			} else {
+				fmt.Printf("✅ Removed %s: %s\n", p.label, p.path)
+			}
+		}
 	}
 
-	if err := os.RemoveAll(config.StateDir); err != nil {
-		return fmt.Errorf("failed to remove state directory %s: %v", config.StateDir, err)
+	// 3) Runtime (e.g. /run/madmail) — best-effort after service stop; even with --keep-data
+	if config.RuntimeDir != "" {
+		if ctx.Bool("dry-run") {
+			fmt.Printf("Would remove runtime directory: %s\n", config.RuntimeDir)
+		} else if err := os.RemoveAll(config.RuntimeDir); err != nil {
+			fmt.Printf("⚠️  Warning: could not remove runtime directory %s: %v\n", config.RuntimeDir, err)
+		} else {
+			fmt.Printf("✅ Removed runtime directory: %s\n", config.RuntimeDir)
+		}
 	}
 
-	fmt.Printf("✅ Removed state directory: %s\n", config.StateDir)
-	logger.Printf("Successfully removed state directory: %s", config.StateDir)
 	return nil
 }
 
@@ -923,7 +1028,7 @@ func showUninstallSummary(config *UninstallConfig, ctx *cli.Context) {
 		fmt.Printf("   These can be manually removed if no longer needed.\n")
 	}
 
-	fmt.Printf("\n✨ Maddy has been successfully uninstalled!\n")
+	fmt.Printf("\n✨ %s has been uninstalled.\n", frameworkconfig.BinaryName())
 	if !ctx.Bool("keep-data") {
 		fmt.Printf("⚠️  All mail data has been permanently deleted.\n")
 	}
