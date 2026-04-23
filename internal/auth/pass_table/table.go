@@ -33,6 +33,46 @@ import (
 	"golang.org/x/text/secure/precis"
 )
 
+// jitFlight coalesces concurrent JIT create requests for the same key.
+// The first goroutine that arrives for a given key runs the function; any
+// other goroutines that arrive while it is still running wait on the same
+// channel and share the result. Once the function returns, the entry is
+// removed so the next call starts fresh (equivalent to singleflight.Do,
+// without the extra dependency).
+type jitFlight struct {
+	mu sync.Mutex
+	m  map[string]*jitCall
+}
+
+type jitCall struct {
+	done chan struct{}
+	err  error
+}
+
+func (f *jitFlight) Do(key string, fn func() error) error {
+	f.mu.Lock()
+	if c, ok := f.m[key]; ok {
+		f.mu.Unlock()
+		<-c.done
+		return c.err
+	}
+	if f.m == nil {
+		f.m = make(map[string]*jitCall)
+	}
+	c := &jitCall{done: make(chan struct{})}
+	f.m[key] = c
+	f.mu.Unlock()
+
+	c.err = fn()
+
+	f.mu.Lock()
+	delete(f.m, key)
+	f.mu.Unlock()
+	close(c.done)
+
+	return c.err
+}
+
 type Auth struct {
 	modName    string
 	instName   string
@@ -49,6 +89,12 @@ type Auth struct {
 	// change the DB on disk without restarting the server.
 	credMu    sync.RWMutex
 	credCache map[string]string
+
+	// jitGroup coalesces concurrent JIT create requests for the same
+	// username. Delta Chat's add_transport_from_qr opens IMAP + SMTP
+	// sessions in parallel for a brand-new user; without coalescing
+	// both sides would race to INSERT into credentials.db.
+	jitGroup jitFlight
 }
 
 func New(modName, instName string, _, inlineArgs []string) (module.Module, error) {
@@ -346,20 +392,26 @@ func (a *Auth) CreateUserIfNotExists(username, password string) error {
 		return fmt.Errorf("%s: create user %s: username is blocklisted", a.modName, key)
 	}
 
-	// Compute the password hash first (this is CPU-intensive but doesn't hold any locks)
-	hash, err := HashCompute[DefaultHash](HashOpts{}, password)
-	if err != nil {
-		return fmt.Errorf("%s: create user %s: hash generation: %w", a.modName, key, err)
-	}
-
-	// Use SetKey which now uses upsert (INSERT OR REPLACE) to atomically
-	// create or update the user. This avoids the race condition where
-	// multiple concurrent requests try to create the same user.
-	if err := tbl.SetKey(key, DefaultHash+":"+hash); err != nil {
-		return fmt.Errorf("%s: create user %s: %w", a.modName, key, err)
-	}
-	a.credCachePut(key, DefaultHash+":"+hash)
-	return nil
+	// Coalesce concurrent creates for the same user: only one goroutine
+	// actually hashes + writes, the rest wait and share the result.
+	return a.jitGroup.Do(key, func() error {
+		// Re-check the cache: a previous in-flight create may have
+		// populated it while we were queued behind the coalescer.
+		if v, ok, _ := a.lookupCred(context.TODO(), key); ok && v != "" {
+			return nil
+		}
+		hash, err := HashCompute[DefaultHash](HashOpts{}, password)
+		if err != nil {
+			return fmt.Errorf("%s: create user %s: hash generation: %w", a.modName, key, err)
+		}
+		// SetKey uses upsert (INSERT OR REPLACE) so it's safe even if
+		// another process inserted the row between the check and here.
+		if err := tbl.SetKey(key, DefaultHash+":"+hash); err != nil {
+			return fmt.Errorf("%s: create user %s: %w", a.modName, key, err)
+		}
+		a.credCachePut(key, DefaultHash+":"+hash)
+		return nil
+	})
 }
 
 func (a *Auth) CreateUserHash(username, password string, hashAlgo string, opts HashOpts) error {

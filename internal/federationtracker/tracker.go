@@ -117,19 +117,19 @@ func (t *FederationTracker) RecordSuccess(domain string, latencyMs int64, transp
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s := t.getOrCreate(domain)
-	if transport != "" {
-		s.SuccessfulDeliveries++
-		s.TotalLatencyMs += latencyMs
-		switch strings.ToUpper(transport) {
-		case "HTTP":
-			s.SuccessHTTP++
-		case "HTTPS":
-			s.SuccessHTTPS++
-		case "SMTP":
-			s.SuccessSMTP++
-		}
-	} else {
+	s.SuccessfulDeliveries++
+	s.TotalLatencyMs += latencyMs
+	if transport == "" {
 		s.InboundDeliveries++
+		return
+	}
+	switch strings.ToUpper(transport) {
+	case "HTTP":
+		s.SuccessHTTP++
+	case "HTTPS":
+		s.SuccessHTTPS++
+	case "SMTP":
+		s.SuccessSMTP++
 	}
 }
 

@@ -1,4 +1,5 @@
 import random
+import socket
 import string
 import time
 import ipaddress
@@ -28,6 +29,19 @@ def run(dc, domain):
         login_uri = (
             f"dclogin:{username}@{domain}/?"
             f"p={encoded_password}&v=1&ip=993&sp=465&ic=3&ss=default"
+        )
+    elif domain.endswith(".localchat"):
+        # cmlxc: dclogin with IMAP/SMTP to public IP; same /?... form as the IP branch
+        # above and relay_minitest/support.py (required for correct DC dclogin parse).
+        ip = socket.gethostbyname(domain)
+        username = random_string(12)
+        password = random_string(20)
+        encoded_password = urllib.parse.quote(password, safe="")
+        addr = f"{username}@{domain}"
+        login_uri = (
+            f"dclogin:{addr}/?"
+            f"p={encoded_password}&v=1"
+            f"&ih={ip}&ip=993&sh={ip}&sp=465&ic=3&ss=default"
         )
     else:
         login_uri = f"dcaccount:{domain}"

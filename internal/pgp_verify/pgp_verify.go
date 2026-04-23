@@ -78,8 +78,7 @@ func IsSecureJoinMessage(header textproto.Header, body io.Reader) bool {
 		return false
 	}
 
-	// Accept multipart/mixed or multipart/alternative (handshake might vary)
-	if mediatype != "multipart/mixed" && mediatype != "multipart/alternative" {
+	if mediatype != "multipart/mixed" {
 		return false
 	}
 
@@ -97,34 +96,36 @@ func IsSecureJoinMessage(header textproto.Header, body io.Reader) bool {
 		}
 
 		partsFound++
-		// Only check the first part for the secure-join indicator
-		if partsFound == 1 {
-			partContentType := part.Header.Get("Content-Type")
-			if !strings.HasPrefix(strings.ToLower(partContentType), "text/plain") {
-				return false
-			}
+		if partsFound > 1 {
+			// A valid Secure-Join request is a single text/plain part in multipart/mixed
+			return false
+		}
+		partContentType := part.Header.Get("Content-Type")
+		if !strings.HasPrefix(strings.ToLower(partContentType), "text/plain") {
+			return false
+		}
 
-			partBody, err := io.ReadAll(io.LimitReader(part, 8192)) // Read up to 8KB
-			if err != nil {
-				return false
-			}
+		partBody, err := io.ReadAll(io.LimitReader(part, 8192)) // Read up to 8KB
+		if err != nil {
+			return false
+		}
 
-			bodyStr := strings.ToLower(strings.TrimSpace(string(partBody)))
-			// Ensure body contains the secure-join indicator
-			if !strings.HasPrefix(bodyStr, "secure-join:") {
-				return false
-			}
+		bodyStr := strings.ToLower(strings.TrimSpace(string(partBody)))
+		if !strings.HasPrefix(bodyStr, "secure-join:") {
+			return false
 		}
 	}
 
-	return partsFound >= 1
+	return partsFound == 1
 }
 
 func IsValidEncryptedMessage(contentType string, body io.Reader) (bool, error) {
-	// Parse content type first - this is the primary indicator
+	if strings.TrimSpace(contentType) == "" {
+		return false, nil
+	}
 	mediatype, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return false, err
+		return false, nil
 	}
 
 	// Must be multipart/encrypted for PGP encrypted messages

@@ -59,7 +59,7 @@ func TestSQL(t *testing.T) {
 			},
 			{
 				Name: "lookup",
-				Args: []string{"SELECT value FROM testTbl WHERE key = $key"},
+				Args: []string{"SELECT value FROM testTbl WHERE key = ?"},
 			},
 		},
 	}))

@@ -535,29 +535,28 @@ func (s *Session) Data(r io.Reader) error {
 		s.cleanSession()
 	}()
 
-	// Enforce PGP encryption
 	rBody, err := buf.Open()
 	if err != nil {
 		return wrapErr(err)
 	}
 	defer rBody.Close()
 
-	isEncrypted, err := pgp_verify.IsAcceptedMessage(header, rBody)
-	if err != nil {
-		s.log.Error("PGP verification error", err, "msg_id", s.msgMeta.ID)
-		// Fall through to allow message if verification fails due to internal error?
-		// Or reject? User said "must not receive".
-		return wrapErr(fmt.Errorf("PGP verification failed: %w", err))
-	}
+	if s.endp.requirePgp {
+		isEncrypted, err := pgp_verify.IsAcceptedMessage(header, rBody)
+		if err != nil {
+			s.log.Error("PGP verification error", err, "msg_id", s.msgMeta.ID)
+			return wrapErr(fmt.Errorf("PGP verification failed: %w", err))
+		}
 
-	if !isEncrypted {
-		s.log.Msg("REJECTED: unencrypted message", "msg_id", s.msgMeta.ID)
-		return wrapErr(&exterrors.SMTPError{
-			Code:         523,
-			EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
-			Message:      "Encryption Needed: Invalid Unencrypted Mail",
-			Reason:       "unencrypted message",
-		})
+		if !isEncrypted {
+			s.log.Msg("REJECTED: unencrypted message", "msg_id", s.msgMeta.ID)
+			return wrapErr(&exterrors.SMTPError{
+				Code:         523,
+				EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
+				Message:      "Encryption Needed: Invalid Unencrypted Mail",
+				Reason:       "unencrypted message",
+			})
+		}
 	}
 
 	if err := s.checkRoutingLoops(header); err != nil {
@@ -628,31 +627,32 @@ func (s *Session) LMTPData(r io.Reader, sc smtp.StatusCollector) error {
 		s.cleanSession()
 	}()
 
-	// Enforce PGP encryption
 	rBody, err := buf.Open()
 	if err != nil {
 		return wrapErr(err)
 	}
 	defer rBody.Close()
 
-	isAccepted, err := pgp_verify.IsAcceptedMessage(header, rBody)
-	if err != nil {
-		s.log.Error("PGP verification error", err, "msg_id", s.msgMeta.ID)
-		return wrapErr(fmt.Errorf("PGP verification failed: %w", err))
-	}
+	if s.endp.requirePgp {
+		isAccepted, err := pgp_verify.IsAcceptedMessage(header, rBody)
+		if err != nil {
+			s.log.Error("PGP verification error", err, "msg_id", s.msgMeta.ID)
+			return wrapErr(fmt.Errorf("PGP verification failed: %w", err))
+		}
 
-	if !isAccepted {
-		s.log.Msg("REJECTED: unencrypted message (LMTP)", "msg_id", s.msgMeta.ID)
-		err := &exterrors.SMTPError{
-			Code:         523,
-			EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
-			Message:      "Encryption Needed: Invalid Unencrypted Mail",
-			Reason:       "unencrypted message",
+		if !isAccepted {
+			s.log.Msg("REJECTED: unencrypted message (LMTP)", "msg_id", s.msgMeta.ID)
+			err := &exterrors.SMTPError{
+				Code:         523,
+				EnhancedCode: exterrors.EnhancedCode{5, 7, 1},
+				Message:      "Encryption Needed: Invalid Unencrypted Mail",
+				Reason:       "unencrypted message",
+			}
+			for _, rcpt := range s.rcpts {
+				sc.SetStatus(rcpt, wrapErr(err))
+			}
+			return nil
 		}
-		for _, rcpt := range s.rcpts {
-			sc.SetStatus(rcpt, wrapErr(err))
-		}
-		return nil
 	}
 
 	if strings.EqualFold(header.Get("TLS-Required"), "No") {

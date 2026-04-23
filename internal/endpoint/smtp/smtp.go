@@ -71,6 +71,9 @@ type Endpoint struct {
 	maxReceived         int
 	maxHeaderBytes      int64
 
+	// requirePgp: if true, accept only PGP multipart/encrypted or Secure-Join DC messages.
+	requirePgp bool
+
 	sessionCnt atomic.Int32
 
 	listenersWg sync.WaitGroup
@@ -361,6 +364,7 @@ func (endp *Endpoint) setConfig(cfg *config.Map) error {
 	cfg.Bool("io_debug", false, false, &ioDebug)
 	cfg.Bool("debug", true, false, &endp.Log.Debug)
 	cfg.Bool("defer_sender_reject", false, true, &endp.deferServerReject)
+	cfg.Bool("require_pgp", false, false, &endp.requirePgp)
 	cfg.Int("max_logged_rcpt_errors", false, false, 5, &endp.maxLoggedRcptErrors)
 	cfg.Custom("limits", false, false, func() (interface{}, error) {
 		return &limits.Group{}, nil
@@ -516,8 +520,18 @@ func (endp *Endpoint) getFederationSetting(key string) (string, bool, error) {
 }
 
 func (endp *Endpoint) Close() error {
-	endp.serv.Close()
+	// go-smtp Server.Close() can deadlock: it holds the lock while closing
+	// active connections, but connection handlers need the same lock in defer.
+	// Unblock the Serve() loop first by closing the listeners we own, so the
+	// go routine started in setupListeners can exit, then use Shutdown to
+	// close done + drain per-connection s.wg without the Close() issue.
+	for _, l := range endp.listeners {
+		_ = l.Close()
+	}
 	endp.listenersWg.Wait()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	_ = endp.serv.Shutdown(ctx)
 	return nil
 }
 

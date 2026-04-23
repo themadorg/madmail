@@ -22,7 +22,7 @@ jobs:
     with:
       cmlxc_commands: |
         cmlxc init
-        # two-madmail tests 
+        # two-madmail tests (deploy-madmail passes --debug to `madmail install` for journal logging)
         cmlxc -v deploy-madmail --source ./repo mad0
         cmlxc -v deploy-madmail --source @main mad1
         cmlxc -v test-mini mad0 mad1

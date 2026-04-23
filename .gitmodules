@@ -10,3 +10,6 @@
 [submodule "exchangers/madexchanger-php"]
 	path = exchangers/madexchanger-php
 	url = git@github.com:themadorg/madexchanger-php.git
+[submodule "tests/cmlxc"]
+	path = tests/cmlxc
+	url = https://github.com/chatmail/cmlxc

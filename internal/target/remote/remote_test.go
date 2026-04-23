@@ -21,11 +21,13 @@ package remote
 import (
 	"context"
 	"crypto/tls"
-	"flag"
+	"errors"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-message/textproto"
 	"github.com/emersion/go-smtp"
@@ -40,6 +42,21 @@ import (
 	"github.com/themadorg/madmail/internal/smtpconn/pool"
 	"github.com/themadorg/madmail/internal/testutils"
 )
+
+func init() {
+	// Do not use flag.Parse() here: test binaries register extra flags in Go
+	// 1.22+; parsing before the testing package runs would fail. Use a
+	// non-privileged default so mock SMTPServer can bind 127.0.0.1 in CI.
+	if p := os.Getenv("TEST_SMTP_PORT"); p != "" {
+		port, err := strconv.Atoi(p)
+		if err != nil {
+			panic(err)
+		}
+		smtpPort = strconv.Itoa(port)
+	} else {
+		smtpPort = "12525"
+	}
+}
 
 // .invalid TLD is used here to make sure if there is something wrong about
 // DNS hooks and lookups go to the real Internet, they will not result in
@@ -59,6 +76,15 @@ func testTarget(t *testing.T, zones map[string]mockdns.Zone, extResolver *dns.Ex
 		Log:         testutils.Logger(t, "remote"),
 		policies:    extraPolicies,
 		limits:      &limits.Group{},
+		// New() sets this; federation HTTP delivery uses rt.httpClient.
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+			Timeout: 30 * time.Second,
+		},
 		pool: pool.New(pool.Config{
 			MaxKeys:             5000,
 			MaxConnsPerKey:      5,      // basically, max. amount of idle connections in cache
@@ -833,7 +859,8 @@ func TestRemoteDelivery_RequireTLS_Missing(t *testing.T) {
 }
 
 func TestRemoteDelivery_RequireTLS_Present(t *testing.T) {
-	_, be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort)
+	clientCfg, be, srv := testutils.SMTPServerSTARTTLS(t, "127.0.0.1:"+smtpPort)
+	srv.EnableREQUIRETLS = true
 	defer srv.Close()
 	defer testutils.CheckSMTPConnLeak(t, srv)
 	zones := map[string]mockdns.Zone{
@@ -845,11 +872,21 @@ func TestRemoteDelivery_RequireTLS_Present(t *testing.T) {
 		},
 	}
 
-	tgt := testTarget(t, zones, nil, nil)
-	tgt.tlsConfig.InsecureSkipVerify = true
+	mtastsGet := func(_ context.Context, domain string) (*mtasts.Policy, error) {
+		if domain != "example.invalid" {
+			return nil, errors.New("Wrong domain in lookup")
+		}
+		return &mtasts.Policy{Mode: mtasts.ModeTesting, MX: []string{"mx.example.invalid"}}, nil
+	}
+
+	tgt := testTarget(t, zones, nil, []module.MXAuthPolicy{
+		testSTSPolicy(t, zones, mtastsGet),
+	})
+	tgt.tlsConfig = clientCfg
 	defer tgt.Close()
 
 	testutils.DoTestDeliveryMeta(t, tgt, "test@example.com", []string{"test@example.invalid"}, &module.MsgMetadata{
+		OriginalFrom: "test@example.com",
 		SMTPOpts: smtp.MailOptions{
 			RequireTLS: true,
 		},
@@ -946,16 +983,4 @@ func TestRemoteDelivery_ConnReuse(t *testing.T) {
 
 	be.CheckMsg(t, 0, "test@example.com", []string{"test@example.invalid"})
 	be.CheckMsg(t, 1, "test@example.com", []string{"test@example.invalid"})
-}
-
-func init() {
-	flag.Parse()
-
-	if os.Getenv("TEST_SMTP_PORT") != "" {
-		port, err := strconv.Atoi(os.Getenv("TEST_SMTP_PORT"))
-		if err != nil {
-			panic(err)
-		}
-		smtpPort = strconv.Itoa(port)
-	}
 }
