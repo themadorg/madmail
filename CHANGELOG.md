@@ -1,3 +1,10 @@
+# [0.45.0](https://github.com/themadorg/madmail/compare/v0.44.0...v0.45.0) (2026-04-23)
+
+
+### Features
+
+* deliver messages via hardlinks to recipients on the same server ([f16e841](https://github.com/themadorg/madmail/commit/f16e84105b6d679ef2cb7462c1b3c8e5ac694078))
+
 # [0.44.0](https://github.com/themadorg/madmail/compare/v0.43.0...v0.44.0) (2026-04-23)
 
 
