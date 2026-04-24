@@ -290,6 +290,11 @@ def main():
     parser.add_argument("--all", action="store_true", help="Run all tests (default)")
     parser.add_argument("--no-test", type=str, default="", help="Comma-separated test numbers to skip, e.g. --no-test 13 or --no-test 12,13,14")
     parser.add_argument("--cool", action="store_true", help="Minimal colored output (show only pass/fail per test)")
+    parser.add_argument(
+        "--color",
+        action="store_true",
+        help="Colorize pass/fail result lines while keeping normal verbose output.",
+    )
     parser.add_argument("--stress", action="store_true", help="Run stress test against a remote server")
     parser.add_argument("--stress-users", type=int, default=50, help="Total users to create (default: 50)")
     parser.add_argument("--stress-workers", type=int, default=8, help="Worker processes to use (default: 8)")
@@ -297,6 +302,18 @@ def main():
     parser.add_argument("--stress-report", default="", help="Path to write stress report JSON")
     
     args = parser.parse_args()
+
+    use_result_color = bool(args.color) and not bool(args.cool)
+
+    def _green(text):
+        if use_result_color:
+            return f"{_C.GREEN}{text}{_C.RST}"
+        return text
+
+    def _red(text):
+        if use_result_color:
+            return f"{_C.RED}{text}{_C.RST}"
+        return text
 
     # Parse excluded tests
     excluded_tests = set()
@@ -436,7 +453,7 @@ def main():
                         rpc, dc, remote1, remote2, test_dir, timestamp,
                         keep_lxc=args.keep_lxc,
                     )
-                    print("✓ TEST #20 PASSED: Exchanger E2E verified")
+                    print(_green("✓ TEST #20 PASSED: Exchanger E2E verified"))
                 # If test_20 is the only test, we're done
                 only_test_20 = not run_all and not any([
                     args.test_1, args.test_2, args.test_3, args.test_4,
@@ -449,7 +466,7 @@ def main():
                 if only_test_20:
                     if not cool:
                         print("\n" + "="*60)
-                        print("🎉 TEST #20 PASSED! 🎉")
+                        print(_green("🎉 TEST #20 PASSED! 🎉"))
                         print("="*60)
                     success = True
 
@@ -475,7 +492,7 @@ def main():
                         rpc, dc, remote1, remote2, test_dir, timestamp,
                         keep_lxc=args.keep_lxc,
                     )
-                    print("✓ TEST #21 PASSED: PHP Exchanger E2E verified")
+                    print(_green("✓ TEST #21 PASSED: PHP Exchanger E2E verified"))
                 # If test_21 is the only test, we're done
                 only_test_21 = not run_all and not any([
                     args.test_1, args.test_2, args.test_3, args.test_4,
@@ -488,7 +505,7 @@ def main():
                 if only_test_21:
                     if not cool:
                         print("\n" + "="*60)
-                        print("🎉 TEST #21 PASSED! 🎉")
+                        print(_green("🎉 TEST #21 PASSED! 🎉"))
                         print("="*60)
                     success = True
 
@@ -508,7 +525,7 @@ def main():
                     print("TEST #22: MxDeliv Security Validation")
                     print("="*50)
                     test_22_mxdeliv_security.run(dc, (remote1, remote2))
-                    print("✓ TEST #22 PASSED: MxDeliv security validation verified")
+                    print(_green("✓ TEST #22 PASSED: MxDeliv security validation verified"))
                 # If test_22 is the only test, we're done
                 only_test_22 = not run_all and not any([
                     args.test_1, args.test_2, args.test_3, args.test_4,
@@ -521,7 +538,7 @@ def main():
                 if only_test_22:
                     if not cool:
                         print("\n" + "="*60)
-                        print("🎉 TEST #22 PASSED! 🎉")
+                        print(_green("🎉 TEST #22 PASSED! 🎉"))
                         print("="*60)
                     success = True
 
@@ -547,7 +564,7 @@ def main():
                     acc1 = test_01_account_creation.run(dc, remote1)
                     acc2 = test_01_account_creation.run(dc, remote2)
                     if should_run(1):
-                        print("✓ TEST #1 PASSED: Accounts created successfully")
+                        print(_green("✓ TEST #1 PASSED: Accounts created successfully"))
                 
                 # Store credentials for SMTP test
                 acc1_email = acc1.get_config("addr")
@@ -585,7 +602,7 @@ def main():
                             smtp_host=remote1
                         )
                         if not cool:
-                            print("✓ TEST #2 PASSED: Unencrypted messages correctly rejected")
+                            print(_green("✓ TEST #2 PASSED: Unencrypted messages correctly rejected"))
                     _run_cool(2, _t2)
                 
                 # ==========================================
@@ -599,7 +616,7 @@ def main():
                             print("="*50)
                         test_03_secure_join.run(rpc, acc1, acc2)
                         if not cool:
-                            print("✓ TEST #3 PASSED: Secure join completed successfully")
+                            print(_green("✓ TEST #3 PASSED: Secure join completed successfully"))
                     _run_cool(3, _t3)
                 
                 # ==========================================
@@ -613,7 +630,7 @@ def main():
                             print("="*50)
                         test_02_unencrypted_rejection.run(acc1, acc2, f"P2P Test Message {timestamp}")
                         if not cool:
-                            print("✓ TEST #4 PASSED: P2P encrypted message delivered")
+                            print(_green("✓ TEST #4 PASSED: P2P encrypted message delivered"))
                     _run_cool(4, _t4)
                 
                 # ==========================================
@@ -628,7 +645,7 @@ def main():
                             print("="*50)
                         group_chat = test_05_group_message.run(acc1, acc2, f"Group {timestamp}")
                         if not cool:
-                            print("✓ TEST #5 PASSED: Group created and message delivered")
+                            print(_green("✓ TEST #5 PASSED: Group created and message delivered"))
                     _run_cool(5, _t5)
                 
                 # ==========================================
@@ -642,7 +659,7 @@ def main():
                             print("="*50)
                         test_06_file_transfer.run(acc1, acc2, test_dir)
                         if not cool:
-                            print("✓ TEST #6 PASSED: File transfer completed with matching hash")
+                            print(_green("✓ TEST #6 PASSED: File transfer completed with matching hash"))
                     _run_cool(6, _t6)
                 
                 # ==========================================
@@ -658,7 +675,7 @@ def main():
                         server_info = lxc.get_server_info() if args.lxc else None
                         acc3 = test_07_federation.run(rpc, dc, acc1, acc2, remote1, remote2, timestamp, server_info=server_info)
                         if not cool:
-                            print("✓ TEST #7 PASSED: Federation test completed successfully")
+                            print(_green("✓ TEST #7 PASSED: Federation test completed successfully"))
                     _run_cool(7, _t7)
                 
                 # ==========================================
@@ -676,7 +693,7 @@ def main():
                             acc3 = test_01_account_creation.run(dc, remote2)
                         test_08_no_logging.run(acc1, acc2, acc3, group_chat, (remote1, remote2))
                         if not cool:
-                            print("✓ TEST #8 PASSED: No logs generated with logging disabled")
+                            print(_green("✓ TEST #8 PASSED: No logs generated with logging disabled"))
                     _run_cool(8, _t8)
                 
                 # ==========================================
@@ -686,7 +703,7 @@ def main():
                     def _t9():
                         test_09_send_bigfile.run(acc1, acc2, test_dir, (remote1, remote2))
                         if not cool:
-                            print("✓ TEST #9 PASSED: Big file transfer timing completed")
+                            print(_green("✓ TEST #9 PASSED: Big file transfer timing completed"))
                     _run_cool(9, _t9)
                 
                 # ==========================================
@@ -700,7 +717,7 @@ def main():
                             print("="*50)
                         test_10_upgrade_mechanism.run(dc, remote1, test_dir)
                         if not cool:
-                            print("✓ TEST #10 PASSED: Upgrade/Update signature verification verified")
+                            print(_green("✓ TEST #10 PASSED: Upgrade/Update signature verification verified"))
                     _run_cool(10, _t10)
 
                 # ==========================================
@@ -710,7 +727,7 @@ def main():
                     def _t11():
                         test_11_jit_registration.run(dc, (remote1, remote2))
                         if not cool:
-                            print("✓ TEST #11 PASSED: JIT registration verified")
+                            print(_green("✓ TEST #11 PASSED: JIT registration verified"))
                     _run_cool(11, _t11)
 
                 # ==========================================
@@ -720,7 +737,7 @@ def main():
                     def _t12():
                         test_12_smtp_imap_idle.run(test_dir=test_dir)
                         if not cool:
-                            print("✓ TEST #12 PASSED: SMTP/IMAP IDLE test verified")
+                            print(_green("✓ TEST #12 PASSED: SMTP/IMAP IDLE test verified"))
                     _run_cool(12, _t12)
 
                 # ==========================================
@@ -730,7 +747,7 @@ def main():
                     def _t13():
                         test_13_concurrent_profiles.run(test_dir=test_dir)
                         if not cool:
-                            print("✓ TEST #13 PASSED: Concurrent profiles verified")
+                            print(_green("✓ TEST #13 PASSED: Concurrent profiles verified"))
                     _run_cool(13, _t13)
 
                 # ==========================================
@@ -740,7 +757,7 @@ def main():
                     def _t14():
                         test_14_purge_messages.run(rpc, dc, acc1, acc2, remote1)
                         if not cool:
-                            print("✓ TEST #14 PASSED: Purge messages verified")
+                            print(_green("✓ TEST #14 PASSED: Purge messages verified"))
                     _run_cool(14, _t14)
 
                 # ==========================================
@@ -750,7 +767,7 @@ def main():
                     def _t15():
                         test_15_iroh_discovery.run(dc, remote1)
                         if not cool:
-                            print("✓ TEST #15 PASSED: Iroh discovery verified")
+                            print(_green("✓ TEST #15 PASSED: Iroh discovery verified"))
                     _run_cool(15, _t15)
 
                 # ==========================================
@@ -760,7 +777,7 @@ def main():
                     def _t16():
                         test_16_webxdc_realtime.run(dc, remote1)
                         if not cool:
-                            print("✓ TEST #16 PASSED: WebXDC Realtime P2P verified")
+                            print(_green("✓ TEST #16 PASSED: WebXDC Realtime P2P verified"))
                     _run_cool(16, _t16)
 
                 # ==========================================
@@ -770,7 +787,7 @@ def main():
                     def _t17():
                         test_17_admin_api.run(dc, remote1, test_dir)
                         if not cool:
-                            print("✓ TEST #17 PASSED: Admin API verified")
+                            print(_green("✓ TEST #17 PASSED: Admin API verified"))
                     _run_cool(17, _t17)
 
                 # ==========================================
@@ -784,7 +801,7 @@ def main():
                             print("="*50)
                         test_18_stealth_mode.run(test_dir=test_dir)
                         if not cool:
-                            print("✓ TEST #18 PASSED: Stealth / Camouflage Mode verified")
+                            print(_green("✓ TEST #18 PASSED: Stealth / Camouflage Mode verified"))
                     _run_cool(18, _t18)
 
                 # ==========================================
@@ -798,7 +815,7 @@ def main():
                             print("="*50)
                         test_19_login_validation.run(dc, (remote1, remote2))
                         if not cool:
-                            print("✓ TEST #19 PASSED: Login domain validation verified")
+                            print(_green("✓ TEST #19 PASSED: Login domain validation verified"))
                     _run_cool(19, _t19)
 
                 # ==========================================
@@ -812,7 +829,7 @@ def main():
                             print("="*50)
                         test_23_bigfile_roundtrip.run(acc1, acc2, test_dir)
                         if not cool:
-                            print("✓ TEST #23 PASSED: Big file received with matching hash")
+                            print(_green("✓ TEST #23 PASSED: Big file received with matching hash"))
                     _run_cool(23, _t23)
 
                 # ==========================================
@@ -820,7 +837,7 @@ def main():
                 # ==========================================
                 if not cool:
                     print("\n" + "="*60)
-                    print("🎉 SELECTED TESTS PASSED! 🎉")
+                    print(_green("🎉 SELECTED TESTS PASSED! 🎉"))
                     print("="*60)
                 success = True
             
@@ -830,7 +847,7 @@ def main():
             sys.stdout = cool._real_stdout
             sys.stderr = cool._real_stderr
         if not cool:
-            print(f"\n❌ TEST FAILED: {e}")
+            print(_red(f"\n❌ TEST FAILED: {e}"))
             import traceback
             traceback.print_exc()
         # Save error to file

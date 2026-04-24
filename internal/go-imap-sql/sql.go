@@ -73,11 +73,13 @@ func (b *Backend) addModerncSqliteParams(dsn string) string {
 
 func (b *Backend) configureEngine() error {
 	if b.db.driver == "sqlite3" || b.db.driver == "sqlite" {
-		// For testing purposes, it is important that only one memory DB will
-		// be used (otherwise each connection will get its own DB)
-		if b.db.dsn == ":memory:" || strings.Contains(b.db.dsn, ":memory:") {
-			b.db.DB.SetMaxOpenConns(1)
-		}
+		// SQLite has a single-writer model. Under concurrent JIT auth/account
+		// creation (SMTP+IMAP logins in parallel), allowing multiple open
+		// writer-capable connections leads to SQLITE_BUSY spikes in addUser.
+		// Force a single DB connection so writes are queued sequentially by
+		// database/sql. This also keeps :memory: semantics correct.
+		b.db.DB.SetMaxOpenConns(1)
+		b.db.DB.SetMaxIdleConns(1)
 
 		if b.extStore == nil {
 			if _, err := b.db.Exec(`PRAGMA page_size=16384`); err != nil {

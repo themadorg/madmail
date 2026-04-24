@@ -11,6 +11,11 @@ from deltachat_rpc_client.const import MessageState, EventType
 MAD_SERVICE = "madmail.service"
 MAD_CONFIG_PATHS = ("/etc/madmail/madmail.conf", "/etc/maddy/maddy.conf")
 
+# When we raise caps after the first SMTP reject above 50M raw, use generous headroom:
+# Base64 (~4/3) plus OpenPGP + MIME framing pushes the SMTP blob well above raw file size,
+# so 100M is often too small for a 70MB attachment even though 70*4/3 < 100.
+RELIEF_SERVER_LIMIT = "200M"
+
 # --- SSH Utility Functions (adapted from test_08) ---
 
 def run_ssh_command(remote, command):
@@ -198,17 +203,24 @@ def run(sender, receiver, test_dir, remotes):
                     send_duration = time.time() - start_send
                     break
                 if snap.state == MessageState.OUT_FAILED:
-                    # Note: Base64 encoding adds ~33% overhead. 
-                    # 40MB binary ~ 53MB SMTP message.
-                    print(f"  Failure detected for {size}MB. (Note: 50M limit includes ~33% Base64 overhead)")
+                    # Base64 (~33%) and OpenPGP/MIME add overhead on top of raw file bytes.
+                    hint = (
+                        "expected under the initial 50M cap"
+                        if not limit_increased and size <= 50
+                        else "check server max_message_size / appendlimit vs wired message size"
+                    )
+                    print(f"  Failure detected for {size}MB ({hint}).")
                     failed = True
                     break
                 time.sleep(1.0)
             
             if failed and size > 50 and not limit_increased:
-                print(f"\n>>> Increasing limits to 100M to allow {size}MB+ transfers...")
-                set_server_limits(REMOTE1, "100M")
-                set_server_limits(REMOTE2, "100M")
+                print(
+                    f"\n>>> Increasing limits to {RELIEF_SERVER_LIMIT} "
+                    f"(PGP/MIME + Base64 need more than raw×4/3) to allow {size}MB+ transfers..."
+                )
+                set_server_limits(REMOTE1, RELIEF_SERVER_LIMIT)
+                set_server_limits(REMOTE2, RELIEF_SERVER_LIMIT)
                 limit_increased = True
                 
                 # Update cursors after restart to avoid counting startup logs
@@ -232,7 +244,12 @@ def run(sender, receiver, test_dir, remotes):
                 failed = False
 
             if failed:
-                results.append({"size": size, "status": "FAIL_SMTP"})
+                st = (
+                    "EXPECTED_CAP"
+                    if not limit_increased and size <= 50
+                    else "FAIL_SMTP"
+                )
+                results.append({"size": size, "status": st})
                 continue
                 
             print(f"  SMTP Transfer: {send_duration:.2f}s")
@@ -246,13 +263,17 @@ def run(sender, receiver, test_dir, remotes):
             
         # Summary Table
         print("\n" + "="*70)
-        print(f"{'Size (MB)':<10} | {'Status':<10} | {'Crypt (s)':<12} | {'Send (s)':<12} | {'Total (s)':<12}")
+        print(
+            "Legend: EXPECTED_CAP = SMTP cap reject while servers still at 50M (normal); "
+            "FAIL_SMTP = reject after caps were raised (investigate)."
+        )
+        print(f"{'Size (MB)':<10} | {'Status':<14} | {'Crypt (s)':<12} | {'Send (s)':<12} | {'Total (s)':<12}")
         print("-" * 70)
         for res in results:
             if res["status"] == "SUCCESS":
-                print(f"{res['size']:<10} | {res['status']:<10} | {res['crypt']:<12.2f} | {res['send']:<12.2f} | {res['total']:<12.2f}")
+                print(f"{res['size']:<10} | {res['status']:<14} | {res['crypt']:<12.2f} | {res['send']:<12.2f} | {res['total']:<12.2f}")
             else:
-                print(f"{res['size']:<10} | {res['status']:<10} | {'-':<12} | {'-':<12} | {'-':<12}")
+                print(f"{res['size']:<10} | {res['status']:<14} | {'-':<12} | {'-':<12} | {'-':<12}")
         print("="*70)
         
         # Step 2: Check for logs

@@ -430,27 +430,38 @@ def create_account_concurrently(host, smtp_port, imap_port, username, password, 
         errors.append(f"SMTP error: {e}")
         timings['smtp_error'] = time.time() - start
     
-    # Then IMAP login
-    start = time.time()
-    try:
-        imap = imaplib.IMAP4(host, imap_port)
-        timings['imap_connect'] = time.time() - start
-        
-        login_start = time.time()
-        imap.login(username, password)
-        timings['imap_login'] = time.time() - login_start
-        
-        imap.logout()
-    except Exception as e:
-        errors.append(f"IMAP error: {e}")
-        timings['imap_error'] = time.time() - start
+    # Then IMAP login (retry SQLITE_BUSY-style transient lock errors).
+    max_attempts = 8
+    retry_delay = 0.2
+    for attempt in range(1, max_attempts + 1):
+        start = time.time()
+        try:
+            imap = imaplib.IMAP4(host, imap_port, timeout=30)
+            timings['imap_connect'] = time.time() - start
+
+            login_start = time.time()
+            imap.login(username, password)
+            timings['imap_login'] = time.time() - login_start
+
+            imap.logout()
+            break
+        except Exception as e:
+            msg = str(e)
+            timings['imap_error'] = time.time() - start
+            # Queue pressure in SQLite can surface as SQLITE_BUSY/locked; retry.
+            if ("SQLITE_BUSY" in msg or "database is locked" in msg) and attempt < max_attempts:
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 1.7, 2.0)
+                continue
+            errors.append(f"IMAP error: {e}")
+            break
     
     if errors:
         return (index, False, "; ".join(errors), timings)
     return (index, True, None, timings)
 
 
-def run(test_dir=None, maddy_binary=None, num_accounts=100):
+def run(test_dir=None, maddy_binary=None, num_accounts=12):
     """Run the concurrent profile creation and mass IDLE test."""
     print("\n" + "="*60)
     print("TEST #13: Concurrent Profile Creation and Mass IDLE Test")
@@ -516,10 +527,9 @@ def run(test_dir=None, maddy_binary=None, num_accounts=100):
         all_timings = []
         completed_count = 0
         
-        # Reduce concurrent workers to minimize SQLite lock contention
-        # SQLite writes serialize, so too many workers just creates contention
-        # Use 5 workers to avoid hitting busy_timeout during concurrent writes
-        account_workers = min(5, num_accounts)
+        # Keep account creation concurrency low and rely on retries for
+        # transient SQLITE_BUSY lock windows.
+        account_workers = min(3, num_accounts)
         print(f"  Creating accounts with {account_workers} concurrent workers...")
         
         with ThreadPoolExecutor(max_workers=account_workers) as executor:

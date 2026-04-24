@@ -26,6 +26,11 @@ const SchemaVersion = 6
 var (
 	ErrUserAlreadyExists = errors.New("imap: user already exists")
 	ErrUserDoesntExists  = errors.New("imap: user doesn't exists")
+
+	// Process-wide lock registry keyed by SQLite DSN.
+	// Multiple backend instances (e.g. IMAP + SMTP auth paths) can target the
+	// same SQLite file; they must share one create-user queue to avoid BUSY.
+	userCreateLocks sync.Map // map[string]*sync.Mutex
 )
 
 type SerializationError struct {
@@ -126,6 +131,11 @@ type Backend struct {
 
 	// database/sql.DB object created by New.
 	DB *sql.DB
+
+	// SQLite is single-writer. Queue user-creation transactions to avoid
+	// SQLITE_BUSY under concurrent JIT logins for distinct usernames.
+	// Must be shared across backend instances targeting the same DB file.
+	userCreateMu *sync.Mutex
 
 	prng         Rand
 	compressAlgo CompressionAlgo
@@ -292,6 +302,9 @@ func New(driver, dsn string, extStore ExternalStore, opts Opts) (*Backend, error
 
 	b.db.driver = driver
 	b.db.dsn = dsn
+	if driver == "sqlite3" || driver == "sqlite" {
+		b.userCreateMu = getUserCreateLock(driver + "|" + dsn)
+	}
 
 	b.db.DB, err = sql.Open(driver, dsn)
 	if err != nil {
@@ -397,6 +410,10 @@ func normalizeUsername(u string) string {
 
 // CreateUser creates user account.
 func (b *Backend) CreateUser(username string) error {
+	if b.userCreateMu != nil {
+		b.userCreateMu.Lock()
+		defer b.userCreateMu.Unlock()
+	}
 	_, _, err := b.createUser(nil, normalizeUsername(username))
 	return err
 }
@@ -543,6 +560,12 @@ func (b *Backend) GetUser(username string) (backend.User, error) {
 func (b *Backend) GetOrCreateUser(username string) (backend.User, error) {
 	username = normalizeUsername(username)
 
+	if b.userCreateMu != nil {
+		// Global queue for account creation/check-create path.
+		b.userCreateMu.Lock()
+		defer b.userCreateMu.Unlock()
+	}
+
 	tx, err := b.db.Begin(false)
 	if err != nil {
 		return nil, err
@@ -569,6 +592,15 @@ func (b *Backend) GetOrCreateUser(username string) (backend.User, error) {
 		}
 	}
 	return &User{id: uid, username: username, parent: b, inboxId: inboxId}, tx.Commit()
+}
+
+func getUserCreateLock(key string) *sync.Mutex {
+	if v, ok := userCreateLocks.Load(key); ok {
+		return v.(*sync.Mutex)
+	}
+	mu := &sync.Mutex{}
+	actual, _ := userCreateLocks.LoadOrStore(key, mu)
+	return actual.(*sync.Mutex)
 }
 
 func (b *Backend) Login(_ *imap.ConnInfo, username, password string) (backend.User, error) {

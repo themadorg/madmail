@@ -53,6 +53,12 @@ def run_test(maddy_bin, private_key_path, test_dir):
         print(f"Stderr: {result.stderr}")
         raise Exception("Failure: Signed binary verification failed!")
 
+    # When this test runs as root (e.g. in CI / Incus), `upgrade` continues past
+    # verification and replaces the current executable with the signed payload.
+    # Restore the real binary so the URL `update` step runs a valid ELF again.
+    shutil.copy2(maddy_bin, maddy_under_test)
+    os.chmod(maddy_under_test, 0o755)
+
     # 4. Test Update from URL
     print("Testing update command from a mock HTTP server...")
     PORT = 9988
