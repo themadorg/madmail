@@ -1,3 +1,10 @@
+# [0.47.0](https://github.com/themadorg/madmail/compare/v0.46.0...v0.47.0) (2026-04-24)
+
+
+### Features
+
+* **chatmail:** enable chatmail support and improve IMAP capability handling ([12c550a](https://github.com/themadorg/madmail/commit/12c550ae9bc4ffdc5df90a185487af009de3da0f))
+
 # [0.46.0](https://github.com/themadorg/madmail/compare/v0.45.0...v0.46.0) (2026-04-24)
 
 
