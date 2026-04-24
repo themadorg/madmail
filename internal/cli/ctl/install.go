@@ -682,18 +682,18 @@ func installCommand(ctx *cli.Context) error {
 				config.A = config.PublicIP
 			}
 		}
-		} else {
-			// Advanced mode
-			if ctx.Bool("turn-off-tls") {
-				config.TurnOffTLS = true
-			}
-			// Process --ip flag in advanced mode: only sets PublicIP and A record
-			if ctx.IsSet("ip") {
-				config.PublicIP = ctx.String("ip")
-				config.A = config.PublicIP
-				// Note: Domain and hostname come from their own flags or prompts
-			}
+	} else {
+		// Advanced mode
+		if ctx.Bool("turn-off-tls") {
+			config.TurnOffTLS = true
 		}
+		// Process --ip flag in advanced mode: only sets PublicIP and A record
+		if ctx.IsSet("ip") {
+			config.PublicIP = ctx.String("ip")
+			config.A = config.PublicIP
+			// Note: Domain and hostname come from their own flags or prompts
+		}
+	}
 
 	if ctx.Bool("enable-ss") {
 		config.EnableSS = true
