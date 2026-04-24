@@ -680,8 +680,8 @@ func dcloginTransport(security, starttlsPort, tlsPort string) (socket, port stri
 	case "starttls":
 		return "starttls", starttlsPort
 	case "default":
-		// Use the STARTTLS listener as transport baseline while letting clients auto-select.
-		return "default", starttlsPort
+		// Prefer the implicit TLS listener when clients are allowed to auto-select.
+		return "default", tlsPort
 	default:
 		return "ssl", tlsPort
 	}

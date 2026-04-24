@@ -79,6 +79,7 @@ type Endpoint struct {
 	turnTTL       int
 	turnPreferTLS bool
 	irohRelayURL  string
+	xchatmail     bool
 
 	Log log.Logger
 }
@@ -185,6 +186,7 @@ func (endp *Endpoint) Init(cfg *config.Map) error {
 	cfg.Int("turn_ttl", false, false, 86400, &endp.turnTTL)
 	cfg.Bool("turn_prefer_tls", true, true, &endp.turnPreferTLS)
 	cfg.String("iroh_relay_url", false, false, "", &endp.irohRelayURL)
+	cfg.Bool("xchatmail", false, false, &endp.xchatmail)
 
 	if _, err := cfg.Process(); err != nil {
 		return err
@@ -482,15 +484,15 @@ func (endp *Endpoint) enableExtensions() error {
 		endp.serv.Enable(&metadataExtension{endp: endp})
 	}
 
-	// Always advertise XCHATMAIL so Delta Chat / chatmail-core can detect a
-	// chatmail-compatible IMAP server without extra configuration.
-	endp.serv.Enable(xchatmailExtension{})
+	if endp.xchatmail {
+		endp.serv.Enable(xchatmailExtension{})
+	}
 
 	return nil
 }
 
 // xchatmailExtension implements the non-standard XCHATMAIL IMAP capability used by
-// chatmail-core / Delta Chat to detect chatmail-compatible servers.
+// Delta Chat core to detect chatmail-compatible servers and apply chatmail defaults.
 type xchatmailExtension struct{}
 
 func (xchatmailExtension) Capabilities(imapserver.Conn) []string {

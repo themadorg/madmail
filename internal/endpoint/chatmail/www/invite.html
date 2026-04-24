@@ -118,7 +118,7 @@
 
             function dcloginEndpoint(mode, starttlsPort, tlsPort) {
                 if (mode === "starttls") return { security: "starttls", port: starttlsPort };
-                if (mode === "default") return { security: "default", port: starttlsPort };
+                if (mode === "default") return { security: "default", port: tlsPort };
                 return { security: "ssl", port: tlsPort };
             }
 

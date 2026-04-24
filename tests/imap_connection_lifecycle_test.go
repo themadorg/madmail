@@ -1,7 +1,6 @@
 //go:build integration
 // +build integration
 
-
 package tests_test
 
 import (
@@ -20,7 +19,7 @@ import (
 	"github.com/themadorg/madmail/tests"
 )
 
-func TestIMAPChatmailCapability(tt *testing.T) {
+func TestIMAPDoesNotAdvertiseChatmailCapabilityByDefault(tt *testing.T) {
 	t := tests.NewT(tt)
 	t.DNS(nil)
 	t.Port("imap")
@@ -32,6 +31,41 @@ func TestIMAPChatmailCapability(tt *testing.T) {
 
 		imap tcp://127.0.0.1:{env:TEST_PORT_imap} {
 			tls off
+
+			auth pass_table static {}
+			storage &test_store
+		}
+	`)
+	t.Run(1)
+	defer t.Close()
+
+	conn := t.Conn("imap")
+	defer conn.Close()
+	conn.ExpectPattern(`\* OK *`)
+	conn.Writeln(". CAPABILITY")
+	line := conn.ExpectPattern(`\* CAPABILITY *`)
+	if strings.Contains(line, "XCHATMAIL") {
+		t.Fatalf("CAPABILITY unexpectedly advertised XCHATMAIL: %q", line)
+	}
+	conn.ExpectPattern(". OK *")
+	conn.Writeln(". LOGOUT")
+	conn.ExpectPattern(`\* BYE *`)
+	conn.ExpectPattern(". OK *")
+}
+
+func TestIMAPAdvertisesChatmailCapabilityWhenEnabled(tt *testing.T) {
+	t := tests.NewT(tt)
+	t.DNS(nil)
+	t.Port("imap")
+	t.Config(`
+		storage.imapsql test_store {
+			driver sqlite3
+			dsn imapsql.db
+		}
+
+		imap tcp://127.0.0.1:{env:TEST_PORT_imap} {
+			tls off
+			xchatmail yes
 
 			auth pass_table static {}
 			storage &test_store

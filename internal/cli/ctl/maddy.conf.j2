@@ -257,6 +257,11 @@ imap tls://0.0.0.0:{{.IMAPTLS}} tcp://0.0.0.0:{{.IMAPPort}} {
     auth &local_authdb
     storage &local_mailboxes
     insecure_auth {{if .TurnOffTLS}}yes{{else}}no{{end}}
+{{if .EnableChatmail}}
+    # Advertise chatmail support so Delta Chat core enables chatmail defaults,
+    # including immediate server-side cleanup via delete_server_after.
+    xchatmail yes
+{{end}}
 {{if .EnableTURN}}
     turn_enable yes
     turn_server {{.PublicIP}}
