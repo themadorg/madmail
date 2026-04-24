@@ -105,7 +105,6 @@ func TestSMTPEndpoint_LargeMessage(tt *testing.T) {
 
 	imapConn.Writeln(". FETCH 1 (BODY.PEEK[])")
 	imapConn.ExpectPattern(`\* 1 FETCH (BODY\[\] {1506312}*`)
-	imapConn.Expect(`Delivered-To: testusr@maddy.test`)
 	imapConn.Expect(`Return-Path: <sender@maddy.test>`)
 	imapConn.ExpectPattern(`Received: from localhost (client.maddy.test \[` + tests.DefaultSourceIP.String() + `\]) by maddy.test`)
 	imapConn.ExpectPattern(` (envelope-sender <sender@maddy.test>) with ESMTP id *; *`)
@@ -193,7 +192,6 @@ func TestSMTPEndpoint_FileBuffer(tt *testing.T) {
 
 		imapConn.Writeln(". FETCH 1 (BODY.PEEK[])")
 		imapConn.ExpectPattern(`\* 1 FETCH (BODY\[\] {*}*`)
-		imapConn.Expect(`Delivered-To: testusr@maddy.test`)
 		imapConn.Expect(`Return-Path: <sender@maddy.test>`)
 		imapConn.ExpectPattern(`Received: from localhost (client.maddy.test \[` + tests.DefaultSourceIP.String() + `\]) by maddy.test`)
 		imapConn.ExpectPattern(` (envelope-sender <sender@maddy.test>) with ESMTP id *; *`)
@@ -310,7 +308,6 @@ func TestSMTPEndpoint_Autobuffer(tt *testing.T) {
 
 	imapConn.Writeln(". FETCH 1:3 (BODY.PEEK[])")
 	imapConn.ExpectPattern(`\* 1 FETCH (BODY\[\] {*}*`)
-	imapConn.Expect(`Delivered-To: testusr@maddy.test`)
 	imapConn.Expect(`Return-Path: <sender@maddy.test>`)
 	imapConn.ExpectPattern(`Received: from localhost (client.maddy.test \[` + tests.DefaultSourceIP.String() + `\]) by maddy.test`)
 	imapConn.ExpectPattern(` (envelope-sender <sender@maddy.test>) with ESMTP id *; *`)
@@ -322,7 +319,6 @@ func TestSMTPEndpoint_Autobuffer(tt *testing.T) {
 	imapConn.Expect("AAAAABBBBBB")
 	imapConn.Expect(")")
 	imapConn.ExpectPattern(`\* 2 FETCH (BODY\[\] {*}*`)
-	imapConn.Expect(`Delivered-To: testusr@maddy.test`)
 	imapConn.Expect(`Return-Path: <sender@maddy.test>`)
 	imapConn.ExpectPattern(`Received: from localhost (client.maddy.test \[` + tests.DefaultSourceIP.String() + `\]) by maddy.test`)
 	imapConn.ExpectPattern(` (envelope-sender <sender@maddy.test>) with ESMTP id *; *`)
@@ -333,7 +329,6 @@ func TestSMTPEndpoint_Autobuffer(tt *testing.T) {
 	imapConn.Expect("")
 	imapConn.Expect(")")
 	imapConn.ExpectPattern(`\* 3 FETCH (BODY\[\] {*}*`)
-	imapConn.Expect(`Delivered-To: testusr@maddy.test`)
 	imapConn.Expect(`Return-Path: <sender@maddy.test>`)
 	imapConn.ExpectPattern(`Received: from localhost (client.maddy.test \[` + tests.DefaultSourceIP.String() + `\]) by maddy.test`)
 	imapConn.ExpectPattern(` (envelope-sender <sender@maddy.test>) with ESMTP id *; *`)

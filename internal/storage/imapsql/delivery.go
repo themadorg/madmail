@@ -84,11 +84,9 @@ func (d *delivery) AddRcpt(ctx context.Context, rcptTo string, _ smtp.RcptOption
 		d.store.Log.Error("Failed to check JIT registration status", err)
 	}
 
-	// This header is added to the message only for that recipient.
-	// go-imap-sql does certain optimizations to store the message
-	// with small amount of per-recipient data in a efficient way.
+	// Empty per-recipient header: all recipients share an identical
+	// compressed blob on disk, enabling hardlink-based deduplication.
 	userHeader := textproto.Header{}
-	userHeader.Add("Delivered-To", accountName)
 
 	if err := d.d.AddRcpt(accountName, userHeader); err != nil {
 		if err == imapsql.ErrUserDoesntExists || err == backend.ErrNoSuchMailbox {

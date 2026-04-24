@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"time"
@@ -35,7 +36,7 @@ func (b *Backend) NewDelivery() Delivery {
 func (d *Delivery) clean() {
 	d.users = d.users[0:0]
 	d.mboxes = d.mboxes[0:0]
-	d.extKey = ""
+	d.extKeys = d.extKeys[0:0]
 	for k := range d.perRcptHeader {
 		delete(d.perRcptHeader, k)
 	}
@@ -54,7 +55,7 @@ type Delivery struct {
 	tx            *sql.Tx
 	users         []User
 	mboxes        []Mailbox
-	extKey        string
+	extKeys       []string
 	perRcptHeader map[string]textproto.Header
 	flagOverrides map[string][]string
 	mboxOverrides map[string]string
@@ -240,9 +241,8 @@ func (d *Delivery) BodyParsed(header textproto.Header, bodyLen int, body Buffer)
 		}
 	}
 
-	// Make sure all auto-generated statements are generated before we start transaction
-	// so it will not cause deadlocks on SQlite when statement is prepared outside
-	// of transaction while transaction is running.
+	// Pre-generate flag statements outside the transaction to
+	// avoid SQLite deadlocks from in-transaction statement prep.
 	for _, mbox := range d.mboxes {
 		if len(d.flagOverrides[mbox.user.username]) != 0 {
 			_, err := d.b.getFlagsAddStmt(len(d.flagOverrides[mbox.user.username]))
@@ -252,35 +252,9 @@ func (d *Delivery) BodyParsed(header textproto.Header, bodyLen int, body Buffer)
 		}
 	}
 
-	date := time.Now()
-
-	var err error
-	d.tx, err = d.b.db.BeginLevel(sql.LevelReadCommitted, false)
-	if err != nil {
-		return wrapErr(err, "Body")
-	}
-
-	for _, mbox := range d.mboxes {
-		var flagsStmt *sql.Stmt
-		if len(d.flagOverrides[mbox.user.username]) != 0 {
-			flagsStmt, err = d.b.getFlagsAddStmt(len(d.flagOverrides[mbox.user.username]))
-			if err != nil {
-				return wrapErr(err, "Body")
-			}
-		}
-
-		err = d.mboxDelivery(header, mbox, int64(bodyLen), body, date, flagsStmt)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (d *Delivery) mboxDelivery(header textproto.Header, mbox Mailbox, bodyLen int64, body Buffer, date time.Time, flagsStmt *sql.Stmt) (err error) {
+	// Merge per-recipient headers (now empty for dedup) once.
 	header = header.Copy()
-	userHeader := d.perRcptHeader[mbox.user.username]
+	userHeader := d.perRcptHeader[d.mboxes[0].user.username]
 	for fields := userHeader.Fields(); fields.Next(); {
 		header.Add(fields.Key(), fields.Value())
 	}
@@ -290,47 +264,98 @@ func (d *Delivery) mboxDelivery(header textproto.Header, mbox Mailbox, bodyLen i
 		return wrapErr(err, "Body (WriteHeader)")
 	}
 
-	length := int64(headerBlob.Len()) + bodyLen
+	length := int64(headerBlob.Len()) + int64(bodyLen)
 	bodyReader, err := body.Open()
 	if err != nil {
 		return err
 	}
 
-	bodyStruct, cachedHeader, extBodyKey, err := d.b.processParsedBody(headerBlob.Bytes(), header, bodyReader, bodyLen)
+	// Write-once: parse and compress the body into the first
+	// recipient's per-user directory.
+	firstMbox := d.mboxes[0]
+	firstRandKey, err := randomKey()
+	if err != nil {
+		return wrapErr(err, "Body (randomKey)")
+	}
+	firstKey := fmt.Sprintf("%d/%s", firstMbox.user.id, firstRandKey)
+
+	bodyStruct, cachedHeader, err := d.b.processParsedBodyOnce(
+		headerBlob.Bytes(), header, bodyReader, int64(bodyLen), firstKey,
+	)
 	if err != nil {
 		return err
 	}
+	d.extKeys = append(d.extKeys, firstKey)
 
-	if _, err = d.tx.Stmt(d.b.addExtKey).Exec(extBodyKey, mbox.user.id, 1); err != nil {
-		d.b.extStore.Delete([]string{extBodyKey})
-		return wrapErr(err, "Body (addExtKey)")
+	date := time.Now()
+
+	d.tx, err = d.b.db.BeginLevel(sql.LevelReadCommitted, false)
+	if err != nil {
+		return wrapErr(err, "Body")
 	}
 
-	// Note that we are extremely careful here with ordering to
-	// decrease change of deadlocks as a result of transaction
-	// serialization.
+	// Insert the first recipient using the master blob.
+	var flagsStmt *sql.Stmt
+	if len(d.flagOverrides[firstMbox.user.username]) != 0 {
+		flagsStmt, err = d.b.getFlagsAddStmt(len(d.flagOverrides[firstMbox.user.username]))
+		if err != nil {
+			return wrapErr(err, "Body")
+		}
+	}
+	if err := d.mboxDeliveryFast(firstKey, bodyStruct, cachedHeader, length, firstMbox, date, flagsStmt); err != nil {
+		return err
+	}
+
+	// Hardlink the blob for remaining recipients.
+	for _, mbox := range d.mboxes[1:] {
+		rcptRandKey, err := randomKey()
+		if err != nil {
+			return wrapErr(err, "Body (randomKey)")
+		}
+		rcptKey := fmt.Sprintf("%d/%s", mbox.user.id, rcptRandKey)
+
+		if err := d.b.extStore.Link(firstKey, rcptKey); err != nil {
+			return wrapErr(err, "Body (Link)")
+		}
+		d.extKeys = append(d.extKeys, rcptKey)
+
+		var rcptFlagsStmt *sql.Stmt
+		if len(d.flagOverrides[mbox.user.username]) != 0 {
+			rcptFlagsStmt, err = d.b.getFlagsAddStmt(len(d.flagOverrides[mbox.user.username]))
+			if err != nil {
+				return wrapErr(err, "Body")
+			}
+		}
+		if err := d.mboxDeliveryFast(rcptKey, bodyStruct, cachedHeader, length, mbox, date, rcptFlagsStmt); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// mboxDeliveryFast inserts a message into a single mailbox using
+// precomputed body structure and cached header data. The blob
+// identified by extBodyKey must already exist on disk.
+func (d *Delivery) mboxDeliveryFast(extBodyKey string, bodyStruct, cachedHeader []byte, length int64, mbox Mailbox, date time.Time, flagsStmt *sql.Stmt) error {
+	if _, err := d.tx.Stmt(d.b.addExtKey).Exec(extBodyKey, mbox.user.id, 1); err != nil {
+		return wrapErr(err, "Body (addExtKey)")
+	}
 
 	// --- operations that involve mboxes table ---
 	msgId, err := mbox.incrementMsgCounters(d.tx)
 	if err != nil {
-		d.b.extStore.Delete([]string{extBodyKey})
 		return wrapErr(err, "Body (incrementMsgCounters)")
 	}
 
-	// --- operations that involve msgs table ---
-	// We set persistRecent to 1 by default. The actual IDLE notification and
-	// \Recent flag assignment happens after commit in Commit() to avoid
-	// race conditions where clients try to fetch before data is visible.
-	// The NewMessage call in Commit() will handle the actual flag logic.
 	persistRecent := 1
 
-	// Queue the notification to be sent after commit to avoid race conditions
-	// where IMAP IDLE clients try to fetch messages before they are visible.
 	d.pendingNotifications = append(d.pendingNotifications, pendingNotification{
 		mboxId: mbox.id,
 		msgId:  msgId,
 	})
 
+	// --- operations that involve msgs table ---
 	_, err = d.tx.Stmt(d.b.addMsg).Exec(
 		mbox.id, msgId, date.Unix(),
 		length,
@@ -338,22 +363,17 @@ func (d *Delivery) mboxDelivery(header textproto.Header, mbox Mailbox, bodyLen i
 		0, d.b.Opts.CompressAlgo, persistRecent,
 	)
 	if err != nil {
-		d.b.extStore.Delete([]string{extBodyKey})
 		return wrapErr(err, "Body (addMsg)")
 	}
-	// --- end of operations that involve msgs table ---
 
 	// --- operations that involve flags table ---
 	flags := d.flagOverrides[mbox.user.username]
 	if len(flags) != 0 {
-
 		params := mbox.makeFlagsAddStmtArgs(flags, msgId, msgId)
 		if _, err := d.tx.Stmt(flagsStmt).Exec(params...); err != nil {
-			d.b.extStore.Delete([]string{extBodyKey})
 			return wrapErr(err, "Body (flagsStmt)")
 		}
 	}
-	// --- end operations that involve flags table ---
 
 	return nil
 }
@@ -364,8 +384,8 @@ func (d *Delivery) Abort() error {
 			return err
 		}
 	}
-	if d.extKey != "" {
-		if err := d.b.extStore.Delete([]string{d.extKey}); err != nil {
+	if len(d.extKeys) > 0 {
+		if err := d.b.extStore.Delete(d.extKeys); err != nil {
 			return err
 		}
 	}
@@ -401,51 +421,48 @@ func (d *Delivery) Commit() error {
 	return nil
 }
 
-func (b *Backend) processParsedBody(headerInput []byte, header textproto.Header, bodyLiteral io.Reader, bodyLen int64) (bodyStruct, cachedHeader []byte, extBodyKey string, err error) {
-	extBodyKey, err = randomKey()
-	if err != nil {
-		return nil, nil, "", err
-	}
-
+// processParsedBodyOnce parses the MIME structure, extracts cached
+// metadata, and compresses the body into the blob identified by key.
+// The caller provides a pre-generated key (e.g. "<uid>/<rand>").
+func (b *Backend) processParsedBodyOnce(headerInput []byte, header textproto.Header, bodyLiteral io.Reader, bodyLen int64, key string) (bodyStruct, cachedHeader []byte, err error) {
 	objSize := int64(len(headerInput)) + bodyLen
 	if b.Opts.CompressAlgo != "" {
 		objSize = -1
 	}
 
-	extWriter, err := b.extStore.Create(extBodyKey, objSize)
+	extWriter, err := b.extStore.Create(key, objSize)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, err
 	}
 	defer extWriter.Close()
 
 	compressW, err := b.compressAlgo.WrapCompress(extWriter, b.Opts.CompressAlgoParams)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, err
 	}
 	defer compressW.Close()
 
 	if _, err := compressW.Write(headerInput); err != nil {
-		b.extStore.Delete([]string{extBodyKey})
-		return nil, nil, "", err
+		b.extStore.Delete([]string{key})
+		return nil, nil, err
 	}
 
 	bufferedBody := bufio.NewReader(io.TeeReader(bodyLiteral, compressW))
 	bodyStruct, cachedHeader, err = extractCachedData(header, bufferedBody)
 	if err != nil {
-		b.extStore.Delete([]string{extBodyKey})
-		return nil, nil, "", err
+		b.extStore.Delete([]string{key})
+		return nil, nil, err
 	}
 
-	// Consume all remaining body so io.TeeReader used with external store will
-	// copy everything to extWriter.
+	// Drain remaining body so TeeReader copies everything to the store.
 	_, err = io.Copy(ioutil.Discard, bufferedBody)
 	if err != nil {
-		b.extStore.Delete([]string{extBodyKey})
-		return nil, nil, "", err
+		b.extStore.Delete([]string{key})
+		return nil, nil, err
 	}
 
 	if err := extWriter.Sync(); err != nil {
-		return nil, nil, "", err
+		return nil, nil, err
 	}
 
 	return

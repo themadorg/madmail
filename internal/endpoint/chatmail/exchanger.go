@@ -57,7 +57,9 @@ func (e *Endpoint) pollExchangers() {
 		return
 	}
 
-	e.logger.Msg(fmt.Sprintf("[exchanger] Found %d exchangers to poll", len(exchangers)))
+	if len(exchangers) > 0 {
+		e.logger.Msg(fmt.Sprintf("[exchanger] Found %d exchangers to poll", len(exchangers)))
+	}
 
 	for _, ex := range exchangers {
 		// Respect per-exchanger polling interval

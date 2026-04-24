@@ -43,4 +43,8 @@ type BlobStore interface {
 
 	// Delete removes a set of keys from store. Non-existent keys are ignored.
 	Delete(ctx context.Context, keys []string) error
+
+	// Link creates a filesystem hardlink from srcKey to destKey,
+	// enabling deduplication for multi-recipient delivery.
+	Link(ctx context.Context, srcKey, destKey string) error
 }
