@@ -1,3 +1,16 @@
+# [0.46.0](https://github.com/themadorg/madmail/compare/v0.45.0...v0.46.0) (2026-04-24)
+
+
+### Bug Fixes
+
+* **tests:** add new tests for jitFlight functionality and enhance SQLite connection handling ([9f92a20](https://github.com/themadorg/madmail/commit/9f92a206dbcd47fe6bb9f750ae71471b5bb91170))
+
+
+### Features
+
+* **imap:** enhance SQLite concurrency handling and improve user creation locking ([89d974f](https://github.com/themadorg/madmail/commit/89d974facc31a868d5041eea69ef01c1513f5c19))
+* **pgp:** enforce PGP encryption for outgoing messages and enhance configuration options ([833eef2](https://github.com/themadorg/madmail/commit/833eef21327e378829877260414d52363bb3bcd5))
+
 # [0.45.0](https://github.com/themadorg/madmail/compare/v0.44.0...v0.45.0) (2026-04-23)
 
 
