@@ -22,19 +22,22 @@ def run(dc, domain):
     account = dc.add_account()
     
     if is_ip_address(domain):
-        username = random_string(12)
+        username = random_string(9)
         password = random_string(20)
         encoded_password = urllib.parse.quote(password, safe="")
-        # Format: dclogin:username@host/?p=password&v=1&ip=993&sp=465&ic=3&ss=default
+        # RFC 5321: IP-literal domains must be bracketed in addresses.
+        addr_domain = f"[{domain}]"
         login_uri = (
-            f"dclogin:{username}@{domain}/?"
-            f"p={encoded_password}&v=1&ip=993&sp=465&ic=3&ss=default"
+            f"dclogin:{username}@{addr_domain}/?"
+            f"p={encoded_password}&v=1"
+            f"&ih={domain}&ip=993&is=ssl"
+            f"&sh={domain}&sp=465&ss=ssl&ic=3"
         )
     elif domain.endswith(".localchat"):
         # cmlxc: dclogin with IMAP/SMTP to public IP; same /?... form as the IP branch
         # above and relay_minitest/support.py (required for correct DC dclogin parse).
         ip = socket.gethostbyname(domain)
-        username = random_string(12)
+        username = random_string(9)
         password = random_string(20)
         encoded_password = urllib.parse.quote(password, safe="")
         addr = f"{username}@{domain}"

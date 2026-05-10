@@ -26,6 +26,7 @@ jobs:
         cmlxc -v deploy-madmail --source ./repo mad0
         cmlxc -v deploy-madmail --source @main mad1
         cmlxc -v test-mini mad0 mad1
+        cmlxc -v test-mini mad1 mad0
         cmlxc -v test-madmail mad0 mad1
 
         # cross-relay type tests
