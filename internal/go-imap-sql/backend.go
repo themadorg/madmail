@@ -156,6 +156,7 @@ type Backend struct {
 	setSubbed          *sql.Stmt
 	uidNextLocked      *sql.Stmt
 	uidNext            *sql.Stmt
+	uidNextIncrease    *sql.Stmt
 	hasChildren        *sql.Stmt
 	uidValidity        *sql.Stmt
 	msgsCount          *sql.Stmt
@@ -232,9 +233,7 @@ type Backend struct {
 	// Used by Delivery.SpecialMailbox.
 	specialUseMbox *sql.Stmt
 
-	setSeenFlagUid   *sql.Stmt
-	increaseMsgCount *sql.Stmt
-	decreaseMsgCount *sql.Stmt
+	setSeenFlagUid *sql.Stmt
 
 	setInboxId *sql.Stmt
 

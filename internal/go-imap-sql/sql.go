@@ -125,8 +125,6 @@ func (b *Backend) initSchema() error {
 			uidvalidity BIGINT NOT NULL,
             specialuse VARCHAR(255) DEFAULT NULL,
 
-            msgsCount INTEGER NOT NULL DEFAULT 0,
-
 			UNIQUE(uid, name)
 		)`)
 	if err != nil {
@@ -312,28 +310,19 @@ func (b *Backend) prepareStmts() error {
 		return wrapErr(err, "uidNext prep")
 	}
 	if b.db.driver == "postgres" {
-		b.increaseMsgCount, err = b.db.Prepare(`
+		b.uidNextIncrease, err = b.db.Prepare(`
 		    UPDATE mboxes
-		    SET uidnext = uidnext + ?,
-                msgsCount = msgsCount + ?
+		    SET uidnext = uidnext + ?
 		    WHERE id = ?
 		    RETURNING uidnext - 1`)
 	} else {
-		b.increaseMsgCount, err = b.db.Prepare(`
+		b.uidNextIncrease, err = b.db.Prepare(`
 		    UPDATE mboxes
-		    SET uidnext = uidnext + ?,
-                msgsCount = msgsCount + ?
+		    SET uidnext = uidnext + ?
 		    WHERE id = ?`)
 	}
 	if err != nil {
-		return wrapErr(err, "increaseMsgCount prep")
-	}
-	b.decreaseMsgCount, err = b.db.Prepare(`
-		UPDATE mboxes
-		SET msgsCount = msgsCount - ?
-		WHERE id = ?`)
-	if err != nil {
-		return wrapErr(err, "decreaseMsgCount prep")
+		return wrapErr(err, "uidNextIncrease prep")
 	}
 	b.uidValidity, err = b.db.Prepare(`
 		SELECT uidvalidity
@@ -343,9 +332,9 @@ func (b *Backend) prepareStmts() error {
 		return wrapErr(err, "uidvalidity prep")
 	}
 	b.msgsCount, err = b.db.Prepare(`
-		SELECT msgsCount
-		FROM mboxes
-		WHERE id = ?`)
+		SELECT count(*)
+		FROM msgs
+		WHERE mboxId = ?`)
 	if err != nil {
 		return wrapErr(err, "msgsCount prep")
 	}

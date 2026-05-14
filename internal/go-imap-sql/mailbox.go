@@ -234,7 +234,7 @@ func (m *Mailbox) incrementMsgCounters(tx *sql.Tx) (uint32, error) {
 	// Increment both uidNext and msgsCount and return previous uidNext.
 	if m.parent.db.driver == "postgres" {
 		var nextId uint32
-		err := tx.Stmt(m.parent.increaseMsgCount).QueryRow(1, 1, m.id).Scan(&nextId)
+		err := tx.Stmt(m.parent.uidNextIncrease).QueryRow(1, m.id).Scan(&nextId)
 		return nextId, err
 	}
 
@@ -245,7 +245,7 @@ func (m *Mailbox) incrementMsgCounters(tx *sql.Tx) (uint32, error) {
 		return 0, err
 	}
 
-	if _, err := tx.Stmt(m.parent.increaseMsgCount).Exec(1, 1, m.id); err != nil {
+	if _, err := tx.Stmt(m.parent.uidNextIncrease).Exec(1, m.id); err != nil {
 		return 0, err
 	}
 
@@ -566,21 +566,14 @@ func (m *Mailbox) MoveMessages(uid bool, seqset *imap.SeqSet, dest string) error
 		return wrapErr(err, "MoveMessages (decrease counters)")
 	}
 
-	// Decrease MESSAGES for the source mailbox.
-	_, err = tx.Stmt(m.parent.decreaseMsgCount).Exec(copiedCount, m.id)
-	if err != nil {
-		m.parent.logMboxErr(m, err, "MoveMessages (decrease counters)", uid, seqset, dest)
-		return wrapErr(err, "MoveMessages (decrease counters)")
-	}
-
 	var oldUidNext uint32
 	if err := tx.Stmt(m.parent.uidNext).QueryRow(destID).Scan(&oldUidNext); err != nil {
 		m.parent.logMboxErr(m, err, "MoveMessages (old uidNext)", uid, seqset, dest)
 		return wrapErr(err, "MoveMessages (old uidNext)")
 	}
 
-	// Increase UIDNEXT and MESSAGES for the target mailbox.
-	if _, err := tx.Stmt(m.parent.increaseMsgCount).Exec(copiedCount, copiedCount, destID); err != nil {
+	// Increase UIDNEXT for the target mailbox.
+	if _, err := tx.Stmt(m.parent.uidNextIncrease).Exec(copiedCount, destID); err != nil {
 		m.parent.logMboxErr(m, err, "MoveMessages (increase counters)", uid, seqset, dest)
 		return wrapErr(err, "MoveMessages (increase counters)")
 	}
@@ -716,7 +709,6 @@ func (m *Mailbox) delMessages(tx *sql.Tx, seqset *imap.SeqSet) (imap.SeqSet, err
 	}
 
 	m.parent.Opts.Log.Println("delMessages: deleted", deletedCount, "messages")
-	_, err = tx.Stmt(m.parent.decreaseMsgCount).Exec(deletedCount, m.id)
 	return deletedUids, err
 }
 
@@ -758,7 +750,7 @@ func (m *Mailbox) copyMessages(tx *sql.Tx, seqset *imap.SeqSet, dest string) (fi
 		return 0, 0, 0, err
 	}
 
-	if _, err := tx.Stmt(m.parent.increaseMsgCount).Exec(totalCopied, totalCopied, destID); err != nil {
+	if _, err := tx.Stmt(m.parent.uidNextIncrease).Exec(totalCopied, destID); err != nil {
 		return 0, 0, 0, err
 	}
 
@@ -812,12 +804,6 @@ func (m *Mailbox) Expunge() error {
 	if err != nil {
 		m.parent.logMboxErr(m, err, "Expunge (expunge)")
 		return wrapErr(err, "Expunge")
-	}
-
-	_, err = tx.Stmt(m.parent.decreaseMsgCount).Exec(expungedCount, m.id)
-	if err != nil {
-		m.parent.logMboxErr(m, err, "Expunge (decrease counters)", m.id, expungedCount)
-		return wrapErr(err, "Expunge (decrease counters)")
 	}
 
 	if _, err := tx.Stmt(m.parent.deleteZeroRef).Exec(m.user.id); err != nil {
