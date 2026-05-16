@@ -1,3 +1,10 @@
+## [0.47.1](https://github.com/themadorg/madmail/compare/v0.47.0...v0.47.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* update configuration and documentation for chatmail and connectivity ([aaf8482](https://github.com/themadorg/madmail/commit/aaf8482e1929652ff917cc01a9d63bdd2fab5391))
+
 # [0.47.0](https://github.com/themadorg/madmail/compare/v0.46.0...v0.47.0) (2026-04-24)
 
 
