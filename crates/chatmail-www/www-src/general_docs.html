@@ -1,0 +1,189 @@
+<!--
+  Copyright (C) 2026 themadorg
+  
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+  
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>General Documentation - {{.WebDomain | cleanDomain}}</title>
+    <link rel="stylesheet" href="/main.css">
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/docs" data-i18n="nav_docs">Docs</a></li>
+        </ul>
+    </header>
+
+    <div class="card card--wide" id="doc-content-en">
+        <h1>General Documentation</h1>
+        <p>Welcome to the general documentation for the <strong>Madmail</strong> server.</p>
+
+        <h2>Introduction to Madmail</h2>
+        <p><strong>Madmail</strong> is a powerful email application built on top of the <strong>Maddy</strong> project.
+            It runs as a single <strong>Go</strong> (Golang) binary and its main goal is to create
+            a secure and fast communication platform.</p>
+
+        <h2>DeltaChat Messenger Integration</h2>
+        <p>The most important feature of Madmail is that it creates an <strong>End-to-End Encrypted</strong>
+            chat server for you.
+            You can use this service with the popular <strong>DeltaChat</strong> application and
+            enjoy a modern messenger experience on a completely private and decentralized platform.</p>
+
+        <h2>Simple and Instant Registration (JIT)</h2>
+        <p>One of the smart features of <strong>Madmail</strong> is support for instant registration,
+            or <strong>Just-In-Time Registration</strong>.
+            This means you don't need to go through lengthy registration steps; upon the first login attempt
+            with new credentials, your account is automatically created if this feature is enabled. You can also use
+            the registration button on the main page to quickly get a QR Code with your settings.</p>
+
+        <h2>Voice and Video Calls (TURN)</h2>
+        <p>One of the standout features of this server is having a dedicated <strong>TURN</strong> service to improve
+            call quality in DeltaChat.
+            This service acts as a relay so that if two users cannot connect directly (P2P),
+            the call is routed through the server with high stability.</p>
+
+        <h2>Storage Quota</h2>
+        <p>To ensure fair resource distribution, the server enforces storage limits. You can
+            view your usage and quota through any email client that supports the QUOTA extension.</p>
+
+        <h2>Server Management (Admin API)</h2>
+        <p>
+            Since version <span class="highlight">v0.15.3</span>, a control API (Admin API) is embedded within the server
+            that allows easy server management.
+            The Admin API path and the admin token are configurable and can be set
+            statically in the server configuration file.
+        </p>
+        <p>
+            To get the default token for authentication, run the command <code>maddy admin-token</code> on your server.
+        </p>
+        <p>
+            In addition to this API, the <span class="highlight">Web Admin</span> project has been developed for graphical server management.
+            The source code is available at <a href="https://github.com/themadorg/madmail-admin-web/" target="_blank"
+                style="color: var(--accent-color);">github.com/themadorg/madmail-admin-web</a> and is automatically
+            built and deployed at
+            <a href="https://admin.madmail.chat/" target="_blank"
+                style="color: var(--accent-color);">https://admin.madmail.chat/</a>.
+            Visit this link and enter your server address and token to easily manage your server.
+        </p>
+
+        <h2>Security Recommendations</h2>
+        <div class="alert alert--info">
+            <p><strong>Message Security:</strong> This service is very secure by default. To ensure communication
+                privacy in DeltaChat, note that the presence of a <strong>grey icon</strong> next to
+                messages means encryption is disabled; therefore, sensitive messages should not have this indicator.</p>
+            <p><strong>Updates:</strong> To maintain security and benefit from the latest features, always keep your
+                DeltaChat application updated to the latest version.</p>
+        </div>
+
+        <h2>Support</h2>
+        <p>For support, please contact your server administrator.</p>
+    </div>
+
+    <!-- Farsi version (hidden by default, shown when lang=fa) -->
+    <div class="card card--wide" id="doc-content-fa" style="display:none;">
+        <h1>مستندات عمومی</h1>
+        <p>به بخش مستندات عمومی سرور <strong>Madmail</strong> خوش آمدید.</p>
+
+        <h2>معرفی سرویس Madmail</h2>
+        <p>سرویس <strong>Madmail</strong> یک اپلیکیشن ایمیل قدرتمند است که بر پایه پروژه <strong>Maddy</strong> توسعه یافته است.
+            این سرویس به صورت یک باینری زبان <strong>Go</strong> (Golang) اجرا می‌شود و هدف اصلی آن ایجاد
+            یک بستر ارتباطی امن و سریع است.</p>
+
+        <h2>پیام‌رسان متصل به DeltaChat</h2>
+        <p>مهم‌ترین ویژگی Madmail این است که یک سرور چت <strong>End-to-End Encrypted</strong> (رمزنگاری
+            شده از مبدا تا مقصد) برای شما ایجاد می‌کند.
+            شما می‌توانید از این سرویس در اپلیکیشن محبوب <strong>DeltaChat</strong> استفاده کنید و
+            تجربه‌ای مشابه پیام‌رسان‌های مدرن اما در بستری کاملاً خصوصی و غیرمتمرکز داشته باشید.</p>
+
+        <h2>ثبت‌نام ساده و آنی (JIT)</h2>
+        <p>یکی از قابلیت‌های هوشمند <strong>Madmail</strong>، پشتیبانی از ثبت‌نام آنی یا <strong>Just-In-Time Registration</strong> است.
+            این به این معناست که شما نیازی به طی کردن مراحل طولانی ثبت‌نام ندارید؛ به محض اولین تلاش برای ورود با یک
+            مشخصات جدید، حساب شما در صورت فعال بودن این قابلیت به صورت خودکار ساخته می‌شود. همچنین می‌توانید از دکمه
+            ثبت‌نام در صفحه اصلی برای دریافت سریع QR Code تنظیمات استفاده کنید.</p>
+
+        <h2>تماس‌های صوتی و تصویری (TURN)</h2>
+        <p>یکی از ویژگی‌های برجسته این سرور، داشتن سرویس <strong>TURN</strong> اختصاصی برای بهبود کیفیت
+            تماس‌ها در DeltaChat است.
+            این سرویس به عنوان یک واسط (Relay) عمل می‌کند تا در صورتی که دو کاربر نتوانند به صورت مستقیم (P2P) به هم
+            متصل شوند، تماس از طریق سرور با پایداری بالا برقرار شود.</p>
+
+        <h2>سهمیه فضای ذخیره‌سازی</h2>
+        <p>سرور برای اطمینان از توزیع عادلانه منابع، محدودیت‌هایی برای فضای ذخیره‌سازی اعمال می‌کند. شما می‌توانید
+            میزان مصرف و سقف مجاز خود را از طریق هر برنامه ایمیلی که از افزونه QUOTA پشتیبانی می‌کند، مشاهده کنید.</p>
+
+        <h2>مدیریت سرور (Admin API)</h2>
+        <p>
+            از نسخه <span class="highlight">v0.15.3</span> به بعد، یک API کنترلی (Admin API) درون خود سرور تعبیه شده است
+            که امکان مدیریت آسان سرور را فراهم می‌کند.
+            مسیر دسترسی به این API و همچنین توکن مدیریتی (Admin Token) قابل تغییر هستند و می‌توانید آن‌ها را به صورت
+            استاتیک در فایل تنظیمات سرور قرار دهید.
+        </p>
+        <p>
+            برای دریافت توکن پیش‌فرض جهت احراز هویت، می‌توانید دستور <code>maddy admin-token</code> را در سرور خود اجرا
+            کنید.
+        </p>
+        <p>
+            در کنار این API، پروژه <span class="highlight">Web Admin</span> نیز برای مدیریت گرافیکی سرور توسعه داده شده
+            است.
+            سورس‌کد این پروژه در <a href="https://github.com/themadorg/madmail-admin-web/" target="_blank" dir="ltr"
+                style="color: var(--accent-color);">github.com/themadorg/madmail-admin-web</a> قرار دارد و به طور خودکار
+            بیلد و در آدرس
+            <a href="https://admin.madmail.chat/" target="_blank" dir="ltr"
+                style="color: var(--accent-color);">https://admin.madmail.chat/</a>
+            مستقر (Deploy) می‌شود. با مراجعه به این لینک و وارد کردن آدرس سرور و توکن خود، به راحتی سرورتان را مدیریت
+            کنید.
+        </p>
+
+        <h2>توصیه‌های امنیتی</h2>
+        <div class="alert alert--info">
+            <p><strong>امنیت پیام‌ها:</strong> این سرویس به صورت پیش‌فرض بسیار امن است. برای اطمینان از محرمانگی
+                ارتباطات در DeltaChat، توجه داشته باشید که وجود <strong>آیکون خاکستری</strong> در کنار
+                پیام‌ها به معنای غیرفعال بودن رمزنگاری است؛ لذا پیام‌های حساس باید فاقد این نشان باشند.</p>
+            <p><strong>به‌روزرسانی:</strong> برای حفظ امنیت و بهره‌مندی از آخرین ویژگی‌ها، حتماً اپلیکیشن DeltaChat خود
+                را همیشه به آخرین نسخه به‌روزرسانی کنید.</p>
+        </div>
+
+        <h2>پشتیبانی</h2>
+        <p>برای دریافت پشتیبانی، لطفاً با مدیر سرور خود تماس بگیرید.</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            var lang = "{{.Language}}";
+            // Show the correct language block
+            if (lang === "fa") {
+                document.getElementById('doc-content-en').style.display = 'none';
+                document.getElementById('doc-content-fa').style.display = '';
+            }
+        };
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,22 @@
+[package]
+name = "chatmail-turn"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+base64 = "0.22"
+hmac = "0.12"
+sha1 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
+tracing = { workspace = true }
+turn = { version = "0.11", default-features = false }
+webrtc-util = { version = "0.12", default-features = false, features = ["vnet"] }
+netdev = { version = "0.40", default-features = false }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "io-util", "process"] }

@@ -1,0 +1,64 @@
+[package]
+name = "chatmail-integration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+base64 = "0.22"
+chatmail-config = { workspace = true }
+chatmail-auth = { workspace = true }
+chatmail-db = { workspace = true }
+chatmail-imap = { workspace = true }
+chatmail-smtp = { workspace = true }
+chatmail-state = { workspace = true }
+chatmail-delivery = { workspace = true }
+chatmail-www = { workspace = true }
+chatmail-pgp = { workspace = true }
+chatmail-storage = { workspace = true }
+chatmail-turn = { workspace = true }
+chatmail-metrics = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+axum = { workspace = true }
+serde_json = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "io-util", "net", "time"] }
+tokio-util = { workspace = true }
+
+[[test]]
+name = "boot_test"
+path = "boot_test.rs"
+
+[[test]]
+name = "securejoin_e2e"
+path = "securejoin_e2e.rs"
+
+[[test]]
+name = "imap_e2e"
+path = "imap_e2e.rs"
+
+[[test]]
+name = "deltachat_p2p_e2e"
+path = "deltachat_p2p_e2e.rs"
+
+[[test]]
+name = "turn_e2e"
+path = "turn_e2e.rs"
+
+[[test]]
+name = "ctl_cli_e2e"
+path = "ctl_cli_e2e.rs"
+
+[[test]]
+name = "ctl_ops_e2e"
+path = "ctl_ops_e2e.rs"
+
+[[test]]
+name = "openmetrics_e2e"
+path = "openmetrics_e2e.rs"

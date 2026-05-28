@@ -1,0 +1,133 @@
+// Copyright (C) 2026 themadorg
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! Flags for `madmail install` and `madmail certificate` (Madmail-compatible).
+
+use std::path::PathBuf;
+
+use clap::{Parser, Subcommand};
+
+/// `madmail install` — server setup (see `context/madmail/docs/chatmail/certificate.md`).
+#[derive(Debug, Parser, Clone)]
+pub struct InstallArgs {
+    /// Non-interactive install (required for scripts).
+    #[arg(long, short = 'n')]
+    pub non_interactive: bool,
+
+    /// Quick IP-based chatmail setup (`--ip` sets domain/hostname).
+    #[arg(long, short = 's')]
+    pub simple: bool,
+
+    #[arg(long)]
+    pub domain: Option<String>,
+
+    #[arg(long)]
+    pub hostname: Option<String>,
+
+    /// Public IP (`--simple` sets domain from this).
+    #[arg(long)]
+    pub ip: Option<String>,
+
+    #[arg(long, default_value = "/etc/madmail")]
+    pub config_dir: PathBuf,
+
+    /// State directory (default: `/var/lib/<binary>` for `--simple` / system install).
+    #[arg(long)]
+    pub state_dir: Option<PathBuf>,
+
+    /// TLS mode: `autocert`, `file`, `self_signed` (auto-detected if omitted).
+    #[arg(long)]
+    pub tls_mode: Option<String>,
+
+    #[arg(long)]
+    pub cert_path: Option<PathBuf>,
+
+    #[arg(long)]
+    pub key_path: Option<PathBuf>,
+
+    #[arg(long)]
+    pub acme_email: Option<String>,
+
+    #[arg(long)]
+    pub enable_chatmail: bool,
+
+    /// Enable Shadowsocks proxy in generated `chatmail` blocks (Madmail `--enable-ss`).
+    #[arg(long)]
+    pub enable_ss: bool,
+
+    #[arg(long)]
+    pub turn_off_tls: bool,
+
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Do not install systemd unit files.
+    #[arg(long)]
+    pub skip_systemd: bool,
+
+    /// Do not create the service system user (`useradd`).
+    #[arg(long)]
+    pub skip_user: bool,
+
+    /// Install path for the binary (default: `/usr/local/bin/<argv0>`).
+    #[arg(long)]
+    pub binary_path: Option<PathBuf>,
+
+    /// Obtain Let's Encrypt cert during install (`autocert` mode only; needs port 80).
+    #[arg(long, default_value_t = true)]
+    pub obtain_certificate: bool,
+
+    /// Obtain a Let's Encrypt short-lived certificate for `--ip` (HTTP-01 on port 80).
+    #[arg(long)]
+    pub auto_ip_cert: bool,
+
+    /// Website/UI language: `en`, `fa`, `ru`, `es` (Madmail `--lang`; seeds `__LANGUAGE__` in DB).
+    #[arg(long, default_value = "en")]
+    pub lang: String,
+}
+
+/// `madmail certificate` — Let's Encrypt via lers HTTP-01.
+#[derive(Debug, Subcommand, Clone)]
+pub enum CertificateCommand {
+    /// Obtain certificate if missing or expiring within 30 days.
+    Get(CertificateArgs),
+    /// Force new certificate issuance.
+    Regenerate(CertificateArgs),
+}
+
+#[derive(Debug, Parser, Clone)]
+pub struct CertificateArgs {
+    /// DNS name (default: `primary_domain` from config).
+    #[arg(long)]
+    pub domain: Option<String>,
+
+    /// ACME contact email (default: `admin@<domain>`).
+    #[arg(long)]
+    pub email: Option<String>,
+
+    /// HTTP-01 listener (port 80 must be free).
+    #[arg(long, default_value = "0.0.0.0:80")]
+    pub http_listen: String,
+
+    /// Use Let's Encrypt staging (for tests).
+    #[arg(long)]
+    pub staging: bool,
+
+    /// Force issuance on `get` even if current cert is still valid.
+    #[arg(long)]
+    pub force: bool,
+}

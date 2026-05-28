@@ -1,0 +1,11 @@
+[package]
+name = "chatmail-pgp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chatmail-types = { workspace = true }
+mail-parser = "0.11"
+
+[dev-dependencies]

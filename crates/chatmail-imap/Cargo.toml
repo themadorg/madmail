@@ -1,0 +1,32 @@
+[package]
+name = "chatmail-imap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chatmail-auth = { workspace = true }
+chatmail-config = { workspace = true }
+chatmail-db = { workspace = true }
+chatmail-turn = { workspace = true }
+chatmail-iroh = { workspace = true }
+chatmail-pgp = { workspace = true }
+chatmail-state = { workspace = true }
+chatmail-storage = { workspace = true }
+chatmail-types = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "net", "rt", "macros", "sync", "time"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+time = { version = "0.3", features = ["formatting"] }
+uuid = { workspace = true }
+chatmail-tls = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+
+[dev-dependencies]
+chatmail-auth = { workspace = true }
+chatmail-db = { workspace = true }
+imap-proto = "0.16"
+tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "io-util"] }

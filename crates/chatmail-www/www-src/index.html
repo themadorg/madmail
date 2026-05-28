@@ -1,0 +1,264 @@
+<!--
+  Copyright (C) 2026 themadorg
+  
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+  
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+    <title data-i18n="index_title">Chat Server</title>
+    <link rel="stylesheet" href="./main.css">
+    <script src="./translations.js"></script>
+    <script src="./qrcode.min.js"></script>
+    <script src="./main.js"></script>
+    <link rel="icon" href="/logo.svg">
+</head>
+
+<body>
+
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu" data-i18n="nav_menu_label">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+            <li><a href="/deploy.html" data-i18n="nav_deploy">Deploy</a></li>
+        </ul>
+    </header>
+
+    <div class="text-center">
+        <h2><span data-i18n="index_title">Chat Server</span> {{.MailDomain | cleanDomain}}</h2>
+        <p data-i18n-html="index_subtitle">This is a dedicated server for use with <strong>DeltaChat</strong>.</p>
+    </div>
+
+    {{if .RegistrationOpen}}
+    <div class="text-center">
+        <button class="btn btn--primary mt-md" onclick="generateAccount()" id="generate-btn" data-i18n="index_generate">Create New Account</button>
+
+        <div id="qr-container" class="hidden mt-md">
+            <div class="qr-wrap">
+                <img id="result-qr" width="180" alt="QR Code" />
+            </div>
+        </div>
+
+        <div id="loading-indicator" class="hidden mt-md text-muted" data-i18n="index_loading">
+            Creating account...
+        </div>
+        <div id="error-message" class="alert alert--danger hidden"></div>
+        <div id="deltachat-error" class="alert alert--warning hidden">
+            <strong data-i18n="index_dc_not_installed_title">DeltaChat is not installed</strong>
+            <p class="mt-sm text-sm" data-i18n="index_dc_not_installed_text">Please install the DeltaChat app first, then use the "Copy Link" button.</p>
+        </div>
+
+        <div id="account-result" class="hidden">
+            <div class="flex flex-center flex-wrap gap-sm mt-md">
+                <button class="btn btn--primary" onclick="openDeltaChat()" id="open-deltachat-btn" disabled data-i18n="index_open_dc">Open DeltaChat</button>
+                <button class="btn btn--secondary" onclick="copyLink()" id="copy-link-btn" disabled data-i18n="index_copy_link">Copy Link</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-lg text-start" id="manual-card-default">
+        <strong data-i18n="index_manual_title">Manual setup (if the button didn't work):</strong>
+        <ol>
+            <li data-i18n="index_manual_step1">In DeltaChat, select "Create new profile".</li>
+            <li data-i18n="index_manual_step2">Then tap "Use Other Server".</li>
+            <li data-i18n="index_manual_step3">Copy the text below and in the scan code section, tap "Paste from clipboard":</li>
+        </ol>
+        <div class="code-block" id="manual-link" onclick="copyText(this)"></div>
+    </div>
+
+    <div class="card mt-lg text-start hidden" id="manual-card-ios">
+        <strong data-i18n="index_ios_title">iPhone account creation guide:</strong>
+        <p class="mt-sm" data-i18n="index_ios_intro">First copy the link below, then follow these steps in DeltaChat:</p>
+        <div class="code-block" id="manual-link-ios" onclick="copyText(this)"></div>
+        <ol class="mt-md">
+            <li>Use Other Server</li>
+            <li>Scan Invitation Code</li>
+            <li>⋯</li>
+            <li>Paste from Clipboard</li>
+            <li data-i18n="index_manual_step1">Enter name and profile picture (optional)</li>
+            <li>Agree & Create Profile</li>
+        </ol>
+    </div>
+
+    <div class="card text-start" id="ios-card">
+        <strong data-i18n="index_ios_note_title">Note for iOS (iPhone) users:</strong>
+        <p class="text-sm mt-sm" data-i18n-html="index_ios_note_text">iPhone users should copy the standard link above and during new account creation follow:</p>
+        <p class="text-sm mono" data-i18n="index_ios_note_path">new account > use other server > scan > paste</p>
+        <p class="text-sm mt-sm" data-i18n="index_ios_note_detail">Although clicking the login button may work on iOS, due to system limitations, the copy-paste method is recommended.</p>
+    </div>
+
+    <div class="card card--centered mt-lg">
+        <h3 data-i18n="index_share_title">Share Your ID</h3>
+        <p class="mb-md" data-i18n="index_share_text">You can share your DeltaChat ID so others can contact you.</p>
+        <a href="/share" class="btn btn--primary" data-i18n="index_share_btn">Share My ID</a>
+    </div>
+    {{else}}
+    <div class="card card--danger card--centered mt-lg">
+        <h3 class="text-danger" data-i18n="index_reg_closed_title">Registration Closed</h3>
+        <p data-i18n="index_reg_closed_text">New user registration on this server is temporarily disabled. Please use other servers.</p>
+    </div>
+    {{end}}
+
+    <script>
+        let currentLink = "";
+        const registrationOpen = "{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true";
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const PAGE_LANG = "{{.Language}}";
+
+        function generateRandomString(length) {
+            const charset = "abcdefghijklmnopqrstuvwxyz0123456789";
+            const bytes = new Uint8Array(length);
+            crypto.getRandomValues(bytes);
+            let result = "";
+            for (let i = 0; i < length; i++) {
+                result += charset.charAt(bytes[i] % charset.length);
+            }
+            return result;
+        }
+
+        const REGISTRATION_DOMAIN = "{{.MailDomain | cleanDomain}}";
+        const DCLOGIN_HOST_FALLBACK = "{{.ClientHost | cleanDomain}}" || "{{.MXDomain | cleanDomain}}" || "{{.PublicIP | cleanDomain}}";
+
+        function createDcloginLink(email, password) {
+            const host = connectHostForDclogin(DCLOGIN_HOST_FALLBACK);
+            const imapMode = "{{.DcloginImapSecurity}}";
+            const smtpMode = "{{.DcloginSmtpSecurity}}";
+
+            function dcloginEndpoint(mode, starttlsPort, tlsPort) {
+                if (mode === "plain") return { security: "plain", port: starttlsPort };
+                if (mode === "starttls") return { security: "starttls", port: starttlsPort };
+                if (mode === "default") return { security: "default", port: tlsPort };
+                if (mode === "ssl") return { security: "ssl", port: tlsPort };
+                return { security: "ssl", port: tlsPort };
+            }
+
+            const imap = dcloginEndpoint(imapMode, "{{.ImapPortStartTLS}}", "{{.ImapPortTLS}}");
+            const smtp = dcloginEndpoint(smtpMode, "{{.SmtpPortStartTLS}}", "{{.SmtpPortTLS}}");
+            return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=${imap.port}&is=${imap.security}&sh=${host}&sp=${smtp.port}&ss=${smtp.security}&ic=3`;
+        }
+
+        function generateAccountRandom() {
+            const username = generateRandomString(12);
+            const password = generateRandomString(24);
+            const email = formatEmail(username, REGISTRATION_DOMAIN);
+
+            currentLink = createDcloginLink(email, password);
+
+            document.getElementById('manual-link').innerText = currentLink;
+            document.getElementById('manual-link-ios').innerText = currentLink;
+            if (!isIOS) {
+                setQrCodeImage(document.getElementById('result-qr'), currentLink);
+                document.getElementById('qr-container').classList.remove('hidden');
+            }
+            document.getElementById('account-result').classList.remove('hidden');
+            document.getElementById('loading-indicator').classList.add('hidden');
+            document.getElementById('error-message').classList.add('hidden');
+            document.getElementById('generate-btn').disabled = false;
+            updateButtonStates();
+        }
+
+        function generateAccount() {
+            generateAccountRandom();
+        }
+
+        function updateButtonStates() {
+            const hasLink = currentLink && currentLink.length > 0;
+            document.getElementById('open-deltachat-btn').disabled = !hasLink;
+            document.getElementById('copy-link-btn').disabled = !hasLink;
+        }
+
+        function openDeltaChat() {
+            if (!currentLink) {
+                document.getElementById('deltachat-error').classList.remove('hidden');
+                return;
+            }
+
+            document.getElementById('deltachat-error').classList.add('hidden');
+
+            let deltaChatOpened = false;
+            let timeoutId = null;
+
+            const cleanup = () => {
+                if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                window.removeEventListener('blur', handleBlur);
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+            };
+
+            const handleBlur = () => { deltaChatOpened = true; cleanup(); };
+            const handleVisibilityChange = () => { if (document.hidden) { deltaChatOpened = true; cleanup(); } };
+
+            window.addEventListener('blur', handleBlur, { once: true });
+            document.addEventListener('visibilitychange', handleVisibilityChange, { once: true });
+
+            try {
+                window.location.href = currentLink;
+            } catch (e) {
+                const link = document.createElement('a');
+                link.href = currentLink;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            timeoutId = setTimeout(() => {
+                cleanup();
+                if (!deltaChatOpened) {
+                    document.getElementById('deltachat-error').classList.remove('hidden');
+                }
+            }, 2500);
+        }
+
+        function copyLink() {
+            if (currentLink) copyToClipboard(currentLink);
+        }
+
+        function copyText(el) {
+            copyToClipboard(el.innerText);
+        }
+
+        window.onload = function () {
+            applyTranslations(PAGE_LANG);
+            // Update title with domain
+            document.title = t('index_title') + ' ' + '{{.MailDomain | cleanDomain}}';
+
+            if (isIOS) {
+                document.getElementById('open-deltachat-btn').style.display = 'none';
+                document.getElementById('manual-card-default').style.display = 'none';
+                document.getElementById('manual-card-ios').classList.remove('hidden');
+                var iosCard = document.getElementById('ios-card');
+                if (iosCard) iosCard.style.display = 'none';
+            }
+            updateButtonStates();
+            if (registrationOpen) {
+                generateAccount();
+            }
+        };
+    </script>
+
+    <div class="footer text-center"><span data-i18n="footer_version">Version</span> {{.Version}}</div>
+</body>
+
+</html>

@@ -1,0 +1,10 @@
+[package]
+name = "chatmail-tls"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chatmail-types = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }

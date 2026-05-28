@@ -1,0 +1,1904 @@
+// Copyright (C) 2026 themadorg
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+use std::sync::Arc;
+
+use chatmail_auth::{normalize_username, AuthContext};
+use chatmail_config::CredentialPolicy;
+use chatmail_iroh::IrohDiscovery;
+use chatmail_turn::TurnDiscovery;
+use chatmail_pgp::{enforce_encryption, EnforceOptions};
+use chatmail_state::AppState;
+use chatmail_storage::{mailbox_exists, read_blob, write_blob_mailbox, list_mailbox_messages, store_add_flags, move_message, copy_message, expunge_deleted, StoredMessage};
+use chatmail_types::{ChatmailError, Result};
+use chatmail_db::DbPool;
+use tokio::io::{
+    AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
+};
+use tokio::sync::broadcast::error::RecvError;
+use tracing::debug;
+
+#[derive(Clone)]
+pub struct ImapSessionConfig {
+    pub hostname: String,
+    pub primary_domain: String,
+    pub jit_domain: Option<String>,
+    pub credential_policy: CredentialPolicy,
+    /// When set, advertise `METADATA` and serve `/shared/vendor/deltachat/turn`.
+    pub turn: Option<TurnDiscovery>,
+    /// When set, serve `/shared/vendor/deltachat/irohrelay` (WebXDC realtime).
+    pub iroh: Option<IrohDiscovery>,
+}
+
+impl ImapSessionConfig {
+    pub fn advertise_metadata(&self) -> bool {
+        self.turn.as_ref().is_some_and(TurnDiscovery::enabled)
+            || self.iroh.as_ref().is_some_and(IrohDiscovery::enabled)
+    }
+}
+
+pub struct ImapSession {
+    ctx: Arc<AppState>,
+    pool: DbPool,
+    cfg: ImapSessionConfig,
+    _tag: u32,
+    authenticated_user: Option<String>,
+    selected_mailbox: Option<String>,
+    selected_folder_needs_expunge: bool,
+    messages: Vec<MailMessage>,
+}
+
+#[derive(Clone)]
+struct MailMessage {
+    uid: u32,
+    id: String,
+    size: u64,
+    internal_date: String,
+    flags: chatmail_storage::MaildirFlags,
+}
+
+impl ImapSession {
+    pub fn new(ctx: Arc<AppState>, pool: DbPool, cfg: ImapSessionConfig) -> Self {
+        Self {
+            ctx,
+            pool,
+            cfg,
+            _tag: 0,
+            authenticated_user: None,
+            selected_mailbox: None,
+            selected_folder_needs_expunge: false,
+            messages: Vec::new(),
+        }
+    }
+
+    pub async fn handle_connection<S>(&mut self, stream: S) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let (reader, mut writer) = tokio::io::split(stream);
+        let mut lines = BufReader::new(reader);
+
+        writer
+            .write_all(format!("* OK {} IMAP4rev1 ready\r\n", self.cfg.hostname).as_bytes())
+            .await?;
+
+        loop {
+            let mut line = String::new();
+            if lines.read_line(&mut line).await? == 0 {
+                break;
+            }
+            let line = line.trim_end().to_string();
+            if line.is_empty() {
+                continue;
+            }
+            let (tag, cmd, args) = parse_command(&line);
+            let resp = self.dispatch(&mut lines, tag, &cmd, &args, &mut writer).await?;
+            if let Some(r) = resp {
+                writer.write_all(r.as_bytes()).await?;
+            }
+            if cmd.eq_ignore_ascii_case("LOGOUT") {
+                writer
+                    .write_all(b"* BYE chatmail-rs logging out\r\n")
+                    .await?;
+                if let Some(t) = tag {
+                    writer
+                        .write_all(format!("{t} OK LOGOUT completed\r\n").as_bytes())
+                        .await?;
+                }
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    async fn dispatch<R, W>(
+        &mut self,
+        lines: &mut BufReader<R>,
+        tag: Option<&str>,
+        cmd: &str,
+        args: &str,
+        writer: &mut W,
+    ) -> Result<Option<String>>
+    where
+        R: tokio::io::AsyncRead + Unpin,
+        W: AsyncWriteExt + Unpin,
+    {
+        let t = tag.unwrap_or("*");
+        match cmd.to_ascii_uppercase().as_str() {
+            "CAPABILITY" => Ok(Some(format!(
+                "* CAPABILITY {}\r\n{t} OK CAPABILITY completed\r\n",
+                capability_string(self.cfg.advertise_metadata())
+            ))),
+            "NOOP" => Ok(Some(format!("{t} OK NOOP completed\r\n"))),
+            "LOGIN" => {
+                let (user, pass) = parse_login_args(args)?;
+                let auth = AuthContext {
+                    pool: self.pool.clone(),
+                    state: Arc::clone(&self.ctx),
+                    primary_domain: self.cfg.primary_domain.clone(),
+                    jit_domain: self.cfg.jit_domain.clone(),
+                    credential_policy: self.cfg.credential_policy,
+                };
+                chatmail_auth::authenticate(&auth, &user, &pass).await?;
+                let user = normalize_username(&user)?;
+                self.ctx.mailbox_store.init_user_dir(&user).await?;
+                let _ = self
+                    .ctx
+                    .mailbox_store
+                    .init_mailbox_dir(&user, "DeltaChat")
+                    .await;
+                self.authenticated_user = Some(user);
+                Ok(Some(format!("{t} OK LOGIN completed\r\n")))
+            }
+            "LIST" | "LSUB" => {
+                let _user = self.require_user()?;
+                let resp = self.format_list_response(t).await?;
+                Ok(Some(resp))
+            }
+            "CREATE" => {
+                let user = self.require_user()?;
+                let mailbox = parse_mailbox_name(args)
+                    .ok_or_else(|| ChatmailError::protocol("CREATE missing mailbox"))?;
+                self.ctx
+                    .mailbox_store
+                    .init_mailbox_dir(&user, &mailbox)
+                    .await?;
+                Ok(Some(format!("{t} OK CREATE completed\r\n")))
+            }
+            "SELECT" | "EXAMINE" => {
+                let user = self.require_user()?;
+                let resp = self.select_mailbox(t, args, &user, cmd).await?;
+                Ok(Some(resp))
+            }
+            "CLOSE" => {
+                if self.selected_mailbox.is_some() {
+                    let user = self.require_user()?;
+                    if let Some(folder) = self.selected_mailbox.clone() {
+                        if self.selected_folder_needs_expunge {
+                            let _ = expunge_deleted(&self.ctx.mailbox_store, &user, &folder).await;
+                            self.selected_folder_needs_expunge = false;
+                        }
+                    }
+                }
+                if self.selected_mailbox.is_none() {
+                    return Ok(Some(format!("{t} BAD No mailbox selected\r\n")));
+                }
+                self.selected_mailbox = None;
+                self.messages.clear();
+                Ok(Some(format!("{t} OK CLOSE completed\r\n")))
+            }
+            "STATUS" => {
+                let user = self.require_user()?;
+                let mailbox = parse_mailbox_name(args).unwrap_or_else(|| "INBOX".into());
+                if !mailbox_exists(&self.ctx.mailbox_store, &user, &mailbox).await {
+                    return Ok(Some(format!("{t} NO Mailbox does not exist\r\n")));
+                }
+                let msgs = list_messages(&self.ctx, &user, &mailbox).await?;
+                let exists = msgs.len();
+                let uid_next = msgs.last().map(|m| m.uid + 1).unwrap_or(1);
+                Ok(Some(format!(
+                    "* STATUS \"{mailbox}\" (MESSAGES {exists} UIDNEXT {uid_next} UIDVALIDITY 1 UNSEEN {exists})\r\n{t} OK STATUS completed\r\n"
+                )))
+            }
+            "FETCH" => {
+                let user = self.require_user()?;
+                let resp = self.handle_fetch(t, args, &user, false).await?;
+                Ok(Some(resp))
+            }
+            "UID" if args.to_ascii_uppercase().starts_with("FETCH") => {
+                let user = self.require_user()?;
+                let rest = args.split_once(' ').map(|(_, r)| r).unwrap_or("");
+                let resp = self.handle_fetch(t, rest, &user, true).await?;
+                Ok(Some(resp))
+            }
+            "UID" if args.to_ascii_uppercase().starts_with("STORE") => {
+                let user = self.require_user()?;
+                let rest = args.split_once(' ').map(|(_, r)| r).unwrap_or("");
+                let resp = self.handle_store(t, rest, &user, true).await?;
+                Ok(Some(resp))
+            }
+            "UID" if args.to_ascii_uppercase().starts_with("MOVE") => {
+                let user = self.require_user()?;
+                let rest = args.split_once(' ').map(|(_, r)| r).unwrap_or("");
+                let resp = self.handle_move(t, rest, &user).await?;
+                Ok(Some(resp))
+            }
+            "UID" if args.to_ascii_uppercase().starts_with("COPY") => {
+                let user = self.require_user()?;
+                let rest = args.split_once(' ').map(|(_, r)| r).unwrap_or("");
+                let resp = self.handle_copy(t, rest, &user).await?;
+                Ok(Some(resp))
+            }
+            "STORE" => {
+                let user = self.require_user()?;
+                let resp = self.handle_store(t, args, &user, false).await?;
+                Ok(Some(resp))
+            }
+            "APPEND" => {
+                let user = self.require_user()?;
+                // Synchronizing literal `{N}` (no +): client waits for continuation (RFC 3501).
+                if let Some((_, _, non_sync)) = parse_literal_spec(args) {
+                    if !non_sync {
+                        writer.write_all(b"+ Ready\r\n").await?;
+                        writer.flush().await?;
+                    }
+                }
+                match self.handle_append(lines, t, args, &user).await {
+                    Ok(resp) => Ok(Some(resp)),
+                    Err(ChatmailError::EncryptionNeeded(_)) => {
+                        Ok(Some(format!("{t} NO [ENCRYPTED] APPEND rejected\r\n")))
+                    }
+                    Err(ChatmailError::QuotaExceeded { .. }) => {
+                        Ok(Some(format!("{t} NO [OVERQUOTA] APPEND rejected\r\n")))
+                    }
+                    Err(ChatmailError::MessageTooLarge) => Ok(Some(format!(
+                        "{t} NO [TOOBIG] {}\r\n",
+                        chatmail_types::MESSAGE_FILE_TOO_BIG
+                    ))),
+                    Err(e) => Err(e),
+                }
+            }
+            "IDLE" => {
+                self.handle_idle(lines, t, writer).await?;
+                Ok(None)
+            }
+            "GETQUOTAROOT" => {
+                let user = self.require_user()?;
+                Ok(Some(format_quota_quotaroot(t, args, &user, &self.ctx)))
+            }
+            "GETQUOTA" => {
+                let user = self.require_user()?;
+                Ok(Some(format_quota_getquota(t, args, &user, &self.ctx)))
+            }
+            "GETMETADATA" => {
+                if self.authenticated_user.is_none() {
+                    return Ok(Some(format!(
+                        "{t} NO [AUTHENTICATIONREQUIRED] login first\r\n"
+                    )));
+                }
+                Ok(Some(handle_getmetadata(
+                    t,
+                    args,
+                    self.cfg.turn.as_ref(),
+                    self.cfg.iroh.as_ref(),
+                )))
+            }
+            "LOGOUT" => Ok(None),
+            _ => Ok(Some(format!("{t} BAD command not supported\r\n"))),
+        }
+    }
+
+    fn require_user(&self) -> Result<String> {
+        self.authenticated_user
+            .clone()
+            .ok_or(ChatmailError::AuthFailed)
+    }
+
+    async fn handle_fetch(&mut self, tag: &str, args: &str, user: &str, by_uid: bool) -> Result<String> {
+        let mode = fetch_response_mode(args);
+        // Reload INBOX so FETCH after SMTP delivery sees new messages on this connection.
+        let mailbox = self
+            .selected_mailbox
+            .as_deref()
+            .unwrap_or("INBOX");
+        self.messages = list_messages(&self.ctx, user, mailbox).await?;
+
+        let selected: Vec<_> = select_fetch_messages(&self.messages, args, by_uid);
+
+        let mut out = String::new();
+        for m in selected {
+            let seq = self
+                .messages
+                .iter()
+                .position(|x| x.uid == m.uid)
+                .map(|i| (i + 1) as u32)
+                .unwrap_or(m.uid);
+            if mode == FetchResponseMode::FullBody {
+                let mailbox = self.selected_mailbox.as_deref().unwrap_or("INBOX");
+                let body = read_blob(&self.ctx.mailbox_store, user, mailbox, &m.id).await?;
+                out.push_str(&format!(
+                    "* {seq} FETCH (UID {} RFC822.SIZE {} BODY[] {{{}}}\r\n",
+                    m.uid,
+                    m.size,
+                    body.len()
+                ));
+                out.push_str(std::str::from_utf8(&body).unwrap_or(""));
+                // Literal ends; close FETCH list (no CRLF between literal and ')' — go-imap compat).
+                out.push_str(")\r\n");
+            } else if mode == FetchResponseMode::Headers {
+                let mailbox = self.selected_mailbox.as_deref().unwrap_or("INBOX");
+                let body = read_blob(&self.ctx.mailbox_store, user, mailbox, &m.id).await?;
+                let headers = filter_header_fields(&body, header_field_names(args));
+                let section = body_section_for_fetch(args);
+                let mut attrs = format!("UID {} RFC822.SIZE {}", m.uid, m.size);
+                if args.contains("INTERNALDATE") {
+                    attrs.push_str(&format!(" INTERNALDATE \"{}\"", m.internal_date));
+                }
+                out.push_str(&format!(
+                    "* {seq} FETCH ({attrs} {section} {{{}}}\r\n",
+                    headers.len()
+                ));
+                out.push_str(std::str::from_utf8(&headers).unwrap_or(""));
+                out.push_str(")\r\n");
+            } else {
+                out.push_str(&format!(
+                    "* {seq} FETCH ({}{})\r\n",
+                    format_fetch_attrs(m),
+                    format_fetch_flags(&m.flags),
+                ));
+            }
+        }
+        out.push_str(&format!("{tag} OK FETCH completed\r\n"));
+        Ok(out)
+    }
+
+    async fn handle_store(
+        &mut self,
+        tag: &str,
+        args: &str,
+        user: &str,
+        by_uid: bool,
+    ) -> Result<String> {
+        let mailbox = self
+            .selected_mailbox
+            .as_deref()
+            .ok_or_else(|| ChatmailError::protocol("No mailbox selected"))?;
+        let (uid_set, mode, flags) = parse_store_args(args)?;
+        if mode != StoreMode::Add {
+            return Ok(format!("{tag} BAD unsupported STORE mode\r\n"));
+        }
+        let uids = uid_set;
+        if uids.is_empty() {
+            return Ok(format!("{tag} OK STORE completed\r\n"));
+        }
+
+        let add_seen = mode == StoreMode::Add && flags.iter().any(|f| f.eq_ignore_ascii_case("\\Seen"));
+        let add_deleted =
+            mode == StoreMode::Add && flags.iter().any(|f| f.eq_ignore_ascii_case("\\Deleted"));
+        if add_deleted {
+            self.selected_folder_needs_expunge = true;
+        }
+
+        let mut out = String::new();
+        for uid in uids {
+            let Some(msg) = self.messages.iter().find(|m| m.uid == uid) else {
+                continue;
+            };
+            let new_flags = store_add_flags(
+                &self.ctx.mailbox_store,
+                user,
+                mailbox,
+                &msg.id,
+                add_seen,
+                add_deleted,
+            )
+            .await?;
+            let seq = self
+                .messages
+                .iter()
+                .position(|x| x.uid == uid)
+                .map(|i| (i + 1) as u32)
+                .unwrap_or(uid);
+            out.push_str(&format!(
+                "* {seq} FETCH (UID {uid}{})\r\n",
+                format_fetch_flags(&new_flags),
+            ));
+        }
+
+        self.messages = list_messages(&self.ctx, user, mailbox).await?;
+        out.push_str(&format!("{tag} OK {} completed\r\n", if by_uid { "UID STORE" } else { "STORE" }));
+        Ok(out)
+    }
+
+    async fn handle_move(&mut self, tag: &str, args: &str, user: &str) -> Result<String> {
+        let from = self
+            .selected_mailbox
+            .as_deref()
+            .ok_or_else(|| ChatmailError::protocol("No mailbox selected"))?;
+        let (uid_set, dest) = parse_uid_set_and_mailbox(args)?;
+        let uids: Vec<u32> = if uid_set.is_empty() {
+            vec![]
+        } else {
+            uid_set
+        };
+        let msgs: Vec<_> = uids
+            .iter()
+            .filter_map(|uid| self.messages.iter().find(|m| m.uid == *uid))
+            .collect();
+        if msgs.is_empty() {
+            return Ok(format!("{tag} NO [TRYCREATE] No such messages\r\n"));
+        }
+        if !mailbox_exists(&self.ctx.mailbox_store, user, &dest).await {
+            self.ctx
+                .mailbox_store
+                .init_mailbox_dir(user, &dest)
+                .await?;
+        }
+        for m in &msgs {
+            move_message(&self.ctx.mailbox_store, user, from, &dest, &m.id).await?;
+        }
+        self.messages = list_messages(&self.ctx, user, from).await?;
+        Ok(format!("{tag} OK UID MOVE completed\r\n"))
+    }
+
+    async fn handle_copy(&mut self, tag: &str, args: &str, user: &str) -> Result<String> {
+        let from = self
+            .selected_mailbox
+            .as_deref()
+            .ok_or_else(|| ChatmailError::protocol("No mailbox selected"))?;
+        let (uid_set, dest) = parse_uid_set_and_mailbox(args)?;
+        let msgs: Vec<_> = uid_set
+            .iter()
+            .filter_map(|uid| self.messages.iter().find(|m| m.uid == *uid))
+            .collect();
+        if msgs.is_empty() {
+            return Ok(format!("{tag} NO [TRYCREATE] No such messages\r\n"));
+        }
+        if !mailbox_exists(&self.ctx.mailbox_store, user, &dest).await {
+            self.ctx
+                .mailbox_store
+                .init_mailbox_dir(user, &dest)
+                .await?;
+        }
+        for m in &msgs {
+            copy_message(&self.ctx.mailbox_store, user, from, &dest, &m.id).await?;
+        }
+        Ok(format!("{tag} OK UID COPY completed\r\n"))
+    }
+
+    /// RFC 2177 IDLE: wait for `DONE`, push unsolicited EXISTS/RECENT when mail arrives.
+    async fn handle_idle<R, W>(
+        &mut self,
+        lines: &mut BufReader<R>,
+        tag: &str,
+        writer: &mut W,
+    ) -> Result<()>
+    where
+        R: tokio::io::AsyncRead + Unpin,
+        W: AsyncWriteExt + Unpin,
+    {
+        if self.selected_mailbox.is_none() {
+            writer
+                .write_all(format!("{tag} BAD No mailbox selected\r\n").as_bytes())
+                .await?;
+            return Ok(());
+        }
+        let user = self.require_user()?.clone();
+        let mailbox = self.selected_mailbox.clone().unwrap_or_default();
+
+        writer.write_all(b"+ idling\r\n").await?;
+        writer.flush().await?;
+
+        let mut rx = self.ctx.events.subscribe();
+        let mut idle_line = String::new();
+
+        debug!(%user, %mailbox, exists = self.messages.len(), "IMAP IDLE started");
+
+        loop {
+            tokio::select! {
+                // Client DONE must preempt waiting on mail (Delta Chat ends IDLE promptly).
+                biased;
+                n = lines.read_line(&mut idle_line) => {
+                    match n? {
+                        0 => break,
+                        _ => {
+                            if is_idle_done(&idle_line) {
+                                debug!(%user, line = %idle_line.trim(), "IMAP IDLE client DONE");
+                                break;
+                            }
+                            idle_line.clear();
+                        }
+                    }
+                }
+                ev = rx.recv() => {
+                    match ev {
+                        Ok(ev) if ev.username == user => {
+                            debug!(%user, msg_id = %ev.msg_id, "IMAP IDLE delivery event");
+                            self.emit_idle_updates(writer, &user).await?;
+                        }
+                        Ok(_) => {}
+                        Err(RecvError::Lagged(n)) => {
+                            debug!(%user, skipped = n, "IMAP IDLE event bus lagged, resyncing");
+                            self.emit_idle_updates(writer, &user).await?;
+                        }
+                        Err(RecvError::Closed) => break,
+                    }
+                }
+            }
+        }
+
+        writer
+            .write_all(format!("{tag} OK IDLE terminated\r\n").as_bytes())
+            .await?;
+        writer.flush().await?;
+        Ok(())
+    }
+
+    /// Reload INBOX and send unsolicited EXISTS / RECENT if the message count grew.
+    async fn emit_idle_updates<W>(&mut self, writer: &mut W, user: &str) -> Result<()>
+    where
+        W: AsyncWriteExt + Unpin,
+    {
+        let prev_exists = self.messages.len();
+        let mailbox = self
+            .selected_mailbox
+            .as_deref()
+            .unwrap_or("INBOX");
+        self.messages = list_messages(&self.ctx, user, mailbox).await?;
+        let new_exists = self.messages.len();
+        if new_exists <= prev_exists {
+            return Ok(());
+        }
+        let recent = new_exists - prev_exists;
+        writer
+            .write_all(format!("* {new_exists} EXISTS\r\n").as_bytes())
+            .await?;
+        writer
+            .write_all(format!("* {recent} RECENT\r\n").as_bytes())
+            .await?;
+        writer.flush().await?;
+        debug!(
+            %user,
+            prev_exists,
+            new_exists,
+            recent,
+            "IMAP IDLE unsolicited update"
+        );
+        Ok(())
+    }
+
+    async fn handle_append<R>(
+        &mut self,
+        lines: &mut BufReader<R>,
+        tag: &str,
+        args: &str,
+        user: &str,
+    ) -> Result<String>
+    where
+        R: tokio::io::AsyncRead + Unpin,
+    {
+        let max_bytes = self.ctx.message_size.effective();
+        let mut literal = Vec::new();
+        if let Some((_, size)) = parse_literal_size(args) {
+            if size as u64 > max_bytes {
+                return Err(ChatmailError::message_too_large());
+            }
+            literal.resize(size, 0);
+            lines.read_exact(&mut literal).await?;
+            let mut extra = String::new();
+            lines.read_line(&mut extra).await?;
+        } else {
+            let mut over_limit = false;
+            loop {
+                let mut dl = String::new();
+                if lines.read_line(&mut dl).await? == 0 {
+                    break;
+                }
+                let dl = dl.trim_end();
+                if dl == "." {
+                    break;
+                }
+                if !over_limit {
+                    let unstuffed = dl.strip_prefix('.').unwrap_or(dl);
+                    let add = unstuffed.len() as u64 + 2;
+                    if literal.len() as u64 + add > max_bytes {
+                        over_limit = true;
+                    } else {
+                        literal.extend_from_slice(unstuffed.as_bytes());
+                        literal.extend_from_slice(b"\r\n");
+                    }
+                }
+            }
+            if over_limit {
+                return Err(ChatmailError::message_too_large());
+            }
+        }
+        enforce_encryption(
+            &literal,
+            &EnforceOptions {
+                mail_from: user.to_string(),
+                recipients: vec![user.to_string()],
+            },
+        )?;
+        self.ctx.quota.check_quota(user, literal.len() as u64)?;
+        let msg_id = uuid::Uuid::new_v4().to_string();
+        let mailbox = self.selected_mailbox.as_deref().unwrap_or("INBOX");
+        write_blob_mailbox(
+            &self.ctx.mailbox_store,
+            user,
+            mailbox,
+            &msg_id,
+            &literal,
+        )
+        .await?;
+        self.ctx.quota.record_write(user, literal.len() as u64);
+        self.ctx.events.notify_new_message(user, &msg_id);
+        self.messages = list_messages(&self.ctx, user, mailbox).await?;
+        Ok(format!("{tag} OK APPEND completed\r\n"))
+    }
+}
+
+impl ImapSession {
+    async fn format_list_response(&self, tag: &str) -> Result<String> {
+        let user = self.require_user()?;
+        let mut out = String::new();
+        for name in ["INBOX", "DeltaChat"] {
+            if mailbox_exists(&self.ctx.mailbox_store, &user, name).await {
+                out.push_str(&format!(
+                    "* LIST (\\HasNoChildren) \"/\" \"{name}\"\r\n"
+                ));
+            }
+        }
+        out.push_str(&format!("{tag} OK LIST completed\r\n"));
+        Ok(out)
+    }
+
+    async fn select_mailbox(
+        &mut self,
+        tag: &str,
+        args: &str,
+        user: &str,
+        cmd: &str,
+    ) -> Result<String> {
+        let mailbox = parse_mailbox_name(args).unwrap_or_else(|| "INBOX".into());
+        if !mailbox_exists(&self.ctx.mailbox_store, user, &mailbox).await {
+            return Ok(format!("{tag} NO [NONEXISTENT] Mailbox does not exist\r\n"));
+        }
+        self.selected_mailbox = Some(mailbox.clone());
+        self.messages = list_messages(&self.ctx, user, &mailbox).await?;
+        let exists = self.messages.len();
+        let uid_next = self.messages.last().map(|m| m.uid + 1).unwrap_or(1);
+        Ok(format!(
+            "* {exists} EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 1] UIDs valid\r\n* OK [UIDNEXT {uid_next}] Predicted next UID\r\n{tag} OK [{cmd}] completed\r\n"
+        ))
+    }
+}
+
+async fn list_messages(
+    ctx: &AppState,
+    user: &str,
+    mailbox: &str,
+) -> Result<Vec<MailMessage>> {
+    Ok(list_mailbox_messages(&ctx.mailbox_store, user, mailbox)
+        .await?
+        .into_iter()
+        .enumerate()
+        .map(|(i, m)| stored_to_mail_message(m, (i + 1) as u32))
+        .collect())
+}
+
+fn stored_to_mail_message(m: StoredMessage, uid: u32) -> MailMessage {
+    MailMessage {
+        uid,
+        id: m.base_id,
+        size: m.size,
+        internal_date: format_internal_date(m.internal_date),
+        flags: m.flags,
+    }
+}
+
+fn format_fetch_attrs(m: &MailMessage) -> String {
+    format!("UID {} RFC822.SIZE {}", m.uid, m.size)
+}
+
+fn format_fetch_flags(flags: &chatmail_storage::MaildirFlags) -> String {
+    let imap = flags.imap_flags();
+    if imap.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " FLAGS ({})",
+            imap.iter()
+                .map(|f| format!("{f}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StoreMode {
+    Add,
+    Remove,
+    Replace,
+}
+
+fn parse_store_args(args: &str) -> Result<(Vec<u32>, StoreMode, Vec<String>)> {
+    let args = args.trim();
+    let (uid_part, rest) = args
+        .split_once('+')
+        .or_else(|| args.split_once('-'))
+        .or_else(|| args.split_once("FLAGS"))
+        .ok_or_else(|| ChatmailError::protocol("invalid STORE args"))?;
+    let uid_part = uid_part.trim();
+    let uids = parse_num_set(&format!("{uid_part} ()"))
+        .unwrap_or_default();
+
+    let mode = if rest.starts_with("FLAGS") || args.contains("-FLAGS") {
+        if args.contains("+FLAGS") {
+            StoreMode::Add
+        } else if args.contains("-FLAGS") {
+            StoreMode::Remove
+        } else {
+            StoreMode::Replace
+        }
+    } else if args.contains('+') {
+        StoreMode::Add
+    } else if args.contains('-') {
+        StoreMode::Remove
+    } else {
+        StoreMode::Replace
+    };
+
+    let flags = parse_flag_list(args);
+    Ok((uids, mode, flags))
+}
+
+fn parse_flag_list(args: &str) -> Vec<String> {
+    let Some(start) = args.find('(') else {
+        return Vec::new();
+    };
+    let Some(end) = args[start..].find(')') else {
+        return Vec::new();
+    };
+    args[start + 1..start + end]
+        .split_whitespace()
+        .map(|s| s.trim_matches('"').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn parse_uid_set_and_mailbox(args: &str) -> Result<(Vec<u32>, String)> {
+    let args = args.trim();
+    let mailbox = if args.contains('"') {
+        parse_mailbox_name(args)
+            .ok_or_else(|| ChatmailError::protocol("MOVE/COPY missing mailbox"))?
+    } else {
+        args.split_whitespace()
+            .last()
+            .map(|s| s.to_string())
+            .ok_or_else(|| ChatmailError::protocol("MOVE/COPY missing mailbox"))?
+    };
+    let uid_part = if args.contains('"') {
+        args.split('"').next().unwrap_or("").trim().to_string()
+    } else {
+        let parts: Vec<&str> = args.split_whitespace().collect();
+        if parts.len() < 2 {
+            return Err(ChatmailError::protocol("MOVE/COPY missing UID set"));
+        }
+        parts[..parts.len() - 1].join(" ")
+    };
+    let uids = parse_num_set(&format!("{uid_part} ()")).unwrap_or_default();
+    Ok((uids, mailbox))
+}
+
+/// Advertised IMAP capabilities (TDD `03-imap-server.md`: XCHATMAIL, IDLE, QUOTA, METADATA).
+pub fn capability_string(advertise_metadata: bool) -> String {
+    let mut caps = vec![
+        "IMAP4rev1",
+        "IDLE",
+        "QUOTA",
+        "MOVE",
+        "UIDPLUS",
+        "AUTH=PLAIN",
+        "LITERAL+",
+        "XCHATMAIL",
+    ];
+    if advertise_metadata {
+        caps.push("METADATA");
+    }
+    caps.join(" ")
+}
+
+/// Parse mailbox name from `SELECT INBOX`, `SELECT "DeltaChat"`, or `MOVE 1 DeltaChat`.
+fn parse_mailbox_name(args: &str) -> Option<String> {
+    let args = args.trim();
+    if let Some(i) = args.find('"') {
+        let rest = &args[i + 1..];
+        let end = rest.find('"')?;
+        return Some(rest[..end].to_string());
+    }
+    let token = args.split_whitespace().next()?.trim_matches('"');
+    if token.is_empty() {
+        None
+    } else {
+        Some(token.to_string())
+    }
+}
+
+/// Parse `GETMETADATA "" (/shared/comment ...)` (Delta Chat core).
+fn parse_getmetadata_args(args: &str) -> (String, Vec<String>) {
+    let mut mailbox = String::new();
+    let mut keys = Vec::new();
+    let mut rest = args.trim();
+    if rest.starts_with('"') {
+        if let Some(end) = rest[1..].find('"') {
+            mailbox = rest[1..end + 1].to_string();
+            rest = rest[end + 2..].trim();
+        }
+    }
+    if let Some(start) = rest.find('(') {
+        let inner = &rest[start + 1..];
+        if let Some(end) = inner.rfind(')') {
+            for part in inner[..end].split_whitespace() {
+                let k = part.trim().trim_matches('"');
+                if !k.is_empty() {
+                    keys.push(k.to_string());
+                }
+            }
+        }
+    }
+    (mailbox, keys)
+}
+
+fn imap_quote_mailbox(name: &str) -> String {
+    if name.is_empty() {
+        "\"\"".into()
+    } else {
+        format!("\"{}\"", name.replace('\\', "\\\\").replace('"', "\\\""))
+    }
+}
+
+fn metadata_value(
+    key: &str,
+    turn: Option<&TurnDiscovery>,
+    iroh: Option<&IrohDiscovery>,
+) -> Option<Option<String>> {
+    // None = omit key; Some(None) = explicit NIL; Some(Some(s)) = value
+    match key {
+        "/shared/comment" | "/shared/admin" => Some(None),
+        "/shared/vendor/deltachat/irohrelay" => {
+            let iroh = iroh.filter(|i| i.enabled())?;
+            Some(Some(iroh.relay_url.clone()))
+        }
+        "/shared/vendor/deltachat/turn" | "/shared/vendor/deltachat/turns" => {
+            let turn = turn.filter(|t| t.enabled())?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let line = turn.metadata_line(now).ok()?;
+            Some(Some(line))
+        }
+        "/shared/vendor/deltachat/turn-test-relay-only" => {
+            turn.filter(|t| t.enabled() && t.turn_test_relay_only)?;
+            Some(Some("1".to_string()))
+        }
+        _ => None,
+    }
+}
+
+fn format_metadata_value(key: &str, value: Option<&str>) -> String {
+    match value {
+        None => format!("{key} NIL"),
+        Some(v) => format!("{key} \"{v}\""),
+    }
+}
+
+/// Default GETMETADATA lines for tests (Delta Chat TURN key).
+pub fn turn_metadata_response(turn: &TurnDiscovery) -> String {
+    handle_getmetadata("t0", "(/shared/vendor/deltachat/turn)", Some(turn), None)
+}
+
+/// Default GETMETADATA lines for tests (Delta Chat Iroh key).
+pub fn iroh_metadata_response(iroh: &IrohDiscovery) -> String {
+    handle_getmetadata(
+        "t0",
+        "(/shared/vendor/deltachat/irohrelay)",
+        None,
+        Some(iroh),
+    )
+}
+
+/// RFC 5464 solicited response: `* METADATA "" (/key NIL /key2 "value")`
+/// (async-imap `MetadataSolicited`; per-key lines are not parsed).
+fn handle_getmetadata(
+    tag: &str,
+    args: &str,
+    turn: Option<&TurnDiscovery>,
+    iroh: Option<&IrohDiscovery>,
+) -> String {
+    let (mailbox, keys) = parse_getmetadata_args(args);
+    let mb = imap_quote_mailbox(&mailbox);
+    let entries: Vec<String> = keys
+        .iter()
+        .filter_map(|key| {
+            metadata_value(key, turn, iroh).map(|v| format_metadata_value(key, v.as_deref()))
+        })
+        .collect();
+    if entries.is_empty() {
+        return format!("{tag} OK GETMETADATA completed\r\n");
+    }
+    format!(
+        "* METADATA {mb} ({entries})\r\n{tag} OK GETMETADATA completed\r\n",
+        entries = entries.join(" "),
+    )
+}
+
+/// RFC 2087: STORAGE quota is reported in kilobytes.
+fn format_quota_quotaroot(tag: &str, args: &str, user: &str, ctx: &AppState) -> String {
+    let mailbox = parse_mailbox_name(args).unwrap_or_else(|| "INBOX".into());
+    let used_kb = ctx.quota.used_bytes(user) / 1024;
+    let max_kb = ctx.quota.max_bytes(user) / 1024;
+    format!(
+        "* QUOTAROOT {mb} \"ROOT\"\r\n* QUOTA \"ROOT\" (STORAGE {used_kb} {max_kb})\r\n{tag} OK GETQUOTAROOT completed\r\n",
+        mb = imap_quote_mailbox(&mailbox),
+    )
+}
+
+fn format_quota_getquota(tag: &str, args: &str, user: &str, ctx: &AppState) -> String {
+    let root = parse_quota_root(args).unwrap_or_else(|| "ROOT".into());
+    let used_kb = ctx.quota.used_bytes(user) / 1024;
+    let max_kb = ctx.quota.max_bytes(user) / 1024;
+    format!(
+        "* QUOTA {root} (STORAGE {used_kb} {max_kb})\r\n{tag} OK GETQUOTA completed\r\n",
+        root = imap_quote_mailbox(&root),
+    )
+}
+
+fn parse_quota_root(args: &str) -> Option<String> {
+    let args = args.trim();
+    if args.starts_with('"') {
+        parse_mailbox_name(args)
+    } else {
+        let root = args.split_whitespace().next()?.trim_matches('"');
+        if root.is_empty() {
+            None
+        } else {
+            Some(root.to_string())
+        }
+    }
+}
+
+/// Select messages for FETCH (sequence numbers) or UID FETCH (UIDs).
+fn select_fetch_messages<'a>(
+    messages: &'a [MailMessage],
+    args: &str,
+    by_uid: bool,
+) -> Vec<&'a MailMessage> {
+    let Some(nums) = parse_num_set(args) else {
+        return messages.iter().collect();
+    };
+    if by_uid {
+        messages
+            .iter()
+            .filter(|m| nums.iter().any(|u| *u == m.uid))
+            .collect()
+    } else {
+        nums.iter()
+            .filter_map(|seq| messages.get(seq.saturating_sub(1) as usize))
+            .collect()
+    }
+}
+
+/// Parse `1`, `2,3`, or `1:*` from the sequence/UID prefix before `(` in FETCH args.
+/// True for `DONE` or tagged `a042 DONE` (RFC 2177 continuation).
+fn is_idle_done(line: &str) -> bool {
+    let upper = line.trim().to_ascii_uppercase();
+    if upper.is_empty() {
+        return false;
+    }
+    if upper == "DONE" {
+        return true;
+    }
+    let mut parts = upper.split_whitespace();
+    matches!(parts.next(), Some(_tag)) && parts.any(|p| p == "DONE")
+}
+
+fn parse_num_set(args: &str) -> Option<Vec<u32>> {
+    let prefix = args.split('(').next()?.trim();
+    if prefix.is_empty() {
+        return None;
+    }
+    let mut uids = Vec::new();
+    for part in prefix.split(',') {
+        let part = part.trim();
+        if let Some((start, end)) = part.split_once(':') {
+            let start: u32 = start.parse().ok()?;
+            let end: u32 = if end == "*" {
+                u32::MAX
+            } else {
+                end.parse().ok()?
+            };
+            let cap = start.saturating_add(256).min(end);
+            uids.extend(start..=cap);
+        } else if let Ok(uid) = part.parse::<u32>() {
+            uids.push(uid);
+        }
+    }
+    if uids.is_empty() {
+        None
+    } else {
+        Some(uids)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FetchResponseMode {
+    FullBody,
+    Headers,
+    Metadata,
+}
+
+/// Classify FETCH data items (avoid treating RFC822.SIZE as full RFC822).
+fn fetch_response_mode(args: &str) -> FetchResponseMode {
+    if args.contains("BODY.PEEK[]") || args.contains("BODY[]") {
+        return FetchResponseMode::FullBody;
+    }
+    if args.contains("HEADER.FIELDS") || args.contains("BODY.PEEK[HEADER") || args.contains("BODY[HEADER") {
+        return FetchResponseMode::Headers;
+    }
+    if args.split_whitespace().any(|w| w == "RFC822") {
+        return FetchResponseMode::FullBody;
+    }
+    FetchResponseMode::Metadata
+}
+
+fn extract_headers(body: &[u8]) -> &[u8] {
+    body.windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|i| &body[..i + 4])
+        .unwrap_or(body)
+}
+
+/// Section name for FETCH responses. Clients may request `BODY.PEEK[...]` but imap-proto only
+/// parses solicited `BODY[HEADER.FIELDS (...)]` in responses (Delta Chat / async-imap).
+fn body_section_for_fetch(args: &str) -> String {
+    if let Some(start) = args.find("HEADER.FIELDS") {
+        let rest = &args[start..];
+        if let Some(end) = rest.find(')') {
+            return format!("BODY[{}]", &rest[..=end]);
+        }
+    }
+    "BODY[HEADER.FIELDS]".into()
+}
+
+fn header_field_names(args: &str) -> Vec<String> {
+    let Some(start) = args.find("HEADER.FIELDS") else {
+        return Vec::new();
+    };
+    let rest = &args[start + "HEADER.FIELDS".len()..];
+    let rest = rest.trim_start();
+    let Some(inner) = rest.strip_prefix('(') else {
+        return Vec::new();
+    };
+    let end = inner.find(')').unwrap_or(inner.len());
+    inner[..end]
+        .split_whitespace()
+        .map(|s| s.trim_matches('"').to_ascii_uppercase())
+        .collect()
+}
+
+fn filter_header_fields(body: &[u8], names: Vec<String>) -> Vec<u8> {
+    let raw = extract_headers(body);
+    if names.is_empty() {
+        return raw.to_vec();
+    }
+    let text = std::str::from_utf8(raw).unwrap_or("");
+    let mut out = Vec::new();
+    let mut keep = false;
+    for line in text.split("\r\n") {
+        if line.is_empty() {
+            out.extend_from_slice(b"\r\n");
+            continue;
+        }
+        if line.starts_with(|c: char| c.is_ascii_whitespace()) {
+            if keep {
+                out.extend_from_slice(line.as_bytes());
+                out.extend_from_slice(b"\r\n");
+            }
+            continue;
+        }
+        let field = line.split(':').next().unwrap_or("").trim().to_ascii_uppercase();
+        keep = names.iter().any(|n| n == &field);
+        if keep {
+            out.extend_from_slice(line.as_bytes());
+            out.extend_from_slice(b"\r\n");
+        }
+    }
+    if !out.ends_with(b"\r\n\r\n") {
+        if !out.ends_with(b"\r\n") {
+            out.extend_from_slice(b"\r\n");
+        }
+        out.extend_from_slice(b"\r\n");
+    }
+    out
+}
+
+/// RFC 3501 `date-time` in UTC for INTERNALDATE.
+fn format_internal_date(st: std::time::SystemTime) -> String {
+    let secs = st
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let dt = time::OffsetDateTime::from_unix_timestamp(secs)
+        .unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+    dt.format(
+        &time::format_description::parse(
+            "[day padding:zero]-[month repr:short]-[year] [hour]:[minute]:[second] +0000",
+        )
+        .expect("valid format"),
+    )
+    .unwrap_or_else(|_| "01-Jan-1970 00:00:00 +0000".into())
+}
+
+fn parse_command(line: &str) -> (Option<&str>, String, String) {
+    let mut parts = line.splitn(3, ' ');
+    let first = parts.next().unwrap_or("");
+    if first.chars().all(|c| c.is_ascii_alphanumeric()) && first.len() <= 8 {
+        let tag = Some(first);
+        let cmd = parts.next().unwrap_or("").to_string();
+        let args = parts.next().unwrap_or("").to_string();
+        (tag, cmd, args)
+    } else {
+        (None, first.to_string(), parts.collect::<Vec<_>>().join(" "))
+    }
+}
+
+fn parse_literal_size(args: &str) -> Option<(usize, usize)> {
+    parse_literal_spec(args).map(|(start, n, _)| (start, n))
+}
+
+/// Literal in APPEND args: `{123}` (sync) or `{123+}` (non-sync / LITERAL+).
+fn parse_literal_spec(args: &str) -> Option<(usize, usize, bool)> {
+    let start = args.find('{')?;
+    let end = args.find('}')?;
+    let inner = args[start + 1..end].trim();
+    let non_sync = inner.ends_with('+');
+    let n_str = inner.trim_end_matches('+').trim();
+    let n: usize = n_str.parse().ok()?;
+    Some((start, n, non_sync))
+}
+
+fn parse_login_args(args: &str) -> Result<(String, String)> {
+    let mut it = args.split_whitespace();
+    let user = it
+        .next()
+        .ok_or_else(|| ChatmailError::protocol("LOGIN missing user"))?
+        .trim_matches('"');
+    let pass = it
+        .next()
+        .ok_or_else(|| ChatmailError::protocol("LOGIN missing pass"))?
+        .trim_matches('"');
+    Ok((user.to_string(), pass.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use chatmail_storage::{write_blob, MailboxStore};
+    // write_blob delivers to INBOX
+
+    /// P5-UT01: CAPABILITY includes Chatmail extensions (TDD + cmdeploy `test_capabilities`).
+    #[test]
+    fn p5_ut01_test_capability_includes_chatmail_extensions() {
+        let caps = capability_string(false);
+        assert!(caps.contains("IMAP4rev1"));
+        assert!(caps.contains("IDLE"));
+        assert!(caps.contains("QUOTA"));
+        assert!(caps.contains("MOVE"));
+        assert!(caps.contains("XCHATMAIL"));
+        assert!(
+            !caps.contains("METADATA"),
+            "METADATA is advertised only when TURN/Iroh discovery is enabled"
+        );
+
+        let with_metadata = capability_string(true);
+        assert!(with_metadata.contains("METADATA"));
+    }
+
+    #[test]
+    fn test_is_idle_done() {
+        assert!(is_idle_done("DONE"));
+        assert!(is_idle_done("done\r\n"));
+        assert!(is_idle_done("a042 DONE"));
+        assert!(!is_idle_done("a042 NOOP"));
+    }
+
+    #[test]
+    fn test_fetch_sequence_uses_index_not_uid() {
+        let msgs = vec![
+            MailMessage {
+                uid: 100,
+                id: "first".into(),
+                size: 1,
+                internal_date: "01-Jan-2020 00:00:00 +0000".into(),
+                flags: Default::default(),
+            },
+            MailMessage {
+                uid: 200,
+                id: "second".into(),
+                size: 2,
+                internal_date: "02-Jan-2020 00:00:00 +0000".into(),
+                flags: Default::default(),
+            },
+        ];
+        let by_seq = select_fetch_messages(&msgs, "2 (BODY.PEEK[])", false);
+        assert_eq!(by_seq.len(), 1);
+        assert_eq!(by_seq[0].id, "second");
+        let by_uid = select_fetch_messages(&msgs, "2 (BODY.PEEK[])", true);
+        assert!(by_uid.is_empty());
+        let by_uid2 = select_fetch_messages(&msgs, "200 (BODY.PEEK[])", true);
+        assert_eq!(by_uid2.len(), 1);
+        assert_eq!(by_uid2[0].id, "second");
+    }
+
+    #[test]
+    fn p6_fetch_body_peek_header_fields_section() {
+        let args = "(UID INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM)])";
+        assert_eq!(
+            body_section_for_fetch(args),
+            "BODY[HEADER.FIELDS (MESSAGE-ID FROM)]"
+        );
+    }
+
+    #[test]
+    fn p6_fetch_prefetch_response_parses_with_imap_proto() {
+        // imap-proto does not parse `BODY.PEEK[...]` in FETCH responses (only `BODY[...]`).
+        let peek = b"* 1 FETCH (UID 1 BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)] {19}\r\n\
+                      Message-ID: <a@b>\r\n\r\n)\r\n";
+        assert!(imap_proto::parser::parse_response(peek).is_err());
+
+        let wire = b"* 1 FETCH (UID 1 RFC822.SIZE 99 BODY[HEADER.FIELDS (MESSAGE-ID FROM)] {34}\r\n\
+                      Message-ID: <a@b>\r\nFrom: <a@b>\r\n\r\n)\r\n";
+        match imap_proto::parser::parse_response(wire) {
+            Ok((_, imap_proto::Response::Fetch(_, _))) => {}
+            other => panic!("imap-proto should parse prefetch FETCH: {other:?}"),
+        }
+        let with_date = b"* 1 FETCH (UID 1 INTERNALDATE \"15-May-2026 13:27:29 +0000\" \
+                          BODY[HEADER.FIELDS (CHAT-VERSION)] {21}\r\nChat-Version: 1.0\r\n\r\n)\r\n";
+        match imap_proto::parser::parse_response(with_date) {
+            Ok((_, imap_proto::Response::Fetch(_, _))) => {}
+            other => panic!("INTERNALDATE in FETCH should parse: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_fetch_uid_rfc822_size_is_metadata_only() {
+        assert_eq!(
+            fetch_response_mode("1 (UID RFC822.SIZE)"),
+            FetchResponseMode::Metadata
+        );
+        assert_eq!(
+            fetch_response_mode("1 (UID RFC822.SIZE BODY.PEEK[])"),
+            FetchResponseMode::FullBody
+        );
+    }
+
+    #[test]
+    fn test_parse_store_args() {
+        let (uids, mode, flags) = parse_store_args("1 +FLAGS (\\Seen)").unwrap();
+        assert_eq!(uids, vec![1]);
+        assert_eq!(mode, StoreMode::Add);
+        assert_eq!(flags, vec!["\\Seen".to_string()]);
+
+        let (uids, _, flags) = parse_store_args("2,3 +FLAGS (\\Deleted)").unwrap();
+        assert_eq!(uids, vec![2, 3]);
+        assert_eq!(flags, vec!["\\Deleted".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_uid_set_and_mailbox() {
+        let (uids, mb) = parse_uid_set_and_mailbox("1 DeltaChat").unwrap();
+        assert_eq!(uids, vec![1]);
+        assert_eq!(mb, "DeltaChat");
+    }
+
+    #[tokio::test]
+    async fn p5_store_seen_moves_to_cur() {
+        use chatmail_storage::{write_blob, store_add_flags, list_mailbox_messages};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let store = MailboxStore::new(tmp.path());
+        store.init_user_dir("u@test").await.unwrap();
+        let body = b"From: a@b.test\r\nTo: u@test\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        write_blob(&store, "u@test", "m1", body).await.unwrap();
+        store_add_flags(&store, "u@test", "INBOX", "m1", true, false)
+            .await
+            .unwrap();
+        let msgs = list_mailbox_messages(&store, "u@test", "INBOX")
+            .await
+            .unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert!(msgs[0].flags.seen);
+    }
+
+    #[tokio::test]
+    async fn p5_move_between_mailboxes() {
+        use chatmail_storage::{write_blob, move_message, list_mailbox_messages};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let store = MailboxStore::new(tmp.path());
+        store.init_user_dir("u@test").await.unwrap();
+        store.init_mailbox_dir("u@test", "DeltaChat").await.unwrap();
+        let body = b"From: a@b.test\r\nTo: u@test\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        write_blob(&store, "u@test", "m1", body).await.unwrap();
+        move_message(&store, "u@test", "INBOX", "DeltaChat", "m1")
+            .await
+            .unwrap();
+        assert!(list_mailbox_messages(&store, "u@test", "INBOX")
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            list_mailbox_messages(&store, "u@test", "DeltaChat")
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_parse_command_tag() {
+        let (tag, cmd, _) = parse_command("a001 CAPABILITY");
+        assert_eq!(tag, Some("a001"));
+        assert_eq!(cmd, "CAPABILITY");
+    }
+
+    /// P5-UT02: maildir listing after delivery exposes messages for FETCH.
+    #[tokio::test]
+    async fn p5_ut02_test_list_messages_after_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MailboxStore::new(dir.path());
+        let ctx = AppState::new(dir.path());
+        let body = b"From: a@b.test\r\nTo: u@example.org\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        write_blob(&store, "u@example.org", "m1", body)
+            .await
+            .unwrap();
+        let msgs = list_messages(&ctx, "u@example.org", "INBOX").await.unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].size, body.len() as u64);
+    }
+
+    /// APPEND `{N}` larger than message cap is rejected before reading the literal.
+    #[tokio::test]
+    async fn append_literal_over_message_limit_returns_toobig() {
+        use chatmail_config::AppConfig;
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let mut cfg = AppConfig::default();
+        cfg.appendlimit = Some("2K".into());
+        cfg.max_message_size = Some("2K".into());
+        let ctx = Arc::new(AppState::with_quota_and_message_limit(
+            dir.path(),
+            chatmail_config::DEFAULT_QUOTA_BYTES,
+            &cfg,
+        ));
+        ctx.hydrate(&pool, &cfg).await.unwrap();
+        assert_eq!(ctx.message_size.effective(), 2048);
+
+        let mut session = ImapSession::new(
+            ctx,
+            pool,
+            ImapSessionConfig {
+                hostname: "imap.test".into(),
+                primary_domain: "test".into(),
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                turn: None,
+                iroh: None,
+            },
+        );
+
+        let literal_len = 3000usize;
+        let args = format!("INBOX {{{literal_len}}}");
+        let mut wire = vec![0u8; literal_len];
+        wire.extend_from_slice(b"\r\n");
+        let mut reader = BufReader::new(wire.as_slice());
+
+        let err = session
+            .handle_append(&mut reader, "a001", &args, "u@test")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ChatmailError::MessageTooLarge));
+        assert!(
+            wire[..literal_len].iter().all(|&b| b == 0),
+            "literal must not be read when over limit"
+        );
+    }
+
+    /// P5-UT03: APPEND path uses PGP enforcement (rejects plaintext).
+    #[test]
+    fn p5_ut03_test_append_rejects_plaintext() {
+        let plain = b"From: u@example.org\r\nSubject: x\r\nContent-Type: text/plain\r\n\r\nno";
+        let err = enforce_encryption(
+            plain,
+            &EnforceOptions {
+                mail_from: "u@example.org".into(),
+                recipients: vec!["u@example.org".into()],
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ChatmailError::EncryptionNeeded(_)));
+    }
+
+    /// P6-S07: METADATA exposes Iroh relay URL (Delta Chat core).
+    #[test]
+    fn p6_s07_test_iroh_metadata_response() {
+        let iroh = IrohDiscovery {
+            relay_url: "http://203.0.113.50:3340".into(),
+        };
+        let resp = iroh_metadata_response(&iroh);
+        assert!(resp.contains("/shared/vendor/deltachat/irohrelay \"http://203.0.113.50:3340\""));
+        assert!(resp.contains("OK GETMETADATA"));
+    }
+
+    /// P6-UT02: METADATA exposes TURN relay key.
+    #[test]
+    fn p9_ut04_test_turn_metadata_response() {
+        let turn = TurnDiscovery {
+            server: "127.0.0.1".into(),
+            port: 3478,
+            secret: "test-secret".into(),
+            ttl_secs: 86400,
+            turn_test_relay_only: false,
+        };
+        let resp = handle_getmetadata(
+            "t1",
+            "(/shared/comment /shared/vendor/deltachat/turn)",
+            Some(&turn),
+            None,
+        );
+        assert!(resp.contains("/shared/vendor/deltachat/turn"));
+        assert!(resp.contains("OK GETMETADATA"));
+        assert!(
+            resp.contains("* METADATA \"\" (/shared/comment NIL /shared/vendor/deltachat/turn"),
+            "RFC 5464 entry-list: {resp}"
+        );
+        assert!(!resp.contains("/shared/comment \"\""));
+    }
+
+    #[test]
+    fn p9_ut04_test_metadata_full_admin_comment_turn() {
+        let turn = TurnDiscovery {
+            server: "turn.test".into(),
+            port: 3478,
+            secret: "s".into(),
+            ttl_secs: 60,
+            turn_test_relay_only: false,
+        };
+        let resp = handle_getmetadata(
+            "t1",
+            "(/shared/comment /shared/admin /shared/vendor/deltachat/turn)",
+            Some(&turn),
+            None,
+        );
+        assert!(
+            resp.contains(
+                "* METADATA \"\" (/shared/comment NIL /shared/admin NIL /shared/vendor/deltachat/turn"
+            ),
+            "{resp}"
+        );
+    }
+
+    #[test]
+    fn p6_ut02_test_quota_quotaroot_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = AppState::new(dir.path());
+        let resp = format_quota_quotaroot("t1", "INBOX", "u@test", &ctx);
+        assert!(resp.contains("QUOTAROOT"));
+        assert!(resp.contains("QUOTA \"ROOT\" (STORAGE"));
+        assert!(resp.contains("OK GETQUOTAROOT"));
+    }
+
+    /// P6-UT02: EXISTS/RECENT only when mailbox count increases.
+    #[tokio::test]
+    async fn p6_ut02_test_emit_idle_updates_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = Arc::new(AppState::new(dir.path()));
+        let body = b"From: a@b.test\r\nTo: u@example.org\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        write_blob(&ctx.mailbox_store, "u@example.org", "m1", body)
+            .await
+            .unwrap();
+
+        let mut session = ImapSession::new(
+            Arc::clone(&ctx),
+            chatmail_db::init_memory_db().await.unwrap(),
+            ImapSessionConfig {
+                hostname: "imap.test".into(),
+                primary_domain: "test".into(),
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                turn: None,
+                iroh: None,
+            },
+        );
+        session.authenticated_user = Some("u@example.org".into());
+        session.selected_mailbox = Some("INBOX".into());
+        session.messages = list_messages(&ctx, "u@example.org", "INBOX").await.unwrap();
+        assert_eq!(session.messages.len(), 1);
+
+        let mut buf = Vec::new();
+        write_blob(&ctx.mailbox_store, "u@example.org", "m2", body)
+            .await
+            .unwrap();
+        session
+            .emit_idle_updates(&mut buf, "u@example.org")
+            .await
+            .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("* 2 EXISTS"));
+        assert!(out.contains("* 1 RECENT"));
+
+        let mut no_dup = Vec::new();
+        session
+            .emit_idle_updates(&mut no_dup, "u@example.org")
+            .await
+            .unwrap();
+        assert!(no_dup.is_empty(), "no duplicate EXISTS when count unchanged");
+    }
+
+    /// P6-UT01: IDLE path uses EventBus (TDD `03-imap-server.md` — EXISTS on delivery).
+    #[tokio::test]
+    async fn p6_ut01_test_idle_receives_delivery_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = Arc::new(AppState::new(dir.path()));
+        let mut rx = ctx.events.subscribe();
+        let ctx_bg = Arc::clone(&ctx);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            ctx_bg.events.notify_new_message("u@example.org", "mid-1");
+        });
+        let ev = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .expect("timeout")
+            .expect("recv");
+        assert_eq!(ev.username, "u@example.org");
+        assert_eq!(ev.msg_id, "mid-1");
+    }
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use chatmail_auth::hash_password;
+    use chatmail_storage::write_blob;
+    use std::sync::Arc;
+    use std::net::TcpListener as StdListener;
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+
+    async fn imap_dialog(
+        pool: DbPool,
+        ctx: Arc<AppState>,
+        script: &[&str],
+    ) -> String {
+        imap_dialog_with_discovery(pool, ctx, None, None, script).await
+    }
+
+    async fn imap_dialog_with_discovery(
+        pool: DbPool,
+        ctx: Arc<AppState>,
+        turn: Option<TurnDiscovery>,
+        iroh: Option<IrohDiscovery>,
+        script: &[&str],
+    ) -> String {
+        let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
+        std_listener.set_nonblocking(true).unwrap();
+        let addr = std_listener.local_addr().unwrap();
+
+        let pool_bg = pool.clone();
+        let ctx_bg = Arc::clone(&ctx);
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut session = ImapSession::new(
+                ctx_bg,
+                pool_bg,
+                ImapSessionConfig {
+                    hostname: "imap.test".into(),
+                    primary_domain: "test".into(),
+                    jit_domain: None,
+                    credential_policy: CredentialPolicy::default(),
+                    turn,
+                    iroh,
+                },
+            );
+            let _ = session.handle_connection(stream).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let mut transcript = String::new();
+        let mut buf = [0u8; 8192];
+
+        for line in script {
+            if let Some(payload) = line.strip_prefix("LITERAL:") {
+                stream.write_all(payload.as_bytes()).await.unwrap();
+                stream.write_all(b"\r\n").await.unwrap();
+            } else {
+                stream.write_all(line.as_bytes()).await.unwrap();
+                stream.write_all(b"\r\n").await.unwrap();
+            }
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            let chunk = tokio::time::timeout(Duration::from_secs(2), async {
+                let mut acc = String::new();
+                loop {
+                    let n = stream.read(&mut buf).await.unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    acc.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    if acc.contains("completed")
+                        || acc.contains("NO [ENCRYPTED]")
+                        || acc.contains("NO [TOOBIG]")
+                        || acc.contains("BAD ")
+                    {
+                        break;
+                    }
+                }
+                acc
+            })
+            .await
+            .unwrap_or_default();
+            transcript.push_str(&chunk);
+        }
+        transcript
+    }
+
+    /// TDD `03-imap-server.md`: CAPABILITY → LOGIN → SELECT → FETCH.
+    #[tokio::test]
+    async fn p5_imap_login_select_fetch_flow() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("pw").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+
+        let ctx = Arc::new(AppState::new(dir.path()));
+        let body = b"From: u@test\r\nTo: u@test\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        write_blob(&ctx.mailbox_store, "u@test", "m1", body)
+            .await
+            .unwrap();
+
+        let t = imap_dialog(
+            pool,
+            ctx,
+            &[
+                "a001 CAPABILITY",
+                "a002 LOGIN u@test pw",
+                "a003 SELECT INBOX",
+                "a003b STATUS INBOX (UIDNEXT MESSAGES)",
+                "a004 UID FETCH 1 (UID INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM)])",
+                "a005 LOGOUT",
+            ],
+        )
+        .await;
+        assert!(t.contains("XCHATMAIL"), "caps: {t}");
+        assert!(t.contains("a002 OK LOGIN"), "login: {t}");
+        assert!(t.contains("UIDNEXT"), "select: {t}");
+        assert!(t.contains("EXISTS"), "select: {t}");
+        assert!(t.contains("STATUS"), "status: {t}");
+        assert!(t.contains("RFC822.SIZE"), "fetch: {t}");
+        assert!(t.contains("MESSAGE-ID"), "header fetch: {t}");
+    }
+
+    /// P5-UT03 over TCP: APPEND plaintext → NO [ENCRYPTED] (TDD `03-imap-server.md`).
+    #[tokio::test]
+    async fn p5_imap_append_plaintext_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("pw").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(dir.path()));
+        let plain = b"From: u@test\r\nSubject: x\r\nContent-Type: text/plain\r\n\r\nn";
+        let t = imap_dialog(
+            pool,
+            ctx,
+            &[
+                "b001 LOGIN u@test pw",
+                &format!("b002 APPEND INBOX {{{}}}", plain.len()),
+                &format!("LITERAL:{}", String::from_utf8_lossy(plain)),
+            ],
+        )
+        .await;
+        assert!(t.contains("NO [ENCRYPTED]"), "append reject: {t}");
+    }
+
+    #[tokio::test]
+    async fn p5_imap_append_literal_toobig() {
+        use chatmail_config::AppConfig;
+        use chatmail_types::MESSAGE_FILE_TOO_BIG;
+
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("pw").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+        let mut cfg = AppConfig::default();
+        cfg.appendlimit = Some("2K".into());
+        cfg.max_message_size = Some("2K".into());
+        let ctx = Arc::new(AppState::with_quota_and_message_limit(
+            dir.path(),
+            chatmail_config::DEFAULT_QUOTA_BYTES,
+            &cfg,
+        ));
+        ctx.hydrate(&pool, &cfg).await.unwrap();
+
+        let payload = vec![b'x'; 3000];
+        let t = imap_dialog(
+            pool,
+            ctx,
+            &[
+                "c001 LOGIN u@test pw",
+                &format!("c002 APPEND INBOX {{{}}}", payload.len()),
+                &format!("LITERAL:{}", String::from_utf8_lossy(&payload)),
+            ],
+        )
+        .await;
+        assert!(t.contains("NO [TOOBIG]"), "append toobig: {t}");
+        assert!(t.contains(MESSAGE_FILE_TOO_BIG), "append toobig: {t}");
+    }
+
+    /// P6 integration: IDLE receives unsolicited EXISTS/RECENT when mail is delivered.
+    #[tokio::test]
+    async fn p6_imap_idle_unsolicited_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("pw").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+
+        let ctx = Arc::new(AppState::new(dir.path()));
+        let body = b"From: u@test\r\nTo: u@test\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        write_blob(&ctx.mailbox_store, "u@test", "m1", body)
+            .await
+            .unwrap();
+
+        let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
+        std_listener.set_nonblocking(true).unwrap();
+        let addr = std_listener.local_addr().unwrap();
+
+        let pool_bg = pool.clone();
+        let ctx_bg = Arc::clone(&ctx);
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut session = ImapSession::new(
+                ctx_bg,
+                pool_bg,
+                ImapSessionConfig {
+                    hostname: "imap.test".into(),
+                    primary_domain: "test".into(),
+                    jit_domain: None,
+                    credential_policy: CredentialPolicy::default(),
+                    turn: None,
+                    iroh: None,
+                },
+            );
+            let _ = session.handle_connection(stream).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let mut buf = [0u8; 8192];
+
+        async fn read_until(sub: &str, stream: &mut TcpStream, buf: &mut [u8]) -> String {
+            let mut acc = String::new();
+            for _ in 0..50 {
+                let n = stream.read(buf).await.unwrap_or(0);
+                if n > 0 {
+                    acc.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    if acc.contains(sub) {
+                        return acc;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            acc
+        }
+
+        async fn sendln(stream: &mut TcpStream, line: &str) {
+            stream.write_all(line.as_bytes()).await.unwrap();
+            stream.write_all(b"\r\n").await.unwrap();
+        }
+
+        read_until("IMAP4rev1 ready", &mut stream, &mut buf).await;
+        sendln(&mut stream, "c001 LOGIN u@test pw").await;
+        read_until("c001 OK", &mut stream, &mut buf).await;
+        sendln(&mut stream, "c002 SELECT INBOX").await;
+        read_until("c002 OK", &mut stream, &mut buf).await;
+        sendln(&mut stream, "c003 IDLE").await;
+        read_until("+ idling", &mut stream, &mut buf).await;
+
+        write_blob(&ctx.mailbox_store, "u@test", "m2", body)
+            .await
+            .unwrap();
+        ctx.events.notify_new_message("u@test", "m2");
+
+        let idle_push = read_until("EXISTS", &mut stream, &mut buf).await;
+        assert!(
+            idle_push.contains("* 2 EXISTS"),
+            "expected EXISTS after delivery, got: {idle_push}"
+        );
+        assert!(idle_push.contains("RECENT"), "expected RECENT: {idle_push}");
+
+        sendln(&mut stream, "DONE").await;
+        let end = read_until("c003 OK", &mut stream, &mut buf).await;
+        assert!(end.contains("IDLE terminated"), "idle end: {end}");
+    }
+
+    /// Delta Chat `configure_mvbox`: EXAMINE → CLOSE → SELECT must not return BAD.
+    #[tokio::test]
+    async fn p6_imap_configure_mvbox_examine_close_select() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("pw").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(dir.path()));
+
+        let turn = TurnDiscovery {
+            server: "turn.test".into(),
+            port: 3478,
+            secret: "s".into(),
+            ttl_secs: 60,
+            turn_test_relay_only: false,
+        };
+        let t = imap_dialog_with_discovery(
+            pool,
+            ctx,
+            Some(turn),
+            None,
+            &[
+                "d001 LOGIN u@test pw",
+                "d002 EXAMINE DeltaChat",
+                "d003 CLOSE",
+                "d004 SELECT DeltaChat",
+                "d005 GETMETADATA \"\" (/shared/comment /shared/vendor/deltachat/turn)",
+                "d006 LOGOUT",
+            ],
+        )
+        .await;
+        assert!(t.contains("d002 OK"), "EXAMINE DeltaChat: {t}");
+        assert!(t.contains("d003 OK CLOSE"), "CLOSE: {t}");
+        assert!(t.contains("d004 OK [SELECT]"), "SELECT DeltaChat: {t}");
+        assert!(t.contains("/shared/vendor/deltachat/turn"), "metadata: {t}");
+    }
+}

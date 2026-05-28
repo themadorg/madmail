@@ -1,0 +1,21 @@
+[package]
+name = "chatmail-acme"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Let's Encrypt (lers / instant-acme) and self-signed TLS for chatmail-rs"
+
+[dependencies]
+chatmail-types = { workspace = true }
+hyper = { version = "0.14", features = ["server", "tcp"] }
+instant-acme = { version = "0.8.5", default-features = false, features = ["hyper-rustls", "ring"] }
+lers = { version = "0.4", default-features = false, features = ["http-01", "vendored"] }
+openssl = { version = "0.10", features = ["vendored"] }
+parking_lot = "0.12"
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
+serde_json = "1"
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

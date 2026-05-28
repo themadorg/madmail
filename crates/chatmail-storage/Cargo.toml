@@ -1,0 +1,15 @@
+[package]
+name = "chatmail-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chatmail-types = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "rt"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+filetime = "0.2"
+tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

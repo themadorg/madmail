@@ -1,0 +1,17 @@
+[package]
+name = "chatmail-admin-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+axum = { workspace = true }
+chatmail-config = { workspace = true }
+chatmail-db = { workspace = true }
+chatmail-types = { workspace = true }
+mime_guess = "2"
+rust-embed = "8"
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

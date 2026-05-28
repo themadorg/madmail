@@ -1,0 +1,3 @@
+[submodule "external/madmail-admin-web"]
+	path = external/madmail-admin-web
+	url = git@github.com:themadorg/madmail-admin-web.git

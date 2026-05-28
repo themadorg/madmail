@@ -1,0 +1,348 @@
+<!--
+  Copyright (C) 2026 themadorg
+  
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+  
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="page-title">Admin API Documentation</title>
+    <link rel="stylesheet" href="/main.css">
+    <style>
+        .doc-container {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background: var(--card);
+            border-radius: 12px;
+            border: 1px solid var(--card-border);
+        }
+
+        pre.code-block {
+            background: var(--code-bg);
+            padding: 18px;
+            border-radius: 8px;
+            color: var(--foreground);
+            font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+            font-size: 0.85em;
+            margin: 15px 0;
+            overflow-x: auto;
+            direction: ltr;
+            text-align: left;
+            border: 1px solid var(--card-border);
+            line-height: 1.7;
+            white-space: pre;
+            word-wrap: normal;
+        }
+
+        h2 {
+            margin-top: 40px;
+            border-bottom: 2px solid var(--link);
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        h3 { margin-top: 25px; font-size: 1.2em; }
+
+        .endpoint-card {
+            margin-bottom: 35px;
+            padding: 20px;
+            background: var(--card);
+            border-radius: 10px;
+            border: 1px solid var(--card-border);
+        }
+        .endpoint-card h3 { margin-top: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+        .method-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 6px;
+            font-size: 0.75em; font-weight: bold; font-family: monospace;
+            direction: ltr; letter-spacing: 0.5px;
+        }
+        .method-get { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); }
+        .method-post { background: color-mix(in srgb, var(--link) 15%, transparent); color: var(--link); border: 1px solid color-mix(in srgb, var(--link) 30%, transparent); }
+        .method-put { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent); }
+        .method-delete { background: color-mix(in srgb, var(--destructive) 15%, transparent); color: var(--destructive); border: 1px solid color-mix(in srgb, var(--destructive) 30%, transparent); }
+
+        .resource-path {
+            font-family: monospace; font-size: 0.85em;
+            background: color-mix(in srgb, var(--link) 10%, transparent); padding: 4px 10px;
+            border-radius: 6px; color: var(--link); direction: ltr;
+        }
+
+        .note-box { padding: 15px; margin: 20px 0; border-radius: 4px; }
+        .note-info { background: color-mix(in srgb, var(--link) 8%, transparent); border-left: 4px solid var(--link); }
+        .note-security { background: color-mix(in srgb, var(--success) 8%, transparent); border-left: 4px solid var(--success); }
+        .note-warning { background: color-mix(in srgb, var(--warning) 8%, transparent); border-left: 4px solid var(--warning); }
+        .note-danger { background: color-mix(in srgb, var(--destructive) 8%, transparent); border-left: 4px solid var(--destructive); }
+
+        [dir="rtl"] .note-info, [dir="rtl"] .note-security, [dir="rtl"] .note-warning, [dir="rtl"] .note-danger {
+            border-left: none; border-right: 4px solid;
+        }
+        [dir="rtl"] .note-info { border-right-color: var(--link); }
+        [dir="rtl"] .note-security { border-right-color: var(--success); }
+        [dir="rtl"] .note-warning { border-right-color: var(--warning); }
+        [dir="rtl"] .note-danger { border-right-color: var(--destructive); }
+
+        .toc { background: var(--card); border-radius: 10px; padding: 20px; margin: 25px 0; border: 1px solid var(--card-border); }
+        .toc h3 { margin-top: 0; }
+        .toc ol { padding-inline-start: 20px; }
+        .toc li { margin: 8px 0; }
+        .toc a { color: var(--muted); transition: color 0.2s; }
+        .toc a:hover { color: var(--link); }
+
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; direction: ltr; text-align: left; }
+        th, td { padding: 10px 14px; border: 1px solid var(--card-border); }
+        th { background: var(--code-bg); font-weight: bold; color: var(--link); }
+        td { color: var(--muted); }
+        td code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+
+        .arch-diagram {
+            background: var(--code-bg); border: 1px solid var(--card-border);
+            border-radius: 8px; padding: 20px; margin: 20px 0;
+            font-family: monospace; color: var(--foreground); direction: ltr;
+            text-align: center; line-height: 1.8; overflow-x: auto;
+        }
+        .separator { border: none; border-top: 1px solid var(--card-border); margin: 40px 0; }
+        .field-desc { margin: 10px 0; padding: 10px 15px; background: var(--code-bg); border-radius: 6px; font-size: 0.9em; color: var(--muted); }
+        .field-desc ul { padding-inline-start: 20px; margin: 5px 0; }
+        .field-desc li { margin: 4px 0; }
+        .field-desc code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; direction: ltr; display: inline-block; }
+    </style>
+    <script src="/translations.js"></script>
+    <script src="/main.js"></script>
+    <script src="/api_data.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/docs" data-i18n="nav_docs">Docs</a></li>
+        </ul>
+    </header>
+
+    <div class="doc-container" id="api-docs-root"></div>
+
+    <footer style="text-align: center; margin: 40px; color: #888; font-size: 0.8em;">
+        {{.Version}}
+    </footer>
+
+    <script>
+    (function() {
+        var LANG = "{{.Language}}";
+        var D = API_DOCS;
+        var root = document.getElementById('api-docs-root');
+
+        function L(obj) {
+            if (!obj) return '';
+            if (typeof obj === 'string') return obj;
+            return obj[LANG] || obj['en'] || '';
+        }
+
+        function h(tag, attrs, children) {
+            var el = document.createElement(tag);
+            if (attrs) for (var k in attrs) {
+                if (k === 'html') el.innerHTML = attrs[k];
+                else if (k === 'text') el.textContent = attrs[k];
+                else if (k === 'cls') el.className = attrs[k];
+                else el.setAttribute(k, attrs[k]);
+            }
+            if (children) for (var i = 0; i < children.length; i++) {
+                if (typeof children[i] === 'string') el.appendChild(document.createTextNode(children[i]));
+                else if (children[i]) el.appendChild(children[i]);
+            }
+            return el;
+        }
+
+        function codeBlock(code) {
+            return h('pre', { cls: 'code-block', text: code });
+        }
+
+        function noteBox(note) {
+            var div = h('div', { cls: 'note-box note-' + note.type });
+            div.innerHTML = '<strong>' + L(note.title) + '</strong> ' + L(note.text);
+            return div;
+        }
+
+        function methodBadges(methods) {
+            var frag = document.createDocumentFragment();
+            for (var i = 0; i < methods.length; i++) {
+                frag.appendChild(h('span', { cls: 'method-badge method-' + methods[i].toLowerCase(), text: methods[i] }));
+            }
+            return frag;
+        }
+
+        function fieldsTable(fields) {
+            var rows = '<tr><th>Field</th><th>Type</th><th>Description</th></tr>';
+            for (var i = 0; i < fields.length; i++) {
+                rows += '<tr><td><code>' + fields[i].name + '</code></td><td>' + (fields[i].type||'') + '</td><td>' + (L(fields[i].desc) || fields[i].desc) + '</td></tr>';
+            }
+            return h('table', { html: rows });
+        }
+
+        function portTable(ports) {
+            var rows = '<tr><th>Endpoint</th><th>Description</th></tr>';
+            for (var i = 0; i < ports.length; i++) {
+                rows += '<tr><td><code>' + ports[i].endpoint + '</code></td><td>' + ports[i].desc + '</td></tr>';
+            }
+            return h('table', { html: rows });
+        }
+
+        function actionTable(actions) {
+            var rows = '<tr><th>Action</th><th>Description</th></tr>';
+            for (var i = 0; i < actions.length; i++) {
+                rows += '<tr><td><code>' + actions[i].action + '</code></td><td>' + L(actions[i].desc) + '</td></tr>';
+            }
+            return h('table', { html: rows });
+        }
+
+        // Title
+        document.getElementById('page-title').textContent = L(D.title);
+        root.appendChild(h('h1', { text: L(D.title) }));
+
+        // TOC
+        var tocDiv = h('div', { cls: 'toc' });
+        tocDiv.appendChild(h('h3', { text: L(D.toc_title) }));
+        var tocOl = h('ol');
+        var allItems = [];
+        for (var i = 0; i < D.sections.length; i++) allItems.push({ id: D.sections[i].id, title: L(D.sections[i].title) });
+        for (var i = 0; i < D.endpoints.length; i++) {
+            var ep = D.endpoints[i];
+            var label = L(ep.title);
+            if (ep.resource && ep.resource.indexOf('{') === -1) label += ' — ' + ep.resource;
+            allItems.push({ id: ep.id, title: label });
+        }
+        allItems.push({ id: D.webPanel.id, title: L(D.webPanel.title) });
+        allItems.push({ id: D.errorCodes.id, title: L(D.errorCodes.title) });
+        for (var i = 0; i < allItems.length; i++) {
+            var li = h('li');
+            li.appendChild(h('a', { href: '#' + allItems[i].id, text: allItems[i].title }));
+            tocOl.appendChild(li);
+        }
+        tocDiv.appendChild(tocOl);
+        root.appendChild(tocDiv);
+
+        // Sections
+        for (var si = 0; si < D.sections.length; si++) {
+            var sec = D.sections[si];
+            root.appendChild(h('hr', { cls: 'separator' }));
+            root.appendChild(h('h2', { id: sec.id, text: L(sec.title) }));
+
+            if (sec.paragraphs) for (var pi = 0; pi < sec.paragraphs.length; pi++) {
+                root.appendChild(h('p', { html: L(sec.paragraphs[pi]) }));
+            }
+            if (sec.diagram) root.appendChild(h('div', { cls: 'arch-diagram', text: sec.diagram }));
+            if (sec.subsections) for (var ssi = 0; ssi < sec.subsections.length; ssi++) {
+                var ss = sec.subsections[ssi];
+                root.appendChild(h('h3', { text: L(ss.title) }));
+                if (ss.text) root.appendChild(h('p', { html: L(ss.text) }));
+                if (ss.code) root.appendChild(codeBlock(ss.code));
+                if (ss.fields) {
+                    var fd = h('div', { cls: 'field-desc' });
+                    var ul = h('ul');
+                    for (var fi = 0; fi < ss.fields.length; fi++) {
+                        ul.appendChild(h('li', { html: '<code>' + ss.fields[fi].name + '</code> — ' + L(ss.fields[fi].desc) }));
+                    }
+                    fd.appendChild(ul);
+                    root.appendChild(fd);
+                }
+            }
+            if (sec.notes) for (var ni = 0; ni < sec.notes.length; ni++) root.appendChild(noteBox(sec.notes[ni]));
+        }
+
+        // Endpoints
+        for (var ei = 0; ei < D.endpoints.length; ei++) {
+            var ep = D.endpoints[ei];
+            root.appendChild(h('hr', { cls: 'separator' }));
+            root.appendChild(h('h2', { id: ep.id, text: L(ep.title) }));
+
+            var card = h('div', { cls: 'endpoint-card' });
+            var cardH3 = h('h3');
+            if (ep.resource && ep.resource.indexOf('{') === -1) {
+                cardH3.appendChild(h('span', { cls: 'resource-path', text: ep.resource }));
+            }
+            cardH3.appendChild(methodBadges(ep.methods));
+            card.appendChild(cardH3);
+            card.appendChild(h('p', { html: L(ep.desc) }));
+
+            if (ep.request) {
+                card.appendChild(h('strong', { html: (LANG === 'fa' ? 'درخواست:' : LANG === 'ru' ? 'Запрос:' : LANG === 'es' ? 'Solicitud:' : 'Request:') }));
+                card.appendChild(codeBlock(ep.request));
+            }
+            if (ep.response) {
+                card.appendChild(h('strong', { html: (LANG === 'fa' ? 'پاسخ:' : LANG === 'ru' ? 'Ответ:' : LANG === 'es' ? 'Respuesta:' : 'Response:') }));
+                card.appendChild(codeBlock(ep.response));
+            }
+            if (ep.fields) card.appendChild(fieldsTable(ep.fields));
+            if (ep.port_table) card.appendChild(portTable(ep.port_table));
+            if (ep.action_table) card.appendChild(actionTable(ep.action_table));
+
+            if (ep.toggle_code) {
+                card.appendChild(codeBlock('// Enable\n{"method": "POST", "resource": "' + ep.toggle_code + '",\n "body": {"action": "enable"}, ...}\n\n// Disable\n{"method": "POST", "resource": "' + ep.toggle_code + '",\n "body": {"action": "disable"}, ...}'));
+            }
+
+            if (ep.examples) for (var exi = 0; exi < ep.examples.length; exi++) {
+                var ex = ep.examples[exi];
+                card.appendChild(h('strong', { text: L(ex.label) + ':' }));
+                card.appendChild(codeBlock(ex.code));
+            }
+            if (ep.notes) for (var ni = 0; ni < ep.notes.length; ni++) card.appendChild(noteBox(ep.notes[ni]));
+
+            root.appendChild(card);
+        }
+
+        // Web Panel
+        var wp = D.webPanel;
+        root.appendChild(h('hr', { cls: 'separator' }));
+        root.appendChild(h('h2', { id: wp.id, text: L(wp.title) }));
+        var wpCard = h('div', { cls: 'endpoint-card' });
+        wpCard.appendChild(h('p', { html: L(wp.desc) }));
+        var wpLabel = h('strong', { text: (LANG === 'fa' ? 'صفحات مدیریتی:' : LANG === 'ru' ? 'Административные страницы:' : LANG === 'es' ? 'Páginas de administración:' : 'Admin pages:') });
+        wpCard.appendChild(wpLabel);
+        var wpRows = '<tr><th>' + (LANG === 'fa' ? 'صفحه' : LANG === 'ru' ? 'Страница' : LANG === 'es' ? 'Página' : 'Page') + '</th><th>' + (LANG === 'fa' ? 'امکانات' : LANG === 'ru' ? 'Возможности' : LANG === 'es' ? 'Funciones' : 'Features') + '</th></tr>';
+        for (var pi = 0; pi < wp.pages.length; pi++) {
+            wpRows += '<tr><td><strong>' + wp.pages[pi].name + '</strong></td><td>' + L(wp.pages[pi].desc) + '</td></tr>';
+        }
+        wpCard.appendChild(h('table', { html: wpRows }));
+        wpCard.appendChild(h('div', { cls: 'note-box note-info', html: '<strong>💡</strong> ' + L(wp.note) }));
+        root.appendChild(wpCard);
+
+        // Error Codes
+        var ec = D.errorCodes;
+        root.appendChild(h('hr', { cls: 'separator' }));
+        root.appendChild(h('h2', { id: ec.id, text: L(ec.title) }));
+        root.appendChild(h('p', { html: L(ec.desc) }));
+        var ecHdr = LANG === 'fa' ? ['Code', 'Meaning', 'When'] : LANG === 'ru' ? ['Код', 'Значение', 'Когда'] : LANG === 'es' ? ['Código', 'Significado', 'Cuándo'] : ['Code', 'Meaning', 'When'];
+        var ecRows = '<tr><th>' + ecHdr[0] + '</th><th>' + ecHdr[1] + '</th><th>' + ecHdr[2] + '</th></tr>';
+        for (var ci = 0; ci < ec.codes.length; ci++) {
+            ecRows += '<tr><td><code>' + ec.codes[ci].code + '</code></td><td>' + ec.codes[ci].meaning + '</td><td>' + ec.codes[ci].when + '</td></tr>';
+        }
+        root.appendChild(h('table', { html: ecRows }));
+
+        // Apply nav translations
+        applyTranslations(LANG);
+    })();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,34 @@
+[package]
+name = "chatmail-www"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+axum = { workspace = true }
+chatmail-auth = { workspace = true }
+chatmail-storage = { workspace = true }
+mail-parser = { workspace = true }
+futures-util = "0.3"
+chatmail-config = { workspace = true }
+chatmail-shadowsocks = { workspace = true }
+chatmail-db = { workspace = true }
+chatmail-delivery = { workspace = true }
+chatmail-pgp = { workspace = true }
+chatmail-smtp = { workspace = true }
+chatmail-state = { workspace = true }
+chatmail-types = { workspace = true }
+minijinja = { version = "2", features = ["loader"] }
+rand = "0.9"
+rust-embed = "8"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tower = { workspace = true }

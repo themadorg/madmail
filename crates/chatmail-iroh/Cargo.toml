@@ -1,0 +1,11 @@
+[package]
+name = "chatmail-iroh"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Embedded iroh-relay v0.35.0 for WebXDC realtime (Delta Chat core parity)"
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["process", "io-util", "fs"] }
+tracing = { workspace = true }

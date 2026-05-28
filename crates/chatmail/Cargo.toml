@@ -1,0 +1,63 @@
+[package]
+name = "chatmail"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "chatmail"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chatmail"
+path = "src/main.rs"
+
+[dependencies]
+axum = { workspace = true }
+chatmail-auth = { workspace = true }
+chatmail-admin = { workspace = true }
+chatmail-admin-web = { workspace = true }
+chatmail-www = { workspace = true }
+chatmail-config = { workspace = true }
+chatmail-db = { workspace = true }
+chatmail-delivery = { workspace = true }
+chatmail-fed = { workspace = true }
+chatmail-imap = { workspace = true }
+chatmail-tls = { workspace = true }
+rustls = { workspace = true }
+chatmail-smtp = { workspace = true }
+chatmail-state = { workspace = true }
+chatmail-storage = { workspace = true }
+chatmail-types = { workspace = true }
+chatmail-acme = { workspace = true }
+chatmail-turn = { workspace = true }
+chatmail-iroh = { workspace = true }
+chatmail-shadowsocks = { workspace = true }
+chatmail-metrics = { workspace = true }
+chatmail-tasks = { workspace = true }
+base64 = "0.22"
+clap = { workspace = true }
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+getrandom = "0.3"
+sqlx = { workspace = true }
+time = { version = "0.3", features = ["formatting", "parsing"] }
+hex = "0.4"
+qrcode = "0.14"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+sd-notify = { workspace = true }
+
+[dev-dependencies]
+chatmail-config = { workspace = true }
+chatmail-storage = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }

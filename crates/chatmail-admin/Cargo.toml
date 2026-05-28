@@ -1,0 +1,33 @@
+[package]
+name = "chatmail-admin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+chatmail-auth = { workspace = true }
+chatmail-db = { workspace = true }
+chatmail-admin-web = { workspace = true }
+chatmail-config = { workspace = true }
+chatmail-shadowsocks = { workspace = true }
+chatmail-delivery = { workspace = true }
+chatmail-imap = { workspace = true }
+chatmail-state = { workspace = true }
+chatmail-storage = { workspace = true }
+chatmail-types = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = "1"
+getrandom = "0.2"
+sqlx = { workspace = true }
+time = { version = "0.3", features = ["formatting", "parsing"] }
+subtle = "2"
+tokio = { workspace = true, features = ["sync", "fs", "rt-multi-thread", "macros"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
+libc = "0.2"
+
+[dev-dependencies]
+chatmail-db = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

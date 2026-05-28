@@ -1,0 +1,25 @@
+[package]
+name = "chatmail-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+argon2 = { version = "0.5", features = ["std"] }
+base64 = "0.22"
+bcrypt = "0.17"
+chatmail-config = { workspace = true }
+chatmail-db = { workspace = true }
+chatmail-state = { workspace = true }
+chatmail-storage = { workspace = true }
+chatmail-types = { workspace = true }
+sha-crypt = "0.6"
+sha2 = "0.10"
+sqlx = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+chatmail-db = { workspace = true }
+chatmail-state = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

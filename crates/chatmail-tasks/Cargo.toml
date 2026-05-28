@@ -1,0 +1,20 @@
+[package]
+name = "chatmail-tasks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chatmail-config = { workspace = true }
+chatmail-db = { workspace = true }
+chatmail-storage = { workspace = true }
+chatmail-types = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+filetime = "0.2"
+tempfile = "3"
+tokio = { workspace = true }

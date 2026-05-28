@@ -1,0 +1,114 @@
+<!--
+  Copyright (C) 2026 themadorg
+  
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+  
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+<!DOCTYPE html>
+<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="info_title">Info</title>
+    <link rel="stylesheet" href="./main.css">
+    <script src="./translations.js"></script>
+    <script src="./main.js"></script>
+</head>
+
+<body>
+    <header class="navbar">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+        </button>
+        <ul class="navbar__menu" id="nav-menu">
+            <li><a href="/" data-i18n="nav_home">Home</a></li>
+            <li><a href="/share" data-i18n="nav_share">Share</a></li>
+            <li><a href="/info.html" data-i18n="nav_info">Info</a></li>
+            <li><a href="/security.html" data-i18n="nav_security">Security</a></li>
+            <li><a href="/deploy.html" data-i18n="nav_deploy">Deploy</a></li>
+        </ul>
+    </header>
+
+    <div class="text-center">
+        <h2 data-i18n="info_title">About This Server</h2>
+        <p data-i18n="info_subtitle">This is a node of the DeltaChat network. Its purpose is to provide fast and private communication for users.</p>
+    </div>
+
+    <div class="card card--centered text-start">
+        <ul>
+            {{if .MessageRetentionLine}}
+            <li>{{.MessageRetentionLine}}</li>
+            {{end}}
+            <li><span data-i18n="info_quota">Storage per account is limited to</span> {{.DefaultQuota | formatBytes}}.</li>
+            <li data-i18n="info_encryption">Messages can only be sent in encrypted form.</li>
+        </ul>
+    </div>
+
+    {{if .SSURL}}
+    <div class="proxy-box">
+        <strong data-i18n="info_proxy_title">🔒 Shadowsocks Proxy (for this server only)</strong>
+        <p data-i18n-html="info_proxy_desc">This proxy is designed <strong>only</strong> for connecting to this server's services (IMAP, SMTP, and video calls) and <strong>no external traffic</strong> passes through it.</p>
+        <p style="font-size: 1.1rem; font-weight: 700; margin-top: 0.8rem;" data-i18n="info_proxy_warning">⛔ This is NOT a VPN or circumvention tool.</p>
+
+        <div style="margin-top: 1rem;">
+            <strong data-i18n="info_proxy_dc_title">1. For DeltaChat (direct connection):</strong>
+            <p class="text-sm" style="margin-top: 0.3rem;"><span data-i18n="info_proxy_dc_desc">Enter this link in DeltaChat settings:</span><br>
+                <span class="text-muted" data-i18n="info_proxy_dc_path">Settings → Advanced → Network → SOCKS5 Proxy</span></p>
+            <div class="proxy-box__link" onclick="copyToClipboard('{{.SSURL}}')">{{.SSURL}}</div>
+        </div>
+
+        {{if .V2rayNGConfigWS}}
+        <div style="margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+            <strong data-i18n="info_proxy_v2ray_ws">2. For v2rayNG — WebSocket mode:</strong>
+            <p class="text-sm" style="margin-top: 0.3rem;">
+                <span data-i18n="info_proxy_v2ray_ws_desc">Copy these settings to v2rayNG:</span><br>
+                <span class="text-muted">v2rayNG → ➕ → Import config from clipboard</span></p>
+            <div class="proxy-box__link" onclick="copyToClipboard(document.getElementById('v2rayng-ws-config').textContent)" style="font-size: 0.7rem; word-break: break-all; cursor: pointer;" data-i18n="info_proxy_v2ray_ws_copy">
+                📋 Copy v2rayNG config (WebSocket) — click
+            </div>
+            <pre id="v2rayng-ws-config" style="display:none;">{{.V2rayNGConfigWS | safeHTML}}</pre>
+        </div>
+        {{end}}
+
+        {{if .V2rayNGConfigGRPC}}
+        <div style="margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+            <strong data-i18n="info_proxy_v2ray_grpc">3. For v2rayNG — gRPC+TLS mode:</strong>
+            <p class="text-sm" style="margin-top: 0.3rem;">
+                <span data-i18n-html="info_proxy_v2ray_grpc_desc">This version encrypts traffic inside gRPC+TLS (similar to HTTPS traffic).</span><br>
+                <span class="text-muted">v2rayNG → ➕ → Import config from clipboard</span></p>
+            <div class="proxy-box__link" onclick="copyToClipboard(document.getElementById('v2rayng-grpc-config').textContent)" style="font-size: 0.7rem; word-break: break-all; cursor: pointer;" data-i18n="info_proxy_v2ray_grpc_copy">
+                📋 Copy v2rayNG config (gRPC+TLS) — click
+            </div>
+            <pre id="v2rayng-grpc-config" style="display:none;">{{.V2rayNGConfigGRPC | safeHTML}}</pre>
+        </div>
+        {{end}}
+
+        <p class="text-muted text-xs mt-sm" data-i18n="info_proxy_footer">
+            ⚠️ Note: All proxies only have access to this server's services. NOT suitable for general internet use.
+        </p>
+    </div>
+    {{end}}
+
+    <script>
+        window.onload = function() {
+            applyTranslations("{{.Language}}");
+            document.title = t('info_title') + ' — {{.MailDomain}}';
+        };
+    </script>
+</body>
+
+</html>
