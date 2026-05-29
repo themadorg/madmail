@@ -110,6 +110,7 @@ async fn smtp_submission_increments_openmetrics_counters() {
         .await
         .expect("user");
     let ctx = Arc::new(AppState::new(dir.path()));
+    ctx.auth.hydrate(&pool).await.expect("auth hydrate");
 
     let metrics_addr = reserve_addr();
     let metrics_url = format!("http://{metrics_addr}/metrics");

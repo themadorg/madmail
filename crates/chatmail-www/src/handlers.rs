@@ -296,6 +296,7 @@ pub async fn new_account(
                     .into_response();
             }
         }
+        st.app.auth.insert(&user, &hash);
         return Json(json!({ "email": user, "password": password })).into_response();
     }
     StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -317,7 +318,7 @@ pub async fn webimap_send(
     if !is_websmtp_enabled(&st.pool).await {
         return service_disabled();
     }
-    let user = match webimap_authenticate(&st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
         Ok(u) => u,
         Err(resp) => return resp,
     };
@@ -404,6 +405,7 @@ pub async fn websmtp_deliver(
 }
 
 pub(crate) async fn webimap_authenticate(
+    app: &chatmail_state::AppState,
     pool: &chatmail_db::DbPool,
     headers: &HeaderMap,
 ) -> Result<String, Response> {
@@ -423,10 +425,7 @@ pub(crate) async fn webimap_authenticate(
         return Err(webimap_error(StatusCode::FORBIDDEN, "user blocked"));
     }
 
-    let Some(hash) = passwords::get_user_hash(pool, &user)
-        .await
-        .map_err(|e| webimap_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?
-    else {
+    let Some(hash) = app.auth.get_hash(&user) else {
         return Err(webimap_error(
             StatusCode::UNAUTHORIZED,
             "invalid credentials",

@@ -95,6 +95,7 @@ async fn delete_account_full(
     if let Err(e) = passwords::delete_user(&st.pool, username).await {
         tracing::warn!(%username, error = %e, "admin delete: credentials removal failed");
     }
+    st.app.auth.remove(username);
     chatmail_db::account_info::delete_quota_row(&st.pool, username)
         .await
         .map_err(db_err)?;
@@ -113,6 +114,7 @@ async fn provision_account(
     passwords::create_user(&st.pool, username, stored_hash)
         .await
         .map_err(db_err)?;
+    st.app.auth.insert(username, stored_hash);
     st.app
         .mailbox_store
         .init_user_dir(username)
@@ -179,10 +181,7 @@ pub async fn accounts(st: &AdminState, method: &str, body: &Value) -> AdminResul
                     continue;
                 }
 
-                if passwords::user_exists(&st.pool, &email)
-                    .await
-                    .map_err(db_err)?
-                {
+                if st.app.auth.user_exists(&email) {
                     continue;
                 }
 
@@ -284,10 +283,7 @@ async fn import_accounts(st: &AdminState, users: Vec<ImportUser>) -> AdminResult
             }
         };
 
-        if passwords::user_exists(&st.pool, &username)
-            .await
-            .map_err(db_err)?
-        {
+        if st.app.auth.user_exists(&username) {
             skipped += 1;
             continue;
         }

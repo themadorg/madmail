@@ -232,7 +232,7 @@ pub async fn mailboxes(State(st): State<WwwState>, headers: HeaderMap) -> Respon
     if !is_webimap_enabled(&st.pool).await {
         return service_disabled();
     }
-    let user = match webimap_authenticate(&st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
         Ok(u) => u,
         Err(r) => return r,
     };
@@ -261,7 +261,7 @@ pub async fn messages(
     if !is_webimap_enabled(&st.pool).await {
         return service_disabled();
     }
-    let user = match webimap_authenticate(&st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
         Ok(u) => u,
         Err(r) => return r,
     };
@@ -302,7 +302,7 @@ pub async fn message_get(
     if !is_webimap_enabled(&st.pool).await {
         return service_disabled();
     }
-    let user = match webimap_authenticate(&st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
         Ok(u) => u,
         Err(r) => return r,
     };
@@ -350,7 +350,7 @@ async fn delete_by_uid(
     if !is_webimap_enabled(&st.pool).await {
         return service_disabled();
     }
-    let user = match webimap_authenticate(&st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
         Ok(u) => u,
         Err(r) => return r,
     };
@@ -387,7 +387,7 @@ pub async fn message_flags(
     if !is_webimap_enabled(&st.pool).await {
         return service_disabled();
     }
-    let _user = match webimap_authenticate(&st.pool, &headers).await {
+    let _user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
         Ok(u) => u,
         Err(r) => return r,
     };

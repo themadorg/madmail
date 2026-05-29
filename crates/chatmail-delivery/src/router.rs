@@ -19,9 +19,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chatmail_config::QueueSettings;
-use chatmail_db::federation_policy_label;
 use chatmail_db::DbPool;
-use chatmail_state::{AppState, PolicyMode};
+use chatmail_state::AppState;
 use chatmail_types::{address_domain, address_is_local, ChatmailError, Result};
 use tokio::sync::OnceCell;
 
@@ -109,7 +108,7 @@ impl DeliveryContext {
                     .any(|f| f.eq_ignore_ascii_case(&domain))
             }) {
                 for rcpt in rcpts {
-                    if !chatmail_db::inbound_local_recipient_allowed(&self.pool, &rcpt).await? {
+                    if !self.state.auth.local_recipient_allowed(&rcpt) {
                         tracing::debug!(rcpt = %rcpt, "silently dropped inbound local delivery");
                         continue;
                     }
@@ -117,7 +116,7 @@ impl DeliveryContext {
                     local_deliveries.push((rcpt, uuid::Uuid::new_v4().to_string()));
                 }
             } else {
-                let mode = PolicyMode::from_label(&federation_policy_label(&self.pool).await?);
+                let mode = self.state.federation_policy.global_mode();
                 for rcpt in rcpts {
                     if !self.state.federation_policy.check_policy(&domain, mode) {
                         return Err(ChatmailError::FederationRejected(domain.clone()));
@@ -187,6 +186,7 @@ mod tests {
         let pool = init_memory_db().await.unwrap();
         let dir = tempfile::tempdir().unwrap();
         let app = Arc::new(AppState::new(dir.path()));
+        app.auth.hydrate(&pool).await.unwrap();
         app.federation_silent_dismiss
             .add(&pool, "remote.test")
             .await
@@ -219,5 +219,39 @@ mod tests {
         let queue_dir = dir.path().join("remote_queue");
         let store = crate::queue::QueueStore::new(queue_dir);
         assert_eq!(store.count_entries().await.unwrap(), 0);
+    }
+
+    /// Local group delivery uses in-memory auth cache (no per-recipient DB lookups).
+    #[tokio::test]
+    async fn route_message_local_group_uses_auth_cache() {
+        let pool = init_memory_db().await.unwrap();
+        chatmail_db::passwords::create_user(&pool, "u1@local.test", "bcrypt:x")
+            .await
+            .unwrap();
+        chatmail_db::passwords::create_user(&pool, "u2@local.test", "bcrypt:x")
+            .await
+            .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(AppState::new(dir.path()));
+        app.auth.hydrate(&pool).await.unwrap();
+
+        let local_domains = chatmail_types::build_local_domains("local.test", None);
+        let ctx = DeliveryContext {
+            pool: pool.clone(),
+            state: Arc::clone(&app),
+            primary_domain: "local.test".into(),
+            local_domains,
+        };
+
+        let recipients: Vec<String> = (1..=60)
+            .map(|i| format!("u{}@local.test", (i % 2) + 1))
+            .collect();
+        let body = b"From: a@local.test\r\nTo: u1@local.test\r\n\r\nhello";
+        ctx.route_message("a@local.test", &recipients, body)
+            .await
+            .unwrap();
+
+        assert_eq!(app.auth.len(), 2);
     }
 }

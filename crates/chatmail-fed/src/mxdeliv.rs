@@ -21,14 +21,11 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use chatmail_db::federation_policy_label;
-use chatmail_db::DbPool;
+use chatmail_db::{is_federation_sender_blocked, DbPool};
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
-use chatmail_state::{AppState, PolicyMode};
+use chatmail_state::AppState;
 use chatmail_storage::write_blob;
 use chatmail_types::ChatmailError;
-
-use chatmail_db::{inbound_local_recipient_allowed, is_federation_sender_blocked};
 
 use crate::security::recipient_matches_server;
 
@@ -91,7 +88,7 @@ async fn handle_mxdeliv(
         return Ok(());
     }
 
-    if !inbound_local_recipient_allowed(&st.pool, &rcpt).await? {
+    if !st.app.auth.local_recipient_allowed(&rcpt) {
         tracing::debug!(rcpt = %rcpt, "mxdeliv: silently dropped (no account or reserved rcpt)");
         return Ok(());
     }
@@ -101,7 +98,7 @@ async fn handle_mxdeliv(
         .map(|(_, d)| d.to_string())
         .unwrap_or_default();
 
-    let policy_mode = PolicyMode::from_label(&federation_policy_label(&st.pool).await?);
+    let policy_mode = st.app.federation_policy.global_mode();
     if !st
         .app
         .federation_policy
@@ -193,9 +190,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = Arc::new(AppState::new(dir.path()));
         app.federation_policy.hydrate(&pool).await.unwrap();
+        app.auth.hydrate(&pool).await.unwrap();
 
         let st = FedState {
-            pool: pool.clone(),
+            pool,
             app,
             primary_domain: "example.org".into(),
             local_domains: chatmail_types::build_local_domains("example.org", None),
@@ -233,6 +231,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = Arc::new(AppState::new(dir.path()));
         app.federation_policy.hydrate(&pool).await.unwrap();
+        app.auth.hydrate(&pool).await.unwrap();
 
         let st = FedState {
             pool,
@@ -241,7 +240,7 @@ mod tests {
             local_domains: chatmail_types::build_local_domains("example.org", None),
         };
 
-        let pgp = b"From: a@peer.test\r\nTo: u@example.org\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        let pgp = b"From: a@peer.test\r\nTo: user@example.org\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
         let mut headers = HeaderMap::new();
         headers.insert("x-mail-from", "sender@peer.test".parse().unwrap());
         headers.insert("x-mail-to", "user@example.org".parse().unwrap());
@@ -282,6 +281,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = Arc::new(AppState::new(dir.path()));
         app.federation_policy.hydrate(&pool).await.unwrap();
+        app.auth.hydrate(&pool).await.unwrap();
 
         let st = FedState {
             pool,

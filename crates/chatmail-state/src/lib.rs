@@ -15,6 +15,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+pub mod auth;
 pub mod events;
 pub mod flusher;
 pub mod listener_ports;
@@ -31,6 +32,7 @@ use chatmail_db::DbPool;
 use chatmail_storage::MailboxStore;
 use chatmail_types::Result;
 
+pub use auth::AuthCache;
 pub use events::{EventBus, NewMessageEvent};
 pub use flusher::{flush_federation_stats, start_flusher, FlusherHandle};
 pub use listener_ports::{ListenerPorts, ListenerPortsStore};
@@ -43,6 +45,7 @@ pub use tracker::{FederationTracker, ServerStat};
 /// Shared hot-path state hydrated at boot.
 #[derive(Clone)]
 pub struct AppState {
+    pub auth: Arc<AuthCache>,
     pub message_size: Arc<MessageSizeLimit>,
     pub quota: Arc<QuotaCache>,
     pub federation_tracker: Arc<FederationTracker>,
@@ -74,6 +77,7 @@ impl AppState {
     ) -> Self {
         let state_dir = state_dir.as_ref().to_path_buf();
         Self {
+            auth: Arc::new(AuthCache::new()),
             message_size: Arc::new(MessageSizeLimit::new(config)),
             quota: Arc::new(QuotaCache::new(default_quota_bytes)),
             federation_tracker: Arc::new(FederationTracker::new()),
@@ -93,6 +97,7 @@ impl AppState {
     }
 
     pub async fn hydrate(&self, pool: &DbPool, config: &AppConfig) -> Result<()> {
+        self.auth.hydrate(pool).await?;
         self.message_size.hydrate(pool, config).await?;
         self.quota.hydrate(pool, &self.mailbox_store).await?;
         self.federation_policy.hydrate(pool).await?;

@@ -18,7 +18,7 @@
 use std::collections::HashSet;
 use std::sync::RwLock;
 
-use chatmail_db::{db_execute, db_fetch_all, normalize_federation_domain, pg_sql, DbPool};
+use chatmail_db::{db_execute, db_fetch_all, federation_policy_label, normalize_federation_domain, pg_sql, DbPool};
 use chatmail_types::Result;
 
 /// Global federation mode (TDD / Madmail admin API).
@@ -43,16 +43,30 @@ impl PolicyMode {
 #[derive(Debug)]
 pub struct FederationPolicyCache {
     exceptions: RwLock<HashSet<String>>,
+    global_mode: RwLock<PolicyMode>,
 }
 
 impl FederationPolicyCache {
     pub fn new() -> Self {
         Self {
             exceptions: RwLock::new(HashSet::new()),
+            global_mode: RwLock::new(PolicyMode::Accept),
         }
     }
 
+    pub fn global_mode(&self) -> PolicyMode {
+        *self.global_mode.read().expect("policy cache lock")
+    }
+
+    pub fn set_global_mode(&self, mode: PolicyMode) {
+        *self.global_mode.write().expect("policy cache lock") = mode;
+    }
+
     pub async fn hydrate(&self, pool: &DbPool) -> Result<()> {
+        let label = federation_policy_label(pool).await?;
+        *self.global_mode.write().expect("policy cache lock") =
+            PolicyMode::from_label(&label);
+
         let rows: Vec<(String,)> =
             db_fetch_all!(pool, (String,), "SELECT domain FROM federation_rules")?;
         let mut set = self.exceptions.write().expect("policy cache lock");

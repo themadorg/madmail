@@ -17,8 +17,6 @@
 
 //! SMTP DATA validation helpers (Madmail `submission.go` / TDD `02-smtp-server.md`).
 
-use chatmail_db::federation_policy_label;
-use chatmail_db::DbPool;
 use chatmail_state::policy::{FederationPolicyCache, PolicyMode};
 use chatmail_types::{address_domain, address_is_local, ChatmailError, Result};
 
@@ -78,8 +76,7 @@ pub fn validate_submission_headers(raw: &[u8], mail_from: &str) -> Result<()> {
 }
 
 /// Outbound / submission: reject at RCPT when target domain is blocked (Madmail `remote.go`).
-pub async fn check_outbound_rcpt_federation(
-    pool: &DbPool,
+pub fn check_outbound_rcpt_federation(
     policy: &FederationPolicyCache,
     local_domains: &[String],
     rcpt: &str,
@@ -91,7 +88,7 @@ pub async fn check_outbound_rcpt_federation(
     if domain.is_empty() {
         return Ok(());
     }
-    let mode = PolicyMode::from_label(&federation_policy_label(pool).await?);
+    let mode = policy.global_mode();
     if policy.check_policy(&domain, mode) {
         Ok(())
     } else {

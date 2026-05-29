@@ -95,23 +95,37 @@ pub async fn delete_user(pool: &DbPool, username: &str) -> Result<()> {
 }
 
 pub async fn list_users(pool: &DbPool) -> Result<Vec<String>> {
+    Ok(list_all_credentials(pool)
+        .await?
+        .into_iter()
+        .map(|(u, _)| u)
+        .collect())
+}
+
+/// Bulk-load all account credentials (one schema detect + one query). Used by [`AuthCache`].
+pub async fn list_all_credentials(pool: &DbPool) -> Result<Vec<(String, String)>> {
     match detect_schema(pool).await? {
+        PasswordsLayout::ChatmailRs => {
+            let rows: Vec<(String, String)> = db_fetch_all!(
+                pool,
+                (String, String),
+                "SELECT username, hash FROM passwords ORDER BY username"
+            )?;
+            Ok(rows)
+        }
         PasswordsLayout::MadmailKv => {
             let sql = match pool.backend() {
-                DbBackend::Sqlite => "SELECT key FROM passwords WHERE key NOT GLOB '__*__'",
-                DbBackend::Postgres => "SELECT key FROM passwords WHERE key !~ '^__.*__$'",
+                DbBackend::Sqlite => {
+                    "SELECT key, value FROM passwords WHERE key NOT GLOB '__*__' ORDER BY key"
+                }
+                DbBackend::Postgres => {
+                    "SELECT key, value FROM passwords WHERE key !~ '^__.*__$' ORDER BY key"
+                }
             };
-            let rows: Vec<(String,)> = db_fetch_all!(pool, (String,), sql)?;
-            Ok(rows.into_iter().map(|(k,)| k).collect())
+            let rows: Vec<(String, String)> = db_fetch_all!(pool, (String, String), sql)?;
+            Ok(rows)
         }
-        _ => {
-            let rows: Vec<(String,)> = db_fetch_all!(
-                pool,
-                (String,),
-                "SELECT username FROM passwords ORDER BY username"
-            )?;
-            Ok(rows.into_iter().map(|(u,)| u).collect())
-        }
+        PasswordsLayout::Unknown => Ok(Vec::new()),
     }
 }
 

@@ -24,6 +24,7 @@ use chatmail_db::{
     federation_policy_label, get_bool_setting, set_federation_policy_label, set_setting,
     settings_keys,
 };
+use chatmail_state::PolicyMode;
 
 #[derive(Deserialize)]
 struct FederationPost {
@@ -66,6 +67,9 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
                 set_federation_policy_label(&st.pool, &p)
                     .await
                     .map_err(db_err)?;
+                st.app
+                    .federation_policy
+                    .set_global_mode(PolicyMode::from_label(&p));
             }
             Ok((200, Some(federation_settings_body(st).await?)))
         }

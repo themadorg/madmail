@@ -283,11 +283,12 @@ pub async fn deliver_message(ctx: &AppState, user: &str, msg_id: &str, body: &[u
     ctx.events.notify_new_message(user, msg_id);
 }
 
-pub async fn create_user(pool: &DbPool, email: &str, password: &str) {
+pub async fn create_user(ctx: &AppState, pool: &DbPool, email: &str, password: &str) {
     let hash = hash_password(password).expect("hash");
     chatmail_db::passwords::create_user(pool, email, &hash)
         .await
         .expect("create user");
+    ctx.auth.insert(email, &hash);
 }
 
 /// Submit a message via SMTP AUTH PLAIN (relay-ping `sendVCRequest` flow).

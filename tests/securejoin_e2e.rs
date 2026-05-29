@@ -16,8 +16,8 @@ async fn securejoin_vc_request_smtp_to_imap() {
     let dir = tempfile::tempdir().expect("tempdir");
     let servers = spawn_mail_servers(dir.path()).await;
 
-    create_user(&servers.pool, "bob@test", "bob-secret").await;
-    create_user(&servers.pool, "alice@test", "alice-secret").await;
+    create_user(&servers.ctx, &servers.pool, "bob@test", "bob-secret").await;
+    create_user(&servers.ctx, &servers.pool, "alice@test", "alice-secret").await;
 
     let invite_number = "relayping-invite-token-01";
     let raw = build_vc_request_raw("bob@test", "alice@test", invite_number);
@@ -68,8 +68,8 @@ async fn securejoin_webimap_send_delivers_vc_request() {
     let dir = tempfile::tempdir().expect("tempdir");
     let servers = spawn_mail_servers(dir.path()).await;
 
-    create_user(&servers.pool, "bob@test", "bob-secret").await;
-    create_user(&servers.pool, "alice@test", "alice-secret").await;
+    create_user(&servers.ctx, &servers.pool, "bob@test", "bob-secret").await;
+    create_user(&servers.ctx, &servers.pool, "alice@test", "alice-secret").await;
 
     let raw = build_vc_request_raw("bob@test", "alice@test", "webimap-invite-01");
     let (status, resp) = webimap_send(
@@ -104,8 +104,8 @@ async fn securejoin_rejects_plaintext_without_handshake() {
     let dir = tempfile::tempdir().expect("tempdir");
     let servers = spawn_mail_servers(dir.path()).await;
 
-    create_user(&servers.pool, "bob@test", "bob-secret").await;
-    create_user(&servers.pool, "alice@test", "alice-secret").await;
+    create_user(&servers.ctx, &servers.pool, "bob@test", "bob-secret").await;
+    create_user(&servers.ctx, &servers.pool, "alice@test", "alice-secret").await;
 
     let raw = "From: <bob@test>\r\n\
          To: <alice@test>\r\n\

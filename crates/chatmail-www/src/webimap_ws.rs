@@ -67,7 +67,7 @@ impl WsWriter {
 }
 
 pub async fn run(socket: WebSocket, st: WwwState, q: WsQuery) -> Result<(), String> {
-    let user = ws_authenticate(&st.pool, &q.email, &q.password).await?;
+    let user = ws_authenticate(&st.app, &st.pool, &q.email, &q.password).await?;
     let watch_mailbox = q.mailbox.unwrap_or_else(|| "INBOX".into());
     if watch_mailbox != "INBOX" {
         return Err("unknown mailbox".into());
@@ -309,6 +309,7 @@ fn default_inbox() -> String {
 }
 
 async fn ws_authenticate(
+    app: &chatmail_state::AppState,
     pool: &chatmail_db::DbPool,
     email: &str,
     password: &str,
@@ -323,7 +324,7 @@ async fn ws_authenticate(
         "x-password",
         HeaderValue::from_str(password).map_err(|e| e.to_string())?,
     );
-    webimap_authenticate(pool, &headers)
+    webimap_authenticate(app, pool, &headers)
         .await
         .map_err(|resp| format!("auth failed ({})", resp.status()))
 }

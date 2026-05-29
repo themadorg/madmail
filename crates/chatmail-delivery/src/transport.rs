@@ -19,8 +19,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-use chatmail_db::federation_policy_label;
-use chatmail_state::PolicyMode;
+use chatmail_db::DbPool;
 use chatmail_types::is_ipv4_literal;
 use reqwest::Client;
 use tracing::debug;
@@ -55,14 +54,7 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
         }
     };
 
-    let policy_mode = match federation_policy_label(&ctx.pool).await {
-        Ok(label) => PolicyMode::from_label(&label),
-        Err(e) => {
-            return DeliveryOutcome::Temporary {
-                reason: e.to_string(),
-            };
-        }
-    };
+    let policy_mode = ctx.state.federation_policy.global_mode();
     if !ctx
         .state
         .federation_policy

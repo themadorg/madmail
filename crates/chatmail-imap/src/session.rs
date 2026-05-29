@@ -1603,6 +1603,8 @@ mod integration_tests {
         iroh: Option<IrohDiscovery>,
         script: &[&str],
     ) -> String {
+        ctx.auth.hydrate(&pool).await.unwrap();
+
         let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
         std_listener.set_nonblocking(true).unwrap();
         let addr = std_listener.local_addr().unwrap();
@@ -1775,6 +1777,7 @@ mod integration_tests {
             .unwrap();
 
         let ctx = Arc::new(AppState::new(dir.path()));
+        ctx.auth.hydrate(&pool).await.unwrap();
         let body = b"From: u@test\r\nTo: u@test\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
         write_blob(&ctx.mailbox_store, "u@test", "m1", body)
             .await

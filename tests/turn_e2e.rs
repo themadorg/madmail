@@ -26,7 +26,7 @@ fn extract_turn_metadata_value(imap_response: &str) -> String {
 async fn turn_imap_e2e_capability_metadata() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers_opts(dir.path(), MailServersOpts { turn: true }).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     let r = c.command("c001 CAPABILITY").await;
@@ -37,7 +37,7 @@ async fn turn_imap_e2e_capability_metadata() {
 async fn turn_imap_e2e_getmetadata_deltachat() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers_opts(dir.path(), MailServersOpts { turn: true }).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     c.command(&format!("m001 LOGIN {USER} {PASS}")).await;
@@ -78,7 +78,7 @@ async fn turn_imap_e2e_getmetadata_requires_auth() {
 async fn turn_metadata_auth() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers_opts(dir.path(), MailServersOpts { turn: true }).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     c.command(&format!("t001 LOGIN {USER} {PASS}")).await;
@@ -117,7 +117,7 @@ async fn turn_metadata_auth() {
 async fn turn_e2e_allocate_with_imap_credentials() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers_opts(dir.path(), MailServersOpts { turn: true }).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     c.command(&format!("a001 LOGIN {USER} {PASS}")).await;
@@ -149,7 +149,7 @@ async fn turn_e2e_allocate_with_imap_credentials() {
 async fn turn_imap_e2e_rfc8656_relay_datapath() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers_opts(dir.path(), MailServersOpts { turn: true }).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     c.command(&format!("r001 LOGIN {USER} {PASS}")).await;

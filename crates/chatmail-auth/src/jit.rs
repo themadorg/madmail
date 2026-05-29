@@ -62,7 +62,7 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
         return Err(ChatmailError::UserBlocked(user));
     }
 
-    if let Some(hash) = passwords::get_user_hash(&ctx.pool, &user).await? {
+    if let Some(hash) = ctx.state.auth.get_hash(&user) {
         if verify_password(password, &hash)? {
             return finish_successful_login(ctx, &user).await;
         }
@@ -78,6 +78,7 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
 
     let hash = hash_password(password)?;
     passwords::create_user(&ctx.pool, &user, &hash).await?;
+    ctx.state.auth.insert(&user, &hash);
     ctx.state.mailbox_store.init_user_dir(&user).await?;
     registration_tokens::ensure_new_account_quota(&ctx.pool, &user).await?;
 
@@ -93,6 +94,7 @@ async fn finish_successful_login(ctx: &AuthContext, user: &str) -> Result<()> {
                 let _ = tokio::fs::remove_dir_all(&maildir.root).await;
             }
             let _ = passwords::delete_user(&ctx.pool, user).await;
+            ctx.state.auth.remove(user);
             Err(ChatmailError::AuthFailed)
         }
     }
@@ -132,6 +134,7 @@ mod tests {
         .await
         .unwrap();
         let state = Arc::new(AppState::new(dir.path()));
+        state.auth.hydrate(&pool).await.unwrap();
         let ctx = AuthContext {
             pool,
             state,
@@ -149,10 +152,7 @@ mod tests {
         authenticate(&ctx, "newuser1@example.org", "longpassword")
             .await
             .unwrap();
-        assert!(passwords::get_user_hash(&ctx.pool, "newuser1@example.org")
-            .await
-            .unwrap()
-            .is_some());
+        assert!(ctx.state.auth.user_exists("newuser1@example.org"));
     }
 
     /// P3-UT04: blocked users cannot authenticate even with correct password.
@@ -162,6 +162,7 @@ mod tests {
         passwords::create_user(&ctx.pool, "blocked@example.org", "bcrypt:x")
             .await
             .unwrap();
+        ctx.state.auth.insert("blocked@example.org", "bcrypt:x");
         chatmail_db::blocklist::block_user(&ctx.pool, "blocked@example.org", "test")
             .await
             .unwrap();
@@ -215,6 +216,7 @@ mod tests {
         passwords::create_user(&ctx.pool, "legacy@example.org", &hash)
             .await
             .unwrap();
+        ctx.state.auth.insert("legacy@example.org", &hash);
         authenticate(&ctx, "legacy@example.org", "x").await.unwrap();
     }
 }

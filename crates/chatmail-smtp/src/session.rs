@@ -20,12 +20,10 @@ use std::sync::Arc;
 use base64::Engine;
 use chatmail_auth::{normalize_username, AuthContext};
 use chatmail_config::CredentialPolicy;
-use chatmail_db::federation_policy_label;
 use chatmail_db::DbPool;
 use chatmail_delivery::DeliveryContext;
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
 use chatmail_state::AppState;
-use chatmail_state::PolicyMode;
 use chatmail_storage::deliver_local_messages;
 use chatmail_types::{ChatmailError, Result};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -216,8 +214,7 @@ impl SmtpSession {
                         }
                     }
                     if !self.cfg.require_auth {
-                        let policy_mode =
-                            PolicyMode::from_label(&federation_policy_label(&self.pool).await?);
+                        let policy_mode = self.ctx.federation_policy.global_mode();
                         if check_inbound_mail_from(
                             &self.mail_from,
                             &self.ctx.federation_policy,
@@ -278,12 +275,10 @@ impl SmtpSession {
                     };
                     if let Err(ChatmailError::FederationRejected(_)) =
                         check_outbound_rcpt_federation(
-                            &self.pool,
                             &self.ctx.federation_policy,
                             &self.cfg.local_domains,
                             &rcpt,
                         )
-                        .await
                     {
                         writer.write_all(b"550 5.7.1 Policy Rejection\r\n").await?;
                         chatmail_metrics::record_smtp_failed_command(
@@ -456,9 +451,7 @@ impl SmtpSession {
             let rcpt = normalize_username(rcpt)?;
             self.ctx.quota.check_quota(&rcpt, data.len() as u64)?;
             if delivery.is_local(&rcpt) {
-                if !self.cfg.require_auth
-                    && !chatmail_db::inbound_local_recipient_allowed(&self.pool, &rcpt).await?
-                {
+                if !self.cfg.require_auth && !self.ctx.auth.local_recipient_allowed(&rcpt) {
                     tracing::debug!(rcpt = %rcpt, "silently dropped inbound local delivery");
                     continue;
                 }
@@ -575,6 +568,8 @@ mod tests {
         ctx: Arc<AppState>,
         script: &[&str],
     ) -> String {
+        ctx.auth.hydrate(&pool).await.unwrap();
+
         let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
         std_listener.set_nonblocking(true).unwrap();
         let addr = std_listener.local_addr().unwrap();

@@ -327,6 +327,7 @@ async fn webimap_send_oversize_returns_message_file_too_big() {
     passwords::create_user(&pool, "u@x.org", &hash)
         .await
         .unwrap();
+    app_state.auth.hydrate(&pool).await.unwrap();
 
     let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg));
 

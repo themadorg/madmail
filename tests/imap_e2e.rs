@@ -23,7 +23,7 @@ const PEER: &str = "peer@test";
 async fn imap_e2e_greeting_and_capability() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     assert!(c.transcript().contains("IMAP4rev1 ready"));
@@ -45,7 +45,7 @@ async fn imap_e2e_greeting_and_capability() {
 async fn imap_e2e_noop_and_logout() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     assert!(c.command("n001 NOOP").await.contains("OK NOOP"));
@@ -59,7 +59,7 @@ async fn imap_e2e_noop_and_logout() {
 async fn imap_e2e_login_success_and_failure() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut ok = ImapClient::connect(srv.imap_addr).await;
     assert!(ok
@@ -94,7 +94,7 @@ async fn imap_e2e_select_requires_login() {
 async fn imap_e2e_list_select_examine_status_empty_inbox() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     c.command(&format!("a001 LOGIN {USER} {PASS}")).await;
@@ -124,7 +124,7 @@ async fn imap_e2e_list_select_examine_status_empty_inbox() {
 async fn imap_e2e_fetch_header_fields_and_body() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
     deliver_message(&srv.ctx, USER, "m1", PGP_MIME_BODY).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
@@ -151,7 +151,7 @@ async fn imap_e2e_fetch_header_fields_and_body() {
 async fn imap_e2e_fetch_sequence_set() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
     deliver_message(&srv.ctx, USER, "m1", PGP_MIME_BODY).await;
     deliver_message(&srv.ctx, USER, "m2", PGP_MIME_BODY).await;
 
@@ -174,7 +174,7 @@ async fn imap_e2e_fetch_sequence_set() {
 async fn imap_e2e_append_encrypted_visible_after_select() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let body = pgp_mime_for_user(USER);
     let mut c = ImapClient::connect(srv.imap_addr).await;
@@ -192,7 +192,7 @@ async fn imap_e2e_append_encrypted_visible_after_select() {
 async fn imap_e2e_append_plaintext_rejected() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let plain = b"From: u@test\r\nSubject: x\r\nContent-Type: text/plain\r\n\r\nn";
     let mut c = ImapClient::connect(srv.imap_addr).await;
@@ -209,7 +209,7 @@ async fn imap_e2e_append_plaintext_rejected() {
 async fn imap_e2e_getquota_and_getquotaroot() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     c.command(&format!("q001 LOGIN {USER} {PASS}")).await;
@@ -233,7 +233,7 @@ async fn imap_e2e_getquota_and_getquotaroot() {
 async fn imap_e2e_idle_unsolicited_exists_on_event() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
     deliver_message(&srv.ctx, USER, "m1", PGP_MIME_BODY).await;
 
     let ctx = Arc::clone(&srv.ctx);
@@ -256,7 +256,7 @@ async fn imap_e2e_idle_unsolicited_exists_on_event() {
 async fn imap_e2e_idle_requires_selected_mailbox() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     c.command(&format!("d001 LOGIN {USER} {PASS}")).await;
@@ -268,7 +268,7 @@ async fn imap_e2e_idle_requires_selected_mailbox() {
 async fn imap_e2e_idle_tagged_done_ends_session() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
     deliver_message(&srv.ctx, USER, "m1", PGP_MIME_BODY).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
@@ -286,8 +286,8 @@ async fn imap_e2e_idle_tagged_done_ends_session() {
 async fn imap_e2e_idle_after_smtp_local_delivery() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
-    create_user(&srv.pool, PEER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, PEER, PASS).await;
 
     let body = String::from_utf8_lossy(&pgp_mime_for_user(PEER))
         .replace("From: u@test", &format!("From: {PEER}"))
@@ -311,7 +311,7 @@ async fn imap_e2e_idle_after_smtp_local_delivery() {
 async fn imap_e2e_uid_store_seen() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
     deliver_message(&srv.ctx, USER, "m1", PGP_MIME_BODY).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
@@ -329,7 +329,7 @@ async fn imap_e2e_uid_store_seen() {
 async fn imap_e2e_uid_store_deleted_and_close_expunge() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
     deliver_message(&srv.ctx, USER, "m1", PGP_MIME_BODY).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
@@ -346,7 +346,7 @@ async fn imap_e2e_uid_store_deleted_and_close_expunge() {
 async fn imap_e2e_uid_move_to_deltachat() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
     deliver_message(&srv.ctx, USER, "m1", PGP_MIME_BODY).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
@@ -366,7 +366,7 @@ async fn imap_e2e_uid_move_to_deltachat() {
 async fn imap_e2e_uid_copy_to_deltachat() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
     deliver_message(&srv.ctx, USER, "m1", PGP_MIME_BODY).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
@@ -388,7 +388,7 @@ async fn imap_e2e_uid_copy_to_deltachat() {
 async fn imap_e2e_delta_chat_sync_session() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;
-    create_user(&srv.pool, USER, PASS).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
     deliver_message(&srv.ctx, USER, "sync-1", PGP_MIME_BODY).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
