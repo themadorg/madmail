@@ -49,7 +49,7 @@ The admin bearer token lives in **`{state_dir}/admin_token`** (created on first 
 ```bash
 git submodule update --init external/madmail-admin-web
 
-# Build SPA + re-embed into chatmail (must run cargo from madmailv2 root, not admin-web/)
+# Build SPA + re-embed into chatmail (must run cargo from madmail root, not admin-web/)
 make build-with-admin-web
 # or: make build-admin-web && cargo build -p chatmail
 

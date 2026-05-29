@@ -14,7 +14,7 @@ python scripts/make_local_dev_version.py
 
 Desktop links `@deltachat/stdio-rpc-server` to:
 
-`relay/madmailv2/context/core/deltachat-rpc-server/npm-package`
+`madmail/context/core/deltachat-rpc-server/npm-package`
 
 (same tree as `desktop/core`).
 

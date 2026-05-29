@@ -75,4 +75,4 @@ See the companion document [AI-assisted development](ai-assisted-development.md)
 | Reference projects & submodules       | `[context/](context-references.md)` and `[external/](context-references.md)` |
 
 
-Contributions, corrections, and additional narrative are very welcome via [GitHub Discussions](https://github.com/themadorg/madmailv2/discussions).
+Contributions, corrections, and additional narrative are very welcome via [GitHub Discussions](https://github.com/themadorg/madmail/discussions).

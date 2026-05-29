@@ -2,6 +2,60 @@
 
 This guide gives you the fastest realistic paths to a working chatmail server, from completely local testing to a proper public server.
 
+## Quick Setup
+
+Download the release binary for your architecture, then install and start the service:
+
+```bash
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -fsSL "https://github.com/themadorg/madmailv2/releases/latest/download/madmail-linux-${ARCH}" \
+  -o madmail
+chmod +x madmail
+```
+
+### With a public IP (no domain)
+
+Trusted TLS via Let's Encrypt IP certificate (~6-day renewal, port 80 required):
+
+```bash
+sudo ./madmail install --simple --ip YOUR_IP \
+  --auto-ip-cert \
+  --acme-email you@example.com \
+  --lang en
+sudo systemctl enable madmail
+sudo systemctl start madmail
+```
+
+> Replace `YOUR_IP` with your server's public IPv4 or IPv6 address.
+
+Self-signed TLS (testing / internal — omit `--auto-ip-cert`):
+
+```bash
+sudo ./madmail install --simple --ip YOUR_IP --lang en
+sudo systemctl enable madmail
+sudo systemctl start madmail
+```
+
+### With a domain
+
+Standard Let's Encrypt certificate (90-day renewal, DNS must point to your server):
+
+```bash
+sudo ./madmail install --simple --domain mail.example.org \
+  --acme-email you@example.com \
+  --lang en
+sudo systemctl enable madmail
+sudo systemctl start madmail
+```
+
+> Replace `mail.example.org` with your hostname and `you@example.com` with a valid contact email.
+
+More detail:
+
+- [Simple IP + ACME install](../../install-simple-ip-acme.md)
+- [IP vs domain deployment](./11-deployment-ip-domain-certs.md)
+- [Local development](../../local-dev.md)
+
 ## Local Testing (for Operators)
 
 If you just want to test the server locally as an operator (without building from source), the easiest approach is usually to use a pre-built release binary or run it via the official install process in a container/VM.
