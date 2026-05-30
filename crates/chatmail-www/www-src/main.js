@@ -88,11 +88,12 @@ function formatEmail(username, domain) {
 
 /** Bare hostname for dclogin `ih` / `sh` (no brackets). */
 function connectHostForDclogin(fallback) {
-    const fromPage = window.location.hostname;
-    if (fromPage) {
-        return fromPage.replace(/^\[|\]$/g, '');
+    const fb = (fallback || '127.0.0.1').replace(/^\[|\]$/g, '');
+    const fromPage = (window.location.hostname || '').replace(/^\[|\]$/g, '');
+    if (!fromPage || fromPage === 'localhost' || fromPage === '127.0.0.1') {
+        return fb;
     }
-    return (fallback || '127.0.0.1').replace(/^\[|\]$/g, '');
+    return fromPage;
 }
 
 /** Render a dclogin / invite QR into an <img> (client-side, no /qr backend). */

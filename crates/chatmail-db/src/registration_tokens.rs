@@ -127,6 +127,14 @@ pub enum FirstLoginOutcome {
     AccountRemoved,
 }
 
+/// Usernames whose first-login quota bookkeeping is complete (`first_login_at != 1`).
+pub async fn list_login_settled_usernames(pool: &DbPool) -> Result<Vec<String>> {
+    let qt = crate::schema::quota_table(pool).await?;
+    let sql = format!("SELECT username FROM {qt} WHERE first_login_at != 1");
+    let rows: Vec<(String,)> = crate::db_fetch_all!(pool, (String,), &sql)?;
+    Ok(rows.into_iter().map(|(u,)| u).collect())
+}
+
 pub async fn record_first_login(pool: &DbPool, username: &str) -> Result<FirstLoginOutcome> {
     let qt = crate::schema::quota_table(pool).await?;
     let select_sql = format!("SELECT first_login_at, used_token FROM {qt} WHERE username = ?");

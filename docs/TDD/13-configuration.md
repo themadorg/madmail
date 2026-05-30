@@ -160,3 +160,13 @@ Configuration drives TLS listeners, submission ports, and certificate automation
 | [3207](https://datatracker.ietf.org/doc/html/rfc3207) | SMTP STARTTLS on submission port 587 | [rfc3207.txt](RFC/rfc3207.txt) |
 
 **Autoconfig XML** (`/.well-known/autoconfig/mail/config-v1.1.xml`) is **not** an IETF RFC — it follows the Mozilla ISPDB format; see [`RFC/README.md` — Autoconfig](RFC/README.md#autoconfig-not-an-ietf-rfc).
+
+Implementation: `chatmail-config::autoconfig`, served by `chatmail-www` at `GET /.well-known/autoconfig/mail/config-v1.1.xml`.
+
+| Behaviour | Notes |
+|-----------|--------|
+| Advertises SSL + STARTTLS IMAP/SMTP entries when both listener types are bound | Ports from runtime listeners + DB overrides |
+| **Does not** advertise IMAP-over-HTTPS ALPN on port 443 | `has_imap_alpn_https` is always false until `chatmail-fed` implements ALPN IMAP |
+| TLS certificate required when plain IMAP/submission bound | Supervisor calls `listeners_need_tls_cert` — PEM loaded for STARTTLS upgrade on 143/587 |
+
+Unit tests: `autoconfig_includes_ssl_and_starttls_when_both_listeners`, `autoconfig_omits_https_alpn_even_when_http_tls_bound`, `mail_autoconfig_omits_https_alpn_entry` (www integration).

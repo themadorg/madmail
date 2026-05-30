@@ -40,6 +40,7 @@ CORS: `Access-Control-Allow-Origin: *` on all WebIMAP/WebSMTP responses. `OPTION
 | POST | `/webimap/message/flags` | WebIMAP | Flag ops acknowledged (no persistent flags in maildir v1) |
 | POST | `/webimap/send` | WebSMTP | JSON `{from,to,body}` — `from` forced to authenticated user |
 | POST | `/websmtp/send` | WebSMTP | Legacy alias (same handler) |
+| POST | `/new` | — | JIT account creation; JSON `{email, password, dclogin_url}` |
 | GET | `/webimap/ws` | WebIMAP | Bidirectional WebSocket (see below) |
 
 ## WebSMTP delivery
@@ -91,6 +92,16 @@ Poll interval: 2s; also wakes on `AppState` mailbox events.
 ## Testing
 
 Integration tests enable both toggles in `tests/support/mod.rs::spawn_mail_servers`. E2E: `securejoin_e2e`, `p2p` (`/webimap/send`, `/webimap/mailboxes`).
+
+### Unit tests (`crates/chatmail-www/src/tests.rs`)
+
+| Test | Validates |
+|------|-----------|
+| `new_account_returns_dclogin_url_with_ssl_hints` | `POST /new` returns server-built `dclogin_url` with `ih`/`sh`/`is=ssl`/`ss=ssl` |
+| `mail_autoconfig_omits_https_alpn_entry` | Autoconfig route does not emit fake port-443 IMAP entry |
+| `connect_host_for_dclogin_prefers_fallback_over_localhost` | Embedded `main.js` skips localhost for dclogin host |
+
+Blocklist checks on WebIMAP auth use `AuthCache::is_blocked` (no DB round-trip).
 
 ## Related
 

@@ -102,6 +102,7 @@ async fn delete_account_full(
     blocklist::block_user(&st.pool, username, reason)
         .await
         .map_err(db_err)?;
+    st.app.auth.block(username);
     st.app.quota.invalidate(username);
     Ok(())
 }

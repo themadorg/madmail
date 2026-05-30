@@ -115,6 +115,27 @@ pub async fn mailbox_exists(store: &MailboxStore, user: &str, mailbox: &str) -> 
     store.maildir_for_mailbox(user, mailbox).root.exists()
 }
 
+/// fsync a directory so a preceding `rename`/`hard_link` into it survives a crash.
+///
+/// `File::sync_data` makes the *content* durable, but the directory entry that points at the
+/// renamed/linked file may not be flushed until the kernel decides to (ext4 `data=ordered`, xfs,
+/// btrfs, NFS …). Combined with notifying clients right after delivery, this is the classic
+/// maildir "the client was told about a message whose file vanished on reboot" hole. Calling this
+/// after the rename/link closes the window. On non-Unix targets it is a no-op (directory fds are
+/// not fsync-able there).
+#[cfg(unix)]
+pub(crate) async fn fsync_dir(dir: &Path) -> Result<()> {
+    let dir = tokio::fs::File::open(dir)
+        .await
+        .map_err(ChatmailError::from)?;
+    dir.sync_all().await.map_err(ChatmailError::from)
+}
+
+#[cfg(not(unix))]
+pub(crate) async fn fsync_dir(_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
 async fn dir_size(dir: &Path) -> Result<u64> {
     let mut total = 0u64;
     let mut read_dir = tokio::fs::read_dir(dir).await?;

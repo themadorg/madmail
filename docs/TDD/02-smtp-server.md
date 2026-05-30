@@ -220,7 +220,14 @@ Runs against a **deployed** Chatmail instance (historically **Dovecot + Postfix*
 
 **Gap:** cmdeploy does **not** assert `523` or federation policy — rely on `deltachat-test` for those. Add Rust integration tests for SMTP policy unit logic.
 
----
+### chatmail-rs unit tests (SMTP)
+
+| Test | Validates |
+|------|-----------|
+| `starttls_ehlo_advertises_starttls_before_tls` | EHLO on 587 advertises `STARTTLS`; no `AUTH` before TLS |
+| `submission_starttls_upgrade_then_auth_allowed` | RFC 3207 / Postfix `smtpd_tls_auth_only` parity: AUTH after STARTTLS |
+
+Supervisor loads PEM when **only** STARTTLS listeners are bound (143 / 587 without 993 / 465) — see `listeners_need_tls_cert` in `chatmail-config`.
 
 ## Configuration
 

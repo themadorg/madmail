@@ -18,10 +18,7 @@
 use std::sync::Arc;
 
 use chatmail_config::CredentialPolicy;
-use chatmail_db::{
-    blocklist, get_bool_setting, passwords, registration_tokens, settings_keys, DbPool,
-    FirstLoginOutcome,
-};
+use chatmail_db::{passwords, registration_tokens, DbPool, FirstLoginOutcome};
 use chatmail_state::AppState;
 use chatmail_storage::MailboxStore;
 use chatmail_types::{ChatmailError, Result};
@@ -48,6 +45,36 @@ impl AuthContext {
     }
 }
 
+fn password_sha256(password: &str) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(password.as_bytes());
+    hasher.finalize().into()
+}
+
+/// Verify `password` against the stored `hash`, short-circuiting via the in-memory auth cache and
+/// otherwise running the (CPU-heavy) bcrypt/argon2 check on a blocking thread so it never stalls
+/// the async runtime that is concurrently servicing other clients' IMAP IDLE/FETCH.
+async fn verify_cached(
+    ctx: &AuthContext,
+    user: &str,
+    password: &str,
+    hash: String,
+) -> Result<bool> {
+    let pw_sha = password_sha256(password);
+    if ctx.state.auth.check_verified(user, &pw_sha) {
+        return Ok(true);
+    }
+    let pw = password.to_string();
+    let ok = tokio::task::spawn_blocking(move || verify_password(&pw, &hash))
+        .await
+        .map_err(|_| ChatmailError::AuthFailed)??;
+    if ok {
+        ctx.state.auth.record_verified(user.to_string(), pw_sha);
+    }
+    Ok(ok)
+}
+
 /// Authenticate user; JIT-create account when enabled (Madmail pass_table + imapsql).
 pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> Result<()> {
     let user = normalize_username(username)?;
@@ -58,19 +85,32 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
         }
     }
 
-    if blocklist::is_blocked(&ctx.pool, &user).await? {
+    if ctx.state.auth.is_blocked(&user) {
         return Err(ChatmailError::UserBlocked(user));
     }
 
     if let Some(hash) = ctx.state.auth.get_hash(&user) {
-        if verify_password(password, &hash)? {
+        if verify_cached(ctx, &user, password, hash).await? {
             return finish_successful_login(ctx, &user).await;
         }
         return Err(ChatmailError::AuthFailed);
     }
 
-    let jit = jit_enabled(&ctx.pool).await?;
-    if !jit {
+    let flight = ctx.state.jit_flight(&user);
+    let _guard = flight.lock().await;
+
+    if ctx.state.auth.is_blocked(&user) {
+        return Err(ChatmailError::UserBlocked(user));
+    }
+
+    if let Some(hash) = ctx.state.auth.get_hash(&user) {
+        if verify_cached(ctx, &user, password, hash).await? {
+            return finish_successful_login(ctx, &user).await;
+        }
+        return Err(ChatmailError::AuthFailed);
+    }
+
+    if !ctx.state.auth.jit_registration_enabled() {
         return Err(ChatmailError::AuthFailed);
     }
 
@@ -79,6 +119,7 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
     let hash = hash_password(password)?;
     passwords::create_user(&ctx.pool, &user, &hash).await?;
     ctx.state.auth.insert(&user, &hash);
+    ctx.state.auth.record_verified(&user, password_sha256(password));
     ctx.state.mailbox_store.init_user_dir(&user).await?;
     registration_tokens::ensure_new_account_quota(&ctx.pool, &user).await?;
 
@@ -86,8 +127,14 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
 }
 
 async fn finish_successful_login(ctx: &AuthContext, user: &str) -> Result<()> {
+    if ctx.state.auth.is_login_settled(user) {
+        return Ok(());
+    }
     match registration_tokens::record_first_login(&ctx.pool, user).await? {
-        FirstLoginOutcome::Ok => Ok(()),
+        FirstLoginOutcome::Ok => {
+            ctx.state.auth.mark_login_settled(user);
+            Ok(())
+        }
         FirstLoginOutcome::AccountRemoved => {
             let maildir = ctx.mailbox_store().maildir_for_user(user);
             if maildir.root.exists() {
@@ -100,20 +147,10 @@ async fn finish_successful_login(ctx: &AuthContext, user: &str) -> Result<()> {
     }
 }
 
-async fn jit_enabled(pool: &DbPool) -> Result<bool> {
-    if get_bool_setting(pool, settings_keys::JIT_REGISTRATION_ENABLED, true).await? {
-        return Ok(true);
-    }
-    if get_bool_setting(pool, settings_keys::REGISTRATION_OPEN, true).await? {
-        return Ok(true);
-    }
-    Ok(false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chatmail_db::{init_memory_db, set_setting};
+    use chatmail_db::{init_memory_db, set_setting, settings_keys};
     use chatmail_state::AppState;
 
     async fn ctx_with_jit(jit: bool) -> (AuthContext, tempfile::TempDir) {
@@ -166,6 +203,7 @@ mod tests {
         chatmail_db::blocklist::block_user(&ctx.pool, "blocked@example.org", "test")
             .await
             .unwrap();
+        ctx.state.auth.block("blocked@example.org");
         assert!(matches!(
             authenticate(&ctx, "blocked@example.org", "pw").await,
             Err(ChatmailError::UserBlocked(_))
@@ -218,5 +256,36 @@ mod tests {
             .unwrap();
         ctx.state.auth.insert("legacy@example.org", &hash);
         authenticate(&ctx, "legacy@example.org", "x").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn repeat_login_skips_record_first_login_db_fast_path() {
+        let (ctx, _dir) = ctx_with_jit(true).await;
+        authenticate(&ctx, "repeat12@example.org", "longpassword1")
+            .await
+            .unwrap();
+        assert!(ctx.state.auth.is_login_settled("repeat12@example.org"));
+        authenticate(&ctx, "repeat12@example.org", "longpassword1")
+            .await
+            .unwrap();
+    }
+
+    /// Concurrent JIT logins for the same username must create a single account.
+    #[tokio::test]
+    async fn jit_coalesces_concurrent_creates_for_same_user() {
+        let (ctx, _dir) = ctx_with_jit(true).await;
+        let ctx = Arc::new(ctx);
+        let user = "coalesce@example.org";
+        let password = "longpassword1";
+
+        let c1 = Arc::clone(&ctx);
+        let c2 = Arc::clone(&ctx);
+        let h1 = tokio::spawn(async move { authenticate(&c1, user, password).await });
+        let h2 = tokio::spawn(async move { authenticate(&c2, user, password).await });
+
+        assert!(h1.await.unwrap().is_ok());
+        assert!(h2.await.unwrap().is_ok());
+        assert_eq!(ctx.state.auth.len(), 1);
+        assert!(ctx.state.auth.user_exists(user));
     }
 }

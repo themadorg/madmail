@@ -22,7 +22,8 @@ use axum::Router;
 use chatmail_config::{
     effective_http_plain_listen, effective_http_tls_listen, effective_imap_plain_listen,
     effective_imap_tls_listen, effective_smtp_listen, effective_submission_plain_listen,
-    effective_submission_tls_listen, effective_tls_pem_paths, AppConfig,
+    effective_submission_tls_listen, effective_tls_pem_paths, listeners_need_tls_cert,
+    AppConfig, RuntimeListeners,
 };
 use chatmail_db::{load_mail_port_overrides, DbPool};
 use chatmail_delivery::{start_outbound_queue, DeliveryContext};
@@ -260,9 +261,16 @@ impl SupervisorInner {
     }
 
     fn load_tls_config(&self, addrs: &ResolvedAddrs) -> Result<Option<Arc<ServerConfig>>> {
-        let needs_tls =
-            addrs.imap_tls.is_some() || addrs.submission_tls.is_some() || addrs.http_tls.is_some();
-        if !needs_tls {
+        let runtime = RuntimeListeners {
+            imap_plain_addr: addrs.imap_plain.clone(),
+            imap_tls_addr: addrs.imap_tls.clone(),
+            submission_plain_addr: addrs.submission_plain.clone(),
+            submission_tls_addr: addrs.submission_tls.clone(),
+            smtp_addr: Some(addrs.smtp.clone()),
+            http_plain_addr: addrs.http_plain.clone(),
+            http_tls_addr: addrs.http_tls.clone(),
+        };
+        if !listeners_need_tls_cert(&runtime) {
             return Ok(None);
         }
         let (cert, key) = effective_tls_pem_paths(&self.file_config, &self.state_dir);

@@ -72,6 +72,7 @@ pub async fn blocklist(st: &AdminState, method: &str, body: &Value) -> AdminResu
             blocklist::block_user(&st.pool, &username, &reason)
                 .await
                 .map_err(db_err)?;
+            st.app.auth.block(&username);
             Ok((200, Some(json!({ "blocked": username }))))
         }
         "DELETE" => {
@@ -84,6 +85,7 @@ pub async fn blocklist(st: &AdminState, method: &str, body: &Value) -> AdminResu
             blocklist::unblock_user(&st.pool, &username)
                 .await
                 .map_err(db_err)?;
+            st.app.auth.unblock(&username);
             Ok((200, Some(json!({ "unblocked": username }))))
         }
         "PATCH" => {
@@ -105,6 +107,7 @@ pub async fn blocklist(st: &AdminState, method: &str, body: &Value) -> AdminResu
                     errors.push(format!("{username}: {e}"));
                     continue;
                 }
+                st.app.auth.unblock(&username);
                 unblocked += 1;
             }
             let mut resp = json!({ "unblocked": unblocked });

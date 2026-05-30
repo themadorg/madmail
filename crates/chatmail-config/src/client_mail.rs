@@ -505,6 +505,15 @@ pub fn port_from_listen(addr: Option<&str>) -> Option<String> {
     }
 }
 
+/// True when the supervisor must load PEM material (implicit TLS and/or STARTTLS upgrade).
+pub fn listeners_need_tls_cert(runtime: &RuntimeListeners) -> bool {
+    runtime.imap_tls_addr.is_some()
+        || runtime.submission_tls_addr.is_some()
+        || runtime.http_tls_addr.is_some()
+        || runtime.imap_plain_addr.is_some()
+        || runtime.submission_plain_addr.is_some()
+}
+
 fn clean_host(s: &str) -> String {
     s.trim_matches(['[', ']']).to_string()
 }
@@ -578,6 +587,31 @@ mod tests {
         assert!(uri.starts_with("dclogin:user@[1.1.1.1]/?p="));
         assert!(uri.contains("&v=1&ih=1.1.1.1&ip=993&is=ssl&sh=1.1.1.1&sp=465&ss=ssl&ic=3"));
         assert!(uri.contains("p%40ss%3Aword"));
+    }
+
+    #[test]
+    fn listeners_need_tls_cert_for_starttls_only_ports() {
+        let starttls_only = RuntimeListeners {
+            imap_plain_addr: Some("0.0.0.0:143".into()),
+            imap_tls_addr: None,
+            submission_plain_addr: Some("0.0.0.0:587".into()),
+            submission_tls_addr: None,
+            smtp_addr: Some("0.0.0.0:25".into()),
+            http_plain_addr: Some("0.0.0.0:8080".into()),
+            http_tls_addr: None,
+        };
+        assert!(listeners_need_tls_cert(&starttls_only));
+
+        let smtp_only = RuntimeListeners {
+            imap_plain_addr: None,
+            imap_tls_addr: None,
+            submission_plain_addr: None,
+            submission_tls_addr: None,
+            smtp_addr: Some("0.0.0.0:25".into()),
+            http_plain_addr: Some("0.0.0.0:8080".into()),
+            http_tls_addr: None,
+        };
+        assert!(!listeners_need_tls_cert(&smtp_only));
     }
 
     #[test]

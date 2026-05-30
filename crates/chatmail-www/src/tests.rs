@@ -398,3 +398,118 @@ async fn www_state_constructs() {
         AppConfig::default(),
     );
 }
+
+#[test]
+fn connect_host_for_dclogin_prefers_fallback_over_localhost() {
+    let js = crate::assets::read_asset("main.js").expect("main.js");
+    let text = String::from_utf8_lossy(&js.data);
+    assert!(
+        text.contains("fromPage === 'localhost'"),
+        "main.js must skip localhost for dclogin ih/sh"
+    );
+    assert!(
+        text.contains("fromPage === '127.0.0.1'"),
+        "main.js must skip loopback for dclogin ih/sh"
+    );
+}
+
+#[tokio::test]
+async fn new_account_returns_dclogin_url_with_ssl_hints() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = AppConfig::default();
+    cfg.primary_domain = Some("192.0.2.1".into());
+    cfg.imap_tls_listen = Some("0.0.0.0:993".into());
+    cfg.submission_tls_listen = Some("0.0.0.0:465".into());
+
+    let app_state = Arc::new(AppState::new(dir.path()));
+    app_state.auth.hydrate(&pool).await.unwrap();
+    app_state.listener_ports.set_runtime(
+        "0.0.0.0:25",
+        None,
+        Some("0.0.0.0:993".into()),
+        None,
+        Some("0.0.0.0:465".into()),
+        None,
+        None,
+    );
+
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg));
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/new")
+                .header("host", "192.0.2.1")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let email = v.get("email").and_then(|e| e.as_str()).expect("email");
+    let _password = v.get("password").and_then(|p| p.as_str()).expect("password");
+    let url = v
+        .get("dclogin_url")
+        .and_then(|u| u.as_str())
+        .expect("dclogin_url");
+    assert!(email.contains("@["));
+    assert!(url.starts_with("dclogin:"));
+    assert!(url.contains("ih=192.0.2.1"));
+    assert!(url.contains("sh=192.0.2.1"));
+    assert!(url.contains("is=ssl"));
+    assert!(url.contains("ss=ssl"));
+    assert!(url.contains(email));
+}
+
+#[tokio::test]
+async fn mail_autoconfig_omits_https_alpn_entry() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = AppConfig::default();
+    cfg.mail_domain = Some("example.org".into());
+    cfg.imap_tls_listen = Some("0.0.0.0:993".into());
+    cfg.submission_tls_listen = Some("0.0.0.0:465".into());
+    cfg.http_tls_listen = Some("0.0.0.0:443".into());
+
+    let app_state = Arc::new(AppState::new(dir.path()));
+    app_state.listener_ports.set_runtime(
+        "0.0.0.0:25",
+        Some("0.0.0.0:143".into()),
+        Some("0.0.0.0:993".into()),
+        Some("0.0.0.0:587".into()),
+        Some("0.0.0.0:465".into()),
+        None,
+        Some("0.0.0.0:443".into()),
+    );
+
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg));
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/.well-known/autoconfig/mail/config-v1.1.xml")
+                .header("host", "example.org")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let xml = String::from_utf8_lossy(&bytes);
+    assert!(xml.contains("<port>993</port>"));
+    assert!(xml.contains("<port>143</port>"));
+    assert!(!xml.contains("<port>443</port>"));
+}

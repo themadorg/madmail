@@ -23,6 +23,24 @@ Chatmail's correctness is defined by **real Delta Chat client behavior**, not ju
   - Federation policy evaluation + normalization (IP brackets, case)
   - Endpoint cache resolution
   - Settings toggle logic
+  - **Auth cache** (credentials, blocklist, JIT flag hydrate + write-through)
+  - **dclogin URL** shape (`build_dclogin_link`, `POST /new`, cmping IP URLs)
+  - **STARTTLS** (IMAP LOGIN gate, SMTP AUTH-after-TLS, TLS cert load for plain listeners)
+  - **Autoconfig** (SSL/STARTTLS entries, no fake HTTPS ALPN IMAP)
+
+### chatmail-rs unit test index (parity fixes)
+
+| Area | Crate / path | Key tests |
+|------|--------------|-----------|
+| dclogin / `/new` | `chatmail-config`, `chatmail-www` | `build_dclogin_link_matches_www_shape`, `new_account_returns_dclogin_url_with_ssl_hints` |
+| cmping IP setup | `context/cmping/test_cmping_dclogin.py` | `test_ip_dclogin_includes_ssl_host_hints` |
+| Auth cache + JIT | `chatmail-state`, `chatmail-auth` | `hydrate_loads_blocklist_and_jit_flag`, `jit_coalesces_concurrent_creates_for_same_user` |
+| TLS for STARTTLS | `chatmail-config` | `listeners_need_tls_cert_for_starttls_only_ports` |
+| Autoconfig | `chatmail-config`, `chatmail-www` | `autoconfig_omits_https_alpn_even_when_http_tls_bound` |
+| IMAP caps | `chatmail-imap` | `p5_ut01_test_capability_includes_chatmail_extensions` (`XDELTAPUSH`) |
+| SMTP submission | `chatmail-smtp` | `submission_starttls_upgrade_then_auth_allowed` |
+
+Run cmping unit tests: `cd context/cmping && uv run python -m unittest test_cmping_dclogin.py -v`
 
 ## 2. Integration Tests
 - Use `tokio::test` + test containers or in-memory SQLite

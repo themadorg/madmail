@@ -56,7 +56,8 @@ impl AutoconfigParams {
             has_imap_plain,
             has_submission_tls,
             has_submission_plain,
-            has_imap_alpn_https: https_port.is_some(),
+            // chatmail-fed does not implement IMAP-over-HTTPS ALPN on 443 yet.
+            has_imap_alpn_https: false,
             https_port,
         }
     }
@@ -224,5 +225,32 @@ mod tests {
         let xml = build_autoconfig_xml(&params);
         assert!(xml.contains("<domain>192.0.2.1</domain>"));
         assert!(xml.contains("<hostname>192.0.2.1</hostname>"));
+    }
+
+    #[test]
+    fn autoconfig_omits_https_alpn_even_when_http_tls_bound() {
+        let mail = DcloginMailSettings {
+            client_host: "example.org".into(),
+            imap_port_tls: "993".into(),
+            imap_port_starttls: "143".into(),
+            smtp_port_tls: "465".into(),
+            smtp_port_starttls: "587".into(),
+            dclogin_imap_security: "ssl".into(),
+            dclogin_smtp_security: "ssl".into(),
+        };
+        let rt = RuntimeListeners {
+            imap_plain_addr: Some("0.0.0.0:143".into()),
+            imap_tls_addr: Some("0.0.0.0:993".into()),
+            submission_plain_addr: Some("0.0.0.0:587".into()),
+            submission_tls_addr: Some("0.0.0.0:465".into()),
+            smtp_addr: None,
+            http_plain_addr: None,
+            http_tls_addr: Some("0.0.0.0:443".into()),
+        };
+        let params = AutoconfigParams::from_mail_settings("example.org", &mail, Some(&rt));
+        assert!(!params.has_imap_alpn_https);
+        let xml = build_autoconfig_xml(&params);
+        assert!(!xml.contains("<port>443</port>"));
+        assert_eq!(xml.matches("<incomingServer").count(), 2);
     }
 }

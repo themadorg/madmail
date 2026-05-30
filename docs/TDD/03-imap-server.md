@@ -339,7 +339,7 @@ Online tests exercise raw `SETMETADATA` / `GETMETADATA` on the dict socket (not 
 | COMPRESS | Yes | Optional | Used if present |
 | XCHATMAIL | Yes | Yes | Detection |
 | APPEND + PGP | Yes (wrapper) | Policy differs | Tests only |
-| XDELTAPUSH | No | Yes | Push on Dovecot |
+| XDELTAPUSH | **Yes (capability)** | Yes | Push on Dovecot; SETMETADATA push path not yet implemented |
 
 ---
 
@@ -446,7 +446,7 @@ Mirrors Madmail `go-imap-sql/delivery.go` and Delta Chat `context/core/src/imap/
 - `handle_fetch`: reload maildir on each FETCH; **sequence** `FETCH n` uses 1-based index; **`UID FETCH`** uses UID (was a common bug).
 - FETCH literals: close with `)\r\n` immediately after literal (go-imap compatible).
 
-**Tests:** `p6_ut01_test_idle_receives_delivery_event`, `p6_imap_idle_unsolicited_exists` in `crates/chatmail-imap/src/session.rs`.
+**Tests:** `p5_ut01_test_capability_includes_chatmail_extensions` (includes `XDELTAPUSH`), `p6_ut01_test_idle_receives_delivery_event`, `p6_imap_idle_unsolicited_exists`, `imap_starttls_capability_and_login_gate`, `imap_starttls_upgrade_then_login` in `crates/chatmail-imap/src/session.rs`.
 
 **relay-ping:** `internal/check/imapcheck/idle.go` — `waitInboxGrow` (IDLE + EXISTS), `probeIdleDelivery` (IDLE + second-session APPEND). Cross-delivery and Secure Join start IDLE **before** SMTP submit (core lifecycle).
 
@@ -465,7 +465,7 @@ After rebuilding chatmail, Delta Chat should pass folder configure and enter **I
 ### Minimum viable server (Delta Chat parity with Madmail)
 
 1. **Session**: AUTH, SELECT, UID FETCH, UID STORE, UID MOVE, CLOSE, LIST, STATUS, IDLE.
-2. **Extensions**: MOVE, SPECIAL-USE, QUOTA (`GETQUOTA`/`GETQUOTAROOT`), METADATA GET (Chatmail keys), `XCHATMAIL`.
+2. **Extensions**: MOVE, SPECIAL-USE, QUOTA (`GETQUOTA`/`GETQUOTAROOT`), METADATA GET (Chatmail keys), `XCHATMAIL`, **`XDELTAPUSH`** (capability advertised; push SETMETADATA optional follow-up).
 3. **APPEND**: With PGP enforcement (mirror `encryptionWrapperUser`).
 4. **IDLE**: Unsolicited `EXISTS` on delivery (SMTP + `/mxdeliv` + local append) — **see table above**.
 5. **JIT**: Account/mailbox creation on first LOGIN (see `05-authentication.md`).

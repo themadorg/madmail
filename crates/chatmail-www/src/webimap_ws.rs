@@ -115,16 +115,15 @@ pub async fn run(socket: WebSocket, st: WwwState, q: WsQuery) -> Result<(), Stri
     let writer_push = writer;
     let push = async move {
         let mut ticker = tokio::time::interval(Duration::from_secs(2));
-        let mut events = st_push.app.events.subscribe();
+        let mut events = st_push.app.events.subscribe(&user_push);
         loop {
             tokio::select! {
                 _ = ticker.tick() => {}
                 ev = events.recv() => {
                     match ev {
-                        Ok(e) if e.username == user_push => {}
+                        Ok(_) => {}
                         Err(RecvError::Lagged(_)) => continue,
                         Err(RecvError::Closed) => break,
-                        _ => continue,
                     }
                 }
             }

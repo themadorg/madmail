@@ -114,9 +114,7 @@ impl SmtpSession {
             match cmd.as_str() {
                 "EHLO" | "HELO" => {
                     self.seen_ehlo = true;
-                    writer
-                        .write_all(self.format_ehlo(false).as_bytes())
-                        .await?;
+                    writer.write_all(self.format_ehlo(false).as_bytes()).await?;
                 }
                 "STARTTLS" => {
                     let Some(cfg) = self.cfg.starttls_config.clone() else {
@@ -182,7 +180,8 @@ impl SmtpSession {
     {
         let mut lines = BufReader::new(reader).lines();
 
-        if !tls_active {
+        // RFC 8314: banner on cleartext and on implicit TLS (:465); skip duplicate after STARTTLS upgrade.
+        if !tls_active || self.cfg.starttls_config.is_none() {
             writer
                 .write_all(format!("220 {} ESMTP chatmail-rs\r\n", self.cfg.hostname).as_bytes())
                 .await?;
@@ -555,6 +554,8 @@ impl SmtpSession {
             local_domains: self.cfg.local_domains.clone(),
         };
 
+        let ingest_start = std::time::Instant::now();
+        let total_rcpts = self.rcpt_to.len();
         let mut local_deliveries: Vec<(String, String)> = Vec::new();
 
         for rcpt in &self.rcpt_to {
@@ -579,12 +580,42 @@ impl SmtpSession {
             }
         }
 
+        let rcpt_phase = ingest_start.elapsed();
         if !local_deliveries.is_empty() {
-            deliver_local_messages(&self.ctx.mailbox_store, &local_deliveries, data).await?;
-            for (rcpt, msg_id) in &local_deliveries {
+            let local_n = local_deliveries.len();
+            let deliver_start = std::time::Instant::now();
+            let outcome =
+                deliver_local_messages(&self.ctx.mailbox_store, &local_deliveries, data).await?;
+            let deliver_ms = deliver_start.elapsed();
+            let notify_start = std::time::Instant::now();
+            // Notify (and charge quota) only for recipients whose body is durably on disk. Each
+            // write/link above already fsync'd the maildir directory, so notification strictly
+            // follows durability.
+            for (rcpt, msg_id) in &outcome.delivered {
                 self.ctx.quota.record_write(rcpt, data.len() as u64);
                 self.ctx.events.notify_new_message(rcpt, msg_id);
             }
+            if !outcome.failed.is_empty() {
+                for (rcpt, _msg_id, err) in &outcome.failed {
+                    tracing::warn!(rcpt = %rcpt, error = %err, "local delivery failed for recipient");
+                }
+                tracing::warn!(
+                    delivered = outcome.delivered.len(),
+                    failed = outcome.failed.len(),
+                    "partial local fan-out: some recipients did not receive the message"
+                );
+            }
+            tracing::info!(
+                total_rcpts,
+                local_n,
+                delivered = outcome.delivered.len(),
+                failed = outcome.failed.len(),
+                rcpt_phase_ms = rcpt_phase.as_millis(),
+                deliver_ms = deliver_ms.as_millis(),
+                notify_ms = notify_start.elapsed().as_millis(),
+                ingest_ms = ingest_start.elapsed().as_millis(),
+                "SMTP local fan-out timing"
+            );
         }
         if !self.cfg.require_auth {
             chatmail_db::record_inbound_delivery();
@@ -1306,5 +1337,55 @@ mod tests {
         let ehlo_tls = read_smtp_until(&mut tls, "250 OK").await;
         assert!(ehlo_tls.contains("AUTH PLAIN"), "post-TLS EHLO: {ehlo_tls}");
         assert!(!ehlo_tls.contains("STARTTLS"), "post-TLS EHLO: {ehlo_tls}");
+    }
+
+    /// RFC 8314: implicit TLS on :465 must emit 220 banner before client EHLO.
+    #[tokio::test]
+    async fn submission_implicit_tls_sends_banner_before_ehlo() {
+        use rustls::pki_types::ServerName;
+        use tokio_rustls::TlsAcceptor;
+        use tokio_rustls::TlsConnector;
+
+        let (tls_server, tls_client) = loopback_tls_configs();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir()));
+        let cfg = SmtpSessionConfig {
+            hostname: "mx.test".into(),
+            primary_domain: "test".into(),
+            local_domains: vec!["test".into()],
+            jit_domain: None,
+            credential_policy: CredentialPolicy::default(),
+            require_auth: true,
+            module: "submission",
+            starttls_config: None,
+        };
+
+        let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
+        std_listener.set_nonblocking(true).unwrap();
+        let addr = std_listener.local_addr().unwrap();
+        let acceptor = TlsAcceptor::from(Arc::clone(&tls_server));
+        let pool_bg = pool.clone();
+        let ctx_bg = Arc::clone(&ctx);
+        let cfg_bg = cfg.clone();
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let tls = acceptor.accept(stream).await.unwrap();
+            let mut session = SmtpSession::new(ctx_bg, pool_bg, cfg_bg);
+            let _ = session.handle_tls_connection(tls).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stream = TcpStream::connect(addr).await.unwrap();
+        let connector = TlsConnector::from(tls_client);
+        let server_name = ServerName::try_from("localhost").unwrap();
+        let mut tls = connector.connect(server_name, stream).await.unwrap();
+
+        let banner = read_smtp_until(&mut tls, "220 ").await;
+        assert!(banner.contains("220 mx.test"), "banner: {banner}");
+
+        smtp_write(&mut tls, "EHLO client.test").await;
+        let ehlo = read_smtp_until(&mut tls, "250 OK").await;
+        assert!(ehlo.contains("AUTH PLAIN"), "EHLO: {ehlo}");
     }
 }

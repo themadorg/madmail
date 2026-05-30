@@ -23,7 +23,8 @@ use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Json;
 use chatmail_auth::{hash_password, normalize_username, verify_password};
-use chatmail_db::{blocklist, get_bool_setting, passwords, registration_tokens, settings_keys};
+use chatmail_config::{build_dclogin_link, DcloginMailSettings};
+use chatmail_db::{get_bool_setting, passwords, registration_tokens, settings_keys};
 use chatmail_delivery::DeliveryContext;
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
 use chatmail_smtp::protocol::validate_submission_headers;
@@ -243,10 +244,7 @@ pub async fn new_account(
                     .into_response();
             }
         };
-        if blocklist::is_blocked(&st.pool, &user)
-            .await
-            .unwrap_or(false)
-        {
+        if st.app.auth.is_blocked(&user) {
             continue;
         }
         let password = random_alnum(policy.generated_password_length());
@@ -297,7 +295,14 @@ pub async fn new_account(
             }
         }
         st.app.auth.insert(&user, &hash);
-        return Json(json!({ "email": user, "password": password })).into_response();
+        let mail = dclogin_mail_settings(&st, &headers).await;
+        let dclogin_url = build_dclogin_link(&user, &password, &mail);
+        return Json(json!({
+            "email": user,
+            "password": password,
+            "dclogin_url": dclogin_url,
+        }))
+        .into_response();
     }
     StatusCode::INTERNAL_SERVER_ERROR.into_response()
 }
@@ -406,7 +411,7 @@ pub async fn websmtp_deliver(
 
 pub(crate) async fn webimap_authenticate(
     app: &chatmail_state::AppState,
-    pool: &chatmail_db::DbPool,
+    _pool: &chatmail_db::DbPool,
     headers: &HeaderMap,
 ) -> Result<String, Response> {
     let email = headers
@@ -421,7 +426,7 @@ pub(crate) async fn webimap_authenticate(
     let user = normalize_username(email)
         .map_err(|e| webimap_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
 
-    if blocklist::is_blocked(pool, &user).await.unwrap_or(false) {
+    if app.auth.is_blocked(&user) {
         return Err(webimap_error(StatusCode::FORBIDDEN, "user blocked"));
     }
 
@@ -497,8 +502,9 @@ pub async fn binary_download(method: Method) -> impl IntoResponse {
 /// Mozilla ISPDB autoconfig for Delta Chat / Thunderbird (`dcaccount:` fetch).
 pub async fn mail_autoconfig(State(st): State<WwwState>, headers: HeaderMap) -> impl IntoResponse {
     use axum::http::header;
-    use chatmail_config::{build_autoconfig_xml, AutoconfigParams, DcloginMailSettings};
+    use chatmail_config::{build_autoconfig_xml, AutoconfigParams};
 
+    let mail = dclogin_mail_settings(&st, &headers).await;
     let snap = st.app.listener_ports.snapshot();
     let runtime = chatmail_config::RuntimeListeners {
         imap_plain_addr: snap.imap_plain_addr,
@@ -509,29 +515,6 @@ pub async fn mail_autoconfig(State(st): State<WwwState>, headers: HeaderMap) -> 
         http_plain_addr: snap.http_plain_addr,
         http_tls_addr: snap.http_tls_addr,
     };
-
-    let cached = match st.context_cache.ensure_fresh(
-        &st.pool,
-        &st.config,
-        st.app.mailbox_store.state_dir(),
-    ).await {
-        Ok(()) => st.context_cache.snapshot().await,
-        Err(e) => {
-            tracing::error!(%e, "autoconfig context cache");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-    let db_ports = match cached {
-        Some(c) => c.db_ports,
-        None => chatmail_config::DbMailPorts::default(),
-    };
-
-    let mail = DcloginMailSettings::from_config_with_db_and_runtime(
-        &st.config,
-        client_host(&headers),
-        &db_ports,
-        Some(&runtime),
-    );
     let params = AutoconfigParams::from_mail_settings(&st.mail_domain, &mail, Some(&runtime));
     let xml = build_autoconfig_xml(&params);
 
@@ -601,6 +584,41 @@ fn static_cache_control(path: &str, live_www_dir: bool) -> Option<&'static str> 
 
 fn client_host(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::HOST).and_then(|v| v.to_str().ok())
+}
+
+async fn dclogin_mail_settings(st: &WwwState, headers: &HeaderMap) -> DcloginMailSettings {
+    let snap = st.app.listener_ports.snapshot();
+    let runtime = chatmail_config::RuntimeListeners {
+        imap_plain_addr: snap.imap_plain_addr,
+        imap_tls_addr: snap.imap_tls_addr,
+        submission_plain_addr: snap.submission_plain_addr,
+        submission_tls_addr: snap.submission_tls_addr,
+        smtp_addr: snap.smtp_addr,
+        http_plain_addr: snap.http_plain_addr,
+        http_tls_addr: snap.http_tls_addr,
+    };
+
+    let db_ports = if st
+        .context_cache
+        .ensure_fresh(&st.pool, &st.config, st.app.mailbox_store.state_dir())
+        .await
+        .is_ok()
+    {
+        st.context_cache
+            .snapshot()
+            .await
+            .map(|c| c.db_ports)
+            .unwrap_or_default()
+    } else {
+        chatmail_config::DbMailPorts::default()
+    };
+
+    DcloginMailSettings::from_config_with_db_and_runtime(
+        &st.config,
+        client_host(headers),
+        &db_ports,
+        Some(&runtime),
+    )
 }
 
 async fn render_template(

@@ -136,15 +136,26 @@ impl DeliveryContext {
         }
 
         if !local_deliveries.is_empty() {
-            chatmail_storage::deliver_local_messages(
+            let outcome = chatmail_storage::deliver_local_messages(
                 &self.state.mailbox_store,
                 &local_deliveries,
                 data,
             )
             .await?;
-            for (rcpt, msg_id) in &local_deliveries {
+            // Only notify recipients whose body was durably written (post-durability notify).
+            for (rcpt, msg_id) in &outcome.delivered {
                 self.state.quota.record_write(rcpt, data.len() as u64);
                 self.state.events.notify_new_message(rcpt, msg_id);
+            }
+            if !outcome.failed.is_empty() {
+                for (rcpt, _msg_id, err) in &outcome.failed {
+                    tracing::warn!(rcpt = %rcpt, error = %err, "local delivery failed for recipient");
+                }
+                tracing::warn!(
+                    delivered = outcome.delivered.len(),
+                    failed = outcome.failed.len(),
+                    "partial local fan-out: some recipients did not receive the message"
+                );
             }
         }
         chatmail_db::record_inbound_delivery();

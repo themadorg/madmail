@@ -53,6 +53,13 @@ pub async fn run_imap_listener(
             }
             accept = listener.accept() => {
                 let (stream, peer) = accept?;
+                // Disable Nagle: IMAP is a chatty request/response protocol (DONE → FETCH →
+                // STORE → EXPUNGE → IDLE). With Nagle + delayed-ACK, each small reply can stall
+                // 40–200ms, compounding across the per-message fetch cycle into multi-second
+                // latency at zero CPU — the cause of slow group-message fan-in under load.
+                if let Err(e) = stream.set_nodelay(true) {
+                    tracing::debug!(%peer, error = %e, "IMAP set_nodelay failed");
+                }
                 let peer_ip = peer.ip().to_string();
                 let ctx = Arc::clone(&ctx);
                 let pool = pool.clone();

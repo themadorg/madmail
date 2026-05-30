@@ -22,16 +22,17 @@ use chatmail_config::CredentialPolicy;
 use chatmail_db::DbPool;
 use chatmail_iroh::IrohDiscovery;
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
-use chatmail_state::AppState;
+use chatmail_state::{AppState, NewMessageEvent};
 use chatmail_storage::{
     copy_message, expunge_deleted, list_mailbox_messages, mailbox_exists, move_message, read_blob,
-    store_add_flags, write_blob_mailbox, StoredMessage,
+    read_blob_known, store_add_flags, write_blob_mailbox, StoredMessage,
 };
 use chatmail_turn::TurnDiscovery;
 use chatmail_types::{ChatmailError, Result};
 use rustls::ServerConfig;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
+use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
@@ -67,12 +68,37 @@ pub struct ImapSession {
     selected_mailbox: Option<String>,
     selected_folder_needs_expunge: bool,
     messages: Vec<MailMessage>,
+    /// EXISTS count last *announced* to the client for the selected mailbox. The IDLE catch-up
+    /// must compare against this, NOT `messages.len()`: FETCH reloads `messages` from disk
+    /// (line in `handle_fetch`), so a message that lands during the EXISTS→FETCH window gets
+    /// silently absorbed into `messages` and the next IDLE would see "no growth" and never push
+    /// an EXISTS for it — the client then only discovers it on Delta Chat's ~75s periodic
+    /// refresh. Tracking the announced count decouples "what the client knows" from the
+    /// connection's scratch view of the maildir.
+    announced_exists: usize,
+    /// Memoized INBOX listing keyed by `EventBus::inbox_version`. FETCH/STORE/IDLE re-check the
+    /// listing many times per client cycle; without this each call did a full `read_dir` + per
+    /// file `stat`. Under a 60-recipient burst that per-command directory walk — not delivery —
+    /// was the throughput wall. The cache is invalidated whenever the version counter advances
+    /// (any local or remote mutation bumps it), so it never serves stale state.
+    cached_inbox_version: u64,
+    cached_inbox_messages: Option<Vec<MailMessage>>,
+    /// Per-user delivery subscription kept alive for the whole connection so that messages
+    /// arriving while the client is *between* IDLE commands (i.e. mid FETCH/STORE/re-IDLE) stay
+    /// buffered in the broadcast channel instead of being dropped. Re-subscribing on every IDLE
+    /// (the old behaviour) lost every notification fired in that window, so under a 60-recipient
+    /// burst most receivers missed the live EXISTS push and only discovered the mail on Delta
+    /// Chat's ~75s periodic IDLE refresh — the cause of the heavy tail latency and message loss.
+    events_rx: Option<broadcast::Receiver<NewMessageEvent>>,
 }
 
 #[derive(Clone)]
 struct MailMessage {
     uid: u32,
     id: String,
+    /// Exact maildir filename discovered by the listing scan (`new/`/`cur/`, incl. `:2,` suffix).
+    /// Lets a body FETCH open the file directly instead of re-scanning the directory.
+    filename: String,
     size: u64,
     internal_date: String,
     flags: chatmail_storage::MaildirFlags,
@@ -89,6 +115,10 @@ impl ImapSession {
             selected_mailbox: None,
             selected_folder_needs_expunge: false,
             messages: Vec::new(),
+            announced_exists: 0,
+            cached_inbox_version: 0,
+            cached_inbox_messages: None,
+            events_rx: None,
         }
     }
 
@@ -101,7 +131,10 @@ impl ImapSession {
     }
 
     pub async fn handle_tls_connection(&mut self, stream: TlsStream<TcpStream>) -> Result<()> {
-        self.serve_loop(stream, true, true).await
+        // RFC 8314: implicit TLS (:993) must emit `* OK`; after STARTTLS the client already
+        // saw the cleartext greeting and must not get a duplicate.
+        let greeted = self.cfg.starttls_config.is_some();
+        self.serve_loop(stream, true, greeted).await
     }
 
     async fn serve_with_starttls_upgrade(&mut self, stream: TcpStream) -> Result<()> {
@@ -319,6 +352,8 @@ impl ImapSession {
                         if self.selected_folder_needs_expunge {
                             let _ = expunge_deleted(&self.ctx.mailbox_store, &user, &folder).await;
                             self.selected_folder_needs_expunge = false;
+                            // Files removed on disk → invalidate any cached listing.
+                            self.bump_inbox(&user, &folder);
                         }
                     }
                 }
@@ -327,6 +362,7 @@ impl ImapSession {
                 }
                 self.selected_mailbox = None;
                 self.messages.clear();
+                self.announced_exists = 0;
                 Ok(Some(format!("{t} OK CLOSE completed\r\n")))
             }
             "STATUS" => {
@@ -344,14 +380,14 @@ impl ImapSession {
             }
             "FETCH" => {
                 let user = self.require_user()?;
-                let resp = self.handle_fetch(t, args, &user, false).await?;
-                Ok(Some(resp))
+                self.handle_fetch(t, args, &user, false, writer).await?;
+                Ok(None)
             }
             "UID" if args.to_ascii_uppercase().starts_with("FETCH") => {
                 let user = self.require_user()?;
                 let rest = args.split_once(' ').map(|(_, r)| r).unwrap_or("");
-                let resp = self.handle_fetch(t, rest, &user, true).await?;
-                Ok(Some(resp))
+                self.handle_fetch(t, rest, &user, true, writer).await?;
+                Ok(None)
             }
             "UID" if args.to_ascii_uppercase().starts_with("STORE") => {
                 let user = self.require_user()?;
@@ -436,21 +472,82 @@ impl ImapSession {
             .ok_or(ChatmailError::AuthFailed)
     }
 
-    async fn handle_fetch(
+    /// Load a mailbox listing, serving the INBOX from an in-session cache keyed by the per-user
+    /// version counter so repeated re-checks within one client cycle don't re-scan the maildir.
+    async fn load_messages(&mut self, user: &str, mailbox: &str) -> Result<Vec<MailMessage>> {
+        if !mailbox.eq_ignore_ascii_case("INBOX") {
+            return list_messages(&self.ctx, user, mailbox).await;
+        }
+        let version = self.ctx.events.inbox_version(user);
+        if version == self.cached_inbox_version {
+            if let Some(cached) = &self.cached_inbox_messages {
+                return Ok(cached.clone());
+            }
+        }
+        let msgs = list_messages(&self.ctx, user, mailbox).await?;
+        self.cached_inbox_version = version;
+        self.cached_inbox_messages = Some(msgs.clone());
+        Ok(msgs)
+    }
+
+    /// Mark the INBOX listing changed after a local mutation so the cache (and any IDLE re-check)
+    /// reloads on next access.
+    fn bump_inbox(&self, user: &str, mailbox: &str) {
+        if mailbox.eq_ignore_ascii_case("INBOX") {
+            self.ctx.events.bump_inbox_version(user);
+        }
+    }
+
+    /// Read a message body, preferring the filename the listing already discovered (a direct file
+    /// open) and falling back to the scanning `read_blob` only if the entry moved (e.g. a flag
+    /// change relocated it between `new/` and `cur/`) since the cached listing was built.
+    async fn read_message_body(
+        &self,
+        user: &str,
+        mailbox: &str,
+        m: &MailMessage,
+    ) -> Result<Vec<u8>> {
+        if !m.filename.is_empty() {
+            if let Some(bytes) =
+                read_blob_known(&self.ctx.mailbox_store, user, mailbox, &m.filename).await?
+            {
+                return Ok(bytes);
+            }
+        }
+        read_blob(&self.ctx.mailbox_store, user, mailbox, &m.id).await
+    }
+
+    /// Serve a FETCH response, writing the result directly to the connection writer.
+    ///
+    /// The response is assembled into a single `Vec<u8>` and written with one `write_all` +
+    /// `flush` (response-level batching). Message bodies and header sections are appended as raw
+    /// bytes — never routed through `str::from_utf8` — so PGP-encrypted / MIME binary payloads
+    /// (images, videos, voice) reach the client byte-for-byte. RFC 3501 §6.4.5 literals are
+    /// 8-bit clean, and the advertised `{N}` length must match exactly, so any UTF-8 lossy
+    /// conversion here would corrupt media and desync the literal framing.
+    async fn handle_fetch<W>(
         &mut self,
         tag: &str,
         args: &str,
         user: &str,
         by_uid: bool,
-    ) -> Result<String> {
+        writer: &mut W,
+    ) -> Result<()>
+    where
+        W: AsyncWriteExt + Unpin,
+    {
         let mode = fetch_response_mode(args);
         // Reload INBOX so FETCH after SMTP delivery sees new messages on this connection.
-        let mailbox = self.selected_mailbox.as_deref().unwrap_or("INBOX");
-        self.messages = list_messages(&self.ctx, user, mailbox).await?;
+        let mailbox = self
+            .selected_mailbox
+            .as_deref()
+            .unwrap_or("INBOX")
+            .to_string();
+        self.messages = self.load_messages(user, &mailbox).await?;
 
         let selected: Vec<_> = select_fetch_messages(&self.messages, args, by_uid);
 
-        let mut out = String::new();
+        let mut out: Vec<u8> = Vec::new();
         for m in selected {
             let seq = self
                 .messages
@@ -460,41 +557,49 @@ impl ImapSession {
                 .unwrap_or(m.uid);
             if mode == FetchResponseMode::FullBody {
                 let mailbox = self.selected_mailbox.as_deref().unwrap_or("INBOX");
-                let body = read_blob(&self.ctx.mailbox_store, user, mailbox, &m.id).await?;
-                out.push_str(&format!(
-                    "* {seq} FETCH (UID {} RFC822.SIZE {} BODY[] {{{}}}\r\n",
-                    m.uid,
-                    m.size,
-                    body.len()
-                ));
-                out.push_str(std::str::from_utf8(&body).unwrap_or(""));
+                let body = self.read_message_body(user, mailbox, m).await?;
+                out.extend_from_slice(
+                    format!(
+                        "* {seq} FETCH (UID {} RFC822.SIZE {} BODY[] {{{}}}\r\n",
+                        m.uid,
+                        m.size,
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+                out.extend_from_slice(&body);
                 // Literal ends; close FETCH list (no CRLF between literal and ')' — go-imap compat).
-                out.push_str(")\r\n");
+                out.extend_from_slice(b")\r\n");
             } else if mode == FetchResponseMode::Headers {
                 let mailbox = self.selected_mailbox.as_deref().unwrap_or("INBOX");
-                let body = read_blob(&self.ctx.mailbox_store, user, mailbox, &m.id).await?;
+                let body = self.read_message_body(user, mailbox, m).await?;
                 let headers = filter_header_fields(&body, header_field_names(args));
                 let section = body_section_for_fetch(args);
                 let mut attrs = format!("UID {} RFC822.SIZE {}", m.uid, m.size);
                 if args.contains("INTERNALDATE") {
                     attrs.push_str(&format!(" INTERNALDATE \"{}\"", m.internal_date));
                 }
-                out.push_str(&format!(
-                    "* {seq} FETCH ({attrs} {section} {{{}}}\r\n",
-                    headers.len()
-                ));
-                out.push_str(std::str::from_utf8(&headers).unwrap_or(""));
-                out.push_str(")\r\n");
+                out.extend_from_slice(
+                    format!("* {seq} FETCH ({attrs} {section} {{{}}}\r\n", headers.len())
+                        .as_bytes(),
+                );
+                out.extend_from_slice(&headers);
+                out.extend_from_slice(b")\r\n");
             } else {
-                out.push_str(&format!(
-                    "* {seq} FETCH ({}{})\r\n",
-                    format_fetch_attrs(m),
-                    format_fetch_flags(&m.flags),
-                ));
+                out.extend_from_slice(
+                    format!(
+                        "* {seq} FETCH ({}{})\r\n",
+                        format_fetch_attrs(m),
+                        format_fetch_flags(&m.flags),
+                    )
+                    .as_bytes(),
+                );
             }
         }
-        out.push_str(&format!("{tag} OK FETCH completed\r\n"));
-        Ok(out)
+        out.extend_from_slice(format!("{tag} OK FETCH completed\r\n").as_bytes());
+        writer.write_all(&out).await?;
+        writer.flush().await?;
+        Ok(())
     }
 
     async fn handle_store(
@@ -506,8 +611,9 @@ impl ImapSession {
     ) -> Result<String> {
         let mailbox = self
             .selected_mailbox
-            .as_deref()
+            .clone()
             .ok_or_else(|| ChatmailError::protocol("No mailbox selected"))?;
+        let mailbox = mailbox.as_str();
         let (uid_set, mode, flags) = parse_store_args(args)?;
         if mode != StoreMode::Add {
             return Ok(format!("{tag} BAD unsupported STORE mode\r\n"));
@@ -526,6 +632,7 @@ impl ImapSession {
         }
 
         let mut out = String::new();
+        let mut deleted_count = 0usize;
         for uid in uids {
             let Some(msg) = self.messages.iter().find(|m| m.uid == uid) else {
                 continue;
@@ -539,6 +646,9 @@ impl ImapSession {
                 add_deleted,
             )
             .await?;
+            if add_deleted {
+                deleted_count += 1;
+            }
             let seq = self
                 .messages
                 .iter()
@@ -551,7 +661,13 @@ impl ImapSession {
             ));
         }
 
-        self.messages = list_messages(&self.ctx, user, mailbox).await?;
+        // The client is removing `deleted_count` messages it already knew about; lower the
+        // announced baseline by that many (NOT to the new total) so a message that arrived during
+        // the FETCH→STORE window is still strictly greater than the baseline and gets its EXISTS.
+        self.announced_exists = self.announced_exists.saturating_sub(deleted_count);
+        // STORE changed flags / deletion state on disk → invalidate the cached listing.
+        self.bump_inbox(user, mailbox);
+        self.messages = self.load_messages(user, mailbox).await?;
         out.push_str(&format!(
             "{tag} OK {} completed\r\n",
             if by_uid { "UID STORE" } else { "STORE" }
@@ -562,8 +678,9 @@ impl ImapSession {
     async fn handle_move(&mut self, tag: &str, args: &str, user: &str) -> Result<String> {
         let from = self
             .selected_mailbox
-            .as_deref()
+            .clone()
             .ok_or_else(|| ChatmailError::protocol("No mailbox selected"))?;
+        let from = from.as_str();
         let (uid_set, dest) = parse_uid_set_and_mailbox(args)?;
         let uids: Vec<u32> = if uid_set.is_empty() { vec![] } else { uid_set };
         let msgs: Vec<_> = uids
@@ -576,10 +693,16 @@ impl ImapSession {
         if !mailbox_exists(&self.ctx.mailbox_store, user, &dest).await {
             self.ctx.mailbox_store.init_mailbox_dir(user, &dest).await?;
         }
+        let moved = msgs.len();
         for m in &msgs {
             move_message(&self.ctx.mailbox_store, user, from, &dest, &m.id).await?;
         }
-        self.messages = list_messages(&self.ctx, user, from).await?;
+        // Client removed `moved` known messages from the source mailbox; lower the baseline so a
+        // concurrently-delivered message is still announced on the next IDLE.
+        self.announced_exists = self.announced_exists.saturating_sub(moved);
+        // Messages left the source mailbox → invalidate the cached listing.
+        self.bump_inbox(user, from);
+        self.messages = self.load_messages(user, from).await?;
         Ok(format!("{tag} OK UID MOVE completed\r\n"))
     }
 
@@ -625,14 +748,28 @@ impl ImapSession {
         let user = self.require_user()?.clone();
         let mailbox = self.selected_mailbox.clone().unwrap_or_default();
 
+        // Reuse the connection-scoped subscription if we already have one. The receiver keeps
+        // buffering deliveries while the client is between IDLE commands (FETCH/STORE/re-IDLE),
+        // so a message that arrives in that window is delivered on the *next* IDLE instead of
+        // being lost until Delta Chat's periodic refresh. Only subscribe fresh on the first IDLE
+        // of the connection. (Taken out of the Option so the loop below can borrow `self` for
+        // emit_idle_updates; restored before returning.)
+        let mut rx = self
+            .events_rx
+            .take()
+            .unwrap_or_else(|| self.ctx.events.subscribe(&user));
+
         writer.write_all(b"+ idling\r\n").await?;
         writer.flush().await?;
 
-        let mut rx = self.ctx.events.subscribe();
-        let mut idle_line = String::new();
-
         debug!(%user, %mailbox, exists = self.messages.len(), "IMAP IDLE started");
 
+        // Catch up on anything delivered before we started waiting (or buffered while between
+        // IDLEs). Idempotent: emit_idle_updates only pushes EXISTS/RECENT when the on-disk count
+        // actually grew, so a duplicate buffered event in the loop below is a harmless no-op.
+        self.emit_idle_updates(writer, &user).await?;
+
+        let mut idle_line = String::new();
         loop {
             tokio::select! {
                 // Client DONE must preempt waiting on mail (Delta Chat ends IDLE promptly).
@@ -651,11 +788,10 @@ impl ImapSession {
                 }
                 ev = rx.recv() => {
                     match ev {
-                        Ok(ev) if ev.username == user => {
+                        Ok(ev) => {
                             debug!(%user, msg_id = %ev.msg_id, "IMAP IDLE delivery event");
                             self.emit_idle_updates(writer, &user).await?;
                         }
-                        Ok(_) => {}
                         Err(RecvError::Lagged(n)) => {
                             debug!(%user, skipped = n, "IMAP IDLE event bus lagged, resyncing");
                             self.emit_idle_updates(writer, &user).await?;
@@ -665,6 +801,10 @@ impl ImapSession {
                 }
             }
         }
+
+        // Keep the subscription alive for the next IDLE so deliveries during FETCH/STORE/re-IDLE
+        // are buffered rather than lost.
+        self.events_rx = Some(rx);
 
         writer
             .write_all(format!("{tag} OK IDLE terminated\r\n").as_bytes())
@@ -678,13 +818,17 @@ impl ImapSession {
     where
         W: AsyncWriteExt + Unpin,
     {
-        let prev_exists = self.messages.len();
-        let mailbox = self.selected_mailbox.as_deref().unwrap_or("INBOX");
-        self.messages = list_messages(&self.ctx, user, mailbox).await?;
+        let prev_exists = self.announced_exists;
+        let mailbox = self
+            .selected_mailbox
+            .clone()
+            .unwrap_or_else(|| "INBOX".to_string());
+        self.messages = self.load_messages(user, &mailbox).await?;
         let new_exists = self.messages.len();
         if new_exists <= prev_exists {
             return Ok(());
         }
+        self.announced_exists = new_exists;
         let recent = new_exists - prev_exists;
         writer
             .write_all(format!("* {new_exists} EXISTS\r\n").as_bytes())
@@ -758,11 +902,17 @@ impl ImapSession {
         )?;
         self.ctx.quota.check_quota(user, literal.len() as u64)?;
         let msg_id = uuid::Uuid::new_v4().to_string();
-        let mailbox = self.selected_mailbox.as_deref().unwrap_or("INBOX");
-        write_blob_mailbox(&self.ctx.mailbox_store, user, mailbox, &msg_id, &literal).await?;
+        let mailbox = self
+            .selected_mailbox
+            .clone()
+            .unwrap_or_else(|| "INBOX".to_string());
+        write_blob_mailbox(&self.ctx.mailbox_store, user, &mailbox, &msg_id, &literal).await?;
         self.ctx.quota.record_write(user, literal.len() as u64);
         self.ctx.events.notify_new_message(user, &msg_id);
-        self.messages = list_messages(&self.ctx, user, mailbox).await?;
+        // The client appended this one message itself; raise the baseline so we don't push it
+        // back as an unsolicited EXISTS, while still announcing anything else that arrived.
+        self.announced_exists = self.announced_exists.saturating_add(1);
+        self.messages = self.load_messages(user, &mailbox).await?;
         Ok(format!("{tag} OK APPEND completed\r\n"))
     }
 }
@@ -792,8 +942,9 @@ impl ImapSession {
             return Ok(format!("{tag} NO [NONEXISTENT] Mailbox does not exist\r\n"));
         }
         self.selected_mailbox = Some(mailbox.clone());
-        self.messages = list_messages(&self.ctx, user, &mailbox).await?;
+        self.messages = self.load_messages(user, &mailbox).await?;
         let exists = self.messages.len();
+        self.announced_exists = exists;
         let uid_next = self.messages.last().map(|m| m.uid + 1).unwrap_or(1);
         Ok(format!(
             "* {exists} EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 1] UIDs valid\r\n* OK [UIDNEXT {uid_next}] Predicted next UID\r\n{tag} OK [{cmd}] completed\r\n"
@@ -814,6 +965,7 @@ fn stored_to_mail_message(m: StoredMessage, uid: u32) -> MailMessage {
     MailMessage {
         uid,
         id: m.base_id,
+        filename: m.filename,
         size: m.size,
         internal_date: format_internal_date(m.internal_date),
         flags: m.flags,
@@ -914,7 +1066,7 @@ fn parse_uid_set_and_mailbox(args: &str) -> Result<(Vec<u32>, String)> {
     Ok((uids, mailbox))
 }
 
-/// Advertised IMAP capabilities (TDD `03-imap-server.md`: XCHATMAIL, IDLE, QUOTA, METADATA).
+/// Advertised IMAP capabilities (TDD `03-imap-server.md`: XCHATMAIL, XDELTAPUSH, IDLE, QUOTA, METADATA).
 pub fn capability_string(advertise_metadata: bool, advertise_starttls: bool) -> String {
     let mut caps = vec![
         "IMAP4rev1",
@@ -925,6 +1077,7 @@ pub fn capability_string(advertise_metadata: bool, advertise_starttls: bool) -> 
         "AUTH=PLAIN",
         "LITERAL+",
         "XCHATMAIL",
+        "XDELTAPUSH",
     ];
     if advertise_starttls {
         caps.push("STARTTLS");
@@ -1331,6 +1484,7 @@ mod tests {
         assert!(caps.contains("QUOTA"));
         assert!(caps.contains("MOVE"));
         assert!(caps.contains("XCHATMAIL"));
+        assert!(caps.contains("XDELTAPUSH"));
         assert!(
             !caps.contains("METADATA"),
             "METADATA is advertised only when TURN/Iroh discovery is enabled"
@@ -1357,6 +1511,7 @@ mod tests {
             MailMessage {
                 uid: 100,
                 id: "first".into(),
+                filename: "first".into(),
                 size: 1,
                 internal_date: "01-Jan-2020 00:00:00 +0000".into(),
                 flags: Default::default(),
@@ -1364,6 +1519,7 @@ mod tests {
             MailMessage {
                 uid: 200,
                 id: "second".into(),
+                filename: "second".into(),
                 size: 2,
                 internal_date: "02-Jan-2020 00:00:00 +0000".into(),
                 flags: Default::default(),
@@ -1669,6 +1825,8 @@ mod tests {
         session.selected_mailbox = Some("INBOX".into());
         session.messages = list_messages(&ctx, "u@example.org", "INBOX").await.unwrap();
         assert_eq!(session.messages.len(), 1);
+        // Simulate SELECT having announced the 1 pre-existing message to the client.
+        session.announced_exists = 1;
 
         let mut buf = Vec::new();
         write_blob(&ctx.mailbox_store, "u@example.org", "m2", body)
@@ -1698,7 +1856,7 @@ mod tests {
     async fn p6_ut01_test_idle_receives_delivery_event() {
         let dir = tempfile::tempdir().unwrap();
         let ctx = Arc::new(AppState::new(dir.path()));
-        let mut rx = ctx.events.subscribe();
+        let mut rx = ctx.events.subscribe("u@example.org");
         let ctx_bg = Arc::clone(&ctx);
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(30)).await;
@@ -1727,6 +1885,111 @@ mod integration_tests {
 
     async fn imap_dialog(pool: DbPool, ctx: Arc<AppState>, script: &[&str]) -> String {
         imap_dialog_with_discovery(pool, ctx, None, None, script).await
+    }
+
+    /// Spawn an IMAP server bound to an ephemeral port and return its address + handle.
+    /// Unlike `imap_dialog`, the caller drives the socket with raw bytes so binary FETCH
+    /// literals can be inspected byte-for-byte (no lossy UTF-8 conversion).
+    async fn spawn_imap_server(pool: DbPool, ctx: Arc<AppState>) -> std::net::SocketAddr {
+        ctx.auth.hydrate(&pool).await.unwrap();
+        let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
+        std_listener.set_nonblocking(true).unwrap();
+        let addr = std_listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut session = ImapSession::new(
+                ctx,
+                pool,
+                ImapSessionConfig {
+                    hostname: "imap.test".into(),
+                    primary_domain: "test".into(),
+                    jit_domain: None,
+                    credential_policy: CredentialPolicy::default(),
+                    turn: None,
+                    iroh: None,
+                    starttls_config: None,
+                },
+            );
+            let _ = session.handle_connection(stream).await;
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        addr
+    }
+
+    /// Read from `stream` until `needle` appears in the accumulated raw bytes (or timeout).
+    async fn read_until(stream: &mut TcpStream, needle: &[u8]) -> Vec<u8> {
+        let mut acc: Vec<u8> = Vec::new();
+        let mut buf = [0u8; 8192];
+        let _ = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let n = stream.read(&mut buf).await.unwrap_or(0);
+                if n == 0 {
+                    break;
+                }
+                acc.extend_from_slice(&buf[..n]);
+                if acc.windows(needle.len()).any(|w| w == needle) {
+                    break;
+                }
+            }
+        })
+        .await;
+        acc
+    }
+
+    /// P10-UT05: FETCH BODY[] returns binary (non-UTF-8) bodies byte-for-byte.
+    ///
+    /// Simulates a PGP-encrypted / MIME binary payload (raw 0x00..0xFF bytes including invalid
+    /// UTF-8 sequences). The pre-fix code routed the body through `str::from_utf8(..).unwrap_or("")`
+    /// which silently truncated/garbled such payloads — the root cause of "images and videos do
+    /// not load correctly". The literal length and the body bytes must both round-trip exactly.
+    #[tokio::test]
+    async fn p10_ut05_fetch_binary_body_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("pw").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(dir.path()));
+
+        // A header block (ASCII) followed by a binary body with every byte value, including
+        // sequences that are invalid UTF-8 (0xFF, 0xFE, lone continuation bytes, NUL).
+        let mut body: Vec<u8> = b"From: u@test\r\nTo: u@test\r\nSubject: media\r\n\r\n".to_vec();
+        body.extend((0u16..=255).map(|b| b as u8));
+        body.extend_from_slice(&[0xFF, 0xFE, 0x80, 0x00, 0xC0, 0xAF]);
+        write_blob(&ctx.mailbox_store, "u@test", "m1", &body)
+            .await
+            .unwrap();
+
+        let addr = spawn_imap_server(pool, ctx).await;
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let _ = read_until(&mut stream, b"IMAP4rev1 ready").await;
+
+        stream.write_all(b"a001 LOGIN u@test pw\r\n").await.unwrap();
+        let _ = read_until(&mut stream, b"a001 OK").await;
+        stream.write_all(b"a002 SELECT INBOX\r\n").await.unwrap();
+        let _ = read_until(&mut stream, b"a002 OK").await;
+        stream.write_all(b"a003 FETCH 1 BODY[]\r\n").await.unwrap();
+        let resp = read_until(&mut stream, b"a003 OK FETCH completed\r\n").await;
+
+        // Parse the literal: `... BODY[] {<len>}\r\n<bytes>)\r\n`.
+        let marker = b"BODY[] {";
+        let mpos = resp
+            .windows(marker.len())
+            .position(|w| w == marker)
+            .expect("BODY[] literal marker present");
+        let after = &resp[mpos + marker.len()..];
+        let brace = after.iter().position(|&b| b == b'}').unwrap();
+        let len: usize = std::str::from_utf8(&after[..brace])
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(len, body.len(), "advertised literal length matches body");
+        // Skip past `}\r\n` to the literal bytes.
+        let literal_start = mpos + marker.len() + brace + 1 + 2;
+        let literal = &resp[literal_start..literal_start + len];
+        assert_eq!(literal, &body[..], "binary body round-trips byte-for-byte");
     }
 
     async fn imap_dialog_with_discovery(
@@ -1991,6 +2254,206 @@ mod integration_tests {
         assert!(end.contains("IDLE terminated"), "idle end: {end}");
     }
 
+    /// Regression: a message delivered in the SELECT → IDLE gap (event fired with no subscriber)
+    /// must surface on IDLE entry via catch-up, without waiting for a *second* delivery.
+    ///
+    /// This is the lost-wakeup that made 60-person group bursts drop trailing messages and
+    /// inflate tail latency: receivers cycle IDLE→FETCH→STORE→re-IDLE, and the next burst
+    /// message's notify is lost because the session is briefly unsubscribed.
+    #[tokio::test]
+    async fn p6_imap_idle_catches_up_on_entry_after_missed_notify() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("pw").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+
+        let ctx = Arc::new(AppState::new(dir.path()));
+        ctx.auth.hydrate(&pool).await.unwrap();
+        let body = b"From: u@test\r\nTo: u@test\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        write_blob(&ctx.mailbox_store, "u@test", "m1", body)
+            .await
+            .unwrap();
+
+        let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
+        std_listener.set_nonblocking(true).unwrap();
+        let addr = std_listener.local_addr().unwrap();
+
+        let pool_bg = pool.clone();
+        let ctx_bg = Arc::clone(&ctx);
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut session = ImapSession::new(
+                ctx_bg,
+                pool_bg,
+                ImapSessionConfig {
+                    hostname: "imap.test".into(),
+                    primary_domain: "test".into(),
+                    jit_domain: None,
+                    credential_policy: CredentialPolicy::default(),
+                    turn: None,
+                    iroh: None,
+                    starttls_config: None,
+                },
+            );
+            let _ = session.handle_connection(stream).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let mut buf = [0u8; 8192];
+
+        async fn read_until(sub: &str, stream: &mut TcpStream, buf: &mut [u8]) -> String {
+            let mut acc = String::new();
+            for _ in 0..50 {
+                let n = stream.read(buf).await.unwrap_or(0);
+                if n > 0 {
+                    acc.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    if acc.contains(sub) {
+                        return acc;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            acc
+        }
+
+        async fn sendln(stream: &mut TcpStream, line: &str) {
+            stream.write_all(line.as_bytes()).await.unwrap();
+            stream.write_all(b"\r\n").await.unwrap();
+        }
+
+        read_until("IMAP4rev1 ready", &mut stream, &mut buf).await;
+        sendln(&mut stream, "c001 LOGIN u@test pw").await;
+        read_until("c001 OK", &mut stream, &mut buf).await;
+        sendln(&mut stream, "c002 SELECT INBOX").await;
+        read_until("c002 OK", &mut stream, &mut buf).await;
+
+        // Delivery + notify happen here, while the session is NOT in IDLE (no subscriber).
+        // The event is therefore lost; only the on-disk state grows.
+        write_blob(&ctx.mailbox_store, "u@test", "m2", body)
+            .await
+            .unwrap();
+        ctx.events.notify_new_message("u@test", "m2");
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        // No further notify is sent. IDLE must still report the new message via catch-up.
+        sendln(&mut stream, "c003 IDLE").await;
+        let idle_push = read_until("EXISTS", &mut stream, &mut buf).await;
+        assert!(
+            idle_push.contains("* 2 EXISTS"),
+            "IDLE must catch up on the missed delivery, got: {idle_push}"
+        );
+
+        sendln(&mut stream, "DONE").await;
+        let end = read_until("c003 OK", &mut stream, &mut buf).await;
+        assert!(end.contains("IDLE terminated"), "idle end: {end}");
+    }
+
+    /// Regression for the 60-recipient group tail-latency/loss: a message that arrives during the
+    /// EXISTS → FETCH → STORE(delete) window must still get an unsolicited EXISTS on the *next*
+    /// IDLE. The old code used `messages.len()` as the IDLE baseline, but `handle_fetch` reloads
+    /// `messages` from disk, so the freshly-arrived message was absorbed into the baseline and the
+    /// next IDLE saw "no growth" — the client only learned about it on Delta Chat's ~75s refresh.
+    #[tokio::test]
+    async fn p6_imap_idle_announces_message_arriving_during_fetch_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("pw").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(dir.path()));
+        ctx.auth.hydrate(&pool).await.unwrap();
+        let body = b"From: u@test\r\nTo: u@test\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        // First message already in the mailbox.
+        write_blob(&ctx.mailbox_store, "u@test", "m1", body)
+            .await
+            .unwrap();
+
+        let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
+        std_listener.set_nonblocking(true).unwrap();
+        let addr = std_listener.local_addr().unwrap();
+
+        let pool_bg = pool.clone();
+        let ctx_bg = Arc::clone(&ctx);
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut session = ImapSession::new(
+                ctx_bg,
+                pool_bg,
+                ImapSessionConfig {
+                    hostname: "imap.test".into(),
+                    primary_domain: "test".into(),
+                    jit_domain: None,
+                    credential_policy: CredentialPolicy::default(),
+                    turn: None,
+                    iroh: None,
+                    starttls_config: None,
+                },
+            );
+            let _ = session.handle_connection(stream).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let mut buf = [0u8; 8192];
+
+        async fn read_until(sub: &str, stream: &mut TcpStream, buf: &mut [u8]) -> String {
+            let mut acc = String::new();
+            for _ in 0..50 {
+                let n = stream.read(buf).await.unwrap_or(0);
+                if n > 0 {
+                    acc.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    if acc.contains(sub) {
+                        return acc;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            acc
+        }
+        async fn sendln(stream: &mut TcpStream, line: &str) {
+            stream.write_all(line.as_bytes()).await.unwrap();
+            stream.write_all(b"\r\n").await.unwrap();
+        }
+
+        read_until("IMAP4rev1 ready", &mut stream, &mut buf).await;
+        sendln(&mut stream, "c001 LOGIN u@test pw").await;
+        read_until("c001 OK", &mut stream, &mut buf).await;
+        sendln(&mut stream, "c002 SELECT INBOX").await;
+        read_until("c002 OK", &mut stream, &mut buf).await;
+
+        // FETCH m1 (uid 1) — this reloads `messages` from disk.
+        sendln(&mut stream, "c003 UID FETCH 1 (BODY[])").await;
+        read_until("c003 OK", &mut stream, &mut buf).await;
+
+        // m2 arrives *now*, during the FETCH→STORE window (notify is lost: no subscriber).
+        write_blob(&ctx.mailbox_store, "u@test", "m2", body)
+            .await
+            .unwrap();
+        ctx.events.notify_new_message("u@test", "m2");
+
+        // Client deletes m1, which it already knew about.
+        sendln(&mut stream, "c004 UID STORE 1 +FLAGS (\\Deleted)").await;
+        read_until("c004 OK", &mut stream, &mut buf).await;
+
+        // Next IDLE must announce m2 immediately via catch-up — no second delivery needed.
+        sendln(&mut stream, "c005 IDLE").await;
+        let idle_push = read_until("EXISTS", &mut stream, &mut buf).await;
+        assert!(
+            idle_push.contains("EXISTS"),
+            "IDLE must announce the message that arrived during the FETCH/STORE window, got: {idle_push}"
+        );
+
+        sendln(&mut stream, "DONE").await;
+        let end = read_until("c005 OK", &mut stream, &mut buf).await;
+        assert!(end.contains("IDLE terminated"), "idle end: {end}");
+    }
+
     /// Delta Chat `configure_mvbox`: EXAMINE → CLOSE → SELECT must not return BAD.
     #[tokio::test]
     async fn p6_imap_configure_mvbox_examine_close_select() {
@@ -2130,10 +2593,7 @@ mod integration_tests {
         ])
         .await;
         assert!(t.contains("STARTTLS"), "CAPABILITY: {t}");
-        assert!(
-            t.contains("NO [PRIVACYREQUIRED]"),
-            "LOGIN before TLS: {t}"
-        );
+        assert!(t.contains("NO [PRIVACYREQUIRED]"), "LOGIN before TLS: {t}");
         assert!(t.contains("OK Begin TLS negotiation"), "STARTTLS: {t}");
     }
 
@@ -2226,7 +2686,9 @@ mod integration_tests {
         let server_name = ServerName::try_from("localhost").unwrap();
         let mut tls = connector.connect(server_name, stream).await.unwrap();
 
-        tls.write_all(b"a002 LOGIN u@test secret\r\n").await.unwrap();
+        tls.write_all(b"a002 LOGIN u@test secret\r\n")
+            .await
+            .unwrap();
         let login = tokio::time::timeout(Duration::from_secs(3), async {
             let mut acc = String::new();
             loop {
@@ -2244,5 +2706,74 @@ mod integration_tests {
         .await
         .unwrap_or_default();
         assert!(login.contains("a002 OK LOGIN completed"), "login: {login}");
+    }
+
+    /// RFC 8314: implicit TLS on :993 must emit untagged OK before client commands.
+    #[tokio::test]
+    async fn imap_implicit_tls_sends_greeting() {
+        use rustls::pki_types::ServerName;
+        use tokio_rustls::TlsAcceptor;
+        use tokio_rustls::TlsConnector;
+
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(dir.path()));
+        ctx.auth.hydrate(&pool).await.unwrap();
+
+        let (tls_server, tls_client) = loopback_tls_configs();
+        let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
+        std_listener.set_nonblocking(true).unwrap();
+        let addr = std_listener.local_addr().unwrap();
+        let acceptor = TlsAcceptor::from(Arc::clone(&tls_server));
+
+        let pool_bg = pool.clone();
+        let ctx_bg = Arc::clone(&ctx);
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let tls = acceptor.accept(stream).await.unwrap();
+            let mut session = ImapSession::new(
+                ctx_bg,
+                pool_bg,
+                ImapSessionConfig {
+                    hostname: "imap.test".into(),
+                    primary_domain: "test".into(),
+                    jit_domain: None,
+                    credential_policy: CredentialPolicy::default(),
+                    turn: None,
+                    iroh: None,
+                    starttls_config: None,
+                },
+            );
+            let _ = session.handle_tls_connection(tls).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stream = TcpStream::connect(addr).await.unwrap();
+        let connector = TlsConnector::from(tls_client);
+        let server_name = ServerName::try_from("localhost").unwrap();
+        let mut tls = connector.connect(server_name, stream).await.unwrap();
+        let mut buf = [0u8; 4096];
+
+        let greeting = tokio::time::timeout(Duration::from_secs(3), async {
+            let mut acc = String::new();
+            loop {
+                let n = tls.read(&mut buf).await.unwrap_or(0);
+                if n == 0 {
+                    break;
+                }
+                acc.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if acc.contains("IMAP4rev1 ready") {
+                    break;
+                }
+            }
+            acc
+        })
+        .await
+        .unwrap_or_default();
+        assert!(
+            greeting.contains("* OK imap.test IMAP4rev1 ready"),
+            "greeting: {greeting}"
+        );
     }
 }

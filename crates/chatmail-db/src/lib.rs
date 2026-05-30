@@ -71,7 +71,8 @@ pub use message_stats::{
 pub use pool::{connect_database, pg_sql, DbBackend, DbPool};
 pub use quota_defaults::resolve_default_quota_bytes;
 pub use registration_tokens::{
-    attach_registration_token, ensure_new_account_quota, record_first_login,
+    attach_registration_token, ensure_new_account_quota, list_login_settled_usernames,
+    record_first_login,
     reserve_registration_token, validate_registration_token, FirstLoginOutcome,
 };
 pub use settings::{

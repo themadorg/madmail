@@ -11,6 +11,7 @@
 | 7 | [b7/](b7/README.md) | Inbound /mxdeliv |
 | 8 | [b8/](b8/README.md) | Outbound delivery |
 | 9 | [b9/](b9/README.md) | TURN/STUN for Delta Chat calls (unit + smoke + E2E) |
+| 10 | [b10/](b10/README.md) | Concurrency hardening: reliable notifications + media body delivery (the two production issues) |
 | T1 | [t1/](t1/README.md) | 1:1 throughput benchmark — madmail vs madmailv2 @ 1 CPU / 1 GiB |
 | P1 | [p1/](p1/README.md) | WebIMAP/WebSMTP in Delta Chat Core + desktop (experimental transport) |
 

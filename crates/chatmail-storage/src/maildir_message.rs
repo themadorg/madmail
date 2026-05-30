@@ -21,7 +21,7 @@ use std::time::SystemTime;
 use chatmail_types::{ChatmailError, Result};
 use tokio::fs;
 
-use crate::maildir::MailboxStore;
+use crate::maildir::{fsync_dir, MailboxStore};
 
 /// Parsed maildir filename flags (`:2,XY` suffix).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -222,6 +222,7 @@ pub async fn move_message(
     };
     fs::create_dir_all(target_dir).await?;
     fs::rename(&path, target_dir.join(&name)).await?;
+    fsync_dir(target_dir).await?;
     Ok(())
 }
 
@@ -265,6 +266,8 @@ async fn write_message(
     tokio::io::AsyncWriteExt::write_all(&mut file, body).await?;
     file.sync_data().await?;
     fs::rename(&tmp_path, &final_path).await?;
+    // Make the directory entry durable before the caller notifies clients (APPEND / COPY).
+    fsync_dir(target_dir).await?;
     Ok(final_path)
 }
 

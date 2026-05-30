@@ -31,6 +31,8 @@ use chatmail_config::AppConfig;
 use chatmail_db::DbPool;
 use chatmail_storage::MailboxStore;
 use chatmail_types::Result;
+use dashmap::DashMap;
+use tokio::sync::Mutex;
 
 pub use auth::AuthCache;
 pub use events::{EventBus, NewMessageEvent};
@@ -55,6 +57,8 @@ pub struct AppState {
     pub events: Arc<EventBus>,
     /// Bound listener ports (IMAP, etc.) for admin status / `ss` probes.
     pub listener_ports: Arc<ListenerPortsStore>,
+    /// Per-user mutexes so concurrent JIT logins coalesce on one DB create.
+    pub jit_flights: Arc<DashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl AppState {
@@ -86,7 +90,16 @@ impl AppState {
             mailbox_store: Arc::new(MailboxStore::new(state_dir)),
             events: Arc::new(EventBus::new()),
             listener_ports: Arc::new(ListenerPortsStore::new()),
+            jit_flights: Arc::new(DashMap::new()),
         }
+    }
+
+    /// Serialize JIT account creation for the same username across concurrent logins.
+    pub fn jit_flight(&self, user: &str) -> Arc<Mutex<()>> {
+        self.jit_flights
+            .entry(user.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     pub fn check_message_size(&self, len: usize) -> Result<()> {

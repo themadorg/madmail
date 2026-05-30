@@ -58,6 +58,10 @@ pub async fn run_smtp_listener(
             }
             accept = listener.accept() => {
                 let (stream, peer) = accept?;
+                // Disable Nagle so small SMTP command replies aren't delayed by 40–200ms.
+                if let Err(e) = stream.set_nodelay(true) {
+                    tracing::debug!(%peer, error = %e, "SMTP set_nodelay failed");
+                }
                 let ctx = Arc::clone(&ctx);
                 let pool = pool.clone();
                 let cfg = cfg.clone();

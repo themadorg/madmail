@@ -23,7 +23,10 @@ pub mod purge;
 
 pub use inbox::{list_inbox, InboxEntry};
 
-pub use blob::{delete_blob, deliver_local_messages, read_blob, write_blob, write_blob_mailbox};
+pub use blob::{
+    delete_blob, deliver_local_messages, read_blob, read_blob_known, write_blob,
+    write_blob_mailbox, DeliveryOutcome,
+};
 pub use maildir::{mailbox_exists, MailboxStore, MaildirPaths};
 pub use maildir_message::{
     copy_message, expunge_deleted, list_mailbox_messages, move_message, split_maildir_filename,

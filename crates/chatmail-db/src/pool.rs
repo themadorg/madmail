@@ -176,11 +176,14 @@ async fn connect_sqlite(db_path: &Path) -> Result<DbPool> {
         .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
 
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+        .max_connections(64)
         .connect_with(options)
         .await?;
 
     sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&pool)
+        .await?;
+    sqlx::query("PRAGMA busy_timeout = 30000")
         .execute(&pool)
         .await?;
 
@@ -190,7 +193,7 @@ async fn connect_sqlite(db_path: &Path) -> Result<DbPool> {
 async fn connect_postgres(dsn: &str) -> Result<DbPool> {
     let options = postgres_connect_options(dsn)?;
     let pool = PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(32)
         .connect_with(options)
         .await
         .map_err(ChatmailError::from)?;
