@@ -1,3 +1,10 @@
+## [2.2.2](https://github.com/themadorg/madmail/compare/v2.2.1...v2.2.2) (2026-05-30)
+
+
+### Bug Fixes
+
+* **ci:** Correct Cargo.lock version extraction in release verify step ([7a9a0ce](https://github.com/themadorg/madmail/commit/7a9a0cefb1255acc1ac2d8c97e75fa4802611803))
+
 ## [2.2.1](https://github.com/themadorg/madmail/compare/v2.2.0...v2.2.1) (2026-05-30)
 
 
