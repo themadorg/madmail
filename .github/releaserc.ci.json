@@ -1,0 +1,22 @@
+{
+    "branches": [
+        "main"
+    ],
+    "tagFormat": "v${version}",
+    "plugins": [
+        "@semantic-release/commit-analyzer",
+        "@semantic-release/release-notes-generator",
+        [
+            "@semantic-release/changelog",
+            {
+                "changelogFile": "CHANGELOG.md"
+            }
+        ],
+        [
+            "@semantic-release/exec",
+            {
+                "prepareCmd": "echo ${nextRelease.version} > .version && npm version ${nextRelease.version} --no-git-tag-version && sed -i '0,/^version = \"/s/^version = \"[^\"]*\"/version = \"'\"${nextRelease.version}\"'\"/' Cargo.toml"
+            }
+        ]
+    ]
+}

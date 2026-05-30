@@ -5,3 +5,4 @@ data
 crates/chatmail-iroh/assets/iroh-relay
 scripts
 build
+node_modules
