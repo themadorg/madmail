@@ -56,8 +56,15 @@ jobs:
       - name: Verify Cargo.lock matches release version
         run: |
           v=$(cat .version)
-          lock_v=$(grep -A1 '^name = "chatmail"$' Cargo.lock | awk '/version =/ { gsub(/.*"/, ""); gsub(/".*/, ""); print; exit }')
+          lock_v=$(grep -A1 '^name = "chatmail"$' Cargo.lock | awk -F'"' '/^version =/ { print $2; exit }')
+          test -n "$lock_v" || { echo "Could not read chatmail version from Cargo.lock"; exit 1; }
           test "$lock_v" = "$v" || { echo "Cargo.lock version mismatch: $lock_v != $v"; exit 1; }
+          mismatched=$(awk -v v="$v" '/^name = "chatmail/ { n=$0; getline; if ($0 !~ "^version = \"" v "\"$") print n, $0 }' Cargo.lock)
+          if [ -n "$mismatched" ]; then
+            echo "Cargo.lock workspace crate versions do not all match $v:"
+            echo "$mismatched"
+            exit 1
+          fi
 
       - name: Upload version artifact for downstream jobs
         uses: actions/upload-artifact@v4
