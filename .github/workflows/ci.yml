@@ -19,8 +19,6 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
-      issues: write
-      pull-requests: write
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
@@ -41,9 +39,7 @@ jobs:
       - name: Install root dependencies (semantic-release)
         run: npm ci
 
-      - name: Run semantic-release (bump, commit, tag, push, GitHub release)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run semantic-release (bump, commit, tag, push)
         run: npx semantic-release --extends ./.github/releaserc.ci.json
 
       - name: Ensure .version exists when no release is cut
