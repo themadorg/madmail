@@ -108,7 +108,7 @@ pub fn build_autoconfig_xml(params: &AutoconfigParams) -> String {
     let id = xml_escape(&params.mail_domain);
     let domain = xml_escape(strip_brackets(&params.mail_domain));
     let host = xml_escape(&params.client_host);
-    let display = xml_escape(&strip_brackets(&params.mail_domain));
+    let display = xml_escape(strip_brackets(&params.mail_domain));
 
     let mut incoming = String::new();
     if params.has_imap_tls {

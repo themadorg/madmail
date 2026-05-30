@@ -127,6 +127,10 @@ impl AuthCache {
         self.entries.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     /// Full reload from DB (boot, SIGUSR2 / admin soft reload).
     pub async fn hydrate(&self, pool: &DbPool) -> Result<()> {
         let rows = passwords::list_all_credentials(pool).await?;

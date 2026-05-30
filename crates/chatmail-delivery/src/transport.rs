@@ -19,7 +19,6 @@ use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-use chatmail_db::DbPool;
 use chatmail_types::is_ipv4_literal;
 use reqwest::Client;
 use tracing::debug;
