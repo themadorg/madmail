@@ -15,7 +15,7 @@
         [
             "@semantic-release/exec",
             {
-                "prepareCmd": "echo ${nextRelease.version} > .version && npm version ${nextRelease.version} --no-git-tag-version && sed -i '0,/^version = \"/s/^version = \"[^\"]*\"/version = \"'\"${nextRelease.version}\"'\"/' Cargo.toml"
+                "prepareCmd": "echo ${nextRelease.version} > .version && npm version ${nextRelease.version} --no-git-tag-version && sed -i '0,/^version = \"/s/^version = \"[^\"]*\"/version = \"'\"${nextRelease.version}\"'\"/' Cargo.toml && sed -i '/^name = \"chatmail/{n;s/^version = .*/version = \"'\"${nextRelease.version}\"'\"/}' Cargo.lock"
             }
         ],
         [
@@ -26,7 +26,8 @@
                     "package-lock.json",
                     "CHANGELOG.md",
                     ".version",
-                    "Cargo.toml"
+                    "Cargo.toml",
+                    "Cargo.lock"
                 ],
                 "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
             }

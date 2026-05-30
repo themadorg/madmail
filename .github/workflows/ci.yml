@@ -53,6 +53,12 @@ jobs:
         id: version
         run: echo "VERSION=$(cat .version)" >> "$GITHUB_OUTPUT"
 
+      - name: Verify Cargo.lock matches release version
+        run: |
+          v=$(cat .version)
+          lock_v=$(grep -A1 '^name = "chatmail"$' Cargo.lock | awk '/version =/ { gsub(/.*"/, ""); gsub(/".*/, ""); print; exit }')
+          test "$lock_v" = "$v" || { echo "Cargo.lock version mismatch: $lock_v != $v"; exit 1; }
+
       - name: Upload version artifact for downstream jobs
         uses: actions/upload-artifact@v4
         with:
@@ -116,7 +122,7 @@ jobs:
           key: build-release
 
       - name: cargo build --release
-        run: cargo build --release --bin chatmail
+        run: cargo build --release --locked --bin chatmail
 
       - name: Read build version
         id: version
