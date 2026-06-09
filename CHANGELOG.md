@@ -1,3 +1,10 @@
+# [2.3.0](https://github.com/themadorg/madmail/compare/v2.2.2...v2.3.0) (2026-06-09)
+
+
+### Features
+
+* **chatmail:** add CPU profiling support and storage policy configuration ([343aa31](https://github.com/themadorg/madmail/commit/343aa314edf2f4db3baeb37e9e46c4b8bc9753aa))
+
 ## [2.2.2](https://github.com/themadorg/madmail/compare/v2.2.1...v2.2.2) (2026-05-30)
 
 
