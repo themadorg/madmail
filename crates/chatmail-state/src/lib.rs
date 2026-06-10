@@ -22,6 +22,7 @@ pub mod listener_ports;
 pub mod message_size;
 pub mod policy;
 pub mod quota;
+pub mod reload;
 pub mod silent_dismiss;
 pub mod tracker;
 
@@ -42,6 +43,7 @@ pub use listener_ports::{ListenerPorts, ListenerPortsStore};
 pub use message_size::MessageSizeLimit;
 pub use policy::{FederationPolicyCache, PolicyMode};
 pub use quota::QuotaCache;
+pub use reload::{ReloadRequest, ReloadScope};
 pub use silent_dismiss::FederationSilentDismissCache;
 pub use tracker::{FederationTracker, ServerStat};
 

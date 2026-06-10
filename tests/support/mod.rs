@@ -100,8 +100,12 @@ pub async fn spawn_mail_servers_opts(dir: &std::path::Path, opts: MailServersOpt
     chatmail_db::set_setting(&pool, chatmail_db::settings_keys::WEBSMTP_ENABLED, "true")
         .await
         .expect("websmtp");
-    if !opts.push_enabled {
-        chatmail_db::set_setting(&pool, chatmail_db::settings_keys::PUSH_ENABLED, "false")
+    if opts.push_enabled {
+        chatmail_push::set_push_mode(&pool, chatmail_push::PushMode::On)
+            .await
+            .expect("push on");
+    } else {
+        chatmail_push::set_push_mode(&pool, chatmail_push::PushMode::Off)
             .await
             .expect("push off");
     }

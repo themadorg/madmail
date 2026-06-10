@@ -64,6 +64,17 @@ async fn flush(pool: &DbPool) -> Result<()> {
 }
 
 #[cfg(test)]
+pub(crate) async fn test_lock() -> tokio::sync::MutexGuard<'static, ()> {
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    LOCK.lock().await
+}
+
+#[cfg(test)]
+pub(crate) fn reset_for_test() {
+    SUCCESSFUL.store(0, Ordering::Relaxed);
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use chatmail_db::db_fetch_one;
@@ -71,8 +82,9 @@ mod tests {
 
     #[tokio::test]
     async fn counters_increment_and_flush() {
+        let _guard = test_lock().await;
         let pool = chatmail_db::init_memory_db().await.unwrap();
-        SUCCESSFUL.store(0, Ordering::Relaxed);
+        reset_for_test();
 
         record_successful_delivery();
         record_successful_delivery();

@@ -29,17 +29,22 @@ pub use serve::{admin_web_router, AdminWebState};
 /// Default mount path when `admin-web enable` is used and no path is configured.
 pub const DEFAULT_ADMIN_WEB_PATH: &str = "/admin";
 
-fn normalize_prefix(path: &str) -> String {
+/// Normalize an admin-web mount path (`/xxx`, trims trailing slash). Returns `None` if empty.
+pub fn normalize_admin_web_path(path: &str) -> Option<String> {
     let path = path.trim();
     if path.is_empty() {
-        return String::new();
+        return None;
     }
     let path = path.trim_end_matches('/');
     if path.starts_with('/') {
-        path.to_string()
+        Some(path.to_string())
     } else {
-        format!("/{path}")
+        Some(format!("/{path}"))
     }
+}
+
+fn normalize_prefix(path: &str) -> String {
+    normalize_admin_web_path(path).unwrap_or_default()
 }
 
 /// Resolve URL path for the admin-web SPA (`admin_web_path` in config, `__ADMIN_WEB_PATH__` in DB).
@@ -107,5 +112,12 @@ mod tests {
         let cfg = AppConfig::default();
         let path = resolve_admin_web_path(&cfg, &pool).await.unwrap();
         assert_eq!(path, "/panel");
+    }
+
+    #[test]
+    fn normalize_adds_leading_slash_and_trims_trailing() {
+        assert_eq!(normalize_admin_web_path("xxx/"), Some("/xxx".into()));
+        assert_eq!(normalize_admin_web_path("/xxx"), Some("/xxx".into()));
+        assert_eq!(normalize_admin_web_path("  "), None);
     }
 }

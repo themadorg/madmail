@@ -22,12 +22,14 @@ use std::sync::Arc;
 use chatmail_config::AppConfig;
 use chatmail_config::DEFAULT_MAX_MESSAGE_BYTES;
 use chatmail_db::{
-    init_memory_db, message_stats_snapshot, record_smtp_accepted, seed_install_defaults,
+    get_bool_setting, init_memory_db, message_stats_snapshot, record_smtp_accepted,
+    seed_install_defaults, settings_keys,
 };
 use chatmail_push::{push_stats_snapshot, record_successful_delivery};
-use chatmail_state::AppState;
+use chatmail_state::{AppState, ReloadRequest, ReloadScope};
 use serde_json::json;
 use tempfile::TempDir;
+use tokio::sync::mpsc;
 
 use crate::resources;
 use crate::AdminState;
@@ -440,6 +442,58 @@ async fn p9_federation_silent_dismiss_crud() {
     assert_eq!(
         body.unwrap().get("remaining").and_then(|v| v.as_u64()),
         Some(0)
+    );
+}
+
+#[tokio::test]
+async fn p9_admin_web_path_set_enables_and_reloads() {
+    let pool = init_memory_db().await.unwrap();
+    seed_install_defaults(&pool).await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let app = Arc::new(AppState::with_quota_and_message_limit(
+        dir.path(),
+        chatmail_config::DEFAULT_QUOTA_BYTES,
+        &AppConfig::default(),
+        pool.clone(),
+    ));
+    app.hydrate(&pool, &AppConfig::default()).await.unwrap();
+    let (reload_tx, mut reload_rx) = mpsc::channel::<ReloadRequest>(1);
+    tokio::spawn(async move {
+        if let Some(req) = reload_rx.recv().await {
+            assert_eq!(req.scope, ReloadScope::HttpRoutes);
+            if let Some(done) = req.done {
+                let _ = done.send(Ok(()));
+            }
+        }
+    });
+    let st = AdminState::new(
+        pool.clone(),
+        app,
+        AppConfig::default(),
+        dir.path().to_path_buf(),
+        "example.org".into(),
+        "secret-token-01234567890123456789012345678901".into(),
+        Some(reload_tx),
+    );
+
+    let (_, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/admin_web_path",
+        &json!({ "action": "set", "value": "/xxx" }),
+    )
+    .await
+    .unwrap();
+    let body = body.unwrap();
+    assert_eq!(body.get("value").and_then(|v| v.as_str()), Some("/xxx"));
+    assert_eq!(
+        body.get("restart_required").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert!(
+        get_bool_setting(&pool, settings_keys::ADMIN_WEB_ENABLED, false)
+            .await
+            .unwrap()
     );
 }
 

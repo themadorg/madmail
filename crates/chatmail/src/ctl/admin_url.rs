@@ -68,6 +68,15 @@ pub fn build_admin_url(config: &AppConfig, settings: &HashMap<String, String>) -
     }
 }
 
+/// Public site base URL (HTTPS or local HTTP) for probing admin-web paths.
+pub fn build_site_base_url(config: &AppConfig, settings: &HashMap<String, String>) -> String {
+    let admin = build_admin_url(config, settings);
+    if let Some((base, _)) = admin.rsplit_once("/api/admin") {
+        return base.to_string();
+    }
+    admin
+}
+
 fn listen_port(addr: Option<&str>) -> Option<String> {
     let addr = addr?.trim();
     let (_, port) = addr.rsplit_once(':')?;

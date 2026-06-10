@@ -23,7 +23,7 @@ use axum::routing::post;
 use axum::Router;
 use chatmail_config::AppConfig;
 use chatmail_db::DbPool;
-use chatmail_state::AppState;
+use chatmail_state::{AppState, ReloadRequest};
 use tokio::sync::mpsc;
 
 use crate::auth::AuthGate;
@@ -40,7 +40,7 @@ pub struct AdminState {
     pub mail_domain: String,
     pub auth: Arc<AuthGate>,
     pub version: String,
-    pub reload_tx: Option<mpsc::Sender<()>>,
+    pub reload_tx: Option<mpsc::Sender<ReloadRequest>>,
 }
 
 impl AdminState {
@@ -51,7 +51,7 @@ impl AdminState {
         state_dir: PathBuf,
         mail_domain: String,
         token: String,
-        reload_tx: Option<mpsc::Sender<()>>,
+        reload_tx: Option<mpsc::Sender<ReloadRequest>>,
     ) -> Self {
         Self {
             pool,

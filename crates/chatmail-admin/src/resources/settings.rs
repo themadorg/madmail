@@ -537,9 +537,20 @@ pub(crate) async fn generic_setting(
                 serde_json::from_value(body.clone()).map_err(|e| (400, e.to_string()))?;
             match req.action.as_str() {
                 "set" => {
-                    let value = body_value_as_string(&req.value);
+                    let mut value = body_value_as_string(&req.value);
                     if value.is_empty() {
                         return Err((400, "value is required for action 'set'".into()));
+                    }
+                    if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
+                        value = chatmail_admin_web::normalize_admin_web_path(&value)
+                            .ok_or((400, "admin web path must not be empty".into()))?;
+                        set_setting(
+                            &st.pool,
+                            chatmail_db::settings_keys::ADMIN_WEB_ENABLED,
+                            "true",
+                        )
+                        .await
+                        .map_err(db_err)?;
                     }
                     validate_setting_value(db_key, &value)?;
                     set_setting(&st.pool, db_key, &value)
@@ -547,7 +558,7 @@ pub(crate) async fn generic_setting(
                         .map_err(db_err)?;
                     super::message_size::refresh_message_size_after_setting(st, db_key).await;
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
-                        super::toggles::trigger_soft_reload(st).await?;
+                        super::toggles::trigger_http_routes_reload(st).await?;
                     }
                     Ok((200, Some(setting_response(db_key, &value, true, true))))
                 }
@@ -555,7 +566,7 @@ pub(crate) async fn generic_setting(
                     delete_setting(&st.pool, db_key).await.map_err(db_err)?;
                     super::message_size::refresh_message_size_after_setting(st, db_key).await;
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
-                        super::toggles::trigger_soft_reload(st).await?;
+                        super::toggles::trigger_http_routes_reload(st).await?;
                     }
                     Ok((200, Some(setting_response(db_key, "", false, true))))
                 }

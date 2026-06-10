@@ -22,7 +22,7 @@ use axum::Router;
 use chatmail_admin::{admin_router, AdminState};
 use chatmail_config::AppConfig;
 use chatmail_db::DbPool;
-use chatmail_state::AppState;
+use chatmail_state::{AppState, ReloadRequest};
 use chatmail_types::Result;
 use chatmail_www::{www_router, WwwState};
 use tokio::sync::mpsc;
@@ -35,7 +35,7 @@ pub async fn start_servers(
     file_config: &AppConfig,
     state_dir: &Path,
     admin_token: &str,
-) -> Result<(ServerSupervisor, mpsc::Sender<()>)> {
+) -> Result<(ServerSupervisor, mpsc::Sender<ReloadRequest>)> {
     ServerSupervisor::start(pool, app, file_config, state_dir, admin_token).await
 }
 
@@ -46,7 +46,7 @@ pub(crate) async fn build_http_extra(
     admin_token: &str,
     pool: DbPool,
     app: Arc<AppState>,
-    reload_tx: Option<mpsc::Sender<()>>,
+    reload_tx: Option<mpsc::Sender<ReloadRequest>>,
 ) -> Result<Option<Router>> {
     let admin_extra = build_admin_router(
         file_config,
@@ -68,7 +68,7 @@ pub(crate) fn build_admin_router(
     admin_token: &str,
     pool: DbPool,
     app: Arc<AppState>,
-    reload_tx: Option<mpsc::Sender<()>>,
+    reload_tx: Option<mpsc::Sender<ReloadRequest>>,
 ) -> Option<Router> {
     let disabled = file_config
         .admin_token

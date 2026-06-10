@@ -30,7 +30,7 @@ use chatmail_delivery::{start_outbound_queue, DeliveryContext};
 use chatmail_fed::run_http_listener;
 use chatmail_imap::run_imap_listener;
 use chatmail_smtp::run_smtp_listener;
-use chatmail_state::AppState;
+use chatmail_state::{AppState, ReloadRequest, ReloadScope};
 use chatmail_tasks::MaintenanceHandle;
 use chatmail_tls::load_server_config;
 use chatmail_types::Result;
@@ -40,7 +40,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::logging::boot_error;
 use crate::servers::{build_http_extra, extend_dev_local_aliases};
@@ -89,7 +89,7 @@ struct SupervisorInner {
     http_extra: Mutex<Option<Router>>,
     bootstrap_admin_token: String,
     listeners: Mutex<Option<ActiveListeners>>,
-    reload_tx: mpsc::Sender<()>,
+    reload_tx: mpsc::Sender<ReloadRequest>,
     turn_server: Mutex<Option<TurnServerHandle>>,
     iroh_relay: Mutex<Option<IrohRelayHandle>>,
     ss_server: Mutex<Option<ShadowsocksHandle>>,
@@ -119,7 +119,7 @@ impl ServerSupervisor {
         file_config: &AppConfig,
         state_dir: &std::path::Path,
         admin_token: &str,
-    ) -> Result<(Self, mpsc::Sender<()>)> {
+    ) -> Result<(Self, mpsc::Sender<ReloadRequest>)> {
         let (reload_tx, mut reload_rx) = mpsc::channel(1);
 
         let hostname = file_config
@@ -233,15 +233,42 @@ impl ServerSupervisor {
 
         let bg = Arc::clone(&inner);
         tokio::spawn(async move {
-            while reload_rx.recv().await.is_some() {
-                let _ = bg.soft_reload().await;
+            while let Some(req) = reload_rx.recv().await {
+                let scope = req.scope;
+                let done = req.done;
+                match scope {
+                    ReloadScope::Full => {
+                        let result = bg.soft_reload().await;
+                        if let Err(e) = &result {
+                            error!(scope = ?scope, error = %e, "supervisor reload failed");
+                        }
+                        if let Some(done) = done {
+                            let _ = done.send(result);
+                        }
+                    }
+                    ReloadScope::HttpRoutes => match bg.rebuild_http_routers().await {
+                        Ok(()) => {
+                            if let Some(done) = done {
+                                let _ = done.send(Ok(()));
+                            }
+                            if let Err(e) = bg.restart_http_listeners().await {
+                                error!(scope = ?scope, error = %e, "supervisor reload failed");
+                            }
+                        }
+                        Err(e) => {
+                            if let Some(done) = done {
+                                let _ = done.send(Err(e));
+                            }
+                        }
+                    },
+                }
             }
         });
 
         Ok((Self { inner }, reload_tx))
     }
 
-    pub fn reload_sender(&self) -> mpsc::Sender<()> {
+    pub fn reload_sender(&self) -> mpsc::Sender<ReloadRequest> {
         self.inner.reload_tx.clone()
     }
 }
@@ -414,38 +441,12 @@ impl SupervisorInner {
         });
 
         let http_extra = self.http_extra.lock().await.clone();
-        let http_plain_slot = addrs.http_plain.map(|addr| {
-            let cancel = CancellationToken::new();
-            let join = spawn_http(
-                addr,
-                cancel.clone(),
-                None,
-                self.pool.clone(),
-                Arc::clone(&self.app),
-                self.primary_domain.clone(),
-                self.local_domains.clone(),
-                http_extra.clone(),
-            );
-            ListenerSlot { cancel, join }
-        });
-
-        let http_tls_slot = addrs.http_tls.map(|addr| {
-            let cancel = CancellationToken::new();
-            let tls = tls_config
-                .clone()
-                .expect("tls config when http tls listen set");
-            let join = spawn_http(
-                addr,
-                cancel.clone(),
-                Some(tls),
-                self.pool.clone(),
-                Arc::clone(&self.app),
-                self.primary_domain.clone(),
-                self.local_domains.clone(),
-                http_extra.clone(),
-            );
-            ListenerSlot { cancel, join }
-        });
+        let (http_plain_slot, http_tls_slot) = self.spawn_http_listener_slots(
+            addrs.http_plain.clone(),
+            addrs.http_tls.clone(),
+            tls_config.as_ref(),
+            http_extra,
+        );
 
         *self.listeners.lock().await = Some(ActiveListeners {
             smtp: ListenerSlot {
@@ -549,6 +550,80 @@ impl SupervisorInner {
         }
         self.start_listeners().await?;
         self.start_openmetrics().await?;
+        Ok(())
+    }
+
+    fn spawn_http_listener_slots(
+        &self,
+        http_plain: Option<String>,
+        http_tls: Option<String>,
+        tls_config: Option<&Arc<ServerConfig>>,
+        http_extra: Option<Router>,
+    ) -> (Option<ListenerSlot>, Option<ListenerSlot>) {
+        let http_plain_slot = http_plain.map(|addr| {
+            let cancel = CancellationToken::new();
+            let join = spawn_http(
+                addr,
+                cancel.clone(),
+                None,
+                self.pool.clone(),
+                Arc::clone(&self.app),
+                self.primary_domain.clone(),
+                self.local_domains.clone(),
+                http_extra.clone(),
+            );
+            ListenerSlot { cancel, join }
+        });
+
+        let http_tls_slot = http_tls.map(|addr| {
+            let cancel = CancellationToken::new();
+            let tls = tls_config
+                .cloned()
+                .expect("tls config when http tls listen set");
+            let join = spawn_http(
+                addr,
+                cancel.clone(),
+                Some(tls),
+                self.pool.clone(),
+                Arc::clone(&self.app),
+                self.primary_domain.clone(),
+                self.local_domains.clone(),
+                http_extra.clone(),
+            );
+            ListenerSlot { cancel, join }
+        });
+
+        (http_plain_slot, http_tls_slot)
+    }
+
+    async fn restart_http_listeners(&self) -> Result<()> {
+        let addrs = self.resolve_addrs().await?;
+        let tls_config = self.load_tls_config(&addrs)?;
+        let http_extra = self.http_extra.lock().await.clone();
+
+        let mut guard = self.listeners.lock().await;
+        let Some(active) = guard.as_mut() else {
+            drop(guard);
+            return self.start_listeners().await;
+        };
+
+        if let Some(slot) = active.http_plain.take() {
+            slot.cancel.cancel();
+            let _ = timeout(Duration::from_secs(8), slot.join).await;
+        }
+        if let Some(slot) = active.http_tls.take() {
+            slot.cancel.cancel();
+            let _ = timeout(Duration::from_secs(8), slot.join).await;
+        }
+
+        let (http_plain_slot, http_tls_slot) = self.spawn_http_listener_slots(
+            addrs.http_plain.clone(),
+            addrs.http_tls.clone(),
+            tls_config.as_ref(),
+            http_extra,
+        );
+        active.http_plain = http_plain_slot;
+        active.http_tls = http_tls_slot;
         Ok(())
     }
 

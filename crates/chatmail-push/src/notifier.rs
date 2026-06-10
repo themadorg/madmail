@@ -223,6 +223,9 @@ mod tests {
 
     #[tokio::test]
     async fn successful_delivery_increments_push_stats() {
+        let _guard = crate::stats::test_lock().await;
+        crate::stats::reset_for_test();
+
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/notify"))

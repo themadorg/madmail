@@ -17,8 +17,11 @@
 
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tokio::sync::oneshot;
+use tokio::time::{timeout, Duration};
 
 use chatmail_db::{get_bool_setting, set_setting, settings_keys, DbPool};
+use chatmail_state::{ReloadRequest, ReloadScope};
 
 use super::{status_storage::db_err, AdminResult};
 use crate::AdminState;
@@ -72,19 +75,55 @@ pub async fn service_bool(st: &AdminState, method: &str, body: &Value, key: &str
 
 /// Queue supervisor soft reload (TURN relay + IMAP METADATA).
 pub(crate) async fn trigger_soft_reload(st: &AdminState) -> Result<(), (u16, String)> {
+    queue_reload(st, ReloadScope::Full, false).await
+}
+
+/// Remount admin-web / www / admin API routes without restarting SMTP/IMAP.
+pub(crate) async fn trigger_http_routes_reload(st: &AdminState) -> Result<(), (u16, String)> {
+    queue_reload(st, ReloadScope::HttpRoutes, true).await
+}
+
+pub(crate) async fn queue_reload(
+    st: &AdminState,
+    scope: ReloadScope,
+    wait: bool,
+) -> Result<(), (u16, String)> {
     let Some(tx) = &st.reload_tx else {
         return Err((
             501,
             "soft reload not available (server started without reload channel)".into(),
         ));
     };
-    tx.try_send(()).map_err(|_| {
-        (
+
+    if wait {
+        let (done_tx, done_rx) = oneshot::channel();
+        tx.try_send(ReloadRequest {
+            scope,
+            done: Some(done_tx),
+        })
+        .map_err(reload_send_err)?;
+
+        match timeout(Duration::from_secs(60), done_rx).await {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(e))) => Err((500, format!("reload failed: {e}"))),
+            Ok(Err(_)) => Err((500, "reload finished without status".into())),
+            Err(_) => Err((504, "reload timed out after 60s".into())),
+        }
+    } else {
+        tx.try_send(ReloadRequest { scope, done: None })
+            .map_err(reload_send_err)?;
+        Ok(())
+    }
+}
+
+fn reload_send_err(err: tokio::sync::mpsc::error::TrySendError<ReloadRequest>) -> (u16, String) {
+    match err {
+        tokio::sync::mpsc::error::TrySendError::Full(_) => (
             409,
             "reload already in progress; wait for the current reload to finish".into(),
-        )
-    })?;
-    Ok(())
+        ),
+        tokio::sync::mpsc::error::TrySendError::Closed(_) => (503, "reload channel closed".into()),
+    }
 }
 
 /// Madmail `RegistrationHandler` — actions `open` / `close`.

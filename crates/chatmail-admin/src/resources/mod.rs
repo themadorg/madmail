@@ -43,7 +43,7 @@ pub async fn dispatch(st: &AdminState, method: &str, resource: &str, body: &Valu
         "/admin/overview" => status_storage::overview(st, method).await,
         "/admin/storage" => status_storage::storage(st, method).await,
         "/admin/restart" => status_storage::restart(method),
-        "/admin/reload" => status_storage::reload(st, method).await,
+        "/admin/reload" => status_storage::reload(st, method, body).await,
         "/admin/registration" => toggles::registration(st, method, body).await,
         "/admin/registration/jit" => toggles::jit(st, method, body).await,
         "/admin/services/turn" => {

@@ -15,11 +15,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use chatmail_admin_web::{resolve_admin_web_path, DEFAULT_ADMIN_WEB_PATH};
+use chatmail_admin_web::{
+    normalize_admin_web_path, resolve_admin_web_path, DEFAULT_ADMIN_WEB_PATH,
+};
 use chatmail_config::{AdminWebCommand, Args};
 use chatmail_db::settings_keys::{ADMIN_WEB_ENABLED, ADMIN_WEB_PATH};
 use chatmail_db::{delete_setting, set_setting};
-use chatmail_types::Result;
+use chatmail_types::{ChatmailError, Result};
 
 use super::context::CtlContext;
 use super::request_reload::notify_http_routes_changed;
@@ -75,14 +77,16 @@ async fn set_flag(ctx: &CtlContext, on: bool) -> Result<()> {
     set_setting(&pool, ADMIN_WEB_ENABLED, if on { "true" } else { "false" }).await?;
     if on {
         chatmail_admin_web::ensure_default_admin_web_path(&ctx.config, &pool).await?;
-        let path = resolve_admin_web_path(&ctx.config, &pool)
-            .await
-            .unwrap_or_else(|| DEFAULT_ADMIN_WEB_PATH.into());
+    }
+    let path = resolve_admin_web_path(&ctx.config, &pool)
+        .await
+        .unwrap_or_else(|| DEFAULT_ADMIN_WEB_PATH.into());
+    if on {
         println!("✅ Admin web dashboard enabled at {path}");
     } else {
         println!("🚫 Admin web dashboard disabled (returns 404 on the admin-web path)");
     }
-    notify_http_routes_changed(ctx).await
+    notify_http_routes_changed(ctx, &path).await
 }
 
 async fn path_cmd(ctx: &CtlContext, path: Option<&str>, reset: bool) -> Result<()> {
@@ -94,7 +98,7 @@ async fn path_cmd(ctx: &CtlContext, path: Option<&str>, reset: bool) -> Result<(
             .await
             .unwrap_or_else(|| DEFAULT_ADMIN_WEB_PATH.into());
         println!("🔄 Admin web path reset (effective: {effective})");
-        return notify_http_routes_changed(ctx).await;
+        return notify_http_routes_changed(ctx, &effective).await;
     }
 
     let Some(new_path) = path else {
@@ -106,7 +110,10 @@ async fn path_cmd(ctx: &CtlContext, path: Option<&str>, reset: bool) -> Result<(
         return Ok(());
     };
 
-    set_setting(&pool, ADMIN_WEB_PATH, new_path).await?;
-    println!("✅ Admin web path set to {new_path}");
-    notify_http_routes_changed(ctx).await
+    let normalized = normalize_admin_web_path(new_path)
+        .ok_or_else(|| ChatmailError::config("admin web path must not be empty"))?;
+    set_setting(&pool, ADMIN_WEB_PATH, &normalized).await?;
+    set_setting(&pool, ADMIN_WEB_ENABLED, "true").await?;
+    println!("✅ Admin web dashboard enabled at {normalized}");
+    notify_http_routes_changed(ctx, &normalized).await
 }

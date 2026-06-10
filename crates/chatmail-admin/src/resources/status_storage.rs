@@ -564,28 +564,51 @@ pub fn restart(method: &str) -> AdminResult {
     ))
 }
 
-pub async fn reload(st: &AdminState, method: &str) -> AdminResult {
+#[derive(serde::Deserialize, Default)]
+struct ReloadBody {
+    /// `full` (default) or `http` — remount admin-web routes only.
+    #[serde(default)]
+    scope: Option<String>,
+    /// Block until reload finishes (recommended for admin-web path changes).
+    #[serde(default)]
+    wait: bool,
+}
+
+pub async fn reload(st: &AdminState, method: &str, body: &serde_json::Value) -> AdminResult {
     if method != "POST" {
         return Err((405, "use POST".into()));
     }
-    let Some(tx) = &st.reload_tx else {
-        return Err((501, "reload not supported in this configuration".into()));
+    let req: ReloadBody = serde_json::from_value(body.clone()).unwrap_or_default();
+    let scope = match req
+        .scope
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some("http") | Some("http_routes") | Some("routes") => {
+            chatmail_state::ReloadScope::HttpRoutes
+        }
+        Some("full") | None => chatmail_state::ReloadScope::Full,
+        Some(other) => {
+            return Err((400, format!("invalid scope: {other} (expected full|http)")));
+        }
     };
-    match tx.try_send(()) {
-        Ok(()) => Ok((
-            200,
-            Some(json!({
-                "status": "reloading",
-                "message": "Stopping listeners, reloading caches from DB, and rebinding SMTP/IMAP/HTTP ports."
-            })),
-        )),
-        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-            Err((409, "reload already in progress".into()))
+    super::toggles::queue_reload(st, scope, req.wait).await?;
+    let message = match scope {
+        chatmail_state::ReloadScope::HttpRoutes => {
+            "HTTP routes remounted (admin API, admin-web, www)."
         }
-        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-            Err((503, "reload channel closed".into()))
+        chatmail_state::ReloadScope::Full => {
+            "Stopping listeners, reloading caches from DB, and rebinding SMTP/IMAP/HTTP ports."
         }
-    }
+    };
+    Ok((
+        200,
+        Some(json!({
+            "status": if req.wait { "reloaded" } else { "reloading" },
+            "message": message,
+        })),
+    ))
 }
 
 async fn dir_size(path: &std::path::Path) -> u64 {
