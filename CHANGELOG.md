@@ -1,3 +1,10 @@
+## [2.4.1](https://github.com/themadorg/madmail/compare/v2.4.0...v2.4.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependencies in Cargo.lock and Cargo.toml ([a984ddc](https://github.com/themadorg/madmail/commit/a984ddc10dbfbc27485f6810cff9cc6eae50387f))
+
 # [2.4.0](https://github.com/themadorg/madmail/compare/v2.3.1...v2.4.0) (2026-06-10)
 
 
