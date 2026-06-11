@@ -1,3 +1,10 @@
+# [2.7.0](https://github.com/themadorg/madmail/compare/v2.6.0...v2.7.0) (2026-06-11)
+
+
+### Features
+
+* **landing:** add build and deployment support for static SvelteKit site ([d7217c0](https://github.com/themadorg/madmail/commit/d7217c0e6b6dffd2ae2b936eab61219865c12a44))
+
 # [2.6.0](https://github.com/themadorg/madmail/compare/v2.5.0...v2.6.0) (2026-06-11)
 
 
