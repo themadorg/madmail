@@ -3,6 +3,6 @@ target
 context
 data
 crates/chatmail-iroh/assets/iroh-relay
-scripts
+/scripts
 build
 node_modules
