@@ -1,3 +1,10 @@
+# [2.8.0](https://github.com/themadorg/madmail/compare/v2.7.0...v2.8.0) (2026-06-11)
+
+
+### Features
+
+* **landing:** add scripts for documentation generation and font synchronization ([9fb8d3d](https://github.com/themadorg/madmail/commit/9fb8d3da70aae4487f67ff798e2017dde9e39034))
+
 # [2.7.0](https://github.com/themadorg/madmail/compare/v2.6.0...v2.7.0) (2026-06-11)
 
 
