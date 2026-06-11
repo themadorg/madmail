@@ -5,7 +5,6 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import DocTreeModal from '$lib/components/DocTreeModal.svelte';
 	import SiteMeta from '$lib/components/SiteMeta.svelte';
-	import favicon from '$lib/assets/favicon.svg';
 	import { docTreeModal } from '$lib/docTreeModal.svelte.js';
 	import { madMode } from '$lib/madMode.svelte.js';
 	import { theme } from '$lib/theme.svelte.js';
@@ -68,7 +67,8 @@
 <SiteMeta />
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<link rel="icon" href="/favicon.ico" sizes="any" />
+	<link rel="icon" href="/favicon.png" type="image/png" sizes="32x32" />
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 	<link rel="stylesheet" href="/fonts/fonts.css" />
 </svelte:head>
