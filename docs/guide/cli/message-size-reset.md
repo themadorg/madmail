@@ -30,3 +30,5 @@ Schema: [json-output.md](json-output.md#message-size-reset).
 
 ---
 [← `message-size`](message-size.md) · [CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/message_size.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/message_size.rs)

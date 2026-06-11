@@ -61,3 +61,5 @@ Schema: [json-output.md](json-output.md#websmtp).
 
 ---
 [← CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/service_toggle.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/service_toggle.rs)

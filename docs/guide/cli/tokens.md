@@ -25,3 +25,5 @@ Schema: [json-output.md](json-output.md#tokens).
 
 ---
 [← CLI index](README.md)
+
+[Source: `crates/chatmail/src/ctl/registration_tokens.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/registration_tokens.rs)

@@ -30,3 +30,5 @@ Schema: [json-output.md](json-output.md#push-on).
 
 ---
 [← `push`](push.md) · [CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/push.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/push.rs)

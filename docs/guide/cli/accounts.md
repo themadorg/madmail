@@ -80,3 +80,5 @@ Schema: [json-output.md](json-output.md#accounts).
 
 ---
 [← CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/accounts.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/accounts.rs)

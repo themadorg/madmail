@@ -33,3 +33,5 @@ Schema: [json-output.md](json-output.md#blocklist-remove).
 
 ---
 [← `blocklist`](blocklist.md) · [CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/blocklist_cmd.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/blocklist_cmd.rs)

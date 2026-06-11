@@ -37,3 +37,5 @@ With `--json`, hidden helpers emit the generated text in the `data` envelope fie
 
 - [install](../install.md) — installs man page and completions on system install
 - [global-flags.md](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/docs.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/docs.rs)

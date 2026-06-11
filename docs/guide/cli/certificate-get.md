@@ -46,3 +46,5 @@ Schema: [json-output.md](json-output.md#certificate-get).
 
 ---
 [← `certificate`](certificate.md) · [CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/certificate.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/certificate.rs)

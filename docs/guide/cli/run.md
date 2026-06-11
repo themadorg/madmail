@@ -58,3 +58,5 @@ Schema: [json-output.md](json-output.md#run).
 
 ---
 [← CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/boot.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/boot.rs)

@@ -53,3 +53,5 @@ Schema: [json-output.md](json-output.md#admin-token).
 
 ---
 [← CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/admin_token.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/admin_token.rs)

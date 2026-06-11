@@ -25,3 +25,5 @@ Schema: [json-output.md](json-output.md#dns-cache).
 
 ---
 [← CLI index](README.md)
+
+[Source: `crates/chatmail/src/ctl/endpoint_cache.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/endpoint_cache.rs)

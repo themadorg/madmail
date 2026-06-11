@@ -49,3 +49,5 @@ madmail status
 
 ---
 [← CLI index](README.md)
+
+[Source: `crates/chatmail-config/src/cli.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail-config/src/cli.rs)

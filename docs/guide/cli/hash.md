@@ -24,3 +24,5 @@ Not implemented — `--json` returns an error envelope. See [json-output.md](jso
 
 ---
 [← CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `internal/cli/ctl/hash.go`](https://github.com/themadorg/madmail/blob/main/internal/cli/ctl/hash.go)

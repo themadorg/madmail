@@ -930,3 +930,5 @@ fi
 
 ---
 [← CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/output.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/output.rs)

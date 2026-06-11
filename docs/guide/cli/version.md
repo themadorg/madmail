@@ -44,3 +44,5 @@ Schema: [json-output.md](json-output.md#version).
 
 ---
 [← CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/version.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/version.rs)

@@ -75,3 +75,5 @@ Schema: [json-output.md](json-output.md#install).
 
 ---
 [← CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `crates/chatmail/src/ctl/install/mod.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/install/mod.rs)

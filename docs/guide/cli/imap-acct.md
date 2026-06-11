@@ -31,3 +31,5 @@ Not implemented — `--json` returns an error envelope. See [json-output.md](jso
 
 ---
 [← CLI index](README.md) · [Global flags](global-flags.md)
+
+[Source: `internal/cli/ctl/imapacct.go`](https://github.com/themadorg/madmail/blob/main/internal/cli/ctl/imapacct.go)
