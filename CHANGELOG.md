@@ -1,3 +1,10 @@
+# [2.6.0](https://github.com/themadorg/madmail/compare/v2.5.0...v2.6.0) (2026-06-11)
+
+
+### Features
+
+* **cli:** enhance command-line interface and configuration handling ([2a51a79](https://github.com/themadorg/madmail/commit/2a51a796e6adaf86a79c5f86dbf453180f35f441))
+
 # [2.5.0](https://github.com/themadorg/madmail/compare/v2.4.1...v2.5.0) (2026-06-11)
 
 
