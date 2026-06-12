@@ -5,7 +5,7 @@
 <h1 align="center">Madmail-V2</h1>
 
 <p align="center">
-  <strong>A Rust mail relay server for Delta Chat — encrypted, federated, single binary.</strong>
+  <strong>A rust-based mail relay server for Delta Chat, encrypted, federated, one binary. batteries included.</strong>
 </p>
 
 <p align="center">
