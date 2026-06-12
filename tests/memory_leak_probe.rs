@@ -214,9 +214,16 @@ async fn probe_never_cas_blob_path_uses_global_batcher() {
         let body = format!("unique-body-{i}-{}", "x".repeat(256));
         let body_len = body.len() as u64;
         let mut reader = Cursor::new(body.into_bytes());
-        write_blob_mailbox_stream(&store, &user, "INBOX", &format!("msg-{i}"), &mut reader, body_len)
-            .await
-            .expect("write");
+        write_blob_mailbox_stream(
+            &store,
+            &user,
+            "INBOX",
+            &format!("msg-{i}"),
+            &mut reader,
+            body_len,
+        )
+        .await
+        .expect("write");
     }
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let coordinators_after = never_delivery_batcher_coordinator_count();
