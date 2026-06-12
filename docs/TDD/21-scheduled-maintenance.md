@@ -13,7 +13,7 @@ Background and on-demand jobs for **message retention**, **unused account cleanu
 | Auto-purge seen (15s) | `internal/endpoint/chatmail/chatmail.go` — `PurgeReadIMAPMsgs` when `__AUTO_PURGE_SEEN__` |
 | Operator purge | `internal/api/admin/resources/queue.go`, `maddy imap-acct prune-unused` |
 
-chatmail-rs stores mail on **maildir** under `{state_dir}/mail/` (not go-imap-sql `msgs`), so retention jobs call `chatmail-storage::purge_*` helpers instead of SQL `DELETE FROM msgs`.
+madmail-v2 stores mail on **maildir** under `{state_dir}/mail/` (not go-imap-sql `msgs`), so retention jobs call `chatmail-storage::purge_*` helpers instead of SQL `DELETE FROM msgs`.
 
 ---
 
@@ -37,7 +37,7 @@ Durations use Go-style suffixes: `s`, `m`, `h`, `d` (parsed by `chatmail_config:
 | `__MESSAGE_RETENTION__` | `/admin/settings` (`message_retention`, e.g. `30d`) | Retention duration for file purge (`chatmail-db::message_retention`) |
 | `__AUTO_PURGE_SEEN__` | `POST /admin/services/auto_purge_seen` | In-process every **15s** when value is `enabled` — deletes maildir `cur/` (seen messages) |
 
-Madmail also documents `auth_db` for unused-account cleanup when auth and storage are separate modules. chatmail-rs uses a single `chatmail.db` / `credentials.db`; no extra `auth_db` directive is required.
+Madmail also documents `auth_db` for unused-account cleanup when auth and storage are separate modules. madmail-v2 uses a single `chatmail.db` / `credentials.db`; no extra `auth_db` directive is required.
 
 Example (`context/madmail/maddy.conf` parity):
 
@@ -161,7 +161,7 @@ First tick runs after one full interval (Madmail ticker behavior). Renewal tempo
 
 ## Deviations from Madmail
 
-- Message retention operates on **maildir files**, not IMAP SQL `msgs` rows (chatmail-rs has no go-imap-sql message table).
+- Message retention operates on **maildir files**, not IMAP SQL `msgs` rows (madmail-v2 has no go-imap-sql message table).
 - Unused-account deletion does not require `auth_db` module name — single DB holds `passwords` + `quotas`.
 - `maddy imap-acct prune-unused` → use `chatmail tasks run prune-unused-accounts` (or `run-all`).
 - `maddy queue purge` → still **planned** as top-level CLI; same storage helpers are available via `tasks` and `/admin/queue`.

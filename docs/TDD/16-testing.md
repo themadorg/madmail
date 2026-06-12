@@ -28,7 +28,7 @@ Chatmail's correctness is defined by **real Delta Chat client behavior**, not ju
   - **STARTTLS** (IMAP LOGIN gate, SMTP AUTH-after-TLS, TLS cert load for plain listeners)
   - **Autoconfig** (SSL/STARTTLS entries, no fake HTTPS ALPN IMAP)
 
-### chatmail-rs unit test index (parity fixes)
+### madmail-v2 unit test index (parity fixes)
 
 | Area | Crate / path | Key tests |
 |------|--------------|-----------|
@@ -106,7 +106,7 @@ All public Admin API examples and CLI examples should be validated.
 
 Path: `context/cmdeploy/src/cmdeploy/tests/online/`
 
-These tests target a **live deployed** Chatmail host (env `CHATMAIL_DOMAIN`, optional `chatmail.ini`). Historically that stack is **Dovecot + Postfix**, not Madmail or chatmail-rs. Use them as an **external behavioural spec** when validating a new Rust IMAP/SMTP server on the same domain.
+These tests target a **live deployed** Chatmail host (env `CHATMAIL_DOMAIN`, optional `chatmail.ini`). Historically that stack is **Dovecot + Postfix**, not Madmail or madmail-v2. Use them as an **external behavioural spec** when validating a new Rust IMAP/SMTP server on the same domain.
 
 | File | Validates |
 |------|-----------|
@@ -134,7 +134,7 @@ cd context/cmdeploy && pytest src/cmdeploy/tests/online/test_0_login.py -v
 
 **Gaps:** cmdeploy does **not** cover `523 Encryption Needed`, federation ACCEPT/REJECT, or Admin API — use `context/madmail/tests/deltachat-test/` for those.
 
-When chatmail-rs replaces Dovecot/Madmail, re-run cmdeploy online suite against the new host before declaring protocol parity.
+When madmail-v2 replaces Dovecot/Madmail, re-run cmdeploy online suite against the new host before declaring protocol parity.
 
 ## Implementation references
 

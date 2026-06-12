@@ -64,7 +64,7 @@ Detailed instructions for **developers** who are building, modifying, and testin
 
 → **[Local Development Workflow](../15-development-workflow.md)**
 
-That guide covers the full edit → build → test loop used by people working on the chatmail-rs code.
+That guide covers the full edit → build → test loop used by people working on the madmail-v2 code.
 
 ## Getting a Pre-built Binary (Releases)
 

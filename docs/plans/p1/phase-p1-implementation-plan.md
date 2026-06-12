@@ -1,10 +1,10 @@
 # Phase P1 — Implementation plan (index)
 
-Cross-repo plan: **chatmail-rs** (server, done) + **Delta Chat Core** + **deltachat-desktop** (client, this phase).
+Cross-repo plan: **madmail-v2** (server, done) + **Delta Chat Core** + **deltachat-desktop** (client, this phase).
 
 ## Problem statement
 
-Madmail and chatmail-rs expose **WebIMAP** (HTTP + WebSocket) and **WebSMTP** so clients without native IMAP can send/receive mail. The Rust server in `madmailv2/crates/chatmail-www/` already matches Madmail behaviour. Delta Chat desktop and core still use **only async-IMAP and SMTP**.
+Madmail and madmail-v2 expose **WebIMAP** (HTTP + WebSocket) and **WebSMTP** so clients without native IMAP can send/receive mail. The Rust server in `madmailv2/crates/chatmail-www/` already matches Madmail behaviour. Delta Chat desktop and core still use **only async-IMAP and SMTP**.
 
 The madweb / deltachat-web-mono stack proves the protocol in TypeScript (`transport.ts`). P1 ports that client into Core and exposes a **user-visible experimental toggle** on desktop — same UX pattern as `webxdc_realtime_enabled`.
 

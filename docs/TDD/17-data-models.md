@@ -1,6 +1,6 @@
 # Data models (Madmail-compatible SQLite)
 
-chatmail-rs uses **one consolidated SQLite database** (`state_dir/chatmail.db`) containing the Madmail **imapsql** extension tables. Madmail splits `credentials.db` (auth KV) and `imapsql.db` (everything else); chatmail-rs can still read Madmail `passwords` tables that use `key`/`value` columns.
+madmail-v2 uses **one consolidated SQLite database** (`state_dir/chatmail.db`) containing the Madmail **imapsql** extension tables. Madmail splits `credentials.db` (auth KV) and `imapsql.db` (everything else); madmail-v2 can still read Madmail `passwords` tables that use `key`/`value` columns.
 
 Schema source of truth in code: `crates/chatmail-db/migrations/`.
 
@@ -15,7 +15,7 @@ Madmail GORM models: [`context/madmail/internal/db/models.go`](../../context/mad
 
 Compatible with Madmail `settings_table` / credentials DB KV.
 
-Notable chatmail-rs keys (full list: `chatmail-db::settings_keys`):
+Notable madmail-v2 keys (full list: `chatmail-db::settings_keys`):
 
 | Key | CLI / admin | Notes |
 |-----|-------------|-------|
@@ -28,7 +28,7 @@ Notable chatmail-rs keys (full list: `chatmail-db::settings_keys`):
 
 ## `passwords` (dual schema)
 
-**chatmail-rs native:**
+**madmail-v2 native:**
 
 | Column | Type |
 |--------|------|
@@ -124,7 +124,7 @@ Pull-based ingress relays (optional):
 | `last_poll_at` | TIMESTAMP |
 | `created_at`, `updated_at` | TIMESTAMP |
 
-## `push_tokens` (chatmail-rs extension)
+## `push_tokens` (madmail-v2 extension)
 
 | Column | Type |
 |--------|------|
@@ -138,7 +138,7 @@ PK (`username`, `device_token`). Populated via IMAP `SETMETADATA /private/device
 
 | Madmail | Reason |
 |---------|--------|
-| go-imap-sql `users` / `mboxes` / `msgs` | chatmail-rs uses Maildir blobs under `state_dir/mail/` |
+| go-imap-sql `users` / `mboxes` / `msgs` | madmail-v2 uses Maildir blobs under `state_dir/mail/` |
 | `contacts` (`sharing.db`) | Contact sharing not in Phase 1–8 scope |
 | `table_entries` legacy GORM KV | Superseded by `settings` |
 

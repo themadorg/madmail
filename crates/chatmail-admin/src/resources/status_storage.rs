@@ -166,7 +166,7 @@ async fn count_registration_tokens(pool: &DbPool) -> Result<i64, (u16, String)> 
     db_fetch_scalar!(pool, i64, "SELECT COUNT(*) FROM registration_tokens").map_err(db_err)
 }
 
-/// Ports where chatmail-rs IMAP may listen (Madmail uses `__IMAP_PORT__`, not only TLS).
+/// Ports where madmail-v2 IMAP may listen (Madmail uses `__IMAP_PORT__`, not only TLS).
 async fn imap_listen_ports(st: &AdminState, pool: &DbPool) -> Vec<String> {
     let mut ports = Vec::new();
     let mut add = |p: Option<String>| {
@@ -559,7 +559,7 @@ pub fn restart(method: &str) -> AdminResult {
         200,
         Some(json!({
             "status": "restarting",
-            "message": "Restart not automated in chatmail-rs; restart the service unit manually."
+            "message": "Restart not automated in madmail-v2; restart the service unit manually."
         })),
     ))
 }

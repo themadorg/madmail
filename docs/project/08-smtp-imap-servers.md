@@ -4,7 +4,7 @@ These two crates (`chatmail-smtp` and `chatmail-imap`) are where the "mail serve
 
 ## Design Choice: Custom Async Implementations
 
-Unlike many servers that use a third-party SMTP/IMAP library for the protocol framing, chatmail-rs wrote its own async state machines.
+Unlike many servers that use a third-party SMTP/IMAP library for the protocol framing, madmail-v2 wrote its own async state machines.
 
 Reasons (from the TDD and plans):
 - Full control over the exact error messages and timing (important for "No-Log" and PGP rejection UX).

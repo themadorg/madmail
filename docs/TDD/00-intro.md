@@ -1,7 +1,7 @@
 # Technical Design Document: Rust-based Chatmail Mailserver
 
 ## Project Name
-**chatmail-rs** (or `madmail-rs` / `rustmail` — TBD)
+**madmail-v2**
 
 ## Overview
 This document outlines the technical design for a **Rust implementation** of a Chatmail-compatible mail server.
@@ -81,7 +81,7 @@ Full index: [`CONTEXT.md`](CONTEXT.md). Paths are under `../../context/`.
 
 | Codebase | Use for this section |
 |----------|----------------------|
-| [madmail](../../context/madmail/) | **Primary target** — feature set chatmail-rs must match |
+| [madmail](../../context/madmail/) | **Primary target** — feature set madmail-v2 must match |
 | [cmrelay](../../context/cmrelay/) | Prior Rust/Python relay on Dovecot; useful for `/mxdeliv` and install layout |
 | [cmdeploy](../../context/cmdeploy/) | How Chatmail is deployed today (Postfix + Dovecot) and online test expectations |
 | [stalwart](../../context/stalwart/) | Modern Rust MTA design patterns (SMTP/IMAP split, async sessions) |

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Ship a **production TURN relay** integrated with chatmail-rs so Delta Chat clients discover time-limited credentials over **IMAP METADATA** ([RFC 5464](https://datatracker.ietf.org/doc/html/rfc5464)) and complete WebRTC calls using **turn-rs** (or equivalent) with **TURN REST**-style HMAC secrets ([draft-uberti-behave-turn-rest-00](https://datatracker.ietf.org/doc/html/draft-uberti-behave-turn-rest-00)).
+Ship a **production TURN relay** integrated with madmail-v2 so Delta Chat clients discover time-limited credentials over **IMAP METADATA** ([RFC 5464](https://datatracker.ietf.org/doc/html/rfc5464)) and complete WebRTC calls using **turn-rs** (or equivalent) with **TURN REST**-style HMAC secrets ([draft-uberti-behave-turn-rest-00](https://datatracker.ietf.org/doc/html/draft-uberti-behave-turn-rest-00)).
 
 ## TDD / RFC index
 

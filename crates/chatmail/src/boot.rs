@@ -103,7 +103,7 @@ pub async fn run(args: Args) -> Result<()> {
     let flusher = app_state.start_flusher(pool.clone());
 
     if debug {
-        info!("chatmail-rs starting (Phases 3–8: auth, SMTP, IMAP, federation, delivery)");
+        info!("madmail-v2 starting (Phases 3–8: auth, SMTP, IMAP, federation, delivery)");
     }
 
     #[cfg(feature = "pprof")]

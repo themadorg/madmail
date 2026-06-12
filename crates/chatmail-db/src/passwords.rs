@@ -146,7 +146,7 @@ mod tests {
     use crate::init_memory_db;
 
     #[tokio::test]
-    async fn test_passwords_crud_chatmail_rs() {
+    async fn test_passwords_crud_madmail_v2() {
         let pool = init_memory_db().await.unwrap();
         create_user(&pool, "u@example.org", "bcrypt:hash")
             .await

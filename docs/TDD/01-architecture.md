@@ -105,7 +105,7 @@ Normative protocol specs used across these crates are archived under [`RFC/`](RF
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        chatmail-rs                               │
+│                        madmail-v2                               │
 ├─────────────────────────────────────────────────────────────────┤
 │  HTTP Server (Axum)                                            │
 │   ├── /new                  (Registration)                     │
@@ -143,7 +143,7 @@ Normative protocol specs used across these crates are archived under [`RFC/`](RF
 | HTTP + WebSocket   | Axum + tower                        | WebSocket support; familiar Rust HTTP stack |
 | TLS                | rustls + tokio-rustls               | Memory safe, modern |
 | Database           | SQLx (compile-time checked) or Diesel | Async friendly |
-| SMTP Server        | Study `context/stalwart/crates/smtp` + `smtp-proto`; implement Chatmail-specific inbound/submission | Stalwart is full MTA; chatmail-rs needs PGP + federation + JIT |
+| SMTP Server        | Study `context/stalwart/crates/smtp` + `smtp-proto`; implement Chatmail-specific inbound/submission | Stalwart is full MTA; madmail-v2 needs PGP + federation + JIT |
 | IMAP Server        | Study `context/stalwart/crates/{imap,imap-proto}`; custom backend on mail storage | Protocol split in Stalwart matches recommended design |
 | Config             | `config` + hot-reload via DB        | Dynamic settings |
 | CLI                | `clap` + `dialoguer`                | Interactive install |
@@ -223,7 +223,7 @@ madmail                     # clap name in production; dev crate: chatmail
 
 Operator reference (per-command): [`../guide/cli/README.md`](../guide/cli/README.md). Design parity matrix: [14-cli-tools.md](14-cli-tools.md).
 
-This matches Madmail's philosophy of simple deployment. The product is still referred to as **chatmail-rs** in design docs; the workspace crate is **`chatmail`**, the shipped binary name is **`madmail`**.
+This matches Madmail's philosophy of simple deployment. The product is still referred to as **madmail-v2** in design docs; the workspace crate is **`chatmail`**, the shipped binary name is **`madmail`**.
 
 ## Implementation references
 

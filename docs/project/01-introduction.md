@@ -1,4 +1,4 @@
-# 01 — Introduction: What is madmailv2 / chatmail-rs?
+# 01 — Introduction: What is madmail-v2?
 
 ## The Big Picture
 
@@ -45,7 +45,7 @@ Chatmail servers (Madmail + this Rust port) are aimed at this use case rather th
 - **maddy** — clean, modular Go mail server (https://github.com/foxcpp/maddy)
 - **Madmail** (themadorg) — fork + heavy patches for Chatmail (JIT, PGP gate, /mxdeliv federation, TURN, No-Log, admin UI, etc.). Lives in `context/madmail/`
 - **cmrelay / chatmaild** (Python reference) — earlier experiments
-- **chatmail-rs / madmailv2** — this project. Rust implementation aiming for Madmail feature parity.
+- **madmail-v2** — this project. Rust implementation aiming for Madmail feature parity.
 
 The project is implemented in phases (see `docs/plans/b1/` through `b9/`, then `p1/`).
 

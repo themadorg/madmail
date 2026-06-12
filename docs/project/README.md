@@ -1,6 +1,6 @@
-# Project Documentation — madmailv2 / chatmail-rs
+# Project Documentation — madmail-v2
 
-This directory contains a **step-by-step guide** to the madmailv2 project (also known as chatmail-rs).
+This directory contains a **step-by-step guide** to the madmail-v2 project.
 
 Its goal is to help you (a developer, reviewer, operator, or curious human) build a mental model of the codebase, architecture, data flows, build system, testing, and how everything fits together — without having to read thousands of lines of code first.
 

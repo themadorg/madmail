@@ -1,6 +1,6 @@
 # Implementation reference codebases
 
-Reference implementations for **chatmail-rs** live under `context/` (sibling of `docs/`). Paths below are relative to this TDD directory (`../../context/...`).
+Reference implementations for **madmail-v2** live under `context/` (sibling of `docs/`). Paths below are relative to this TDD directory (`../../context/...`).
 
 | Tree | Role | When to read |
 |------|------|--------------|

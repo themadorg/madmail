@@ -29,7 +29,7 @@ use super::toggles::trigger_soft_reload;
 use super::AdminResult;
 use crate::AdminState;
 
-pub const HTTP_PROXY_NOT_IMPLEMENTED: &str = "HTTP proxy is not implemented in chatmail-rs";
+pub const HTTP_PROXY_NOT_IMPLEMENTED: &str = "HTTP proxy is not implemented in madmail-v2";
 
 const SS_NOT_CONFIGURED: &str =
     "Shadowsocks is not configured in maddy.conf (set ss_addr and ss_password in the chatmail block)";

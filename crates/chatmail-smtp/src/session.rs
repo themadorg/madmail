@@ -94,7 +94,7 @@ impl SmtpSession {
         let mut lines = BufReader::new(reader);
 
         writer
-            .write_all(format!("220 {} ESMTP chatmail-rs\r\n", self.cfg.hostname).as_bytes())
+            .write_all(format!("220 {} ESMTP madmail-v2\r\n", self.cfg.hostname).as_bytes())
             .await?;
 
         loop {
@@ -183,7 +183,7 @@ impl SmtpSession {
         // RFC 8314: banner on cleartext and on implicit TLS (:465); skip duplicate after STARTTLS upgrade.
         if !tls_active || self.cfg.starttls_config.is_none() {
             writer
-                .write_all(format!("220 {} ESMTP chatmail-rs\r\n", self.cfg.hostname).as_bytes())
+                .write_all(format!("220 {} ESMTP madmail-v2\r\n", self.cfg.hostname).as_bytes())
                 .await?;
         }
 

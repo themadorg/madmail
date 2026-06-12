@@ -1,6 +1,6 @@
 # CLI tools (Madmail parity)
 
-chatmail-rs exposes the same **single binary** model as Madmail: one executable (`chatmail` in dev, **`madmail`** in production) with global flags and subcommands.
+madmail-v2 exposes the same **single binary** model as Madmail: one executable (`chatmail` in dev, **`madmail`** in production) with global flags and subcommands.
 
 ## Operator guide (per-command reference)
 
@@ -36,7 +36,7 @@ After on-disk DB changes while the daemon runs, operators call **`madmail reload
 
 ## Global flags
 
-| Flag | Madmail | chatmail-rs | Guide |
+| Flag | Madmail | madmail-v2 | Guide |
 |------|---------|-------------|-------|
 | `--config` | `MADDY_CONFIG` | `CHATMAIL_CONFIG`; auto `./data/chatmail.toml` | [`global-flags.md`](../guide/cli/global-flags.md) |
 | `--state-dir` / `--libexec` | `/var/lib/<binary>` | `CHATMAIL_STATE_DIR`; auto `./data` when DB present | same |
@@ -100,7 +100,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 ### Server lifecycle
 
-| Command | Guide | Madmail source | chatmail-rs |
+| Command | Guide | Madmail source | madmail-v2 |
 |---------|-------|----------------|-------------|
 | `run` | [run.md](../guide/cli/run.md) | `maddy.go` | **done** |
 | `install` | [install.md](../guide/cli/install.md) | `ctl/install.go` | **done** (non-interactive + `--simple`; no DNS-01) |
@@ -113,7 +113,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 ### Accounts & credentials
 
-| Command | Guide | Madmail source | chatmail-rs |
+| Command | Guide | Madmail source | madmail-v2 |
 |---------|-------|----------------|-------------|
 | `accounts` | [accounts.md](../guide/cli/accounts.md) | `ctl/accounts_*.go` | **done** |
 | `ban-list` | [ban-list.md](../guide/cli/ban-list.md) | `ctl/accounts_direct.go` | **done** |
@@ -126,7 +126,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 ### Policy & delivery
 
-| Command | Guide | Madmail source | chatmail-rs |
+| Command | Guide | Madmail source | madmail-v2 |
 |---------|-------|----------------|-------------|
 | `federation` | [federation.md](../guide/cli/federation.md) | `ctl/federation.go` | **done** — includes silent dismiss (`chatmail-state::silent_dismiss`) |
 | `endpoint-cache` | [endpoint-cache.md](../guide/cli/endpoint-cache.md) | `ctl/dnscache.go` | **done** |
@@ -141,7 +141,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 ### Services (DB toggles)
 
-| Command | Guide | Settings keys | chatmail-rs |
+| Command | Guide | Settings keys | madmail-v2 |
 |---------|-------|---------------|-------------|
 | `push` | [push.md](../guide/cli/push.md) | `__PUSH_MODE__` | **done** — [23-push-notifications.md](23-push-notifications.md) |
 | `webimap` | [webimap.md](../guide/cli/webimap.md) | `__WEBIMAP_ENABLED__` | **done** |
@@ -150,14 +150,14 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 ### Web / HTML
 
-| Command | Guide | chatmail-rs |
+| Command | Guide | madmail-v2 |
 |---------|-------|-------------|
 | `html-export` | [html-export.md](../guide/cli/html-export.md) | **done** |
 | `html-serve` | [html-serve.md](../guide/cli/html-serve.md) | **done** — sets `www_dir` in config |
 
 ### IMAP tooling
 
-| Command | Guide | chatmail-rs |
+| Command | Guide | madmail-v2 |
 |---------|-------|-------------|
 | `imap-acct` | [imap-acct.md](../guide/cli/imap-acct.md) | **planned** (`prune-unused` → `tasks run prune-unused-accounts`) |
 | `imap-mboxes` | [imap-mboxes.md](../guide/cli/imap-mboxes.md) | **planned** |
@@ -165,7 +165,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 ### Hidden / dev
 
-| Command | chatmail-rs |
+| Command | madmail-v2 |
 |---------|-------------|
 | `generate-man` | `docs.rs` (embedded `docs/man/madmail.1.scd`) |
 | `generate-fish-completion` | `docs.rs` |

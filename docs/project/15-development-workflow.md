@@ -4,7 +4,7 @@ This is the "I just want to make a change and see it work" guide.
 
 ## Getting Started: Local Development & Testing (First Time)
 
-This section is the full onboarding flow for developers who are building and testing chatmail-rs from source.
+This section is the full onboarding flow for developers who are building and testing madmail-v2 from source.
 
 ### Requirements
 - Rust (stable, ≥ 1.75)

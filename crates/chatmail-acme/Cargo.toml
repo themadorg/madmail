@@ -3,7 +3,7 @@ name = "chatmail-acme"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Let's Encrypt (instant-acme) and self-signed TLS for chatmail-rs"
+description = "Let's Encrypt (instant-acme) and self-signed TLS for madmail-v2"
 
 [dependencies]
 chatmail-types = { workspace = true }

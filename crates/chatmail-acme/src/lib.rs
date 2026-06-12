@@ -15,7 +15,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! TLS certificate issuance for chatmail-rs (Madmail-compatible paths).
+//! TLS certificate issuance for madmail-v2 (Madmail-compatible paths).
 //!
 //! - **self_signed** — local/IP testing (`/var/lib/<binary>/certs/`)
 //! - **autocert** — Let's Encrypt via HTTP-01 (`madmail certificate get|regenerate`)

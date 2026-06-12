@@ -24,7 +24,7 @@ use crate::{resolve_state_path, AppConfig};
 /// Madmail default: `auth.pass_table` → `credentials.db` in the state directory.
 pub const MADMAIL_CREDENTIALS_DB: &str = "credentials.db";
 
-/// chatmail-rs dev default when not using Madmail layout.
+/// madmail-v2 dev default when not using Madmail layout.
 pub const CHATMAIL_RS_DB: &str = "chatmail.db";
 
 /// Supported `driver` values in `maddy.conf` (`sqlite3`, `postgres`, …).
@@ -71,7 +71,7 @@ impl DatabaseConfig {
 /// Priority:
 /// 1. `credentials_driver` + `credentials_dsn` from config
 /// 2. Existing `credentials.db` (Madmail install)
-/// 3. Existing `chatmail.db` (chatmail-rs-only dev)
+/// 3. Existing `chatmail.db` (madmail-v2-only dev)
 /// 4. New installs: `credentials.db` (Madmail-compatible default)
 pub fn effective_database_config(state_dir: &Path, config: &AppConfig) -> DatabaseConfig {
     let driver = DbDriver::parse(config.credentials_driver.as_deref());

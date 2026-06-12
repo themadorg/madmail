@@ -2,7 +2,7 @@
 
 ## Goal
 
-Let **Delta Chat Core** (and **deltachat-desktop**) optionally use the chatmail-rs **WebIMAP REST + WebSocket** and **WebSMTP** stack instead of native async-IMAP/SMTP — behind an **experimental per-account toggle**, mirroring the existing `webxdc_realtime_enabled` pattern.
+Let **Delta Chat Core** (and **deltachat-desktop**) optionally use the madmail-v2 **WebIMAP REST + WebSocket** and **WebSMTP** stack instead of native async-IMAP/SMTP — behind an **experimental per-account toggle**, mirroring the existing `webxdc_realtime_enabled` pattern.
 
 **Server side:** already implemented in `crates/chatmail-www/` ([TDD 10-webimap](../../TDD/10-webimap.md)). Operators enable with `chatmail webimap enable` / `websmtp enable` or Admin API.
 
@@ -12,7 +12,7 @@ Let **Delta Chat Core** (and **deltachat-desktop**) optionally use the chatmail-
 
 | Layer | Status |
 |-------|--------|
-| chatmail-rs HTTP `/webimap/*`, `/webimap/ws`, `/websmtp/send` | **Done** (`webimap.rs`, `webimap_ws.rs`, `handlers.rs`) |
+| madmail-v2 HTTP `/webimap/*`, `/webimap/ws`, `/websmtp/send` | **Done** (`webimap.rs`, `webimap_ws.rs`, `handlers.rs`) |
 | Madmail / web SDK reference | **Done** (`context/madmail/docs/chatmail/webimap.md`, `desktop/deltachat-web-mono/packages/sdk/lib/transport.ts`, `desktop/protocol/websocket_spec.md`) |
 | Delta Chat Core production path | **IMAP + SMTP only** today |
 | Core test helper | **REST only** — `http_get_mailboxes` in `context/core/src/tests/chatmail_transport.rs` |
@@ -54,7 +54,7 @@ From [10-webimap.md](../../TDD/10-webimap.md) vs full Core IMAP usage ([03-imap-
 │    else:    existing Imap::connect / smtp                           │
 └───────┼─────────────────────────────────────────────────────────────┘
         │ HTTPS / WSS (configured HTTP host, port 443/80)
-┌───────▼────────────────── chatmail-rs ──────────────────────────────┐
+┌───────▼────────────────── madmail-v2 ──────────────────────────────┐
 │  chatmail-www: /webimap/*  gated by __WEBIMAP_ENABLED__             │
 │                websmtp     gated by __WEBSMTP_ENABLED__               │
 └─────────────────────────────────────────────────────────────────────┘
@@ -74,7 +74,7 @@ From [10-webimap.md](../../TDD/10-webimap.md) vs full Core IMAP usage ([03-imap-
 
 ## Prerequisites
 
-- chatmail-rs Phases 4–5 (SMTP submission + IMAP) for hybrid fallback and parity tests
+- madmail-v2 Phases 4–5 (SMTP submission + IMAP) for hybrid fallback and parity tests
 - Account configured as **chatmail** (`Context::is_chatmail()`)
 - HTTP listener reachable at same host users use for `/new` (from `ConfiguredLoginParam` or provider DB)
 - Server: `__WEBIMAP_ENABLED__` and `__WEBSMTP_ENABLED__` = `"true"` (tests: `tests/support/mod.rs`)

@@ -37,7 +37,7 @@ Madmail-compatible JSON-RPC admin API. Full operator reference: [`context/madmai
 
 ## Resource catalogue (Madmail parity)
 
-| Resource | Methods | Status in chatmail-rs |
+| Resource | Methods | Status in madmail-v2 |
 |----------|---------|------------------------|
 | `/admin/status` | GET | Implemented (live IMAP session count + `ss` fallback on `__IMAP_PORT__` / `__IMAP_TLS_PORT__`). Legacy; prefer `/admin/overview` for the admin-web dashboard. |
 | `/admin/overview` | GET | Implemented — dashboard summary: status metrics, host `disk`, registration `tokens.total`, and full `settings` snapshot (one call for admin-web overview) |
@@ -112,7 +112,7 @@ Operator broadcast: deliver a **plain-text, unencrypted** RFC 5322 message into 
 
 Two storage areas:
 
-1. **User maildir** (`{state_dir}/mail/`) — Madmail `state_dir/messages/` + IMAP SQL; chatmail-rs uses maildir files.
+1. **User maildir** (`{state_dir}/mail/`) — Madmail `state_dir/messages/` + IMAP SQL; madmail-v2 uses maildir files.
 2. **Outbound retry queue** (`{state_dir}/remote_queue/`) — Madmail `target.queue`; failed federation deliveries are retried from disk (see [07-federation.md](07-federation.md)).
 
 | `action` | Body fields | Effect |
@@ -168,7 +168,7 @@ Run: `cargo test -p chatmail-admin`
 
 ## Public web UI (`www`)
 
-Madmail embeds `internal/endpoint/chatmail/www/` as the main site (index, docs, `/new`, `/qr`, static CSS/JS). chatmail-rs serves the same tree from `crates/chatmail-www` (source: `www-src/`, build-time, `rust-embed`).
+Madmail embeds `internal/endpoint/chatmail/www/` as the main site (index, docs, `/new`, `/qr`, static CSS/JS). madmail-v2 serves the same tree from `crates/chatmail-www` (source: `www-src/`, build-time, `rust-embed`).
 
 | Path | Purpose |
 |------|---------|
@@ -183,7 +183,7 @@ Mounted on the HTTP listener together with `/mxdeliv` and `/api/admin` (see `cra
 
 ## Web admin panel (Svelte)
 
-Madmail serves a separate SPA from `admin-web/` via `adminweb.go`. chatmail-rs embeds **`external/madmail-admin-web`** via `chatmail-admin-web` on the HTTP listener (same origin as `/api/admin`).
+Madmail serves a separate SPA from `admin-web/` via `adminweb.go`. madmail-v2 embeds **`external/madmail-admin-web`** via `chatmail-admin-web` on the HTTP listener (same origin as `/api/admin`).
 
 Push UI: overview card + services row — toggle (`auto`/`disable`), successful-notification count, `notifications.delta.chat` copy. See [23-push-notifications.md](23-push-notifications.md#admin-web-embedded-spa).
 

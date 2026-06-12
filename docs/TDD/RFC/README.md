@@ -1,4 +1,4 @@
-# RFC reference library (chatmail-rs TDD)
+# RFC reference library (madmail-v2 TDD)
 
 Plain-text copies of IETF RFCs referenced by the Technical Design Document. Use these for offline implementation work; canonical specs remain on the IETF site.
 

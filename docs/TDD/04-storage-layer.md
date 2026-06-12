@@ -155,7 +155,7 @@ This design follows patterns used by traditional mail stacks (Postfix + Dovecot)
 
 Index: [`CONTEXT.md`](CONTEXT.md).
 
-| Concern | chatmail-rs | madmail | cmrelay | cmdeploy | stalwart |
+| Concern | madmail-v2 | madmail | cmrelay | cmdeploy | stalwart |
 |---------|-------------|---------|---------|----------|----------|
 | Maildir / blob store | `crates/chatmail-storage/` (`blob`, `cas`, `external_store`) | [`fsstore.go`](../../context/madmail/internal/go-imap-sql/fsstore.go), [`external_store.go`](../../context/madmail/internal/go-imap-sql/external_store.go) | Dovecot maildir | [`dovecot.conf.j2`](../../context/cmdeploy/src/cmdeploy/dovecot/dovecot.conf.j2) | [`crates/email/src/message/`](../../context/stalwart/crates/email/src/message/) |
 | Delivery → mailbox | `blob::deliver_local_messages` | [`delivery.go`](../../context/madmail/internal/go-imap-sql/delivery.go) | [`inbound.rs`](../../context/cmrelay/src/filtermail/src/inbound.rs) | LMTP | [`delivery.rs`](../../context/stalwart/crates/email/src/message/delivery.rs) |

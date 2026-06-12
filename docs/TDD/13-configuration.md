@@ -1,6 +1,6 @@
 # Configuration (Madmail-compatible)
 
-chatmail-rs reads the same static configuration sources as **Madmail**:
+madmail-v2 reads the same static configuration sources as **Madmail**:
 
 | Source | Parser | Notes |
 |--------|--------|-------|
@@ -29,7 +29,7 @@ Reference: [`context/madmail/maddy.conf`](../../context/madmail/maddy.conf), [`s
 | `log` | `stderr` / `off` / `syslog` (default: off when omitted) |
 | `hostname` | SMTP hostname when not only in `$(hostname)` |
 | `tls { loader … }` | Parsed as `tls_mode` hint; **runtime** uses `tls file` PEM paths only |
-| `tls file <cert> <key>` | `tls_cert_path`, `tls_key_path` — used by chatmail-rs TLS listeners |
+| `tls file <cert> <key>` | `tls_cert_path`, `tls_key_path` — used by madmail-v2 TLS listeners |
 
 Environment substitution `{env:VAR}` in values is expanded when the variable is set.
 
@@ -105,7 +105,7 @@ Boot prefers `CHATMAIL_*_ADDR` env vars, then config listen addresses, then dev 
 | `www_dir` | External www root (`html-serve` override) | embedded assets |
 | `ss_addr` / `ss_password` / `ss_cipher` / `ss_cert` / `ss_key` / `ss_allowed_ports` | Shadowsocks proxy (see [`11-proxy-services.md`](11-proxy-services.md)) | — |
 
-Madmail reference: [`context/madmail/dist/config/maddy.example.conf`](../../context/madmail/dist/config/maddy.example.conf) (`username_length`, `password_length`, `min_username_length`, `max_username_length`). chatmail-rs also supports `password_min_length` (cmrelay `chatmail.ini` parity).
+Madmail reference: [`context/madmail/dist/config/maddy.example.conf`](../../context/madmail/dist/config/maddy.example.conf) (`username_length`, `password_length`, `min_username_length`, `max_username_length`). madmail-v2 also supports `password_min_length` (cmrelay `chatmail.ini` parity).
 
 `username_length` is clamped to `[min_username_length, max_username_length]`. Generated passwords use `max(password_length, password_min_length)`.
 
@@ -164,7 +164,7 @@ Stored in the `settings` table with Madmail `__KEY__` names (see `chatmail-db::s
 
 ## Database layout vs Madmail
 
-| Madmail | chatmail-rs |
+| Madmail | madmail-v2 |
 |---------|-------------|
 | `state_dir/credentials.db` (passwords KV + settings) | Single `state_dir/chatmail.db` by default |
 | `state_dir/imapsql.db` (quotas, federation, mail index) | Same tables in `chatmail.db` |
@@ -180,7 +180,7 @@ Top-level directives:
 | `acme_email` | `acme_email` — ACME contact (default: `admin@<domain>` via `effective_acme_email`) |
 | `tls_mode autocert` | `tls_mode` — enables in-process daily renewal when server runs (see [`19-certificates.md`](19-certificates.md)) |
 
-chatmail-rs does not run maddy’s in-process `autocert` TLS loader on first connection. Use `madmail install` / `madmail certificate get` (lers HTTP-01) and `tls file` paths, or `tls_mode autocert` for scheduled renewal via `chatmail-tasks`.
+madmail-v2 does not run maddy’s in-process `autocert` TLS loader on first connection. Use `madmail install` / `madmail certificate get` (lers HTTP-01) and `tls file` paths, or `tls_mode autocert` for scheduled renewal via `chatmail-tasks`.
 
 ## OpenMetrics
 

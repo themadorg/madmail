@@ -91,4 +91,4 @@ This project was built by following a very detailed, step-by-step plan across ma
 
 Welcome to the codebase. You now know where everything is and how it fits together.
 
-— The madmailv2 / chatmail-rs documentation team
+— The madmail-v2 documentation team

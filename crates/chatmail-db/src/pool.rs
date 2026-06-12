@@ -293,7 +293,7 @@ pub(crate) async fn run_migrations(pool: &DbPool) -> Result<()> {
         DbPool::Postgres(p) => {
             if crate::schema::madmail_postgres_schema_present(pool).await? {
                 tracing::info!(
-                    "skipping chatmail-rs PostgreSQL migrations (existing Madmail schema)"
+                    "skipping madmail-v2 PostgreSQL migrations (existing Madmail schema)"
                 );
                 apply_postgres_extension_tables(p).await?;
             } else {
@@ -307,7 +307,7 @@ pub(crate) async fn run_migrations(pool: &DbPool) -> Result<()> {
     Ok(())
 }
 
-/// Tables added by chatmail-rs that are not created by Madmail Go migrations.
+/// Tables added by madmail-v2 that are not created by Madmail Go migrations.
 async fn apply_postgres_extension_tables(pool: &sqlx::PgPool) -> Result<()> {
     const FEDERATION_SILENT_DISMISS: &str =
         include_str!("../migrations/postgres/20240501000000_federation_silent_dismiss.sql");

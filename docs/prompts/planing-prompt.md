@@ -1,4 +1,4 @@
-# User prompt — request implementation plan for chatmail-rs
+# User prompt — request implementation plan for madmail-v2
 
 Copy everything below the line into your external AI session **after** attaching:
 
@@ -9,7 +9,7 @@ Copy everything below the line into your external AI session **after** attaching
 
 ## Task
 
-Using the attached **context.txt** and the system instructions, produce the **implementation plan** for **chatmail-rs**.
+Using the attached **context.txt** and the system instructions, produce the **implementation plan** for **madmail-v2**.
 
 **Critical:** Phase 1 must be planned **in full detail** (step-by-step tasks, **unit tests**, and **folder structure**). Later phases (2–10) stay at roadmap level unless noted otherwise.
 
@@ -33,7 +33,7 @@ Key capabilities (from `docs/TDD/00-intro.md`):
 - SQLite settings DB, dynamic config without restart
 - E2E tests via Delta Chat RPC (`context/madmail/tests/deltachat-test/`)
 
-The repo today is a stub (`madmailv2/` with minimal `Cargo.toml`). Phase 1 establishes the real workspace layout under this tree (or a renamed root crate `chatmail-rs`).
+The repo today is a stub (`madmailv2/` with minimal `Cargo.toml`). Phase 1 establishes the real workspace layout under this tree (or a renamed root crate `madmail-v2`).
 
 ---
 
@@ -61,7 +61,7 @@ Plan **Phase 1 only** as an implementable sprint. Use this structure:
 Provide a **complete directory tree** (every folder and key files), for example:
 
 ```
-chatmail-rs/                    # or madmailv2/ — state your choice
+madmail-v2/                    # or madmailv2/ — state your choice
 ├── Cargo.toml                  # workspace
 ├── crates/
 │   ├── chatmail/               # main binary library

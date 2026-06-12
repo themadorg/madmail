@@ -105,7 +105,7 @@ pub fn resolve_runtime_from_settings(
     let listen_addr = listen_from_settings(&ss_addr, settings);
     let enabled =
         file.ss_configured() && bool_from_settings(settings, settings_keys::SS_ENABLED, true);
-    // chatmail-rs: raw TCP Shadowsocks only (no Xray WS/gRPC listeners).
+    // madmail-v2: raw TCP Shadowsocks only (no Xray WS/gRPC listeners).
     let ws_enabled = false;
     let grpc_enabled = false;
 

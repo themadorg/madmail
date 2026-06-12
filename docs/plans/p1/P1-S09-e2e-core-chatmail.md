@@ -1,4 +1,4 @@
-# P1-S09: Core E2E tests vs chatmail-rs
+# P1-S09: Core E2E tests vs madmail-v2
 
 ## Action
 

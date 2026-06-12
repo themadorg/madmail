@@ -1,6 +1,6 @@
 # User & Operator Guide
 
-This section documents running and operating a **chatmail** relay (the Rust implementation in this project, also known as madmailv2).
+This section documents running and operating a **chatmail** relay (the Rust **madmail-v2** implementation in this project).
 
 It is written in the same spirit as the original Madmail "chatmail" documentation — clear explanations for normal users and semi-technical operators, focused on what you actually need to know and do.
 

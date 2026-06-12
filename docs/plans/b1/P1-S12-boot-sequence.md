@@ -2,7 +2,7 @@
 
 ## Action
 
-In `main.rs`: `#[tokio::main]`, parse `Args`, `load_config`, `create_dir_all(state_dir)`, open `{state_dir}/chatmail.db`, apply No-Log, log `chatmail-rs starting`, exit 0.
+In `main.rs`: `#[tokio::main]`, parse `Args`, `load_config`, `create_dir_all(state_dir)`, open `{state_dir}/chatmail.db`, apply No-Log, log `madmail-v2 starting`, exit 0.
 
 ## Files touched
 

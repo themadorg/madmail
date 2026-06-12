@@ -210,7 +210,7 @@ impl ImapSession {
             }
             if cmd_upper == "LOGOUT" {
                 writer
-                    .write_all(b"* BYE chatmail-rs logging out\r\n")
+                    .write_all(b"* BYE madmail-v2 logging out\r\n")
                     .await?;
                 if let Some(t) = tag {
                     writer
@@ -281,7 +281,7 @@ impl ImapSession {
             }
             if cmd_upper == "LOGOUT" {
                 writer
-                    .write_all(b"* BYE chatmail-rs logging out\r\n")
+                    .write_all(b"* BYE madmail-v2 logging out\r\n")
                     .await?;
                 if let Some(t) = tag {
                     writer

@@ -14,7 +14,7 @@
 - Support **JIT** account creation on first authenticated login / delivery
 - Enforce **quota** and **blocklist** on hot paths
 
-Non-goals for chatmail-rs Phase 1 (present in Stalwart, not required for Madmail parity):
+Non-goals for madmail-v2 Phase 1 (present in Stalwart, not required for Madmail parity):
 
 - Full MTA queue spool with DSN generation at Dovecot scale
 - Milter, ARC sealing, inbound DKIM/DMARC pipeline (Madmail defers DKIM signing; inbound auth is policy + PGP)
@@ -44,7 +44,7 @@ crates/smtp/
 │   ├── auth.rs       # SASL
 │   ├── ehlo.rs       # Capabilities
 │   ├── spam.rs       # Spam filter integration (replace with PGP policy for chatmail)
-│   ├── milter.rs     # Optional milter (skip for chatmail-rs MVP)
+│   ├── milter.rs     # Optional milter (skip for madmail-v2 MVP)
 │   └── hooks/        # Script hooks (skip or simplify)
 ├── outbound/         # Remote delivery: SMTP client, DANE, MTA-STS, LMTP local
 ├── queue/            # Persistent queue, throttle, quota, DSN
@@ -62,7 +62,7 @@ Used by Stalwart for:
 - `LineReceiver` / `DataReceiver` / `BdatReceiver` with size limits
 - Response encoding
 
-chatmail-rs should likely depend on **`smtp-proto`** (or equivalent) plus a thin **Chatmail session** layer (PGP, federation, storage).
+madmail-v2 should likely depend on **`smtp-proto`** (or equivalent) plus a thin **Chatmail session** layer (PGP, federation, storage).
 
 ---
 
@@ -136,7 +136,7 @@ Must implement deep OpenPGP packet inspection (New Format packets, PKESK/SKESK +
 
 ---
 
-## chatmail-rs proposed crate split
+## madmail-v2 proposed crate split
 
 Mirror Stalwart’s separation, but keep Chatmail policy in your code:
 
@@ -167,7 +167,7 @@ Mirror Stalwart’s separation, but keep Chatmail policy in your code:
 
 ### Outbound delivery (not the same as inbound session)
 
-Madmail uses `target.remote` with HTTP `/mxdeliv` first, SMTP MX fallback. Stalwart’s `outbound/` implements full SMTP client (DANE, MTA-STS, LMTP). For chatmail-rs:
+Madmail uses `target.remote` with HTTP `/mxdeliv` first, SMTP MX fallback. Stalwart’s `outbound/` implements full SMTP client (DANE, MTA-STS, LMTP). For madmail-v2:
 
 - **Phase 1**: HTTP client + minimal SMTP client for fallback (study Stalwart `outbound/delivery.rs`, `client.rs`)
 - **Do not** port queue/reporting unless you need deferred delivery at scale
@@ -176,7 +176,7 @@ Madmail uses `target.remote` with HTTP `/mxdeliv` first, SMTP MX fallback. Stalw
 
 ## Stalwart vs Chatmail feature matrix (SMTP)
 
-| Feature | Stalwart `smtp` | Madmail | chatmail-rs MVP |
+| Feature | Stalwart `smtp` | Madmail | madmail-v2 MVP |
 |---------|-----------------|---------|-----------------|
 | Inbound SMTP | Yes | Yes | Yes |
 | Submission AUTH | Yes | Yes | Yes |
@@ -194,7 +194,7 @@ Madmail uses `target.remote` with HTTP `/mxdeliv` first, SMTP MX fallback. Stalw
 
 ## Testing
 
-### Madmail / chatmail-rs E2E (primary)
+### Madmail / madmail-v2 E2E (primary)
 
 `context/madmail/tests/deltachat-test/` — must pass after Rust server:
 
@@ -205,7 +205,7 @@ Madmail uses `target.remote` with HTTP `/mxdeliv` first, SMTP MX fallback. Stalw
 
 ### cmdeploy online tests (`context/cmdeploy`)
 
-Runs against a **deployed** Chatmail instance (historically **Dovecot + Postfix**, not Madmail). Still valuable for **protocol-level** checks before/after migrating to chatmail-rs:
+Runs against a **deployed** Chatmail instance (historically **Dovecot + Postfix**, not Madmail). Still valuable for **protocol-level** checks before/after migrating to madmail-v2:
 
 | Test file | SMTP-related coverage |
 |-----------|------------------------|
@@ -218,11 +218,11 @@ Runs against a **deployed** Chatmail instance (historically **Dovecot + Postfix*
 
 - Set `CHATMAIL_DOMAIN` (and optional `chatmail.ini` in parent dir)
 - `pytest context/cmdeploy/src/cmdeploy/tests/online/ -k login`
-- For chatmail-rs: point DNS/config at your Rust server instead of Dovecot; keep same tests as black-box spec
+- For madmail-v2: point DNS/config at your Rust server instead of Dovecot; keep same tests as black-box spec
 
 **Gap:** cmdeploy does **not** assert `523` or federation policy — rely on `deltachat-test` for those. Add Rust integration tests for SMTP policy unit logic.
 
-### chatmail-rs unit tests (SMTP)
+### madmail-v2 unit tests (SMTP)
 
 | Test | Validates |
 |------|-----------|

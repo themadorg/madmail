@@ -187,7 +187,7 @@ fn first_port(candidates: impl IntoIterator<Item = Option<String>>, default: &st
     default.to_string()
 }
 
-/// Effective `host:port` for the chatmail-rs SMTP listener at process start.
+/// Effective `host:port` for the madmail-v2 SMTP listener at process start.
 ///
 /// Matches Madmail admin **SMTP port** (`__SMTP_PORT__` / `smtp tcp://…` in maddy.conf), not
 /// submission. DB value wins over the config file so `smtp tcp://0.0.0.0:25` does not stick

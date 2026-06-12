@@ -35,7 +35,7 @@ pub struct QueueSettings {
     /// Delay before processing queue entries loaded at startup (default: 10s).
     pub post_init_delay_secs: u64,
     /// Max time a message may stay in the outbound queue (default: 600s = 10m).
-    /// After this, the message is dropped as failed (chatmail-rs; Madmail retries much longer).
+    /// After this, the message is dropped as failed (madmail-v2; Madmail retries much longer).
     pub max_delivery_secs: u64,
 }
 

@@ -1,6 +1,6 @@
 # Bandwidth monitoring and management
 
-This document specifies how **chatmail-rs** measures, stores, exposes, and optionally limits **network bandwidth** for the whole installation and per user. The goal is to help operators control VPS costs and detect abuse (heavy file sync, TURN voice/video calls, federation traffic).
+This document specifies how **madmail-v2** measures, stores, exposes, and optionally limits **network bandwidth** for the whole installation and per user. The goal is to help operators control VPS costs and detect abuse (heavy file sync, TURN voice/video calls, federation traffic).
 
 **Related:**
 
@@ -24,7 +24,7 @@ VPS providers bill on **egress bandwidth** (often with monthly caps, e.g. 100 GB
 - use **TURN relay** for voice/video calls (UDP media on relay ports);
 - use **Iroh relay** for WebXDC realtime.
 
-Today chatmail-rs tracks **message counts** (`message_stats`), **disk usage** (`QuotaCache` / maildir scan), and **federation delivery counters** (`FederationTracker`), but **not network bytes**. The admin `/admin/status` endpoint reports IMAP connection counts and TURN relay **session count** (via `ss`), not bytes transferred.
+Today madmail-v2 tracks **message counts** (`message_stats`), **disk usage** (`QuotaCache` / maildir scan), and **federation delivery counters** (`FederationTracker`), but **not network bytes**. The admin `/admin/status` endpoint reports IMAP connection counts and TURN relay **session count** (via `ss`), not bytes transferred.
 
 **Success criteria:**
 

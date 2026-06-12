@@ -902,7 +902,7 @@ These commands are not implemented yet. With `--json`, they return the **error e
 ```json
 {
   "ok": false,
-  "error": "'madmail creds' is not implemented in chatmail-rs yet."
+  "error": "'madmail creds' is not implemented in madmail-v2 yet."
 }
 ```
 

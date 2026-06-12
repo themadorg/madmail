@@ -44,7 +44,7 @@ Server must:
 
 ## Outbound retry queue (`target.queue`)
 
-Madmail persists failed remote deliveries under `target.queue remote_queue` and retries with exponential backoff. chatmail-rs mirrors most of this, with one deliberate difference:
+Madmail persists failed remote deliveries under `target.queue remote_queue` and retries with exponential backoff. madmail-v2 mirrors most of this, with one deliberate difference:
 
 | Setting (`maddy.conf`) | Default | Meaning |
 |------------------------|---------|---------|
@@ -53,12 +53,12 @@ Madmail persists failed remote deliveries under `target.queue remote_queue` and 
 | `initial_retry` | 1m | First retry delay (Go duration: `1m`, `15m`, `1h`, …) |
 | `retry_time_scale` | 1.25 | Backoff multiplier |
 | `post_init_delay` | 10s | Startup grace before processing loaded entries |
-| `max_delivery_time` / `delivery_timeout` | **10m** | **chatmail-rs only:** max wall-clock time in queue; older messages are logged as failed and removed (Madmail has no equivalent cap and may retry for days) |
+| `max_delivery_time` / `delivery_timeout` | **10m** | **madmail-v2 only:** max wall-clock time in queue; older messages are logged as failed and removed (Madmail has no equivalent cap and may retry for days) |
 | `location` | `{state_dir}/remote_queue` | On-disk queue directory |
 
 Each queued message: `{id}.meta` (JSON, includes `queued_at_unix`) + `{id}.body` (RFC 5322 bytes). Remote SMTP/IMAP accept enqueues immediately; the worker delivers via HTTPS/HTTP `/mxdeliv` (same as before). Temporary failures requeue until `max_tries` or `max_delivery_time`; HTTP 4xx → immediate permanent drop.
 
-**Not yet:** DSN/bounce pipeline (`bounce {}` in Madmail), full MX lookup for SMTP (chatmail-rs uses direct `:25` to resolved host).
+**Not yet:** DSN/bounce pipeline (`bounce {}` in Madmail), full MX lookup for SMTP (madmail-v2 uses direct `:25` to resolved host).
 
 ## Delivery Priority (target.remote)
 1. **HTTPS** `POST https://domain/mxdeliv` (InsecureSkipVerify for self-signed)
@@ -86,7 +86,7 @@ Flushed to DB every 30s. Exposed via `/admin/federation/servers`
 
 ## Implementation modules (`crates/`)
 
-| Madmail path | chatmail-rs crate | Notes |
+| Madmail path | madmail-v2 crate | Notes |
 |--------------|-------------------|-------|
 | `internal/target/remote/` | `chatmail-delivery` | `queue`, `router`, `transport`, `federation_http` — shared `reqwest` client for `/mxdeliv` POSTs |
 | `internal/target/queue/queue.go` | `chatmail-config::queue` | `target.queue` settings parsed into `AppConfig.queue` |

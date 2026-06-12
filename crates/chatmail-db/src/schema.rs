@@ -15,7 +15,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Detect Madmail vs chatmail-rs database layouts.
+//! Detect Madmail vs madmail-v2 database layouts.
 
 use chatmail_types::Result;
 
@@ -101,7 +101,7 @@ pub async fn uses_madmail_settings_kv(pool: &DbPool) -> Result<bool> {
     ))
 }
 
-/// Madmail Go uses `quota`; chatmail-rs migrations create `quotas`.
+/// Madmail Go uses `quota`; madmail-v2 migrations create `quotas`.
 pub async fn quota_table(pool: &DbPool) -> Result<&'static str> {
     if table_exists(pool, "quota").await? {
         Ok("quota")
@@ -110,7 +110,7 @@ pub async fn quota_table(pool: &DbPool) -> Result<&'static str> {
     }
 }
 
-/// Existing Madmail PostgreSQL DB (from Go binary) — skip chatmail-rs migrations.
+/// Existing Madmail PostgreSQL DB (from Go binary) — skip madmail-v2 migrations.
 pub async fn madmail_postgres_schema_present(pool: &DbPool) -> Result<bool> {
     if !pool.is_postgres() {
         return Ok(false);
@@ -118,7 +118,7 @@ pub async fn madmail_postgres_schema_present(pool: &DbPool) -> Result<bool> {
     table_exists(pool, "schema_version").await
 }
 
-/// Madmail Go uses `failed_http_s` / `success_http_s`; chatmail-rs uses `failed_https` / `success_https`.
+/// Madmail Go uses `failed_http_s` / `success_http_s`; madmail-v2 uses `failed_https` / `success_https`.
 pub struct FederationStatsColumns {
     pub failed_https: &'static str,
     pub success_https: &'static str,

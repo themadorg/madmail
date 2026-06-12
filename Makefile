@@ -1,4 +1,4 @@
-# chatmail-rs — developer targets (adapted from context/madmail/Makefile)
+# madmail-v2 — developer targets (adapted from context/madmail/Makefile)
 #
 # Madmail (Go/maddy) originals: build.sh, systemd install, sign/deploy.
 # Deploy: `make push` builds release chatmail, scp's to test servers, replaces binary, restarts systemd (no signing).
@@ -99,7 +99,7 @@ init:
 #   1. (bun|npm) run build  → admin-web/build/
 #   2. stamp build/version.json (service worker cache bust)
 #   3. cp -r admin-web/build → internal/adminweb/build → go:embed in maddy
-# chatmail-rs: build.rs copies $(ADMIN_WEB_BUILD) → crates/chatmail-admin-web/embed/
+# madmail-v2: build.rs copies $(ADMIN_WEB_BUILD) → crates/chatmail-admin-web/embed/
 # when CHATMAIL_ADMIN_WEB_BUILD is set (see build-chatmail-embed* targets).
 # After changing admin-web/src: `make build-with-admin-web` then `make restart`.
 # `make build` / `make restart` alone do NOT rebuild or re-embed the SPA.
@@ -414,7 +414,7 @@ man-check: man-lint
 
 # ── Help ─────────────────────────────────────────────────────────────────────
 help:
-	@echo "chatmail-rs Makefile (from context/madmail/Makefile)"
+	@echo "madmail-v2 Makefile (from context/madmail/Makefile)"
 	@echo ""
 	@echo "Build:     build (Rust only), build-admin-web ($(ADMIN_WEB_DIR) SPA), build-with-admin-web (SPA+embed+Rust), build-release, build-profiling (release + pprof), build-release-static, build-landing ($(LANDING_DIR) static site)"
 	@echo "Run:       run, restart, dev-certs, dev-bind-cap (Linux <1024 ports), reset-db, install, preview-landing"

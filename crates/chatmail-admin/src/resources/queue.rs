@@ -17,7 +17,7 @@
 
 //! Queue admin API — maildir / blob purge (Madmail `resources/queue.go`).
 //!
-//! chatmail-rs has no persistent SMTP retry queue (outbound is in-memory). This endpoint
+//! madmail-v2 has no persistent SMTP retry queue (outbound is in-memory). This endpoint
 //! manages on-disk message storage under `{state_dir}/mail/`, not a delivery queue.
 
 use std::time::Duration;

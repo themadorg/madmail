@@ -9,7 +9,7 @@ Implementation: `crates/chatmail-acme/` ([lers](https://github.com/akrantz01/ler
 
 ## Difference from Madmail (maddy) autocert loader
 
-Madmail can embed an **maddy `autocert` loader** in `maddy.conf` that obtains certs on first TLS connection. **chatmail-rs** always uses:
+Madmail can embed an **maddy `autocert` loader** in `maddy.conf` that obtains certs on first TLS connection. **madmail-v2** always uses:
 
 ```
 tls file /var/lib/madmail/certs/fullchain.pem /var/lib/madmail/certs/privkey.pem
@@ -114,7 +114,7 @@ Requires port 80 to be available during issuance (same as CLI `certificate get`)
 
 ## DNS-01 (`acme` mode)
 
-Not implemented in chatmail-rs v1 (Madmail supports Cloudflare etc.). Use `file` mode with external certbot DNS plugin, or HTTP-01 `autocert`.
+Not implemented in madmail-v2 v1 (Madmail supports Cloudflare etc.). Use `file` mode with external certbot DNS plugin, or HTTP-01 `autocert`.
 
 ## Related
 

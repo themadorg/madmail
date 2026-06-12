@@ -118,7 +118,7 @@ pub struct AppConfig {
     pub username_length: Option<u32>,
     /// `password_length` — auto-generated password length (Madmail default: 16).
     pub password_length: Option<u32>,
-    /// `min_username_length` — minimum localpart length (Madmail example: 3; chatmail-rs default: 8).
+    /// `min_username_length` — minimum localpart length (Madmail example: 3; madmail-v2 default: 8).
     pub min_username_length: Option<u32>,
     /// `max_username_length` — maximum localpart length (Madmail default: 20).
     pub max_username_length: Option<u32>,
@@ -238,7 +238,7 @@ impl AppConfig {
         Some(chatmail_types::wrap_ip_domain(raw))
     }
 
-    /// Effective SMTP submission/plain listen for chatmail-rs dev server.
+    /// Effective SMTP submission/plain listen for madmail-v2 dev server.
     pub fn smtp_addr(&self) -> Option<&str> {
         self.submission_listen
             .as_deref()

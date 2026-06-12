@@ -1,6 +1,6 @@
 # Technical Design Document — Rust Chatmail Mailserver
 
-This directory contains the Technical Design Document (TDD) for **chatmail-rs**, a Rust implementation of the Chatmail federated mail server. The running binary and root crate are named **`chatmail`** (`crates/chatmail/`).
+This directory contains the Technical Design Document (TDD) for **madmail-v2**, a Rust implementation of the Chatmail federated mail server. The running binary and root crate are named **`chatmail`** (`crates/chatmail/`).
 
 ## Workspace crates
 

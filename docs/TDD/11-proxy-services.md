@@ -2,7 +2,7 @@
 
 **Operator CLI:** [`../guide/cli/port.md`](../guide/cli/port.md) — per-service port overrides (`turn`, `iroh`, `shadowsocks`, `sasl`). Install: [`../guide/cli/install.md`](../guide/cli/install.md) (`--enable-ss`).
 
-This document specifies how **chatmail-rs** provides a **TURN/STUN relay** so Delta Chat clients can complete **WebRTC audio/video calls** behind NAT. It ties together:
+This document specifies how **madmail-v2** provides a **TURN/STUN relay** so Delta Chat clients can complete **WebRTC audio/video calls** behind NAT. It ties together:
 
 - **Delta Chat core** (IMAP client + ICE JSON for UI)
 - **Madmail** (reference discovery + `pion/turn` server)
@@ -126,7 +126,7 @@ If metadata is missing, unparsable, or server has no `METADATA`:
 - Core sets expiry **7 days** ahead and uses [`create_fallback_ice_servers()`](../../context/core/src/calls.rs): STUN `nine.testrun.org:3478` + TURN `turn.delta.chat` with public demo credentials.
 - If valid TURN metadata was received once, fallbacks are **not** mixed in (see core CHANGELOG).
 
-**Implication for chatmail-rs:** Production Chatmail should always advertise working metadata when TURN is enabled; otherwise clients silently use public infrastructure.
+**Implication for madmail-v2:** Production Chatmail should always advertise working metadata when TURN is enabled; otherwise clients silently use public infrastructure.
 
 ### RPC surface
 
@@ -226,7 +226,7 @@ key = MD5(username ":" realm ":" password)   // or SHA-256 per algorithm
 
 This is **wire-compatible** with Madmail’s metadata password + pion `GenerateAuthKey` for MD5.
 
-### Integration options for chatmail-rs
+### Integration options for madmail-v2
 
 | Option | Pros | Cons |
 |--------|------|------|
@@ -261,7 +261,7 @@ port-range = "49152..65535"
 
 ---
 
-## chatmail-rs design
+## madmail-v2 design
 
 ### Crates
 
@@ -360,7 +360,7 @@ Full step-by-step plan: **[`docs/plans/b9/`](../plans/b9/README.md)**.
 - TURN Allocate with username/password from `turn_metadata_value` (long-term creds per [RFC 8656](RFC/rfc8656.txt) §4).
 - Optional: `coturn` `turnutils_uclient` if `COTURN_UCLIENT_PATH` set (parity with [`context/turn-rs/tests/turn.rs`](../../context/turn-rs/tests/turn.rs)).
 
-### Integration + E2E (chatmail-rs + relay-ping patterns)
+### Integration + E2E (madmail-v2 + relay-ping patterns)
 
 1. Extend [`tests/support/mod.rs`](../../tests/support/mod.rs) `spawn_mail_servers` with TURN listener + `turn_enable` settings.
 2. Replace stub in [`tests/imap_e2e.rs`](../../tests/imap_e2e.rs): `GETMETADATA "" /shared/vendor/deltachat/turn` (not `/private/turn/relay`).
@@ -447,7 +447,7 @@ Initial `GETMETADATA` request (with TURN keys):
 (/shared/comment /shared/admin /shared/vendor/deltachat/irohrelay /shared/vendor/deltachat/turn)
 ```
 
-### IMAP advertisement (chatmail-rs)
+### IMAP advertisement (madmail-v2)
 
 | Requirement | Implementation |
 |-------------|----------------|
@@ -459,7 +459,7 @@ Madmail reference: [`context/madmail/internal/endpoint/imap/imap.go`](../../cont
 
 ### Single-binary deployment model
 
-Unlike legacy Madmail/cmdeploy (separate `iroh-relay.service`), **chatmail-rs** ships one operator binary:
+Unlike legacy Madmail/cmdeploy (separate `iroh-relay.service`), **madmail-v2** ships one operator binary:
 
 ```
 chatmail (one process)
@@ -487,7 +487,7 @@ imap tls://0.0.0.0:993 {
 
 Parsed into `AppConfig.iroh_relay_url` / `iroh_enable` ([`chatmail-config`](../../crates/chatmail-config/src/maddy.rs)).
 
-If only `iroh_enable` is set without URL, chatmail-rs derives `http://{public_ip|hostname}:{port}` (default port **3340**).
+If only `iroh_enable` is set without URL, madmail-v2 derives `http://{public_ip|hostname}:{port}` (default port **3340**).
 
 ### Admin API / database settings
 

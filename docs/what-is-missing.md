@@ -1,8 +1,8 @@
-# CLI gaps: Madmail (`context/madmail`) vs chatmail-rs
+# CLI gaps: Madmail (`context/madmail`) vs madmail-v2
 
-This document lists **Madmail / `maddy` operator CLI** commands defined under [`context/madmail`](../context/madmail) (symlink to the Madmail Go tree) that are **not implemented** in chatmail-rs today, plus commands that exist in both but differ in behavior.
+This document lists **Madmail / `maddy` operator CLI** commands defined under [`context/madmail`](../context/madmail) (symlink to the Madmail Go tree) that are **not implemented** in madmail-v2 today, plus commands that exist in both but differ in behavior.
 
-**chatmail-rs binary:** `chatmail` (often installed as `/usr/local/bin/madmail`).  
+**madmail-v2 binary:** `chatmail` (often installed as `/usr/local/bin/madmail`).  
 **Reference code:** `context/madmail/internal/cli/ctl/*.go`, `context/madmail/maddy.go`.  
 **Reference docs:** [`context/madmail/docs/chatmail/cli.md`](../context/madmail/docs/chatmail/cli.md) (full subcommand index), [`context/madmail/docs/chatmail/commands.md`](../context/madmail/docs/chatmail/commands.md) (install/flags detail).  
 **Parity matrix (maintained):** [`docs/TDD/14-cli-tools.md`](TDD/14-cli-tools.md).
@@ -18,7 +18,7 @@ When a command is missing from the CLI, the same feature may still be available 
 | **Implemented** | 29 | `run`, `version`, `upgrade`, `update`, `admin-token`, `admin-web`, `install`*, `certificate`, `accounts`, `ban-list`, `blocklist`, `create-user`*, `delete`, `registration`, `language`, `html-export`, `html-serve`, `webimap`, `websmtp`, `federation`, `registration-tokens`, `sharing`, `status`, `uninstall`, `reload`, `endpoint-cache`, `port`, `message-size`, `tasks` |
 | **Stub only** (clap parses; `dispatch` → not implemented) | 9 | `creds`, `hash`, `submission-access`, `imap-acct`, `imap-mboxes`, `imap-msgs`, `queue`, `exchanger`, `migrate-pgp-config` |
 | **Madmail-only / not in chatmail clap** | — | (none material; see partial gaps) |
-| **chatmail-rs-only / reshaped** | — | See [chatmail-rs extensions](#chatmail-rs-extensions-not-in-madmail-cli) |
+| **madmail-v2-only / reshaped** | — | See [madmail-v2 extensions](#madmail-v2-extensions-not-in-madmail-cli) |
 
 \*Partial — see [Partial parity](#partial-parity-implemented-but-incomplete).
 
@@ -29,11 +29,11 @@ When a command is missing from the CLI, the same feature may still be available 
 
 ---
 
-## Implemented in chatmail-rs
+## Implemented in madmail-v2
 
 These match Madmail closely enough for day-to-day ops on `credentials.db` + maildir:
 
-| Command | Madmail source | chatmail-rs notes |
+| Command | Madmail source | madmail-v2 notes |
 |---------|----------------|-------------------|
 | `run` | `maddy.go` | Default server start |
 | `version` | `maddy.go` | Crate version (no full Madmail build metadata) |
@@ -41,7 +41,7 @@ These match Madmail closely enough for day-to-day ops on `credentials.db` + mail
 | `admin-token` | `ctl/admin_token.go` | `--raw` |
 | `admin-web` | `ctl/adminweb.go` | `status`, `enable`, `disable`, `path` / `--reset` |
 | `install` | `ctl/install.go` | Non-interactive + `--simple`; not full interactive/DNS-01 installer |
-| `certificate` | — | **chatmail-rs addition** (HTTP-01 / lers), not in Go Madmail CLI |
+| `certificate` | — | **madmail-v2 addition** (HTTP-01 / lers), not in Go Madmail CLI |
 | `accounts` | `ctl/accounts_bulk.go` | All subcommands below |
 | `ban-list` | `ctl/accounts_direct.go` | Alias of `accounts ban-list` |
 | `blocklist` | `ctl/blocklist.go` | `list`, `add`, `remove` |
@@ -51,7 +51,7 @@ These match Madmail closely enough for day-to-day ops on `credentials.db` + mail
 | `language` | `ctl/language.go` | `status`, `set`, `reset` on `__LANGUAGE__` (en, fa, ru, es) |
 | `webimap` / `websmtp` | `ctl/webmail_services.go` | `status`, `enable`, `disable` on `__WEBIMAP_ENABLED__` / `__WEBSMTP_ENABLED__` |
 | `html-export` / `html-serve` | `ctl/html.go` | See [HTML www overrides](#html-www-overrides-done) |
-| `federation` | `ctl/federation.go` | Madmail: `policy`, `block`, `allow`, `remove`, `flush`, `list`, `status`. **Also:** `dismiss`, `undismiss`, `dismiss-list`, `dismiss-flush` (chatmail-rs; `federation_silent_dismiss` table) |
+| `federation` | `ctl/federation.go` | Madmail: `policy`, `block`, `allow`, `remove`, `flush`, `list`, `status`. **Also:** `dismiss`, `undismiss`, `dismiss-list`, `dismiss-flush` (madmail-v2; `federation_silent_dismiss` table) |
 | `registration-tokens` | `ctl/registration_token.go` | `create`, `list`, `status`, `delete` |
 | `sharing` | `ctl/sharing.go` | `list`, `create`, `reserve`, `remove`, `edit` (`{state_dir}/sharing.db`) |
 | `uninstall` | `ctl/uninstall.go` | `--force`, `--keep-data` / `--keep-user` / `--keep-config` / `--keep-binary`, `--dry-run`, `--log-file` |
@@ -59,8 +59,8 @@ These match Madmail closely enough for day-to-day ops on `credentials.db` + mail
 | `reload` | `ctl/reload_config.go` | POST admin envelope to `/admin/reload`; `--url`, `--insecure` |
 | `endpoint-cache` | `ctl/dnscache.go` | Alias `dns-cache`; `list`, `set`, `get`, `remove` on `dns_overrides` |
 | `port` | `ctl/port.go` | `status` + per-service `status`/`set`/`reset`/`local`/`public` on `__*_PORT__` / `__*_LOCAL_ONLY__` |
-| `message-size` | `ctl/appendlimit.go` (per-user) + install `--max-message-size` | **chatmail-rs top-level** — `status`, `set`, `reset` on `__APPENDLIMIT__` / `__MAX_MESSAGE_SIZE__` |
-| `tasks` | imapsql periodic cleanup (no dedicated ctl in Go) | **chatmail-rs** — `list`, `run`, `run-all`; see [`TDD/21-scheduled-maintenance.md`](TDD/21-scheduled-maintenance.md) |
+| `message-size` | `ctl/appendlimit.go` (per-user) + install `--max-message-size` | **madmail-v2 top-level** — `status`, `set`, `reset` on `__APPENDLIMIT__` / `__MAX_MESSAGE_SIZE__` |
+| `tasks` | imapsql periodic cleanup (no dedicated ctl in Go) | **madmail-v2** — `list`, `run`, `run-all`; see [`TDD/21-scheduled-maintenance.md`](TDD/21-scheduled-maintenance.md) |
 
 ### `accounts` subcommands (done)
 
@@ -89,7 +89,7 @@ Madmail parity for operator-owned www trees (`ctl/html.go`):
 
 ### `message-size` (done)
 
-Madmail sets limits via install (`--max-message-size`) and per-account `imap-acct appendlimit USERNAME`. chatmail-rs exposes a **server-wide** CLI backed by the settings DB:
+Madmail sets limits via install (`--max-message-size`) and per-account `imap-acct appendlimit USERNAME`. madmail-v2 exposes a **server-wide** CLI backed by the settings DB:
 
 | Subcommand | Settings keys |
 |------------|---------------|
@@ -99,7 +99,7 @@ Madmail sets limits via install (`--max-message-size`) and per-account `imap-acc
 
 Code: `crates/chatmail/src/ctl/message_size.rs`. Apply to a running server: `chatmail reload`.
 
-### `tasks` (done — chatmail-rs only)
+### `tasks` (done — madmail-v2 only)
 
 On-demand maintenance (Madmail runs similar jobs inside `imapsql` when the server is up; there is no `maddy tasks` command):
 
@@ -111,9 +111,9 @@ On-demand maintenance (Madmail runs similar jobs inside `imapsql` when the serve
 
 Code: `crates/chatmail/src/ctl/tasks.rs`, `chatmail-tasks` crate. Prefer `tasks` + Admin `/admin/queue` over a future `queue purge` for operators.
 
-### chatmail-rs extensions (not in Madmail CLI)
+### madmail-v2 extensions (not in Madmail CLI)
 
-| Piece | Madmail | chatmail-rs |
+| Piece | Madmail | madmail-v2 |
 |-------|---------|-------------|
 | `certificate` | — (TLS via install / autocert) | `get`, `regenerate` (lers HTTP-01) |
 | `registration` | `creds registration {open\|close\|status}` | Top-level `registration` (same `__REGISTRATION_OPEN__` DB key) |
@@ -125,7 +125,7 @@ Code: `crates/chatmail/src/ctl/tasks.rs`, `chatmail-tasks` crate. Prefer `tasks`
 
 ## Missing top-level commands
 
-Invoking these today prints: *`'chatmail <name>' is not implemented in chatmail-rs yet`*.
+Invoking these today prints: *`'chatmail <name>' is not implemented in madmail-v2 yet`*.
 
 ### `creds` — `ctl/users.go`
 
@@ -179,12 +179,12 @@ Storage-account tooling (module framework + `local_mailboxes`).
 | `purge-read` | |
 | `prune-unread` | |
 | `stat` | |
-| `appendlimit` | per-user APPENDLIMIT (server-wide limit → use **`message-size`** in chatmail-rs) |
+| `appendlimit` | per-user APPENDLIMIT (server-wide limit → use **`message-size`** in madmail-v2) |
 | `prune-unused` | age argument (e.g. `720h`) — overlap with **`tasks run prune-unused-accounts`** |
 
 **Flags:** `--cfg-block` (default `local_mailboxes`).
 
-**chatmail-rs:** mail is maildir under `state_dir/mail/`; no separate imapsql account CLI.
+**madmail-v2:** mail is maildir under `state_dir/mail/`; no separate imapsql account CLI.
 
 ---
 
@@ -223,7 +223,7 @@ Debug / migration tooling.
 |------------|--------|
 | `purge USERNAME` | Required arg. `--sender` / `--recipient` are **boolean** flags (default `true`) controlling which direction to purge; `--cfg-block` (default `remote_queue`) |
 
-**chatmail-rs:** use **`tasks`** for retention; queue purge via Admin API when exposed.
+**madmail-v2:** use **`tasks`** for retention; queue purge via Admin API when exposed.
 
 ---
 
@@ -245,13 +245,13 @@ Pull-based relay (exchanger) management.
 
 One-time config rewrite: move submission PGP policy from `check.pgp_encryption` to endpoint `pgp_*` directives (creates `.bak`). Flags: `--config`, `--dry-run`.
 
-**chatmail-rs:** declared in clap; **not implemented**. Documented in Madmail: `context/madmail/docs/code/message-checks-pipeline.md`, `pgp-verification.md`.
+**madmail-v2:** declared in clap; **not implemented**. Documented in Madmail: `context/madmail/docs/code/message-checks-pipeline.md`, `pgp-verification.md`.
 
 ---
 
 ## Partial parity (implemented but incomplete)
 
-| Area | Madmail | chatmail-rs gap |
+| Area | Madmail | madmail-v2 gap |
 |------|---------|-----------------|
 | **`run`** | `--log` targets | Logging via config / tracing only |
 | **`install`** | Full interactive installer, Cloudflare/DNS, many flags (`--enable-iroh`, `--lang`, …) | Subset (`--simple`, non-interactive); no DNS-01 in install |

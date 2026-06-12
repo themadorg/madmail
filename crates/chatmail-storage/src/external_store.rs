@@ -19,7 +19,7 @@
 //!
 //! Go madmail keeps message bodies in an `ExternalStore` (keyed blobs) separate from the metadata
 //! DB, with `Link` for cheap multi-recipient fan-out and explicit `Sync` for durability. This
-//! module introduces the same seam in chatmail-rs as a trait so the body backend can evolve
+//! module introduces the same seam in madmail-v2 as a trait so the body backend can evolve
 //! (compression, object storage, ranges) without touching the SMTP/IMAP layers. The default and
 //! only backend today is [`FsStore`], which delegates to the existing maildir blob functions — so
 //! behaviour is unchanged; this is the foundation the analysis called for ("introduce behind a

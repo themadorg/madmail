@@ -103,7 +103,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
 fn not_implemented(cmd: &Command) -> Result<()> {
     let name = command_name(cmd);
     Err(ChatmailError::config(format!(
-        "'madmail {name}' is not implemented in chatmail-rs yet.\n\
+        "'madmail {name}' is not implemented in madmail-v2 yet.\n\
          See docs/TDD/14-cli-tools.md and context/madmail/docs/chatmail/commands.md.\n\
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, language, \

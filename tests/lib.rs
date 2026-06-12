@@ -1,4 +1,4 @@
-//! Workspace-level integration tests for chatmail-rs.
+//! Workspace-level integration tests for madmail-v2.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;

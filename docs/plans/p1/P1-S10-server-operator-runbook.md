@@ -11,7 +11,7 @@ Document for admins (optional `docs/operator/webimap-desktop.md`):
 
 No Core code in this step — **regression tests only** prove server still matches plan assumptions.
 
-## Enable on chatmail-rs
+## Enable on madmail-v2
 
 ```bash
 chatmail webimap enable
