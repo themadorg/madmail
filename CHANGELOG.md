@@ -1,3 +1,11 @@
+## [2.8.1](https://github.com/themadorg/madmail/compare/v2.8.0...v2.8.1) (2026-06-12)
+
+
+### Bug Fixes
+
+* rename project from chatmail-rs to madmail-v2 ([ab647de](https://github.com/themadorg/madmail/commit/ab647dee344a42748c5d8da25aee6a12d338e91b))
+* **storage:** add coordinator count for Never-mode delivery batcher ([b38d087](https://github.com/themadorg/madmail/commit/b38d087f15e97e2bee7218bc8e9303f089dbdab4))
+
 # [2.8.0](https://github.com/themadorg/madmail/compare/v2.7.0...v2.8.0) (2026-06-11)
 
 
