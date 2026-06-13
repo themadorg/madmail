@@ -1,3 +1,10 @@
+## [2.8.2](https://github.com/themadorg/madmail/compare/v2.8.1...v2.8.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* remove memory leak probe test ([b3fee06](https://github.com/themadorg/madmail/commit/b3fee064d060878877733b9bb1f0b91a75ac1e66))
+
 ## [2.8.1](https://github.com/themadorg/madmail/compare/v2.8.0...v2.8.1) (2026-06-12)
 
 
