@@ -144,6 +144,7 @@ mod tests {
             enable_contact_sharing: true,
             enable_ss: true,
             enable_turn: true,
+            enable_iroh: false,
             turn_port: "3478".into(),
             turn_secret: String::new(),
             turn_ttl: 86400,

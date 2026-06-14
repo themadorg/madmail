@@ -48,36 +48,68 @@ pub struct IrohRelayHandle {
     pub config_path: PathBuf,
 }
 
-/// Path to embedded binary (set by `build.rs` when assets exist).
-pub fn embedded_binary_path() -> Option<&'static str> {
-    option_env!("CHATMAIL_IROH_RELAY_PATH")
+#[cfg(embed_iroh)]
+mod iroh_embedded {
+    include!(concat!(env!("OUT_DIR"), "/iroh_embedded.rs"));
 }
 
 /// Embedded release tag (e.g. `v0.35.0`).
 pub fn embedded_version() -> Option<&'static str> {
-    option_env!("CHATMAIL_IROH_RELAY_VERSION")
+    #[cfg(embed_iroh)]
+    {
+        Some(iroh_embedded::IROH_RELAY_VERSION)
+    }
+    #[cfg(not(embed_iroh))]
+    {
+        None
+    }
 }
 
-/// Resolve binary: `CHATMAIL_IROH_RELAY_PATH` env, then compile-time embed, then `iroh-relay` on PATH.
-pub fn resolve_binary() -> Result<PathBuf> {
+#[cfg(embed_iroh)]
+fn materialize_embedded_binary(state_dir: &Path) -> Result<PathBuf> {
+    let dest = state_dir.join("iroh-relay");
+    if dest.is_file() {
+        return Ok(dest);
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    std::fs::write(&dest, iroh_embedded::IROH_RELAY_BYTES)
+        .with_context(|| format!("write {}", dest.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
+            .with_context(|| format!("chmod {}", dest.display()))?;
+    }
+    Ok(dest)
+}
+
+/// Resolve binary: `CHATMAIL_IROH_RELAY_PATH` env, `{state_dir}/iroh-relay`, embed extract, then PATH.
+pub fn resolve_binary(state_dir: &Path) -> Result<PathBuf> {
     if let Ok(p) = std::env::var("CHATMAIL_IROH_RELAY_PATH") {
         let p = PathBuf::from(p);
         if p.is_file() {
             return Ok(p);
         }
     }
-    if let Some(p) = embedded_binary_path() {
-        let p = PathBuf::from(p);
-        if p.is_file() {
-            return Ok(p);
-        }
+    let state_path = state_dir.join("iroh-relay");
+    if state_path.is_file() {
+        return Ok(state_path);
     }
-    Ok(PathBuf::from("iroh-relay"))
+    #[cfg(embed_iroh)]
+    {
+        materialize_embedded_binary(state_dir)
+    }
+    #[cfg(not(embed_iroh))]
+    {
+        Ok(PathBuf::from("iroh-relay"))
+    }
 }
 
 /// Write config and spawn `iroh-relay --config-path`.
 pub async fn spawn_iroh_relay(state_dir: &Path, opts: IrohSpawnOpts) -> Result<IrohRelayHandle> {
-    let binary = resolve_binary()?;
+    let binary = resolve_binary(state_dir)?;
     let config_path = state_dir.join("iroh-relay.toml");
     write_config(&config_path, &opts).await?;
 

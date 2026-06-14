@@ -38,16 +38,21 @@ fn main() {
     if binary.exists() {
         let dest = out_dir.join("iroh-relay");
         fs::copy(&binary, &dest).expect("copy iroh-relay to OUT_DIR");
-        println!(
-            "cargo:rustc-env=CHATMAIL_IROH_RELAY_PATH={}",
-            dest.display()
-        );
-        println!(
-            "cargo:rustc-env=CHATMAIL_IROH_RELAY_VERSION={}",
-            fs::read_to_string(&version_file)
-                .unwrap_or_else(|_| VERSION.to_string())
-                .trim()
-        );
+        let version = fs::read_to_string(&version_file)
+            .unwrap_or_else(|_| VERSION.to_string())
+            .trim()
+            .replace('"', "\\\"");
+        fs::write(
+            out_dir.join("iroh_embedded.rs"),
+            format!(
+                r#"pub const IROH_RELAY_BYTES: &[u8] = include_bytes!(r"{dest}");
+pub const IROH_RELAY_VERSION: &str = "{version}";
+"#,
+                dest = dest.display(),
+            ),
+        )
+        .expect("write iroh_embedded.rs");
+        println!("cargo:rustc-cfg=embed_iroh");
     } else {
         println!(
             "cargo:warning=iroh-relay binary missing in assets/; run `make init` to download v0.35.0"

@@ -40,6 +40,7 @@ pub struct InstallConfig {
     pub enable_contact_sharing: bool,
     pub enable_ss: bool,
     pub enable_turn: bool,
+    pub enable_iroh: bool,
     pub turn_port: String,
     pub turn_secret: String,
     pub turn_ttl: u32,
@@ -102,6 +103,14 @@ pub fn render_maddy_conf(c: &InstallConfig) -> String {
     turn_ttl {}"#,
             c.public_ip, c.turn_port, c.turn_secret, c.turn_ttl
         )
+    } else {
+        String::new()
+    };
+
+    let imap_iroh = if c.enable_iroh {
+        r#"
+    iroh_relay_url http://$(public_ip):3340"#
+            .to_string()
     } else {
         String::new()
     };
@@ -338,7 +347,7 @@ imap tls://0.0.0.0:993 tcp://0.0.0.0:143 {{
     auth &local_authdb
     storage &local_mailboxes
     insecure_auth {insecure}
-{imap_turn}
+{imap_turn}{imap_iroh}
     xchatmail yes
 }}
 {turn_block}
@@ -366,6 +375,7 @@ imap tls://0.0.0.0:993 tcp://0.0.0.0:143 {{
         mx_auth = mx_auth,
         insecure = turn_off,
         imap_turn = imap_turn,
+        imap_iroh = imap_iroh,
         turn_block = turn_block,
         chatmail_http = chatmail_http,
     )

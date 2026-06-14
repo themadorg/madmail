@@ -6,3 +6,16 @@ crates/chatmail-iroh/assets/iroh-relay
 /scripts
 build
 node_modules
+
+# Local signing keys (make sign / push2)
+imp/
+
+# E2E / stress test output (deltachat-test, cmping, …)
+tmp/
+
+# Python test harness (tests/deltachat-test-incus.sh, tests/pyproject.toml)
+tests/.deltachat-test-env
+tests/.venv
+__pycache__/
+*.pyc
+.pytest_cache/

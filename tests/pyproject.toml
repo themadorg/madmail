@@ -1,0 +1,15 @@
+[project]
+name = "madmail-deltachat-tests"
+version = "0.1.0"
+description = "Delta Chat RPC E2E harness for madmail-v2 (incus + cmlxc)"
+requires-python = ">=3.12"
+dependencies = [
+    "deltachat-rpc-client>=2.37.0",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+    "cryptography>=46.0.3",
+    "toml>=0.10.2",
+    "termcolor>=2.4.0",
+    "xdg-base-dirs>=6.0.2",
+    "argcomplete>=3.0.0",
+]

@@ -319,7 +319,13 @@ impl ImapSession {
             ))),
             "NOOP" => Ok(Some(format!("{t} OK NOOP completed\r\n"))),
             "LOGIN" => {
-                let (user, pass) = parse_login_args(args)?;
+                let (user, pass) = match parse_login_args(args) {
+                    Ok(v) => v,
+                    Err(ChatmailError::Protocol(msg)) => {
+                        return Ok(Some(format!("{t} BAD {msg}\r\n")));
+                    }
+                    Err(e) => return Err(e),
+                };
                 let auth = AuthContext {
                     pool: self.pool.clone(),
                     state: Arc::clone(&self.ctx),
@@ -327,8 +333,13 @@ impl ImapSession {
                     jit_domain: self.cfg.jit_domain.clone(),
                     credential_policy: self.cfg.credential_policy,
                 };
-                chatmail_auth::authenticate(&auth, &user, &pass).await?;
-                let user = normalize_username(&user)?;
+                if let Err(e) = chatmail_auth::authenticate(&auth, &user, &pass).await {
+                    return Ok(Some(format_imap_login_failure(t, &e)));
+                }
+                let user = match normalize_username(&user) {
+                    Ok(u) => u,
+                    Err(e) => return Ok(Some(format_imap_login_failure(t, &e))),
+                };
                 self.ctx.mailbox_store.init_user_dir(&user).await?;
                 let _ = self
                     .ctx
@@ -1791,6 +1802,18 @@ fn parse_literal_spec(args: &str) -> Option<(usize, usize, bool)> {
     Some((start, n, non_sync))
 }
 
+/// Map auth/domain validation failures to an IMAP tagged response instead of dropping the session.
+fn format_imap_login_failure(tag: &str, err: &ChatmailError) -> String {
+    if matches!(err, ChatmailError::Protocol(_)) {
+        let ChatmailError::Protocol(msg) = err else {
+            unreachable!();
+        };
+        format!("{tag} BAD {msg}\r\n")
+    } else {
+        format!("{tag} NO [AUTHENTICATIONFAILED] LOGIN failed\r\n")
+    }
+}
+
 fn parse_login_args(args: &str) -> Result<(String, String)> {
     let mut it = args.split_whitespace();
     let user = it
@@ -2551,6 +2574,72 @@ mod integration_tests {
         assert!(t.contains("STATUS"), "status: {t}");
         assert!(t.contains("RFC822.SIZE"), "fetch: {t}");
         assert!(t.contains("MESSAGE-ID"), "header fetch: {t}");
+    }
+
+    /// Login domain validation must return tagged NO, not drop the connection (E2E test #19).
+    #[tokio::test]
+    async fn imap_login_rejects_invalid_domain_with_no() {
+        use chatmail_db::{set_setting, settings_keys};
+        use std::net::TcpListener as StdListener;
+
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        set_setting(
+            &pool,
+            settings_keys::JIT_REGISTRATION_ENABLED,
+            "true",
+        )
+        .await
+        .unwrap();
+        set_setting(&pool, settings_keys::REGISTRATION_OPEN, "true")
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(dir.path(), pool.clone()));
+        ctx.auth.hydrate(&pool).await.unwrap();
+
+        let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
+        std_listener.set_nonblocking(true).unwrap();
+        let addr = std_listener.local_addr().unwrap();
+        let pool_bg = pool.clone();
+        let ctx_bg = Arc::clone(&ctx);
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut session = ImapSession::new(
+                ctx_bg,
+                pool_bg,
+                ImapSessionConfig {
+                    hostname: "imap.test".into(),
+                    primary_domain: "[1.2.3.4]".into(),
+                    jit_domain: Some("[1.2.3.4]".into()),
+                    credential_policy: CredentialPolicy::default(),
+                    turn: None,
+                    iroh: None,
+                    push_enabled: false,
+                    starttls_config: None,
+                },
+            );
+            let _ = session.handle_connection(stream).await;
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let _ = read_until(&mut stream, b"IMAP4rev1 ready").await;
+
+        for (cmd, tag) in [
+            ("a001 LOGIN user@%5b1.2.3.4%5d longpassword", "a001"),
+            ("a002 LOGIN user@abcd longpassword", "a002"),
+            ("a003 LOGIN x@y@z longpassword", "a003"),
+            ("a004 LOGIN user@[10.0.0.1] longpassword", "a004"),
+        ] {
+            stream.write_all(format!("{cmd}\r\n").as_bytes()).await.unwrap();
+            let resp = read_until(&mut stream, format!("{tag} NO").as_bytes()).await;
+            let text = String::from_utf8_lossy(&resp);
+            assert!(
+                text.contains("AUTHENTICATIONFAILED"),
+                "{cmd}: expected NO [AUTHENTICATIONFAILED], got: {text}"
+            );
+        }
     }
 
     /// P5-UT03 over TCP: APPEND plaintext → NO [ENCRYPTED] (TDD `03-imap-server.md`).

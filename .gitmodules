@@ -1,3 +1,6 @@
 [submodule "external/madmail-admin-web"]
 	path = external/madmail-admin-web
 	url = git@github.com:themadorg/madmail-admin-web.git
+[submodule "tests/cmlxc"]
+	path = tests/cmlxc
+	url = git@github.com:chatmail/cmlxc.git

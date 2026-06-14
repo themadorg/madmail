@@ -485,6 +485,7 @@ impl InstallConfig {
             enable_contact_sharing: true,
             enable_ss,
             enable_turn,
+            enable_iroh: args.enable_iroh,
             turn_port: "3478".into(),
             turn_secret: String::new(),
             turn_ttl: 86400,
@@ -583,6 +584,7 @@ mod tests {
             acme_email: None,
             enable_chatmail: false,
             enable_ss: false,
+            enable_iroh: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -643,6 +645,7 @@ mod tests {
             acme_email: None,
             enable_chatmail: false,
             enable_ss: false,
+            enable_iroh: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -687,6 +690,7 @@ mod tests {
             acme_email: None,
             enable_chatmail: false,
             enable_ss: false,
+            enable_iroh: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -732,6 +736,7 @@ mod tests {
             acme_email: None,
             enable_chatmail: false,
             enable_ss: false,
+            enable_iroh: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -772,6 +777,7 @@ mod tests {
                 acme_email: None,
                 enable_chatmail: false,
                 enable_ss: false,
+                enable_iroh: false,
                 turn_off_tls: false,
                 dry_run: false,
                 skip_systemd: false,
@@ -810,6 +816,7 @@ mod tests {
             acme_email: Some("admin@example.com".into()),
             enable_chatmail: false,
             enable_ss: false,
+            enable_iroh: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -856,6 +863,7 @@ mod tests {
                 acme_email: None,
                 enable_chatmail: false,
                 enable_ss: false,
+                enable_iroh: false,
                 turn_off_tls: false,
                 dry_run: false,
                 skip_systemd: false,
@@ -893,6 +901,7 @@ mod tests {
                 acme_email: None,
                 enable_chatmail: false,
                 enable_ss: false,
+                enable_iroh: false,
                 turn_off_tls: false,
                 dry_run: false,
                 skip_systemd: false,
@@ -904,5 +913,43 @@ mod tests {
             }
         };
         assert!(InstallConfig::from_args(&global, &args).is_err());
+    }
+
+    #[test]
+    fn enable_iroh_adds_imap_relay_url() {
+        let global = Args {
+            config: PathBuf::from("/etc/madmail/madmail.conf"),
+            state_dir: PathBuf::from("./data"),
+            boot_once: false,
+            json: false,
+        };
+        let args = InstallArgs {
+            non_interactive: true,
+            simple: true,
+            domain: None,
+            hostname: None,
+            ip: Some(EXAMPLE_PUBLIC_IP.into()),
+            config_dir: None,
+            state_dir: None,
+            tls_mode: None,
+            cert_path: None,
+            key_path: None,
+            acme_email: None,
+            enable_chatmail: false,
+            enable_ss: false,
+            enable_iroh: true,
+            turn_off_tls: false,
+            dry_run: false,
+            skip_systemd: false,
+            skip_user: false,
+            binary_path: None,
+            obtain_certificate: true,
+            auto_ip_cert: false,
+            lang: "en".into(),
+        };
+        let cfg = InstallConfig::from_args(&global, &args).unwrap();
+        assert!(cfg.enable_iroh);
+        let conf = render_maddy_conf(&cfg);
+        assert!(conf.contains("iroh_relay_url http://$(public_ip):3340"));
     }
 }

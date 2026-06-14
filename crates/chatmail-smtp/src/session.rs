@@ -642,7 +642,16 @@ fn parse_path_addr(line: &str, prefix: &str) -> Result<String> {
         .find(prefix)
         .ok_or_else(|| ChatmailError::protocol("bad address"))?;
     let rest = line[idx + prefix.len()..].trim();
-    let addr = rest.trim_start_matches('<').trim_end_matches('>');
+    if let Some(inner) = rest.strip_prefix('<') {
+        if let Some(close) = inner.find('>') {
+            return Ok(inner[..close].to_string());
+        }
+    }
+    let addr = rest
+        .split_whitespace()
+        .next()
+        .unwrap_or(rest)
+        .trim_matches(|c| c == '<' || c == '>');
     Ok(addr.to_string())
 }
 
@@ -678,6 +687,17 @@ mod tests {
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
+
+    #[test]
+    fn parse_path_addr_handles_ip_literal_with_size() {
+        let line = "MAIL FROM:<user@[10.0.0.1]> SIZE=183";
+        assert_eq!(
+            parse_path_addr(line, "FROM:").unwrap(),
+            "user@[10.0.0.1]"
+        );
+        let rcpt = "RCPT TO:<peer@[10.0.0.2]>";
+        assert_eq!(parse_path_addr(rcpt, "TO:").unwrap(), "peer@[10.0.0.2]");
+    }
 
     #[tokio::test]
     async fn p4_ut03_test_smtp_state_machine_order() {

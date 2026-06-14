@@ -38,6 +38,8 @@ REMOTE1          ?=
 REMOTE2          ?=
 # Madmail admin-web submodule (external/madmail-admin-web). Override in .env if needed.
 ADMIN_WEB_DIR    ?= external/madmail-admin-web
+# cmlxc Incus test runner (tests/cmlxc git submodule).
+CMLXC_DIR        ?= tests/cmlxc
 ADMIN_WEB_BUILD  := $(ADMIN_WEB_DIR)/build
 LANDING_DIR      ?= landing
 
@@ -227,10 +229,17 @@ test-core-turn:
 # First time: make test-deltachat DC_TEST_ARGS='--init'
 # Optional: CHATMAIL_BIN=target/release/madmail make test-deltachat
 test-deltachat:
-	chmod +x scripts/deltachat-test-incus.sh scripts/deltachat-test-deploy.py
+	chmod +x tests/deltachat-test-incus.sh tests/deltachat-test-deploy.py
 	@command -v uv >/dev/null || (echo "test-deltachat needs uv: https://docs.astral.sh/uv/"; exit 1)
 	@command -v incus >/dev/null || (echo "test-deltachat needs incus on PATH"; exit 1)
-	./scripts/deltachat-test-incus.sh $(DC_TEST_ARGS)
+	@if [ ! -f "$(CMLXC_DIR)/pyproject.toml" ]; then \
+		echo "-- Initializing cmlxc submodule ($(CMLXC_DIR))..."; \
+		git submodule update --init $(CMLXC_DIR); \
+	fi
+	@if [ ! -f "$(CMLXC_DIR)/pyproject.toml" ]; then \
+		echo "-- [!] $(CMLXC_DIR)/pyproject.toml missing (run: git submodule update --init $(CMLXC_DIR))"; exit 1; \
+	fi
+	./tests/deltachat-test-incus.sh $(DC_TEST_ARGS)
 
 test: test-unit
 

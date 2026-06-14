@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+# deltachat-test calls plain `ssh root@<relay-ip>`; cmlxc uses key auth via its ssh-config.
+set -eu
+
+REAL_SSH="${DELTACHAT_REAL_SSH:-/usr/bin/ssh}"
+SSH_CONFIG="${DELTACHAT_TEST_SSH_CONFIG:-${HOME}/.config/cmlxc/ssh-config}"
+SSH_IDENTITY="${DELTACHAT_TEST_SSH_IDENTITY:-${HOME}/.config/cmlxc/id_localchat}"
+
+if [ -f "$SSH_CONFIG" ] && [ -f "$SSH_IDENTITY" ]; then
+	exec "$REAL_SSH" \
+		-F "$SSH_CONFIG" \
+		-i "$SSH_IDENTITY" \
+		-o IdentitiesOnly=yes \
+		-o BatchMode=yes \
+		"$@"
+fi
+
+exec "$REAL_SSH" "$@"

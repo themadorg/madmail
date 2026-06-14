@@ -70,6 +70,10 @@ pub struct InstallArgs {
     #[arg(long)]
     pub enable_ss: bool,
 
+    /// Enable Iroh relay + IMAP discovery (`iroh_relay_url` in `imap` block).
+    #[arg(long)]
+    pub enable_iroh: bool,
+
     #[arg(long)]
     pub turn_off_tls: bool,
 
