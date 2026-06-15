@@ -1,3 +1,15 @@
+# [2.9.0](https://github.com/themadorg/madmail/compare/v2.8.2...v2.9.0) (2026-06-15)
+
+
+### Bug Fixes
+
+* add support for Iroh relay configuration ([960d6bb](https://github.com/themadorg/madmail/commit/960d6bb5ebea3f267379f0db685eb9f482fb316b))
+
+
+### Features
+
+* implement federation size management in the admin interface ([a184cec](https://github.com/themadorg/madmail/commit/a184cec39e911f01411fd17bded43a26fbc2fab5))
+
 ## [2.8.2](https://github.com/themadorg/madmail/compare/v2.8.1...v2.8.2) (2026-06-13)
 
 
