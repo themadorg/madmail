@@ -1,3 +1,10 @@
+# [2.10.0](https://github.com/themadorg/madmail/compare/v2.9.0...v2.10.0) (2026-06-17)
+
+
+### Features
+
+* add Shadowsocks proxy support and enhance TURN server configuration ([6037c72](https://github.com/themadorg/madmail/commit/6037c72975330bf7dc8ae6801fde7dceb4596f5a))
+
 # [2.9.0](https://github.com/themadorg/madmail/compare/v2.8.2...v2.9.0) (2026-06-15)
 
 
