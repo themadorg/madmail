@@ -1,3 +1,10 @@
+# [2.11.0](https://github.com/themadorg/madmail/compare/v2.10.0...v2.11.0) (2026-06-17)
+
+
+### Features
+
+* **auth:** implement SHA256 password hashing and upgrade mechanism ([3304b2e](https://github.com/themadorg/madmail/commit/3304b2eccb1828d5317fc5bc73ea67589bad718a))
+
 # [2.10.0](https://github.com/themadorg/madmail/compare/v2.9.0...v2.10.0) (2026-06-17)
 
 
