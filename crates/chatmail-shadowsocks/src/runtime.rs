@@ -83,7 +83,7 @@ pub async fn resolve_runtime_with_db(
     resolve_runtime_from_settings(file, mail_domain, state_dir, db, &settings)
 }
 
-/// Same as [`resolve_runtime_with_db`] but uses a preloaded settings map (www cache).
+/// Same as [`resolve_runtime`] but uses a preloaded settings map (www cache).
 pub fn resolve_runtime_from_settings(
     file: &AppConfig,
     mail_domain: &str,

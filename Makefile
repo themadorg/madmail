@@ -182,12 +182,13 @@ build-all: build-release
 
 # ── Quality ──────────────────────────────────────────────────────────────────
 check:
-	cargo check --workspace
+	RUSTFLAGS="-D warnings" cargo check --workspace --all-targets
 
 vet: check
 
-lint:
+lint: fmt-check check
 	cargo clippy --workspace --all-targets -- -D warnings
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 fmt:
 	cargo fmt --all

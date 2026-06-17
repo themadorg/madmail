@@ -118,7 +118,13 @@ pub async fn deliver(host: &str, job: &OutboundJob) -> Result<(), String> {
         .rsplit_once('@')
         .map(|(_, d)| d)
         .unwrap_or(connect_host);
-    deliver_to_endpoint(&format!("{connect_host}:25"), connect_host, rcpt_domain, job).await
+    deliver_to_endpoint(
+        &format!("{connect_host}:25"),
+        connect_host,
+        rcpt_domain,
+        job,
+    )
+    .await
 }
 
 async fn deliver_to_endpoint(
@@ -192,7 +198,10 @@ async fn deliver_to_endpoint(
     Ok(())
 }
 
-fn smtp_tls_server_name(connect_host: &str, rcpt_domain: &str) -> Result<ServerName<'static>, String> {
+fn smtp_tls_server_name(
+    connect_host: &str,
+    rcpt_domain: &str,
+) -> Result<ServerName<'static>, String> {
     let bare = connect_host.trim().trim_matches(|c| c == '[' || c == ']');
     let name = if is_ipv4_literal(bare) {
         rcpt_domain.trim().trim_matches(|c| c == '[' || c == ']')
@@ -209,7 +218,10 @@ fn ehlo_advertises_starttls(ehlo_response: &str) -> bool {
     })
 }
 
-async fn read_smtp_reply(transport: &mut SmtpTransport, expect_code: u16) -> Result<String, String> {
+async fn read_smtp_reply(
+    transport: &mut SmtpTransport,
+    expect_code: u16,
+) -> Result<String, String> {
     let mut acc = String::new();
     let mut buf = [0u8; 4096];
     tokio::time::timeout(Duration::from_secs(30), async {
@@ -232,7 +244,8 @@ async fn read_smtp_reply(transport: &mut SmtpTransport, expect_code: u16) -> Res
 }
 
 fn smtp_has_final_line(acc: &str, expect_code: u16) -> bool {
-    acc.lines().any(|line| smtp_line_code(line) == Some((expect_code, false)))
+    acc.lines()
+        .any(|line| smtp_line_code(line) == Some((expect_code, false)))
 }
 
 fn smtp_final_line_error(acc: &str, expect_code: u16) -> Option<String> {
@@ -269,10 +282,10 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use chatmail_config::CredentialPolicy;
     use chatmail_smtp::session::PGP_MIME_BODY;
     use chatmail_smtp::{SmtpSession, SmtpSessionConfig};
     use chatmail_state::AppState;
-    use chatmail_config::CredentialPolicy;
     use rcgen::generate_simple_self_signed;
     use rustls::pki_types::{CertificateDer, PrivateKeyDer};
     use rustls::{ClientConfig, RootCertStore, ServerConfig};

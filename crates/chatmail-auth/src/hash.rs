@@ -28,7 +28,10 @@ const SHA256_SALT_LEN: usize = 32;
 
 /// Hash a password for storage (`sha256:<salt_b64>:<hash_b64>`).
 pub fn hash_password(password: &str) -> Result<String> {
-    Ok(format!("{DEFAULT_HASH_PREFIX}{}", compute_sha256(password)?))
+    Ok(format!(
+        "{DEFAULT_HASH_PREFIX}{}",
+        compute_sha256(password)?
+    ))
 }
 
 /// True when a stored hash should be re-written with [`hash_password`] after login.

@@ -102,7 +102,7 @@ pub async fn list_users(pool: &DbPool) -> Result<Vec<String>> {
         .collect())
 }
 
-/// Bulk-load all account credentials (one schema detect + one query). Used by [`AuthCache`].
+/// Bulk-load all account credentials (one schema detect + one query). Used by `AuthCache`.
 pub async fn list_all_credentials(pool: &DbPool) -> Result<Vec<(String, String)>> {
     match detect_schema(pool).await? {
         PasswordsLayout::ChatmailRs => {

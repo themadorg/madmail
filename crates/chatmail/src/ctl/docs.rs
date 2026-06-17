@@ -31,7 +31,7 @@ use super::output::CtlOut;
 /// Rendered from `docs/man/madmail.1.scd` (regenerate with `make man`).
 const EMBEDDED_MAN_MADMAIL: &str = include_str!("../../../../docs/man/madmail.1");
 
-/// Basename of argv[0] (e.g. `madmail`, `chatmail`).
+/// Basename of argv\[0\] (e.g. `madmail`, `chatmail`).
 pub fn argv_binary_name() -> String {
     std::env::args()
         .next()

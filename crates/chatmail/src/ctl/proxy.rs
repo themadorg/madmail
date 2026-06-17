@@ -40,9 +40,7 @@ pub async fn proxy(args: &Args, cmd: Option<&ProxyCommand>) -> Result<()> {
         None | Some(ProxyCommand::Status) => status(args, &ctx, &pool).await,
         Some(ProxyCommand::Enable) => set_enabled(args, &ctx, &pool, true).await,
         Some(ProxyCommand::Disable) => set_enabled(args, &ctx, &pool, false).await,
-        Some(ProxyCommand::Cipher { cmd }) => {
-            cipher_setting(args, &ctx, &pool, cmd.as_ref()).await
-        }
+        Some(ProxyCommand::Cipher { cmd }) => cipher_setting(args, &ctx, &pool, cmd.as_ref()).await,
         Some(ProxyCommand::Password { cmd }) => {
             password_setting(args, &ctx, &pool, cmd.as_ref()).await
         }
@@ -76,7 +74,10 @@ async fn status(args: &Args, ctx: &CtlContext, pool: &chatmail_db::DbPool) -> Re
                 "no"
             }
         ));
-        out.line(format!("  Port:        {}", data["port"].as_str().unwrap_or("")));
+        out.line(format!(
+            "  Port:        {}",
+            data["port"].as_str().unwrap_or("")
+        ));
         out.line(format!(
             "  Cipher:      {} ({})",
             data["cipher"].as_str().unwrap_or(""),
@@ -114,7 +115,12 @@ async fn set_enabled(
     }
 
     let out = CtlOut::from_args(args, if on { "proxy enable" } else { "proxy disable" });
-    set_setting(pool, settings_keys::SS_ENABLED, if on { "true" } else { "false" }).await?;
+    set_setting(
+        pool,
+        settings_keys::SS_ENABLED,
+        if on { "true" } else { "false" },
+    )
+    .await?;
     let msg = if on {
         "Shadowsocks proxy enabled"
     } else {
@@ -138,26 +144,43 @@ async fn cipher_setting(
     cmd: Option<&ProxySettingCommand>,
 ) -> Result<()> {
     match cmd {
-        None | Some(ProxySettingCommand::Status) => setting_status(
-            args,
-            ctx,
-            pool,
-            settings_keys::SS_CIPHER,
-            "proxy cipher status",
-            "cipher",
-            ctx.config.ss_cipher.as_deref().unwrap_or("aes-128-gcm"),
-        )
-        .await,
+        None | Some(ProxySettingCommand::Status) => {
+            setting_status(
+                args,
+                ctx,
+                pool,
+                settings_keys::SS_CIPHER,
+                "proxy cipher status",
+                "cipher",
+                ctx.config.ss_cipher.as_deref().unwrap_or("aes-128-gcm"),
+            )
+            .await
+        }
         Some(ProxySettingCommand::Set { value }) => {
-            setting_set(args, ctx, pool, settings_keys::SS_CIPHER, "proxy cipher set", value, |v| {
-                validate_cipher(v)
-            })
+            setting_set(
+                args,
+                ctx,
+                pool,
+                settings_keys::SS_CIPHER,
+                "proxy cipher set",
+                value,
+                validate_cipher,
+            )
             .await
         }
         Some(ProxySettingCommand::Reset) => {
-            setting_reset(args, ctx, pool, settings_keys::SS_CIPHER, "proxy cipher reset", |cfg| {
-                cfg.ss_cipher.clone().unwrap_or_else(|| "aes-128-gcm".into())
-            })
+            setting_reset(
+                args,
+                ctx,
+                pool,
+                settings_keys::SS_CIPHER,
+                "proxy cipher reset",
+                |cfg| {
+                    cfg.ss_cipher
+                        .clone()
+                        .unwrap_or_else(|| "aes-128-gcm".into())
+                },
+            )
             .await
         }
     }
@@ -184,25 +207,34 @@ async fn password_setting(
             .await
         }
         Some(ProxySettingCommand::Reset) => {
-            setting_reset(args, ctx, pool, settings_keys::SS_PASSWORD, "proxy password reset", |cfg| {
-                cfg.ss_password.clone().unwrap_or_default()
-            })
+            setting_reset(
+                args,
+                ctx,
+                pool,
+                settings_keys::SS_PASSWORD,
+                "proxy password reset",
+                |cfg| cfg.ss_password.clone().unwrap_or_default(),
+            )
             .await
         }
     }
 }
 
-async fn password_status(
-    args: &Args,
-    ctx: &CtlContext,
-    pool: &chatmail_db::DbPool,
-) -> Result<()> {
+async fn password_status(args: &Args, ctx: &CtlContext, pool: &chatmail_db::DbPool) -> Result<()> {
     let out = CtlOut::from_args(args, "proxy password status");
     require_ss_configured(&ctx.config)?;
 
     let db_override = get_setting(pool, settings_keys::SS_PASSWORD).await?;
-    let configured = ctx.config.ss_password.as_ref().is_some_and(|s| !s.is_empty());
-    let source = if db_override.is_some() { "db" } else { "config" };
+    let configured = ctx
+        .config
+        .ss_password
+        .as_ref()
+        .is_some_and(|s| !s.is_empty());
+    let source = if db_override.is_some() {
+        "db"
+    } else {
+        "config"
+    };
 
     if out.is_json() {
         return out.emit(json!({
@@ -244,7 +276,11 @@ async fn setting_status(
         .as_deref()
         .filter(|s| !s.is_empty())
         .unwrap_or(config_default);
-    let source = if db_override.is_some() { "db" } else { "config" };
+    let source = if db_override.is_some() {
+        "db"
+    } else {
+        "config"
+    };
 
     if out.is_json() {
         return out.emit(json!({

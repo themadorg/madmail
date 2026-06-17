@@ -228,11 +228,9 @@ async fn dispatch_proxy_not_configured_status_and_enable_guard() {
 
     let cli = parse_cli(dir.path(), &["proxy", "disable"]);
     dispatch(&cli).await.unwrap();
-    assert!(
-        !get_bool_setting(&pool, settings_keys::SS_ENABLED, true)
-            .await
-            .unwrap()
-    );
+    assert!(!get_bool_setting(&pool, settings_keys::SS_ENABLED, true)
+        .await
+        .unwrap());
 
     let cli = parse_cli(dir.path(), &["proxy", "enable"]);
     let err = dispatch(&cli).await.unwrap_err().to_string();
@@ -249,19 +247,15 @@ async fn dispatch_proxy_configured_toggle_and_settings() {
 
     let cli = parse_cli_with_config(dir.path(), &config, &["proxy", "disable"]);
     dispatch(&cli).await.unwrap();
-    assert!(
-        !get_bool_setting(&pool, settings_keys::SS_ENABLED, true)
-            .await
-            .unwrap()
-    );
+    assert!(!get_bool_setting(&pool, settings_keys::SS_ENABLED, true)
+        .await
+        .unwrap());
 
     let cli = parse_cli_with_config(dir.path(), &config, &["proxy", "enable"]);
     dispatch(&cli).await.unwrap();
-    assert!(
-        get_bool_setting(&pool, settings_keys::SS_ENABLED, false)
-            .await
-            .unwrap()
-    );
+    assert!(get_bool_setting(&pool, settings_keys::SS_ENABLED, false)
+        .await
+        .unwrap());
 
     let cli = parse_cli_with_config(
         dir.path(),
@@ -284,7 +278,11 @@ async fn dispatch_proxy_configured_toggle_and_settings() {
         .unwrap()
         .is_none());
 
-    let cli = parse_cli_with_config(dir.path(), &config, &["proxy", "password", "set", "new-pass"]);
+    let cli = parse_cli_with_config(
+        dir.path(),
+        &config,
+        &["proxy", "password", "set", "new-pass"],
+    );
     dispatch(&cli).await.unwrap();
     assert_eq!(
         get_setting(&pool, settings_keys::SS_PASSWORD)
