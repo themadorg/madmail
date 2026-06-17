@@ -1,6 +1,6 @@
 # Proxy Services — TURN/STUN for Delta Chat Calls
 
-**Operator CLI:** [`../guide/cli/port.md`](../guide/cli/port.md) — per-service port overrides (`turn`, `iroh`, `shadowsocks`, `sasl`). Install: [`../guide/cli/install.md`](../guide/cli/install.md) (`--enable-ss`).
+**Operator CLI:** [`../guide/cli/proxy.md`](../guide/cli/proxy.md) — enable/disable Shadowsocks, cipher, password, client URL. Port overrides: [`../guide/cli/port.md`](../guide/cli/port.md) (`turn`, `iroh`, `shadowsocks`, `sasl`). Install: [`../guide/cli/install.md`](../guide/cli/install.md) (`--enable-ss`).
 
 This document specifies how **madmail-v2** provides a **TURN/STUN relay** so Delta Chat clients can complete **WebRTC audio/video calls** behind NAT. It ties together:
 

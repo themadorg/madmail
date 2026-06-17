@@ -6,6 +6,8 @@ Aliases: `ss`.
 
 Manage **Shadowsocks (8388)** listener port and bind mode. Default port: **8388**.
 
+Enable/disable, cipher, password, and client URL: [`proxy`](proxy.md).
+
 ## Subcommands
 
 | Subcommand | Description |
