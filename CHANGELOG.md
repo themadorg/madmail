@@ -1,3 +1,10 @@
+## [2.11.1](https://github.com/themadorg/madmail/compare/v2.11.0...v2.11.1) (2026-06-17)
+
+
+### Bug Fixes
+
+* Enhance Makefile and code formatting across multiple files ([96abc2d](https://github.com/themadorg/madmail/commit/96abc2db38e6b6a6248c8826791d0890f196d808))
+
 # [2.11.0](https://github.com/themadorg/madmail/compare/v2.10.0...v2.11.0) (2026-06-17)
 
 
