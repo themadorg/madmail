@@ -121,6 +121,8 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
         admin_web_path: parsed.admin_web_path,
         language: parsed.language,
         www_dir: parsed.www_dir.map(PathBuf::from),
+        enable_contact_sharing: false,
+        sharing_dsn: None,
         admin_token: None,
         smtp_listen: parsed.smtp_listen,
         submission_listen: parsed.submission_listen,

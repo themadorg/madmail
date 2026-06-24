@@ -27,6 +27,7 @@ use minijinja::Environment;
 use serde::Serialize;
 
 use crate::assets::WwwAssets;
+use crate::go_template::prepare_template;
 
 /// Template context (Madmail `serveTemplate` fields).
 #[derive(Debug, Clone, Serialize)]
@@ -72,7 +73,7 @@ pub struct CustomFields {
 }
 
 pub struct TemplateEngine {
-    /// Compiled embedded templates (`www/` in the binary).
+    /// Compiled embedded templates (`www-src/` in the binary).
     embedded: Option<Environment<'static>>,
     /// `html-serve` / `html-export` tree — templates read from disk on every render.
     external_root: Option<std::path::PathBuf>,
@@ -135,7 +136,8 @@ impl TemplateEngine {
             if path.ends_with(".html") {
                 if let Some(data) = WwwAssets::get(path) {
                     let src = std::str::from_utf8(data.data.as_ref()).unwrap_or("");
-                    env.add_template_owned(path.to_string(), src.to_string())
+                    let prepared = prepare_template(src);
+                    env.add_template_owned(path.to_string(), prepared)
                         .expect("template");
                 }
             }
@@ -165,7 +167,7 @@ impl TemplateEngine {
         })?;
         let mut env = Environment::new();
         add_filters(&mut env);
-        env.add_template_owned(name.to_string(), src)
+        env.add_template_owned(name.to_string(), prepare_template(&src))
             .map_err(|e| chatmail_types::ChatmailError::config(e.to_string()))?;
         env.get_template(name)
             .map_err(|e| chatmail_types::ChatmailError::config(e.to_string()))?

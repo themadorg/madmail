@@ -404,7 +404,7 @@ mod tests {
         let hash = hash_password(PASS).unwrap();
         passwords::create_user(&pool, USER, &hash).await.unwrap();
         app.auth.hydrate(&pool).await.unwrap();
-        (WwwState::new(pool, app, cfg), dir)
+        (WwwState::new(pool, app, cfg, dir.path()), dir)
     }
 
     async fn seed_inbox(st: &WwwState) {

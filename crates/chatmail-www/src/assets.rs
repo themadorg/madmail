@@ -22,7 +22,7 @@ use std::sync::{Arc, RwLock};
 use rust_embed::RustEmbed;
 
 #[derive(RustEmbed)]
-#[folder = "www/"]
+#[folder = "www-src/"]
 pub struct WwwAssets;
 
 /// Load every embedded static file into RAM at boot (default site — no `www_dir`).

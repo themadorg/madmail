@@ -91,6 +91,24 @@ pub fn normalize_sharing_url(raw: &str) -> Result<String> {
     ))
 }
 
+pub async fn get_sharing_contact(pool: &SqlitePool, slug: &str) -> Result<Option<SharingContact>> {
+    let row = sqlx::query_as::<_, SharingContact>(
+        "SELECT slug, url, name, created_at FROM contacts WHERE slug = ?",
+    )
+    .bind(slug)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn sharing_slug_exists(pool: &SqlitePool, slug: &str) -> Result<bool> {
+    let row: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM contacts WHERE slug = ? LIMIT 1")
+        .bind(slug)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.is_some())
+}
+
 pub async fn list_sharing_contacts(pool: &SqlitePool) -> Result<Vec<SharingContact>> {
     let rows = sqlx::query_as::<_, SharingContact>(
         "SELECT slug, url, name, created_at FROM contacts ORDER BY created_at DESC",

@@ -26,7 +26,10 @@ use chatmail_auth::{
     hash_password, normalize_username, schedule_hash_upgrade_if_needed, verify_password,
 };
 use chatmail_config::{build_dclogin_link, DcloginMailSettings};
-use chatmail_db::{get_bool_setting, passwords, registration_tokens, settings_keys};
+use chatmail_db::{
+    create_sharing_contact, get_bool_setting, get_sharing_contact, normalize_sharing_url,
+    passwords, registration_tokens, settings_keys, sharing_slug_exists, validate_slug,
+};
 use chatmail_delivery::DeliveryContext;
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
 use chatmail_smtp::protocol::validate_submission_headers;
@@ -36,6 +39,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::assets::www_html_exists;
+use crate::contact_sharing::is_reserved_slug;
 use crate::gate::{is_websmtp_enabled, service_disabled};
 use crate::template::{build_context, CustomFields};
 use crate::WwwState;
@@ -136,6 +140,9 @@ async fn doc_lang(st: &WwwState, name: &str, headers: &HeaderMap) -> Response {
 }
 
 pub async fn share_get(State(st): State<WwwState>, headers: HeaderMap) -> impl IntoResponse {
+    if st.sharing.is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     render_template(&st, "contact_share.html", None, client_host(&headers)).await
 }
 
@@ -144,14 +151,81 @@ pub async fn share_post(
     headers: HeaderMap,
     axum::Form(form): axum::Form<ShareForm>,
 ) -> impl IntoResponse {
-    let slug = form
+    let Some(sharing) = st.sharing.as_ref() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let raw_url = form.url.as_deref().unwrap_or("").trim();
+    if raw_url.is_empty() {
+        return plain_error(StatusCode::BAD_REQUEST, "Invite URL is required");
+    }
+    if !raw_url.starts_with("https://i.delta.chat/#") {
+        return plain_error(
+            StatusCode::BAD_REQUEST,
+            "Only Delta Chat web invite links (https://i.delta.chat/#...) are accepted.",
+        );
+    }
+
+    let url = match normalize_sharing_url(raw_url) {
+        Ok(u) => u,
+        Err(e) => return plain_error(StatusCode::BAD_REQUEST, &e.to_string()),
+    };
+    if url.contains(' ') {
+        return plain_error(StatusCode::BAD_REQUEST, "Invalid Delta Chat invite URL.");
+    }
+
+    let name = form.name.as_deref().unwrap_or("").trim().to_string();
+    let slug = match form
         .slug
-        .filter(|s| s.len() >= 3)
-        .unwrap_or_else(|| random_alnum(8));
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => random_alnum(8),
+        Some(s) => {
+            if s.len() < 3 {
+                return plain_error(
+                    StatusCode::BAD_REQUEST,
+                    "Path name must be at least 3 characters.",
+                );
+            }
+            if let Err(e) = validate_slug(s) {
+                return plain_error(StatusCode::BAD_REQUEST, &e.to_string());
+            }
+            if is_reserved_slug(s) {
+                return plain_error(StatusCode::BAD_REQUEST, "This path name is reserved.");
+            }
+            s.to_string()
+        }
+    };
+
+    let pool = match sharing.pool().await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!(error = %e, "contact sharing DB unavailable");
+            return plain_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create shareable link",
+            );
+        }
+    };
+
+    if sharing_slug_exists(pool, &slug).await.unwrap_or(false) {
+        return plain_error(StatusCode::BAD_REQUEST, "This path name is already taken.");
+    }
+
+    if let Err(e) = create_sharing_contact(pool, &slug, &url, &name).await {
+        tracing::error!(error = %e, slug = %slug, "failed to store contact share");
+        return plain_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to create shareable link",
+        );
+    }
+
     let custom = CustomFields {
         Slug: slug,
-        URL: form.url.unwrap_or_default(),
-        Name: form.name.unwrap_or_default(),
+        URL: url,
+        Name: name,
     };
     render_template(
         &st,
@@ -553,7 +627,39 @@ pub async fn catch_all(
     if let Some(resp) = serve_bytes(&st, &path) {
         return resp.into_response();
     }
+    if let Some(contact) = lookup_shared_contact(&st, &path).await {
+        return render_template(
+            &st,
+            "contact_view.html",
+            Some(contact),
+            client_host(&headers),
+        )
+        .await
+        .into_response();
+    }
     StatusCode::NOT_FOUND.into_response()
+}
+
+fn plain_error(status: StatusCode, message: &str) -> Response {
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .body(Body::from(message.to_string()))
+        .unwrap_or_else(|_| status.into_response())
+}
+
+async fn lookup_shared_contact(st: &WwwState, path: &str) -> Option<CustomFields> {
+    if path.contains('.') || path.contains('/') || is_reserved_slug(path) {
+        return None;
+    }
+    let sharing = st.sharing.as_ref()?;
+    let pool = sharing.pool().await.ok()?;
+    let contact = get_sharing_contact(pool, path).await.ok()??;
+    Some(CustomFields {
+        Slug: contact.slug,
+        URL: contact.url,
+        Name: contact.name,
+    })
 }
 
 fn serve_bytes(st: &WwwState, path: &str) -> Option<Response> {

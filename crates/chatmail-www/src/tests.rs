@@ -167,7 +167,7 @@ async fn default_config_www_is_embedded_ram() {
     assert!(cfg.www_dir.is_none());
     let dir = tempfile::tempdir().unwrap();
     let app = Arc::new(AppState::new(dir.path(), pool.clone()));
-    let st = crate::WwwState::new(pool, app, cfg.clone());
+    let st = crate::WwwState::new(pool, app, cfg.clone(), dir.path());
     assert!(st.uses_embedded_www());
     assert!(!st.uses_external_www());
     assert!(st.templates.is_embedded());
@@ -224,11 +224,40 @@ async fn external_www_live_reload() {
         .contains("updated-html"));
 
     let app = Arc::new(AppState::new(dir.path(), pool.clone()));
-    let st = crate::WwwState::new(pool, app, cfg);
+    let st = crate::WwwState::new(pool, app, cfg, dir.path());
     let css = st.load_asset("marker.css").unwrap();
     assert!(css.windows(4).any(|w| w == b"blue"));
     let css2 = st.load_asset("marker.css").unwrap();
     assert!(css2.windows(4).any(|w| w == b"blue"));
+}
+
+/// External `www_dir` accepts Madmail Go template syntax (`{{if .Field}}`).
+#[tokio::test]
+async fn external_www_go_template_syntax() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("index.html"),
+        r#"<!DOCTYPE html><html><body>{{if .RegistrationOpen}}open{{else}}closed{{end}} {{.MailDomain}}</body></html>"#,
+    )
+    .unwrap();
+
+    let mut cfg = AppConfig::default();
+    cfg.www_dir = Some(dir.path().to_path_buf());
+    cfg.mail_domain = Some("go.test".into());
+
+    let engine = TemplateEngine::from_config(&cfg);
+    let pool = init_memory_db().await.unwrap();
+    let cache = WwwContextCache::new();
+    let ctx = build_context(&pool, &cfg, None, None, None, dir.path(), &cache)
+        .await
+        .unwrap();
+
+    let html = engine.render("index.html", &ctx).unwrap();
+    assert!(html.contains("go.test"));
+    assert!(
+        html.contains("open") || html.contains("closed"),
+        "expected registration branch, got: {html}"
+    );
 }
 
 #[test]
@@ -260,7 +289,12 @@ async fn binary_download_route_serves_current_executable() {
     let pool = init_memory_db().await.unwrap();
     let dir = tempfile::tempdir().unwrap();
     let app_state = Arc::new(AppState::new(dir.path(), pool.clone()));
-    let app = crate::www_router(crate::WwwState::new(pool, app_state, AppConfig::default()));
+    let app = crate::www_router(crate::WwwState::new(
+        pool,
+        app_state,
+        AppConfig::default(),
+        dir.path(),
+    ));
 
     let resp = app
         .oneshot(
@@ -329,7 +363,7 @@ async fn webimap_send_oversize_returns_message_file_too_big() {
         .unwrap();
     app_state.auth.hydrate(&pool).await.unwrap();
 
-    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg));
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg, dir.path()));
 
     let body = "x".repeat((max + 1) as usize);
     let payload = serde_json::json!({
@@ -395,7 +429,7 @@ async fn www_state_constructs() {
     let pool = init_memory_db().await.unwrap();
     let dir = tempfile::tempdir().unwrap();
     let app = Arc::new(AppState::new(dir.path(), pool.clone()));
-    let _state = crate::WwwState::new(pool, app, AppConfig::default());
+    let _state = crate::WwwState::new(pool, app, AppConfig::default(), dir.path());
 }
 
 #[test]
@@ -437,7 +471,7 @@ async fn new_account_returns_dclogin_url_with_ssl_hints() {
         None,
     );
 
-    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg));
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg, dir.path()));
     let resp = app
         .oneshot(
             Request::builder()
@@ -496,7 +530,7 @@ async fn mail_autoconfig_omits_https_alpn_entry() {
         Some("0.0.0.0:443".into()),
     );
 
-    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg));
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg, dir.path()));
     let resp = app
         .oneshot(
             Request::builder()
@@ -514,4 +548,71 @@ async fn mail_autoconfig_omits_https_alpn_entry() {
     assert!(xml.contains("<port>993</port>"));
     assert!(xml.contains("<port>143</port>"));
     assert!(!xml.contains("<port>443</port>"));
+}
+
+/// Contact sharing: POST /share persists to sharing.db; GET /{slug} renders contact page.
+#[tokio::test]
+async fn contact_sharing_post_and_slug_view() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    use chatmail_db::{get_sharing_contact, init_sharing_db};
+    use chatmail_state::AppState;
+
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = AppConfig::default();
+    cfg.enable_contact_sharing = true;
+    cfg.mail_domain = Some("share.test".into());
+
+    let app_state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    let app = crate::www_router(crate::WwwState::new(
+        pool.clone(),
+        app_state,
+        cfg,
+        dir.path(),
+    ));
+
+    let form = "url=https%3A%2F%2Fi.delta.chat%2F%23ABCDEF0123456789%26name%3DTest&name=Alice&slug=alicepage";
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/share")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(axum::body::Body::from(form))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("alicepage"));
+
+    let sharing_db = dir.path().join("sharing.db");
+    let sharing_pool = init_sharing_db(&sharing_db).await.unwrap();
+    let row = get_sharing_contact(&sharing_pool, "alicepage")
+        .await
+        .unwrap()
+        .expect("contact row");
+    assert_eq!(row.name, "Alice");
+    assert!(row.url.starts_with("openpgp4fpr:"));
+
+    let view = app
+        .oneshot(
+            Request::builder()
+                .uri("/alicepage")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(view.status(), StatusCode::OK);
+    let view_body = to_bytes(view.into_body(), usize::MAX).await.unwrap();
+    let page = String::from_utf8_lossy(&view_body);
+    assert!(page.contains("Alice"));
+    assert!(page.contains("openpgp4fpr:"));
 }

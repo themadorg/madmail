@@ -502,7 +502,7 @@ mod tests {
         let hash = hash_password(PASS).unwrap();
         passwords::create_user(&pool, USER, &hash).await.unwrap();
         app.auth.hydrate(&pool).await.unwrap();
-        let st = WwwState::new(pool, app, cfg);
+        let st = WwwState::new(pool, app, cfg, dir.path());
         (st, dir)
     }
 

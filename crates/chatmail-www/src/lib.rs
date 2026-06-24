@@ -16,9 +16,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 pub mod assets;
+mod contact_sharing;
 pub mod context_cache;
 pub mod export;
 pub mod gate;
+mod go_template;
 pub mod handlers;
 pub mod response;
 pub mod router;

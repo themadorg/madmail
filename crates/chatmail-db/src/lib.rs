@@ -81,8 +81,9 @@ pub use settings::{
     list_double_underscore_settings, seed_install_defaults, set_setting,
 };
 pub use sharing::{
-    create_sharing_contact, init_sharing_db, list_sharing_contacts, normalize_sharing_url,
-    remove_sharing_contact, update_sharing_contact, validate_slug, SharingContact,
+    create_sharing_contact, get_sharing_contact, init_sharing_db, list_sharing_contacts,
+    normalize_sharing_url, remove_sharing_contact, sharing_slug_exists, update_sharing_contact,
+    validate_slug, SharingContact,
 };
 
 /// Open (or create) the application database and run embedded migrations.

@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use axum::routing::{delete, get, post};
@@ -26,6 +26,7 @@ use chatmail_db::DbPool;
 use chatmail_state::AppState;
 
 use crate::assets::{embedded_asset_bytes, external_asset_bytes, preload_embedded_www};
+use crate::contact_sharing::SharingStore;
 use crate::context_cache::{SharedWwwContextCache, WwwContextCache};
 use crate::handlers;
 use crate::template::TemplateEngine;
@@ -46,10 +47,19 @@ pub struct WwwState {
     pub context_cache: SharedWwwContextCache,
     /// Embedded static assets preloaded into RAM (`www_dir` unset only).
     asset_cache: Arc<RwLock<HashMap<String, Arc<[u8]>>>>,
+    pub state_dir: PathBuf,
+    /// Lazy `{state_dir}/sharing.db` pool when `enable_contact_sharing` is set.
+    pub sharing: Option<Arc<SharingStore>>,
 }
 
 impl WwwState {
-    pub fn new(pool: DbPool, app: Arc<AppState>, config: AppConfig) -> Self {
+    pub fn new(
+        pool: DbPool,
+        app: Arc<AppState>,
+        config: AppConfig,
+        state_dir: impl AsRef<Path>,
+    ) -> Self {
+        let state_dir = state_dir.as_ref().to_path_buf();
         let mail_domain = config.effective_registration_domain(None);
         let hostname = config
             .hostname
@@ -63,6 +73,14 @@ impl WwwState {
             preload_embedded_www(&asset_cache);
             tracing::debug!("www: default site from embedded RAM (no www_dir)");
         }
+        let sharing = if config.enable_contact_sharing {
+            Some(SharingStore::new(
+                &state_dir,
+                config.sharing_db_path(&state_dir),
+            ))
+        } else {
+            None
+        };
         Self {
             pool,
             app,
@@ -73,6 +91,8 @@ impl WwwState {
             www_dir,
             context_cache: Arc::new(WwwContextCache::new()),
             asset_cache,
+            state_dir,
+            sharing,
         }
     }
 

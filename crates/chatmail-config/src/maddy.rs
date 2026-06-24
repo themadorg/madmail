@@ -352,6 +352,10 @@ fn apply_directive(name: &str, args: &[String], block_path: &[&str], cfg: &mut A
             "www_dir" if has_value => {
                 cfg.www_dir = Some(PathBuf::from(strip_quotes(&value)));
             }
+            "enable_contact_sharing" => cfg.enable_contact_sharing = parse_bool(arg0),
+            "sharing_dsn" if has_value => {
+                cfg.sharing_dsn = Some(strip_quotes(&value));
+            }
             "username_length" if has_value => {
                 if let Ok(n) = arg0.parse::<u32>() {
                     cfg.username_length = Some(n);

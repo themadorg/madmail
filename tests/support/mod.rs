@@ -240,7 +240,7 @@ pub async fn spawn_mail_servers_opts(dir: &std::path::Path, opts: MailServersOpt
     http_listener.set_nonblocking(true).expect("http nb");
     let http_addr = http_listener.local_addr().expect("http addr");
 
-    let www_state = WwwState::new(pool.clone(), Arc::clone(&ctx), app_config);
+    let www_state = WwwState::new(pool.clone(), Arc::clone(&ctx), app_config, dir);
     let router: Router = www_router(www_state);
     tokio::spawn(async move {
         let listener = TcpListener::from_std(http_listener).expect("http tokio");
