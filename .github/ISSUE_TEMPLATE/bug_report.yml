@@ -1,0 +1,95 @@
+name: Bug report
+description: Something is broken or behaves incorrectly
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. For questions or setup help, use [GitHub Discussions](https://github.com/themadorg/madmail/discussions) instead.
+
+        **Security issues** (auth bypass, PGP enforcement failure, data leakage, etc.) should be reported privately — do not post details here.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Madmail is affected?
+      options:
+        - SMTP
+        - IMAP
+        - Federation (HTTP /mxdeliv or outbound delivery)
+        - Authentication / JIT registration
+        - Admin API / admin web UI
+        - TURN / STUN / Iroh relay
+        - TLS / ACME / certificates
+        - Storage / quota / Maildir
+        - Configuration / CLI
+        - Installation / deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Madmail version
+      description: Output of `madmail version` or the release tag you are running
+      placeholder: e.g. 2.11.1
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description of the bug and what you expected instead
+      placeholder: When I …, Madmail … instead of …
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, commands, or client actions that trigger the issue
+      placeholder: |
+        1. Configure …
+        2. Run `…`
+        3. Connect with Delta Chat / curl / …
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, deployment mode, and relevant config
+      placeholder: |
+        - OS: Debian 13 / amd64
+        - Deploy: systemd, domain mail.example.org (or IP + ACME)
+        - Delta Chat version (if applicable):
+        - Relevant config (hostname, tls_mode, federation settings, etc.):
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Relevant log lines, SMTP/IMAP session traces, or stack traces (redact tokens, passwords, and PII)
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Reporter checklist
+      options:
+        - label: I searched existing issues and discussions for duplicates
+          required: true
+        - label: I redacted secrets, admin tokens, and personal data from logs
+          required: true
