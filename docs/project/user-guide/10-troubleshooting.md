@@ -41,16 +41,33 @@ Set reasonable default quotas and consider enabling automatic deletion of old re
 ### What to check
 
 1. Look at the **Federation** section in the admin web interface. It shows success rate and latency for other servers.
-2. Check whether the destination server is reachable at all (try `curl -I https://other.server` or normal email delivery as a test).
-3. Look at the outbound queue (`madmail queue list` or the web interface). A large backlog usually means either the other server is down or there is a network problem.
+2. Check whether the peer's federation endpoint responds (from outside your network):
+
+   ```bash
+   curl -sI https://other.server/mxdeliv
+   ```
+
+   A response like **405** or **400** means the endpoint is reachable. Connection refused or timeout means DNS, firewall, or nginx routing — not missing DKIM/SPF records.
+
+3. Check the outbound queue in the **admin web UI** (Federation / queue views). A large backlog usually means the other server is down or there is a network problem. (`madmail queue` CLI is not implemented yet — use the admin UI.)
+
+4. On **your** server, confirm inbound **443** (and ideally **80**) are reachable so peers can deliver to you:
+
+   ```bash
+   curl -sI https://YOUR_DOMAIN/mxdeliv
+   ```
 
 ### Common causes
 
-- The other server is temporarily unreachable.
-- DNS or network issues on your side or theirs.
-- The other server is using a very old chatmail version that doesn’t speak the fast HTTP federation protocol well.
+- Firewall or cloud security group blocking **outbound 443** (you → them) or **inbound 443** (them → you).
+- Wrong or missing **`A`/`AAAA`** record for your hostname.
+- Federation policy not set to accept (`madmail federation list`; default is accept).
+- Port **25** blocked when delivery falls back to SMTP (many VPS providers block it).
+- The other server is temporarily unreachable or misconfigured.
 
-In most cases the messages will eventually go through via the SMTP fallback.
+**Unlikely:** missing SPF, DKIM TXT, or DMARC records — chatmail-to-chatmail delivery uses HTTP `/mxdeliv` and PGP, not those DNS records. See [DNS and Mail Authentication](./12-dns-mail-auth.md).
+
+In most cases messages will eventually go through via the SMTP fallback if HTTPS is blocked — but fixing **443** is the right first step between chatmail relays.
 
 ## Calls (Voice/Video) Don’t Work
 

@@ -216,9 +216,14 @@
         <p>ابتدا باید رکوردهای DNS زیر را در پنل مدیریت دامنه خود تنظیم کنید:</p>
 
         <div class="dns-records">
-            <span class="comment"># رکورد A — اشاره دامنه به آی‌پی سرور</span><br>
+            <span class="comment"># رکورد A — hostname به IP سرور (قبل از install)</span><br>
             chat.example.org. A 203.0.113.50<br>
+            <br>
+            <span class="comment"># MX — دامنهٔ پست → hostname (fallback SMTP)</span><br>
+            example.org. MX 10 chat.example.org.<br>
         </div>
+
+        <p>SPF، DKIM TXT (<code>default._domainkey</code>) و DMARC برای SMTP اختیاری‌اند؛ برای federation HTTP بین relayهای chatmail لازم نیستند. راهنمای <strong>DNS and Mail Authentication</strong> در مستندات پروژه.</p>
 
         <div class="tip-box">
             <strong>نکته:</strong> بعد از تنظیم رکوردها، ممکن است بین ۵ دقیقه تا ۲۴ ساعت طول بکشد تا فعال شوند.

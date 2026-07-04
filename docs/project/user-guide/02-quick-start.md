@@ -8,7 +8,7 @@ Download the release binary for your architecture, then install and start the se
 
 ```bash
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -fsSL "https://github.com/themadorg/madmailv2/releases/latest/download/madmail-linux-${ARCH}" \
+curl -fsSL "https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-${ARCH}" \
   -o madmail
 chmod +x madmail
 ```
@@ -50,10 +50,13 @@ sudo systemctl start madmail
 
 > Replace `mail.example.org` with your hostname and `you@example.com` with a valid contact email.
 
+Before install, create an **`A`/`AAAA`** record for the hostname pointing at your server. After install, add **`MX`** and (optionally) SPF/DKIM/DMARC — see [DNS and Mail Authentication](./12-dns-mail-auth.md).
+
 More detail:
 
 - [Simple IP + ACME install](../../install-simple-ip-acme.md)
 - [IP vs domain deployment](./11-deployment-ip-domain-certs.md)
+- [DNS, SPF, DKIM, federation](./12-dns-mail-auth.md)
 - [Local development](../../local-dev.md)
 
 ## Local Testing (for Operators)
