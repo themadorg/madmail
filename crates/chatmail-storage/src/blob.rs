@@ -117,13 +117,11 @@ pub(crate) async fn link_into_inbox(
             "message {msg_id} already exists for {user}"
         )));
     }
-    let new_dir = store.maildir_for_mailbox(user, "INBOX").new;
+    let paths = store.maildir_for_mailbox(user, "INBOX");
+    let new_dir = paths.new.clone();
     match tokio::fs::hard_link(canonical, &dest).await {
         Ok(()) => {
             store.fsync().commit_directory(&new_dir).await?;
-            store.invalidate_mailbox_listing(user, "INBOX");
-
-            // Dovecot-style eager registration at delivery time.
             let internal_secs = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -132,25 +130,25 @@ pub(crate) async fn link_into_inbox(
                 .await
                 .map(|m| m.len())
                 .unwrap_or(0);
-            let _ = store
-                .uidlist()
-                .pre_register(
-                    user,
-                    "INBOX",
-                    &store.maildir_for_mailbox(user, "INBOX"),
-                    msg_id,
-                    size,
-                    internal_secs,
-                    store.policy().fsync_mode,
-                )
-                .await;
-
+            store
+                .register_delivered_message(user, "INBOX", &paths, msg_id, size, internal_secs)
+                .await?;
             Ok(dest)
         }
         Err(e) if is_cross_device_link(&e) => {
             tokio::fs::copy(canonical, &dest).await?;
             store.fsync().commit_directory(&new_dir).await?;
-            store.invalidate_mailbox_listing(user, "INBOX");
+            let internal_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let size = tokio::fs::metadata(&dest)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(0);
+            store
+                .register_delivered_message(user, "INBOX", &paths, msg_id, size, internal_secs)
+                .await?;
             Ok(dest)
         }
         Err(e) => Err(ChatmailError::from(e)),
@@ -317,7 +315,20 @@ async fn commit_mailbox_blob(
     store.fsync().sync_file_data(&mut file).await?;
     tokio::fs::rename(&tmp_path, &new_path).await?;
     store.fsync().commit_directory(&paths.new).await?;
-    store.invalidate_mailbox_listing(user, mailbox);
+    let internal_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    store
+        .register_delivered_message(
+            user,
+            mailbox,
+            &paths,
+            msg_id,
+            body.len() as u64,
+            internal_secs,
+        )
+        .await?;
     Ok(new_path)
 }
 
@@ -377,24 +388,20 @@ async fn finalize_from_tmp(
                     .await;
             } else {
                 store.fsync().commit_directory(&paths.new).await?;
-                store.invalidate_mailbox_listing(user, mailbox);
-
                 let internal_secs = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
-                let _ = store
-                    .uidlist()
-                    .pre_register(
+                store
+                    .register_delivered_message(
                         user,
                         mailbox,
                         paths,
                         msg_id,
                         tmp.size,
                         internal_secs,
-                        store.policy().fsync_mode,
                     )
-                    .await;
+                    .await?;
             }
 
             return Ok(dest);
@@ -415,24 +422,13 @@ async fn finalize_from_tmp(
         tokio::fs::rename(&tmp.path, &new_path).await?;
     }
     store.fsync().commit_directory(&paths.new).await?;
-    store.invalidate_mailbox_listing(user, mailbox);
-
     let internal_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let _ = store
-        .uidlist()
-        .pre_register(
-            user,
-            mailbox,
-            paths,
-            msg_id,
-            tmp.size,
-            internal_secs,
-            store.policy().fsync_mode,
-        )
-        .await;
+    store
+        .register_delivered_message(user, mailbox, paths, msg_id, tmp.size, internal_secs)
+        .await?;
 
     Ok(new_path)
 }
@@ -448,11 +444,6 @@ async fn install_maildir_entry(
     let dest = paths.new.join(msg_id);
     store.content_store().link_into(canonical, &dest).await?;
     store.fsync().commit_directory(&paths.new).await?;
-    store.invalidate_mailbox_listing(user, mailbox);
-
-    // Dovecot-style: register the new message in the uidlist *at commit time*
-    // (instead of waiting for a later readdir in UidListStore::sync).
-    // This assigns the UID at delivery and writes the record eagerly.
     let internal_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -461,20 +452,9 @@ async fn install_maildir_entry(
         .await
         .map(|m| m.len())
         .unwrap_or(0);
-    // Ignore error — uidlist pre-registration is best-effort for correctness
-    // (sync will still discover it on next listing).
-    let _ = store
-        .uidlist()
-        .pre_register(
-            user,
-            mailbox,
-            paths,
-            msg_id,
-            size,
-            internal_secs,
-            store.policy().fsync_mode,
-        )
-        .await;
+    store
+        .register_delivered_message(user, mailbox, paths, msg_id, size, internal_secs)
+        .await?;
 
     Ok(dest)
 }

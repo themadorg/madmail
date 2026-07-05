@@ -615,13 +615,27 @@ impl ImapSession {
         } else {
             None
         };
-        // Reload INBOX so FETCH after SMTP delivery sees new messages on this connection.
+        // Reload when the INBOX version advanced; otherwise reuse the session listing cache
+        // so concurrent FETCH during delivery bursts does not force uidlist.sync() readdir.
         let mailbox = self
             .selected_mailbox
             .as_deref()
             .unwrap_or("INBOX")
             .to_string();
-        self.messages = self.load_messages(user, &mailbox).await?;
+        if mailbox.eq_ignore_ascii_case("INBOX") {
+            let version = self.ctx.events.inbox_version(user);
+            if version == self.cached_inbox_version {
+                if let Some(cached) = &self.cached_inbox_messages {
+                    self.messages = cached.clone();
+                } else {
+                    self.messages = self.load_messages(user, &mailbox).await?;
+                }
+            } else {
+                self.messages = self.load_messages(user, &mailbox).await?;
+            }
+        } else {
+            self.messages = self.load_messages(user, &mailbox).await?;
+        }
 
         let selected: Vec<_> = select_fetch_messages(&self.messages, args, by_uid);
 

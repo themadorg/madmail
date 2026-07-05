@@ -17,12 +17,14 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, UNIX_EPOCH};
 
 use chatmail_types::{ChatmailError, Result};
 
 use crate::cas::ContentStore;
 use crate::fsync_batch::FsyncCoordinator;
 use crate::maildir_cache::MaildirListCache;
+use crate::maildir_message::{MaildirFlags, StoredMessage};
 use crate::storage_policy::StoragePolicy;
 use crate::uidlist::UidListStore;
 
@@ -102,6 +104,45 @@ impl MailboxStore {
 
     pub fn invalidate_mailbox_listing(&self, user: &str, mailbox: &str) {
         self.inner.list_cache.invalidate(user, mailbox);
+    }
+
+    /// Register a newly delivered message in the uidlist and extend the listing cache.
+    ///
+    /// Call after the maildir file is visible in `new/`. Skips `invalidate_mailbox_listing` so
+    /// concurrent IMAP FETCH does not force a full `uidlist.sync()` readdir (issue #68).
+    pub async fn register_delivered_message(
+        &self,
+        user: &str,
+        mailbox: &str,
+        paths: &MaildirPaths,
+        msg_id: &str,
+        size: u64,
+        internal_secs: u64,
+    ) -> Result<StoredMessage> {
+        let uid = self
+            .uidlist()
+            .pre_register(
+                user,
+                mailbox,
+                paths,
+                msg_id,
+                size,
+                internal_secs,
+                self.policy().fsync_mode,
+            )
+            .await?;
+        let message = StoredMessage {
+            uid,
+            base_id: msg_id.to_string(),
+            filename: msg_id.to_string(),
+            size,
+            internal_date: UNIX_EPOCH + Duration::from_secs(internal_secs),
+            flags: MaildirFlags::default(),
+        };
+        self.list_cache()
+            .append_message(user, mailbox, &paths.new, &paths.cur, message.clone())
+            .await;
+        Ok(message)
     }
 
     /// INBOX maildir (`mail/{user}/Maildir/`).

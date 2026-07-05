@@ -105,6 +105,37 @@ impl MaildirListCache {
             },
         );
     }
+
+    /// Extend a cached listing after eager uidlist registration at delivery time.
+    ///
+    /// Avoids `invalidate` + full `uidlist.sync()` readdir on the next IMAP listing when
+    /// `pre_register` already assigned the stable UID (issue #68 contention path).
+    pub async fn append_message(
+        &self,
+        user: &str,
+        mailbox: &str,
+        new_dir: &Path,
+        cur_dir: &Path,
+        message: StoredMessage,
+    ) {
+        let new_mtime = Self::dir_mtime(new_dir).await;
+        let cur_mtime = Self::dir_mtime(cur_dir).await;
+        let key = (user.to_string(), mailbox.to_string());
+        if let Some(mut entry) = self.entries.get_mut(&key) {
+            if !entry
+                .messages
+                .iter()
+                .any(|m| m.base_id == message.base_id)
+            {
+                entry.messages.push(message);
+                entry.messages.sort_by_key(|m| m.uid);
+            }
+            entry.new_mtime = new_mtime;
+            entry.cur_mtime = cur_mtime;
+        } else {
+            self.store(user, mailbox, new_mtime, cur_mtime, vec![message]);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -173,6 +204,40 @@ mod tests {
             .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
             .await
             .is_none());
+    }
+
+    /// P11-UT32: append_message extends cache so delivery does not require full readdir.
+    #[tokio::test]
+    async fn p11_ut32_append_message_extends_cached_listing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let new_dir = tmp.path().join("new");
+        let cur_dir = tmp.path().join("cur");
+        tokio::fs::create_dir_all(&new_dir).await.unwrap();
+        tokio::fs::create_dir_all(&cur_dir).await.unwrap();
+
+        let cache = MaildirListCache::default();
+        let new_mtime = MaildirListCache::dir_mtime(&new_dir).await;
+        let cur_mtime = MaildirListCache::dir_mtime(&cur_dir).await;
+        cache.store("u@test", "INBOX", new_mtime, cur_mtime, vec![sample_msg("a")]);
+
+        let second = StoredMessage {
+            uid: 2,
+            base_id: "b".into(),
+            filename: "b".into(),
+            size: 10,
+            internal_date: SystemTime::now(),
+            flags: MaildirFlags::default(),
+        };
+        cache
+            .append_message("u@test", "INBOX", &new_dir, &cur_dir, second)
+            .await;
+
+        let hit = cache
+            .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
+            .await
+            .expect("append should refresh mtimes and keep cache valid");
+        assert_eq!(hit.len(), 2);
+        assert_eq!(hit[1].base_id, "b");
     }
 
     /// P11-UT06: explicit invalidation drops cached listing.
