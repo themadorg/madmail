@@ -124,6 +124,7 @@ async fn provision_account(
     registration_tokens::ensure_new_account_quota(&st.pool, username)
         .await
         .map_err(db_err)?;
+    st.app.webhooks.emit_user_registered(username, "admin", false);
     Ok(())
 }
 

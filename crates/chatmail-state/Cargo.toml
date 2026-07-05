@@ -8,6 +8,7 @@ license.workspace = true
 chatmail-config = { workspace = true }
 chatmail-db = { workspace = true }
 chatmail-push = { workspace = true }
+chatmail-webhooks = { workspace = true }
 chatmail-storage = { workspace = true }
 chatmail-types = { workspace = true }
 dashmap = "6"
@@ -18,5 +19,7 @@ tracing = { workspace = true }
 [dev-dependencies]
 chatmail-config = { workspace = true }
 chatmail-db = { workspace = true }
+chatmail-webhooks = { workspace = true }
 tempfile = "3"
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+wiremock = "0.6"

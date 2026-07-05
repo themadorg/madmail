@@ -725,6 +725,140 @@ async fn turn_relay_port_settings_reject_control_port_in_range() {
 }
 
 #[tokio::test]
+async fn webhooks_get_put_and_test() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/hook"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+
+    let (_, body) = resources::dispatch(&st, "GET", "/admin/services/webhooks", &json!({}))
+        .await
+        .unwrap();
+    assert_eq!(
+        body.unwrap().get("enabled").and_then(|v| v.as_bool()),
+        Some(false)
+    );
+
+    let (_, put) = resources::dispatch(
+        &st,
+        "PUT",
+        "/admin/services/webhooks",
+        &json!({
+            "enabled": true,
+            "url": format!("{}/hook", server.uri()),
+            "event_user_registered": true,
+            "event_quota_exceeded": true
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        put.unwrap().get("enabled").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+
+    let (_, test) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/services/webhooks",
+        &json!({ "action": "test" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        test.unwrap().get("status").and_then(|v| v.as_str()),
+        Some("ok")
+    );
+}
+
+#[tokio::test]
+async fn webhooks_put_rejects_insecure_url() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let err = resources::dispatch(
+        &st,
+        "PUT",
+        "/admin/services/webhooks",
+        &json!({
+            "enabled": true,
+            "url": "http://example.com/hook"
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 500);
+    assert!(err.1.contains("https://"));
+}
+
+#[tokio::test]
+async fn webhooks_user_registered_on_admin_create() {
+    use std::sync::atomic::Ordering;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/hook"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    resources::dispatch(
+        &st,
+        "PUT",
+        "/admin/services/webhooks",
+        &json!({
+            "enabled": true,
+            "url": format!("{}/hook", server.uri()),
+            "event_user_registered": true,
+            "event_quota_exceeded": false
+        }),
+    )
+    .await
+    .unwrap();
+    st.app.webhooks.invalidate_config_cache();
+
+    let (_, created) = resources::dispatch(&st, "POST", "/admin/accounts", &json!({}))
+        .await
+        .unwrap();
+    let username = created
+        .unwrap()
+        .get("email")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        st.app
+            .webhooks
+            .stats()
+            .successful_deliveries
+            .load(Ordering::Relaxed)
+            >= 1,
+        "expected webhook for created account {username}"
+    );
+}
+
+#[tokio::test]
 async fn p9_auth_gate_bearer() {
     use std::collections::HashMap;
     let gate = crate::auth::AuthGate::new("secret-token-01234567890123456789012345678901".into());

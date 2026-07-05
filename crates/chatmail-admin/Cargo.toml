@@ -14,6 +14,7 @@ chatmail-shadowsocks = { workspace = true }
 chatmail-delivery = { workspace = true }
 chatmail-imap = { workspace = true }
 chatmail-push = { workspace = true }
+chatmail-webhooks = { workspace = true }
 chatmail-state = { workspace = true }
 chatmail-storage = { workspace = true }
 chatmail-types = { workspace = true }
@@ -31,4 +32,5 @@ libc = "0.2"
 [dev-dependencies]
 chatmail-db = { workspace = true }
 tempfile = "3"
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+wiremock = "0.6"

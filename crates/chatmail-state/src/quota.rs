@@ -16,8 +16,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use chatmail_db::passwords;
+use chatmail_webhooks::WebhookDispatcher;
 use chatmail_db::{db_fetch_all, db_fetch_optional, schema::quota_table, DbPool};
 use chatmail_storage::MailboxStore;
 use chatmail_types::{ChatmailError, Result};
@@ -48,14 +50,23 @@ pub struct QuotaCache {
     /// Config fallback when `__GLOBAL_DEFAULT__` is missing or `max_storage <= 0`.
     config_default_max_bytes: u64,
     default_max_bytes: AtomicU64,
+    webhooks: Option<Arc<WebhookDispatcher>>,
 }
 
 impl QuotaCache {
     pub fn new(config_default_max_bytes: u64) -> Self {
+        Self::with_webhooks(config_default_max_bytes, None)
+    }
+
+    pub fn with_webhooks(
+        config_default_max_bytes: u64,
+        webhooks: Option<Arc<WebhookDispatcher>>,
+    ) -> Self {
         Self {
             entries: DashMap::new(),
             config_default_max_bytes,
             default_max_bytes: AtomicU64::new(config_default_max_bytes),
+            webhooks,
         }
     }
 
@@ -209,6 +220,9 @@ impl QuotaCache {
     pub fn check_quota(&self, user: &str, incoming_bytes: u64) -> Result<()> {
         let (used, max, _) = self.get_quota(user);
         if used.saturating_add(incoming_bytes) > max {
+            if let Some(ref wh) = self.webhooks {
+                wh.emit_quota_exceeded(user, used, max, incoming_bytes);
+            }
             return Err(ChatmailError::QuotaExceeded {
                 user: user.to_string(),
                 used,
@@ -242,6 +256,43 @@ mod tests {
     use chatmail_config::DEFAULT_QUOTA_BYTES;
     use chatmail_db::{db_execute, init_memory_db};
     use chatmail_storage::MailboxStore;
+
+    #[tokio::test]
+    async fn quota_exceeded_fires_webhook() {
+        use std::sync::atomic::Ordering;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let pool = init_memory_db().await.unwrap();
+        chatmail_webhooks::save_webhook_config(
+            &pool,
+            &chatmail_webhooks::WebhookConfig {
+                enabled: true,
+                url: format!("{}/hook", server.uri()),
+                event_quota_exceeded: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let wh = Arc::new(chatmail_webhooks::WebhookDispatcher::new(pool));
+        let cache = QuotaCache::with_webhooks(10 * 1024 * 1024, Some(wh.clone()));
+        cache.entries.insert(
+            "user@example.org".into(),
+            QuotaEntry::new(0, 1000, false),
+        );
+        let _ = cache.check_quota("user@example.org", 2000);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(wh.stats().successful_deliveries.load(Ordering::Relaxed) >= 1);
+    }
 
     /// P2-UT03: 10MB cap rejects 11MB write.
     #[tokio::test]

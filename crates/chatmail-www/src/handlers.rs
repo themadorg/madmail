@@ -297,6 +297,11 @@ pub async fn new_account(
             }
         }
         st.app.auth.insert(&user, &hash);
+        st.app.webhooks.emit_user_registered(
+            &user,
+            "web",
+            !registration_token.is_empty(),
+        );
         let mail = dclogin_mail_settings(&st, &headers).await;
         let dclogin_url = build_dclogin_link(&user, &password, &mail);
         return Json(json!({

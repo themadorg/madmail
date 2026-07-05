@@ -32,6 +32,7 @@ use std::sync::Arc;
 use chatmail_config::AppConfig;
 use chatmail_db::DbPool;
 use chatmail_push::{push_runtime_enabled, PushNotifier};
+use chatmail_webhooks::WebhookDispatcher;
 use chatmail_storage::{MailboxStore, StoragePolicy};
 use chatmail_types::Result;
 use dashmap::DashMap;
@@ -63,6 +64,8 @@ pub struct AppState {
     pub events: Arc<EventBus>,
     /// FCM/APNS wake-up via Delta Chat notification proxy.
     pub push: Arc<PushNotifier>,
+    /// Operator-configured HTTPS webhooks (registration, quota cap).
+    pub webhooks: Arc<WebhookDispatcher>,
     /// Bound listener ports (IMAP, etc.) for admin status / `ss` probes.
     pub listener_ports: Arc<ListenerPortsStore>,
     /// Per-user mutexes so concurrent JIT logins coalesce on one DB create.
@@ -96,12 +99,16 @@ impl AppState {
     ) -> Self {
         let state_dir = state_dir.as_ref().to_path_buf();
         let queue_dir = state_dir.join("pending_notifications");
-        let push = Arc::new(PushNotifier::new(pool, queue_dir, None));
+        let push = Arc::new(PushNotifier::new(pool.clone(), queue_dir, None));
+        let webhooks = Arc::new(WebhookDispatcher::new(pool));
         Self {
             auth: Arc::new(AuthCache::new()),
             message_size: Arc::new(MessageSizeLimit::new(config)),
             federation_size: Arc::new(FederationSizeLimit::new(config)),
-            quota: Arc::new(QuotaCache::new(default_quota_bytes)),
+            quota: Arc::new(QuotaCache::with_webhooks(
+                default_quota_bytes,
+                Some(Arc::clone(&webhooks)),
+            )),
             federation_tracker: Arc::new(FederationTracker::new()),
             federation_policy: Arc::new(FederationPolicyCache::new()),
             federation_silent_dismiss: Arc::new(FederationSilentDismissCache::new()),
@@ -114,6 +121,7 @@ impl AppState {
             )),
             events: Arc::new(EventBus::new()),
             push,
+            webhooks,
             listener_ports: Arc::new(ListenerPortsStore::new()),
             jit_flights: Arc::new(DashMap::new()),
         }

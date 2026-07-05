@@ -154,6 +154,9 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
         .record_verified(&user, password_sha256(password));
     ctx.state.mailbox_store.init_user_dir(&user).await?;
     registration_tokens::ensure_new_account_quota(&ctx.pool, &user).await?;
+    ctx.state
+        .webhooks
+        .emit_user_registered(&user, "jit", false);
 
     finish_successful_login(ctx, &user).await
 }

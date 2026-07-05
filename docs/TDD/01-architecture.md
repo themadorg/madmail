@@ -44,7 +44,7 @@ Integration tests live in workspace member `tests/` (`chatmail-integration` pack
 | **`chatmail-types`** | Shared errors and domain helpers | `error`, `domains` |
 | **`chatmail-config`** | `maddy.conf` AST, `AppConfig`, CLI (`clap`) | `maddy`, `madmail_parse`, `parse`, `cli`, `install_cli`, `config_autocert`, `config_www`, `credential_policy`, `queue`, `data_size`, `client_mail`, `autoconfig`, `paths`, `db_path` |
 | **`chatmail-db`** | SQLx pool (SQLite + Postgres), migrations, settings, accounts | `pool`, `settings`, `settings_keys`, `passwords`, `blocklist`, `endpoint_cache`, `federation_policy`, `message_stats`, `message_retention`, `maintenance`, `mail_ports`, `modseq`, `inbound`, `sharing`, `registration_tokens`, `account_info`, `schema`, `models`, `quota_defaults` |
-| **`chatmail-state`** | In-memory hot path hydrated at boot | `AppState` (`mailbox_store`, `push`, `jit_flights`), `auth`, `quota`, `policy`, `tracker`, `flusher`, `events`, `message_size`, `silent_dismiss`, `listener_ports`, `reload` (`ReloadScope::{Full,HttpRoutes}`) |
+| **`chatmail-state`** | In-memory hot path hydrated at boot | `AppState` (`mailbox_store`, `push`, `webhooks`, `jit_flights`), `auth`, `quota`, `policy`, `tracker`, `flusher`, `events`, `message_size`, `silent_dismiss`, `listener_ports`, `reload` (`ReloadScope::{Full,HttpRoutes}`) |
 | **`chatmail-storage`** | Maildir + CAS blobs on disk | `maildir`, `blob`, `cas`, `external_store`, `storage_policy`, `uidlist`, `maildir_cache`, `fsync_batch`, `delivery_batch`, `maildir_message`, `purge`, `inbox` |
 | **`chatmail-auth`** | Login, JIT, password hashing | `jit`, `hash`, `validate`, `normalize` |
 | **`chatmail-pgp`** | PGP-only policy gate (MIME/header checks via `mail-parser`) | `enforce_encryption`, `EnforceOptions` |
@@ -53,6 +53,7 @@ Integration tests live in workspace member `tests/` (`chatmail-integration` pack
 | **`chatmail-fed`** | HTTP listener: `/mxdeliv` + merged routers | `mxdeliv`, `security`, `server::run_http_listener` |
 | **`chatmail-delivery`** | Outbound queue (HTTP then SMTP) | `queue`, `router`, `transport`; private `federation_http` (shared `reqwest` client) |
 | **`chatmail-push`** | XDELTAPUSH device tokens + `notifications.delta.chat` notifier | `enabled`, `notifier`, `store`, `mode`, `stats` — [23-push-notifications.md](23-push-notifications.md) |
+| **`chatmail-webhooks`** | Operator HTTPS webhooks (registration, quota cap) | `WebhookDispatcher`, settings keys — [24-operator-webhooks.md](24-operator-webhooks.md) |
 | **`chatmail-www`** | Public site, `/new`, WebIMAP/WebSMTP | `router`, `webimap`, `webimap_ws`, `handlers`, `gate`, `export`, `assets`, `context_cache`, `template`, `response` |
 | **`chatmail-admin`** | Admin JSON-RPC (`POST /api/admin`) | `auth`, `cors`, `handler`, `router`, `resources/*` |
 | **`chatmail-admin-web`** | Embedded operator SPA | `serve::admin_web_router` |

@@ -4,7 +4,7 @@ This directory contains the Technical Design Document (TDD) for **madmail-v2**, 
 
 ## Workspace crates
 
-Twenty-three library crates under `crates/` plus integration tests in `tests/`. Full dependency diagram, runtime wiring, and per-section mapping: **[01-architecture.md](01-architecture.md#rust-workspace-crates)**.
+Twenty-four library crates under `crates/` plus integration tests in `tests/`. Full dependency diagram, runtime wiring, and per-section mapping: **[01-architecture.md](01-architecture.md#rust-workspace-crates)**.
 
 | Crate | TDD topics |
 |-------|------------|
@@ -22,6 +22,7 @@ Twenty-three library crates under `crates/` plus integration tests in `tests/`. 
 | `chatmail-push` | [23](23-push-notifications.md) |
 | `chatmail-www` | [10](10-webimap.md) |
 | `chatmail-admin` / `chatmail-admin-web` | [09](09-admin-api.md) |
+| `chatmail-webhooks` | [24](24-operator-webhooks.md) |
 | `chatmail-turn` / `chatmail-iroh` / `chatmail-shadowsocks` | [11](11-proxy-services.md), [20](20-deltachat-calls.md) |
 | `chatmail-tls` / `chatmail-acme` | [19](19-certificates.md) |
 | `chatmail-tasks` | [21](21-scheduled-maintenance.md) |
@@ -53,6 +54,7 @@ Twenty-three library crates under `crates/` plus integration tests in `tests/`. 
 | `21-scheduled-maintenance.md` | Retention, dormant accounts (`chatmail-tasks`) |
 | `22-bandwidth-monitoring.md` | Bandwidth spec (planned) |
 | `23-push-notifications.md` | XDELTAPUSH, `notifications.delta.chat`, modes, CLI `madmail push` |
+| `24-operator-webhooks.md` | Operator HTTPS webhooks (`user.registered`, `user.quota_exceeded`) |
 
 ## RFC reference library
 

@@ -53,6 +53,7 @@ Madmail-compatible JSON-RPC admin API. Full operator reference: [`context/madmai
 | `/admin/services/webimap` | GET, POST | Implemented (`__WEBIMAP_ENABLED__`, default disabled) |
 | `/admin/services/websmtp` | GET, POST | Implemented (`__WEBSMTP_ENABLED__`, default disabled) |
 | `/admin/services/push` | GET, POST | Implemented — `__PUSH_MODE__` (`auto`/`on`/`off`, **default `off`**); POSTs device tokens to `notifications.delta.chat` when enabled; GET returns `successful_notifications`, `consecutive_failures`; POST `enable`/`disable`/`auto` → soft reload. See [23-push-notifications.md](23-push-notifications.md) |
+| `/admin/services/webhooks` | GET, PUT, POST | Implemented — operator HTTPS webhooks for `user.registered` and `user.quota_exceeded`; POST `{ "action": "test" }`. See [24-operator-webhooks.md](24-operator-webhooks.md) |
 | `/admin/settings/federation` | GET, POST | Implemented — includes `max_federation_size`, `federation_size_effective` |
 | `/admin/federation/rules` | GET, POST, DELETE | Implemented |
 | `/admin/federation/silent-dismiss` | GET, POST, DELETE | Implemented — outbound domains accepted but not delivered (`federation_silent_dismiss` table) |

@@ -1,0 +1,23 @@
+[package]
+name = "chatmail-webhooks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chatmail-db = { workspace = true }
+chatmail-types = { workspace = true }
+dashmap = "6"
+hmac = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = "0.10"
+sqlx = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+chatmail-db = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+wiremock = "0.6"

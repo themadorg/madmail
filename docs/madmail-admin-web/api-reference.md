@@ -48,6 +48,9 @@ From `src/lib/pageRefresh.ts` — used for prefetch and header **Refresh**:
 | `/admin/services/auto_purge_seen` | POST | `enable`, `disable` | Services |
 | `/admin/services/webimap` | POST | `enable`, `disable` | Services |
 | `/admin/services/websmtp` | POST | `enable`, `disable` | Services |
+| `/admin/services/webhooks` | GET | — | **API only** (no UI yet) |
+| `/admin/services/webhooks` | PUT | `{ "enabled"?, "url"?, "secret"?, "event_user_registered"?, "event_quota_exceeded"? }` | **API only** |
+| `/admin/services/webhooks` | POST | `{ "action": "test" }` | **API only** |
 | `/admin/services/message_retention` | POST | `enable`, `disable` | Overview |
 | `/admin/services/shadowsocks` | POST | `enable`, `disable` | Proxy |
 | `/admin/services/ss_ws` | POST | `enable`, `disable` | Proxy |

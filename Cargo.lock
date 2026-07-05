@@ -620,6 +620,7 @@ dependencies = [
  "chatmail-state",
  "chatmail-storage",
  "chatmail-types",
+ "chatmail-webhooks",
  "getrandom 0.2.17",
  "libc",
  "serde",
@@ -631,6 +632,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -898,11 +900,13 @@ dependencies = [
  "chatmail-push",
  "chatmail-storage",
  "chatmail-types",
+ "chatmail-webhooks",
  "dashmap",
  "sqlx",
  "tempfile",
  "tokio",
  "tracing",
+ "wiremock",
 ]
 
 [[package]]
@@ -967,6 +971,24 @@ version = "2.11.1"
 dependencies = [
  "sqlx",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "chatmail-webhooks"
+version = "2.11.1"
+dependencies = [
+ "chatmail-db",
+ "chatmail-types",
+ "dashmap",
+ "hmac",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "wiremock",
 ]
 
 [[package]]

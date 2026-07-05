@@ -168,6 +168,12 @@ mod tests {
         );
 
         tokio::fs::write(new_dir.join("msg"), b"x").await.unwrap();
+        // Child file creation does not bump directory mtime on all filesystems (e.g. tmpfs);
+        // production paths call `invalidate_mailbox_listing` on write. Simulate mtime change here.
+        let bumped = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() + std::time::Duration::from_secs(5),
+        );
+        filetime::set_file_mtime(&new_dir, bumped).unwrap();
 
         assert!(cache
             .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)

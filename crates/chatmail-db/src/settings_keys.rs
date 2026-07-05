@@ -102,3 +102,10 @@ pub const MAX_FEDERATION_SIZE: &str = "__MAX_FEDERATION_SIZE__";
 
 /// Pseudo-username row in `quotas` for server-wide default cap.
 pub const GLOBAL_QUOTA_USERNAME: &str = "__GLOBAL_DEFAULT__";
+
+/// Operator webhook master toggle (`/admin/services/webhooks`).
+pub const WEBHOOK_ENABLED: &str = "__WEBHOOK_ENABLED__";
+pub const WEBHOOK_URL: &str = "__WEBHOOK_URL__";
+pub const WEBHOOK_SECRET: &str = "__WEBHOOK_SECRET__";
+pub const WEBHOOK_EVENT_USER_REGISTERED: &str = "__WEBHOOK_EVENT_USER_REGISTERED__";
+pub const WEBHOOK_EVENT_QUOTA_EXCEEDED: &str = "__WEBHOOK_EVENT_QUOTA_EXCEEDED__";
