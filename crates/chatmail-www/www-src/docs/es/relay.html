@@ -238,9 +238,14 @@
         <p>Configure los siguientes registros DNS en el panel de su dominio:</p>
 
         <div class="dns-records">
-            <span class="comment"># Registro A — el dominio apunta a la IP del servidor</span><br>
+            <span class="comment"># Registro A — hostname → IP del servidor (antes de install)</span><br>
             chat.example.org. A 203.0.113.50<br>
+            <br>
+            <span class="comment"># MX — dominio de correo → hostname (fallback SMTP)</span><br>
+            example.org. MX 10 chat.example.org.<br>
         </div>
+
+        <p>SPF, DKIM TXT (<code>default._domainkey</code>) y DMARC son opcionales para SMTP; no son necesarios para la federación HTTP entre relays chatmail. <code>install --domain</code> obtiene TLS y genera claves DKIM; los TXT en DNS los publicas tú. Ver la guía <strong>DNS and Mail Authentication</strong> en la documentación del proyecto.</p>
 
         <div class="tip-box">
             <strong>Nota:</strong> Tras crear los registros, la propagación puede tardar entre minutos y 24 horas.

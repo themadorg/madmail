@@ -267,6 +267,16 @@ Before going live, confirm:
 4. **Ports 80 and 443** — mapped to the container for HTTPS registration and ACME renewal.
 5. **Reverse DNS (PTR)** — optional but helps deliverability; set with your VPS provider to match the hostname.
 
+**Optional mail-auth records (SMTP hygiene, not required for chatmail HTTP federation):**
+
+| Type | Name | Example |
+|------|------|---------|
+| `TXT` (SPF) | `@` | `v=spf1 mx a -all` |
+| `TXT` (DKIM) | `default._domainkey` | public key for selector `default` (keys generated under `/var/lib/madmail/`) |
+| `TXT` (DMARC) | `_dmarc` | `v=DMARC1; p=none; rua=mailto:admin@example.org` |
+
+`madmail install --domain` obtains TLS and creates DKIM signing keys; it does not publish these TXT records. Full operator guide (native and Docker): [DNS and Mail Authentication](../project/user-guide/12-dns-mail-auth.md).
+
 ### Registration and mail URLs (domain)
 
 | Service | URL / connection |

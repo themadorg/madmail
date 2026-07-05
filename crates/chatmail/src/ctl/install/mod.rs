@@ -327,6 +327,16 @@ fn print_next_steps(cfg: &InstallConfig) {
             cfg.binary_name
         );
     }
+    if is_valid_dns_domain(&cfg.primary_domain) {
+        println!(
+            "  • DNS:    ensure A/AAAA + MX for {}; optional SPF/DKIM/DMARC — see docs/project/user-guide/12-dns-mail-auth.md",
+            cfg.primary_domain
+        );
+        println!(
+            "  • Federation check: curl -sI https://{}/mxdeliv",
+            cfg.hostname
+        );
+    }
     if cfg.tls_mode == "self_signed" || cfg.turn_off_tls {
         println!("  • Delta Chat: use turn_off_tls / accept self-signed certs for IP relays");
     }

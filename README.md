@@ -72,6 +72,7 @@ sudo systemctl start madmail
 More detail:
 
 - [Quick start (full guide)](docs/project/user-guide/02-quick-start.md)
+- [DNS, SPF, DKIM, federation](docs/project/user-guide/12-dns-mail-auth.md)
 - [Simple IP + ACME install](docs/install-simple-ip-acme.md)
 - [IP vs domain deployment](docs/project/user-guide/11-deployment-ip-domain-certs.md)
 - [Local development](docs/local-dev.md)

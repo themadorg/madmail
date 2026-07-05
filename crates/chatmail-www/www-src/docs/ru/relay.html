@@ -238,9 +238,14 @@
         <p>Сначала настройте следующие DNS-записи в вашей панели управления доменом:</p>
 
         <div class="dns-records">
-            <span class="comment"># Запись типа A — укажите IP-адрес сервера</span><br>
+            <span class="comment"># Запись A — hostname → IP сервера (нужна до install)</span><br>
             chat.example.org. A 203.0.113.50<br>
+            <br>
+            <span class="comment"># MX — почтовый домен → hostname (SMTP fallback)</span><br>
+            example.org. MX 10 chat.example.org.<br>
         </div>
+
+        <p>SPF, DKIM TXT (<code>default._domainkey</code>) и DMARC — по желанию для SMTP; для HTTP-федерации chatmail не обязательны. <code>install --domain</code> выдаёт TLS и ключи DKIM; TXT в DNS добавляете вы. См. руководство <strong>DNS and Mail Authentication</strong> в документации проекта.</p>
 
         <div class="tip-box">
             <strong>Примечание:</strong> Распространение записей DNS может занять от 5 минут до 24 часов.

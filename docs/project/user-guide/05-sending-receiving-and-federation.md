@@ -110,6 +110,14 @@ It will usually fall back to normal SMTP. Delivery may be slower and you lose HT
 
 For reliable chatmail-to-chatmail delivery, outbound HTTPS (443) should work. The SMTP fallback uses port 25 outbound. Many networks already allow this.
 
+**“Do I need DKIM, SPF, or DMARC DNS records for federation with other chatmail servers?”**
+
+Usually **no**. Chatmail relays deliver to each other over `POST https://<domain>/mxdeliv` first. Authentication on that path is **PGP**, not DKIM/SPF/DMARC. Those TXT records matter for **SMTP fallback** and mail to non-chatmail hosts. See [DNS and Mail Authentication](./12-dns-mail-auth.md).
+
+**“Can I replace a cmdeploy (Postfix + Dovecot) server with madmail?”**
+
+**Yes**, as a new deployment of the same chatmail protocol — not an in-place upgrade. Redeploy madmail, point DNS at the new host, and have users re-register. See [DNS and Mail Authentication](./12-dns-mail-auth.md#replacing-a-cmdeploy-postfix--dovecot-server).
+
 ## Summary
 
 Sending and receiving on a chatmail server works like this:
