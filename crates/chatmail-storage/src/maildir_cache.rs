@@ -77,10 +77,11 @@ impl MaildirListCache {
         new_dir: &Path,
         cur_dir: &Path,
     ) -> Option<Vec<StoredMessage>> {
-        let key = (user.to_string(), mailbox.to_string());
-        let cached = self.entries.get(&key)?;
+        // Read mtimes before locking the shard: never hold a DashMap guard across `.await`.
         let new_mtime = Self::dir_mtime(new_dir).await;
         let cur_mtime = Self::dir_mtime(cur_dir).await;
+        let key = (user.to_string(), mailbox.to_string());
+        let cached = self.entries.get(&key)?;
         if cached.new_mtime == new_mtime && cached.cur_mtime == cur_mtime {
             Some(cached.messages.clone())
         } else {
@@ -173,6 +174,69 @@ mod tests {
             .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
             .await
             .is_none());
+    }
+
+    /// `get_if_fresh` must not hold a DashMap shard guard across `.await`: a concurrent `store` on
+    /// the same shard would block a single-worker runtime forever. Reproduce and bound with a
+    /// watchdog — the buggy ordering hangs, the fixed ordering completes.
+    #[test]
+    fn get_if_fresh_does_not_deadlock_store() {
+        let worker = std::thread::spawn(|| {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let tmp = tempfile::tempdir().unwrap();
+                let new_dir = tmp.path().join("new");
+                let cur_dir = tmp.path().join("cur");
+                tokio::fs::create_dir_all(&new_dir).await.unwrap();
+                tokio::fs::create_dir_all(&cur_dir).await.unwrap();
+
+                let cache = std::sync::Arc::new(MaildirListCache::default());
+                let m = MaildirListCache::dir_mtime(&new_dir).await;
+                cache.store("u@test", "INBOX", m, m, vec![sample_msg("a")]);
+
+                // Reader suspends inside get_if_fresh (at the mtime .await); the single worker then
+                // runs the writer, whose store() takes the same shard's write lock.
+                let reader = {
+                    let cache = cache.clone();
+                    let new_dir = new_dir.clone();
+                    let cur_dir = cur_dir.clone();
+                    tokio::spawn(async move {
+                        cache
+                            .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
+                            .await
+                    })
+                };
+                let writer = {
+                    let cache = cache.clone();
+                    tokio::spawn(async move {
+                        for i in 0..50 {
+                            cache.store("u@test", "INBOX", None, None, vec![sample_msg("b")]);
+                            cache.invalidate("u@test", "INBOX");
+                            if i % 7 == 0 {
+                                tokio::task::yield_now().await;
+                            }
+                        }
+                    })
+                };
+                let _ = reader.await;
+                let _ = writer.await;
+            });
+        });
+
+        // Watchdog: a runtime-internal timeout can't fire once the worker deadlocks in futex, so
+        // poll thread completion from outside the runtime.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !worker.is_finished() {
+            if std::time::Instant::now() > deadline {
+                panic!("get_if_fresh deadlocked with a concurrent store");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        worker.join().unwrap();
     }
 
     /// P11-UT06: explicit invalidation drops cached listing.
