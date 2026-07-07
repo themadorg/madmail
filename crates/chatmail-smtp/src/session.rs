@@ -557,6 +557,7 @@ impl SmtpSession {
         let ingest_start = std::time::Instant::now();
         let total_rcpts = self.rcpt_to.len();
         let mut local_deliveries: Vec<(String, String)> = Vec::new();
+        let mut remote_rcpts: Vec<String> = Vec::new();
 
         for rcpt in &self.rcpt_to {
             let rcpt = normalize_username(rcpt)?;
@@ -574,10 +575,17 @@ impl SmtpSession {
             {
                 tracing::debug!(rcpt = %rcpt, "silently dismissed outbound federation message");
             } else {
-                delivery
-                    .enqueue_remote(self.mail_from.clone(), rcpt.clone(), data.to_vec())
-                    .await?;
+                remote_rcpts.push(rcpt);
             }
+        }
+
+        // Federated group fan-out: write all remote recipients' queue entries in
+        // parallel instead of one-at-a-time, so a large group's later members are
+        // not delayed behind the sequential disk writes of the earlier ones.
+        if !remote_rcpts.is_empty() {
+            delivery
+                .enqueue_remote_batch(&self.mail_from, &remote_rcpts, data)
+                .await?;
         }
 
         let rcpt_phase = ingest_start.elapsed();
