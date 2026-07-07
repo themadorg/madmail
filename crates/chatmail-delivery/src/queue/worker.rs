@@ -18,7 +18,7 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use chatmail_types::{ChatmailError, Result};
+use chatmail_types::Result;
 use tokio::sync::{mpsc, Semaphore};
 use tracing::{info, warn};
 
@@ -75,73 +75,31 @@ impl OutboundQueue {
         Ok(())
     }
 
-    /// Enqueue one message for many remote recipients concurrently — the federated
-    /// group fan-out path.
+    /// Enqueue one message for many remote recipients — the federated group
+    /// fan-out path.
     ///
-    /// Unlike calling [`Self::enqueue`] in a loop, each recipient's durable write
-    /// runs in parallel (bounded by `max_parallelism`) and is handed to the worker
-    /// the moment its own body/meta land on disk. This mirrors how local group
-    /// delivery writes one blob and cheaply hard-links the rest, so a federated
-    /// group's later members no longer wait behind the sequential fsync chain of
-    /// every earlier member before their delivery can even start.
+    /// Applies the same madmail principle as local group delivery: the body is
+    /// written to disk **once** and hard-linked into every other recipient's queue
+    /// entry (same bytes, one inode, no second copy), instead of writing a full
+    /// separate copy per recipient. Each entry is dispatched to the worker only
+    /// after its body and meta are durable.
     pub async fn enqueue_batch(
-        self: &Arc<Self>,
+        &self,
         mail_from: &str,
         rcpts: &[String],
         data: &[u8],
     ) -> Result<()> {
-        match rcpts {
-            [] => return Ok(()),
-            [only] => {
-                return self
-                    .enqueue(OutboundJob {
-                        mail_from: mail_from.to_string(),
-                        rcpt_to: only.clone(),
-                        data: data.to_vec(),
-                    })
-                    .await;
-            }
-            _ => {}
+        if rcpts.is_empty() {
+            return Ok(());
         }
-
-        // Share a single in-memory copy of the body across recipients; each task
-        // still writes its own durable disk copy (as a per-recipient queue entry).
-        let body: Arc<[u8]> = Arc::from(data);
-        let sem = Arc::new(Semaphore::new(self.config.max_parallelism));
-        let mut set = tokio::task::JoinSet::new();
-        for rcpt in rcpts {
-            let queue = Arc::clone(self);
-            let sem = Arc::clone(&sem);
-            let body = Arc::clone(&body);
-            let mail_from = mail_from.to_string();
-            let rcpt = rcpt.clone();
-            set.spawn(async move {
-                // Bound concurrency so a huge group cannot exhaust file descriptors.
-                let _permit = sem.acquire_owned().await;
-                queue
-                    .enqueue(OutboundJob {
-                        mail_from,
-                        rcpt_to: rcpt,
-                        data: body.to_vec(),
-                    })
-                    .await
-            });
+        let ids = self
+            .store
+            .write_shared(mail_from, rcpts, data, now_unix())
+            .await?;
+        for id in ids {
+            let _ = self.work_tx.send(id);
         }
-
-        let mut first_err: Option<ChatmailError> = None;
-        while let Some(joined) = set.join_next().await {
-            let outcome = match joined {
-                Ok(res) => res,
-                Err(e) => Err(ChatmailError::storage(format!("enqueue task failed: {e}"))),
-            };
-            if let Err(e) = outcome {
-                first_err.get_or_insert(e);
-            }
-        }
-        match first_err {
-            Some(e) => Err(e),
-            None => Ok(()),
-        }
+        Ok(())
     }
 
     pub async fn depth(&self) -> Result<usize> {

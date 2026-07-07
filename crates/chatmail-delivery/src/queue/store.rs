@@ -92,6 +92,57 @@ impl QueueStore {
         Ok(())
     }
 
+    /// Write one message for many recipients using the madmail single-write +
+    /// hard-link fan-out: the body is written to disk **once**, then hard-linked
+    /// into every other recipient's entry (same bytes, one inode, no second copy),
+    /// and each recipient gets its own small `.meta`. Returns the entry ids in
+    /// recipient order.
+    ///
+    /// Because the entries share one inode, [`Self::remove`] unlinking a delivered
+    /// entry just drops one link; the body's bytes live until the last recipient's
+    /// entry is removed — the same refcount-by-hard-link that local delivery relies
+    /// on.
+    pub async fn write_shared(
+        &self,
+        mail_from: &str,
+        rcpts: &[String],
+        body: &[u8],
+        next_attempt_unix: u64,
+    ) -> Result<Vec<String>> {
+        let now = now_unix();
+        let ids: Vec<String> = rcpts
+            .iter()
+            .map(|_| uuid::Uuid::new_v4().to_string())
+            .collect();
+
+        // 1. Write the body exactly once (the only real copy on disk).
+        self.write_body(&ids[0], body).await?;
+        let canonical = self.body_path(&ids[0]);
+
+        // 2. Hard-link that single body into every other recipient's entry.
+        for id in &ids[1..] {
+            fs::hard_link(&canonical, self.body_path(id)).await?;
+        }
+
+        // 3. Write per-recipient meta. Written after the body/links so an entry is
+        //    never observable (by reload or the worker) without its body present.
+        for (id, rcpt) in ids.iter().zip(rcpts) {
+            let meta = QueueMeta {
+                id: id.clone(),
+                mail_from: mail_from.to_string(),
+                rcpt_to: rcpt.clone(),
+                tries_count: 0,
+                queued_at_unix: now,
+                last_attempt_unix: 0,
+                next_attempt_unix,
+                last_error: None,
+            };
+            self.write_meta(&meta).await?;
+        }
+
+        Ok(ids)
+    }
+
     pub async fn update_meta(&self, meta: &QueueMeta) -> Result<()> {
         self.write_meta(meta).await
     }

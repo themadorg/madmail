@@ -289,8 +289,27 @@ mod tests {
         // Every remote recipient got its own durable queue entry. Delivery to the
         // bogus domain fails transiently and requeues (max_tries=3), so all entries
         // remain on disk for this assertion.
-        let store = crate::queue::QueueStore::new(dir.path().join("remote_queue"));
+        let queue_dir = dir.path().join("remote_queue");
+        let store = crate::queue::QueueStore::new(queue_dir.clone());
         assert_eq!(store.count_entries().await.unwrap(), recipients.len());
+
+        // madmail single-write + hard-link principle: the body bytes exist once on
+        // disk (one inode) and every recipient's `.body` is a hard link to it.
+        use std::os::unix::fs::MetadataExt;
+        let mut bodies = std::fs::read_dir(&queue_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "body"))
+            .collect::<Vec<_>>();
+        assert_eq!(bodies.len(), recipients.len());
+        let inodes: std::collections::HashSet<u64> = bodies
+            .iter_mut()
+            .map(|p| std::fs::metadata(&*p).unwrap().ino())
+            .collect();
+        assert_eq!(inodes.len(), 1, "all bodies must share a single inode");
+        let nlink = std::fs::metadata(&bodies[0]).unwrap().nlink();
+        assert_eq!(nlink as usize, recipients.len());
     }
 
     /// Local group delivery uses in-memory auth cache (no per-recipient DB lookups).
