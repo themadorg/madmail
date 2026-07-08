@@ -81,7 +81,10 @@ pub async fn webmail_cors(args: &Args, cmd: Option<&WebmailCorsCommand>) -> Resu
         Some(WebmailCorsCommand::Add { origin }) => add_origin(args, &pool, origin).await,
         Some(WebmailCorsCommand::Remove { origin }) => remove_one(args, &pool, origin).await,
         Some(WebmailCorsCommand::Reset) => reset(args, &pool).await,
-        Some(WebmailCorsCommand::Enable { origin }) => enable_dev(args, &pool, origin).await,
+        Some(WebmailCorsCommand::Enable { origin }) => {
+            enable_dev(args, &pool, origin.as_deref().unwrap_or("")).await
+        }
+        Some(WebmailCorsCommand::Disable) => disable_dev(args, &pool).await,
     }
 }
 
@@ -97,17 +100,29 @@ async fn status(args: &Args, pool: &DbPool) -> Result<()> {
     let list = parse_origins_list(&raw);
     let webimap = service_on(pool, settings_keys::WEBIMAP_ENABLED).await?;
     let websmtp = service_on(pool, settings_keys::WEBSMTP_ENABLED).await?;
+    let browser_access = webimap && websmtp;
 
     if out.is_json() {
         return out.emit(serde_json::json!({
+            "status": if browser_access { "enabled" } else { "disabled" },
+            "browser_access_enabled": browser_access,
             "cors_origins": raw,
             "cors_origins_list": list,
             "webimap_enabled": webimap,
             "websmtp_enabled": websmtp,
+            "auto_reflect_origin": browser_access,
         }));
     }
 
     out.blank();
+    out.line(format!(
+        "  Browser access:  {}",
+        if browser_access {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    ));
     out.line(format!(
         "  WebIMAP:  {}",
         if webimap { "enabled" } else { "disabled" }
@@ -116,9 +131,12 @@ async fn status(args: &Args, pool: &DbPool) -> Result<()> {
         "  WebSMTP:  {}",
         if websmtp { "enabled" } else { "disabled" }
     ));
-    out.line("  CORS origins (WebIMAP / WebSMTP / /new):");
+    if browser_access {
+        out.line("  CORS: request Origin is reflected (no *; no origin list required)");
+    }
+    out.line("  CORS origins (optional whitelist / legacy):");
     if list.is_empty() {
-        out.line("    (none — browser cross-origin requests get no CORS headers)");
+        out.line("    (none)");
     } else {
         for o in &list {
             out.line(format!("    {o}"));
@@ -179,7 +197,9 @@ async fn remove_one(args: &Args, pool: &DbPool, origin: &str) -> Result<()> {
     let existing = current_origins(pool).await?;
     let merged = remove_origin(&existing, origin);
     if merged == existing {
-        return Err(ChatmailError::config(format!("origin not in list: {origin}")));
+        return Err(ChatmailError::config(format!(
+            "origin not in list: {origin}"
+        )));
     }
     if merged.is_empty() {
         delete_setting(pool, settings_keys::WEBMAIL_CORS_ORIGINS).await?;
@@ -210,24 +230,62 @@ async fn reset(args: &Args, pool: &DbPool) -> Result<()> {
 async fn enable_dev(args: &Args, pool: &DbPool, origin: &str) -> Result<()> {
     let out = CtlOut::from_args(args, "webmail-cors enable");
     let origin = origin.trim();
-    validate_origin(origin)?;
+    if !origin.is_empty() {
+        validate_origin(origin)?;
+    }
     set_setting(pool, settings_keys::WEBIMAP_ENABLED, "true").await?;
     set_setting(pool, settings_keys::WEBSMTP_ENABLED, "true").await?;
-    let existing = current_origins(pool).await?;
-    let merged = append_origin(&existing, origin);
-    set_setting(pool, settings_keys::WEBMAIL_CORS_ORIGINS, &merged).await?;
+    let merged = if origin.is_empty() {
+        current_origins(pool).await?
+    } else {
+        let existing = current_origins(pool).await?;
+        let merged = append_origin(&existing, origin);
+        set_setting(pool, settings_keys::WEBMAIL_CORS_ORIGINS, &merged).await?;
+        merged
+    };
+    let human = if origin.is_empty() {
+        "✅ Browser access enabled (WebIMAP + WebSMTP; request Origin reflected)".to_string()
+    } else {
+        format!("✅ Browser access enabled for {origin} (WebIMAP + WebSMTP + CORS)")
+    };
+    let json_origin = if origin.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::Value::String(origin.to_string())
+    };
     out.done_msg(
-        format!(
-            "✅ Dev browser access enabled for {origin} (WebIMAP + WebSMTP + CORS)"
-        ),
+        human,
         serde_json::json!({
-            "origin": origin,
+            "status": "enabled",
+            "browser_access_enabled": true,
+            "origin": json_origin,
             "webimap_enabled": true,
             "websmtp_enabled": true,
             "cors_origins": merged,
             "cors_origins_list": parse_origins_list(&merged),
+            "auto_reflect_origin": true,
         }),
-        format!("Dev browser access enabled for {origin}"),
+        if origin.is_empty() {
+            "Browser access enabled".to_string()
+        } else {
+            format!("Browser access enabled for {origin}")
+        },
+    )
+}
+
+async fn disable_dev(args: &Args, pool: &DbPool) -> Result<()> {
+    let out = CtlOut::from_args(args, "webmail-cors disable");
+    set_setting(pool, settings_keys::WEBIMAP_ENABLED, "false").await?;
+    set_setting(pool, settings_keys::WEBSMTP_ENABLED, "false").await?;
+    out.done_msg(
+        "⏸ Browser access disabled (WebIMAP + WebSMTP off)",
+        serde_json::json!({
+            "status": "disabled",
+            "browser_access_enabled": false,
+            "webimap_enabled": false,
+            "websmtp_enabled": false,
+        }),
+        "Browser access disabled",
     )
 }
 

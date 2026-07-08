@@ -100,13 +100,47 @@ async fn dispatch_webmail_cors_enable_and_add() {
         .unwrap_or_default();
     assert!(cors.contains("http://127.0.0.1:5173"));
 
-    let cli = parse_cli(dir.path(), &["webmail-cors", "add", "http://localhost:5173"]);
+    let cli = parse_cli(
+        dir.path(),
+        &["webmail-cors", "add", "http://localhost:5173"],
+    );
     dispatch(&cli).await.unwrap();
     let cors = get_setting(&pool, settings_keys::WEBMAIL_CORS_ORIGINS)
         .await
         .unwrap()
         .unwrap_or_default();
     assert!(cors.contains("http://localhost:5173"));
+}
+
+#[tokio::test]
+async fn dispatch_webmail_cors_enable_without_origin_and_disable() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+
+    let cli = parse_cli(dir.path(), &["webmail-cors", "enable"]);
+    dispatch(&cli).await.unwrap();
+    assert!(
+        get_bool_setting(&pool, settings_keys::WEBIMAP_ENABLED, false)
+            .await
+            .unwrap()
+    );
+    assert!(
+        get_bool_setting(&pool, settings_keys::WEBSMTP_ENABLED, false)
+            .await
+            .unwrap()
+    );
+
+    let cli = parse_cli(dir.path(), &["webmail-cors", "disable"]);
+    dispatch(&cli).await.unwrap();
+    assert!(
+        !get_bool_setting(&pool, settings_keys::WEBIMAP_ENABLED, true)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !get_bool_setting(&pool, settings_keys::WEBSMTP_ENABLED, true)
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -511,22 +545,20 @@ fn cli_language_and_registration_parse() {
         }))) if port == "8443"
     ));
 
-    let cli = parse_cli(
-        std::path::Path::new("/tmp"),
-        &["port", "http", "disable"],
-    );
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["port", "http", "disable"]);
     assert!(matches!(
         cli.command,
-        Some(Command::Port(PortCommand::Http(PortServiceCommand::Disable)))
+        Some(Command::Port(PortCommand::Http(
+            PortServiceCommand::Disable
+        )))
     ));
 
-    let cli = parse_cli(
-        std::path::Path::new("/tmp"),
-        &["port", "https", "enable"],
-    );
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["port", "https", "enable"]);
     assert!(matches!(
         cli.command,
-        Some(Command::Port(PortCommand::Https(PortServiceCommand::Enable)))
+        Some(Command::Port(PortCommand::Https(
+            PortServiceCommand::Enable
+        )))
     ));
 
     let cli = parse_cli(

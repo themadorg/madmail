@@ -7,27 +7,34 @@ Alias: `webmail-dev` (same command).
 ## Synopsis
 
 ```bash
-madmail webmail-cors <status|set|add|remove|reset|enable>
+madmail webmail-cors <status|enable|disable|set|add|remove|reset>
 ```
+
+Alias: `madmail webmail-dev` (same command).
 
 ## Subcommands
 
 | Subcommand | Description |
 |------------|-------------|
-| `status` | Show origins list and WebIMAP/WebSMTP status (default) |
-| `set ORIGINS` | Replace full list (comma/newline separated; `*` = any) |
-| `add ORIGIN` | Append one origin |
-| `remove ORIGIN` | Remove one origin |
-| `reset` | Clear all origins |
-| `enable ORIGIN` | Enable WebIMAP + WebSMTP and allow CORS from ORIGIN |
+| `status` | Show browser access, WebIMAP/WebSMTP, and optional CORS whitelist (default) |
+| `enable [ORIGIN]` | Turn on WebIMAP + WebSMTP. Without ORIGIN, the server reflects each request `Origin` (no `*`) |
+| `disable` | Turn off WebIMAP + WebSMTP (browser access off) |
+| `set ORIGINS` | Replace full whitelist (comma/newline separated; `*` = any) |
+| `add ORIGIN` | Append one origin to the whitelist |
+| `remove ORIGIN` | Remove one origin from the whitelist |
+| `reset` | Clear the whitelist |
 
 ## Examples
 
 ```bash
-# Local Vite dev app
+# Enable browser access (reflect request Origin — recommended)
+madmail webmail-cors enable
+
+# Legacy: enable and add a specific origin to the whitelist
 madmail webmail-cors enable http://127.0.0.1:5173
 
 madmail webmail-cors status
+madmail webmail-cors disable
 madmail webmail-cors add http://localhost:5173
 madmail webmail-cors set "http://127.0.0.1:5173,http://localhost:5173"
 ```

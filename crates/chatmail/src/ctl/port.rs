@@ -186,10 +186,7 @@ fn port_status_all(args: &Args, settings: &HashMap<String, String>) -> Result<()
             format!("{}:", spec.display)
         );
         if let Some(on) = service_enabled(settings, spec) {
-            line.push_str(&format!(
-                " enabled={}",
-                if on { "yes" } else { "no" }
-            ));
+            line.push_str(&format!(" enabled={}", if on { "yes" } else { "no" }));
         }
         out.line(line);
     }
@@ -229,10 +226,7 @@ async fn port_service(
                 ));
                 out.line(format!("    mode: {}", service_mode(settings, spec)));
                 if let Some(on) = enabled {
-                    out.line(format!(
-                        "    enabled: {}",
-                        if on { "yes" } else { "no" }
-                    ));
+                    out.line(format!("    enabled: {}", if on { "yes" } else { "no" }));
                 }
                 out.blank();
                 Ok(())
@@ -333,10 +327,7 @@ async fn set_listener_enabled(
     on: bool,
 ) -> Result<()> {
     let key = spec.enabled_key.ok_or_else(|| {
-        ChatmailError::config(format!(
-            "{} does not support enable/disable",
-            spec.display
-        ))
+        ChatmailError::config(format!("{} does not support enable/disable", spec.display))
     })?;
     set_setting(pool, key, if on { "true" } else { "false" }).await?;
     let verb = if on { "enabled" } else { "disabled" };

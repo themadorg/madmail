@@ -259,6 +259,7 @@ async fn run_smtp_transaction(
 }
 
 /// Legacy name used by unit tests.
+#[cfg(test)]
 async fn deliver_to_endpoint(
     endpoint: &str,
     connect_host: &str,

@@ -29,9 +29,9 @@ use mail_parser::MessageParser;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::cors::CorsSnap;
 use crate::gate::{is_webimap_enabled, service_disabled};
 use crate::handlers::webimap_authenticate;
-use crate::cors::CorsSnap;
 use crate::response::{json_err, json_ok, options_preflight as cors_options_preflight};
 use crate::WwwState;
 

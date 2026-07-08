@@ -45,9 +45,12 @@ pub async fn webmail_dev(st: &AdminState, method: &str, body: &Value) -> AdminRe
                 .unwrap_or_default();
             let webimap = toggle_status(pool, settings_keys::WEBIMAP_ENABLED).await?;
             let websmtp = toggle_status(pool, settings_keys::WEBSMTP_ENABLED).await?;
+            let browser_access = webimap == "enabled" && websmtp == "enabled";
             Ok((
                 200,
                 Some(json!({
+                    "status": if browser_access { "enabled" } else { "disabled" },
+                    "browser_access_enabled": browser_access,
                     "webimap_enabled": webimap,
                     "websmtp_enabled": websmtp,
                     "cors_origins": cors,
@@ -96,18 +99,28 @@ fn validate_origin(origin: &str) -> Result<(), (u16, String)> {
 }
 
 async fn enable_dev(pool: &DbPool, origin: &str) -> AdminResult {
-    validate_origin(origin)?;
+    if !origin.is_empty() {
+        validate_origin(origin)?;
+    }
     set_setting(pool, settings_keys::WEBIMAP_ENABLED, "true")
         .await
         .map_err(db_err)?;
     set_setting(pool, settings_keys::WEBSMTP_ENABLED, "true")
         .await
         .map_err(db_err)?;
-    let merged = merge_origin(pool, origin).await?;
+    let merged = if origin.is_empty() {
+        get_setting(pool, settings_keys::WEBMAIL_CORS_ORIGINS)
+            .await
+            .map_err(db_err)?
+            .unwrap_or_default()
+    } else {
+        merge_origin(pool, origin).await?
+    };
     Ok((
         200,
         Some(json!({
             "status": "enabled",
+            "browser_access_enabled": true,
             "webimap_enabled": "enabled",
             "websmtp_enabled": "enabled",
             "cors_origins": merged,
@@ -152,6 +165,7 @@ async fn disable_dev(pool: &DbPool) -> AdminResult {
         200,
         Some(json!({
             "status": "disabled",
+            "browser_access_enabled": false,
             "webimap_enabled": "disabled",
             "websmtp_enabled": "disabled",
         })),

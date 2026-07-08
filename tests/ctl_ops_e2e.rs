@@ -67,11 +67,7 @@ fn e2e_webmail_cors_enable() {
 
     chatmail()
         .args(base.clone())
-        .args([
-            "webmail-cors",
-            "enable",
-            "http://127.0.0.1:5173",
-        ])
+        .args(["webmail-cors", "enable", "http://127.0.0.1:5173"])
         .assert()
         .success()
         .stdout(predicate::str::contains("127.0.0.1:5173"));
@@ -96,6 +92,41 @@ fn e2e_webmail_cors_enable() {
             .unwrap_or_default();
         assert!(cors.contains("http://127.0.0.1:5173"));
     });
+}
+
+#[test]
+fn e2e_webmail_cors_enable_disable_no_origin() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    chatmail()
+        .args(base.clone())
+        .args(["webmail-cors", "enable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Browser access enabled"));
+
+    chatmail()
+        .args(base.clone())
+        .args(["webmail-cors", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Browser access:  enabled"));
+
+    chatmail()
+        .args(base.clone())
+        .args(["webmail-cors", "disable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Browser access disabled"));
+
+    chatmail()
+        .args(base)
+        .args(["webmail-cors", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Browser access:  disabled"));
 }
 
 #[test]

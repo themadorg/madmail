@@ -232,10 +232,9 @@ async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<(
     }
 
     let obtain = effective_obtain_certificate(args);
-    let missing_pems =
-        !cfg.cert_path.is_file() || !cfg.key_path.is_file();
-    let should_obtain = obtain
-        && (cfg.tls_mode == "autocert" || (cfg.tls_mode == "file" && missing_pems));
+    let missing_pems = !cfg.cert_path.is_file() || !cfg.key_path.is_file();
+    let should_obtain =
+        obtain && (cfg.tls_mode == "autocert" || (cfg.tls_mode == "file" && missing_pems));
 
     if should_obtain {
         if cfg.acme_email.is_empty() {
@@ -249,9 +248,7 @@ async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<(
             "DNS"
         };
         let http_listen = parse_http_listen(&args.http_listen)?;
-        println!(
-            "Obtaining Let's Encrypt {label} certificate (HTTP-01 on {http_listen})…"
-        );
+        println!("Obtaining Let's Encrypt {label} certificate (HTTP-01 on {http_listen})…");
         let opts = ObtainOptions {
             domain: cfg.primary_domain.clone(),
             email: cfg.acme_email.clone(),

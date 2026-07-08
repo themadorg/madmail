@@ -48,12 +48,13 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::cors::{CorsAllow, CorsSnap};
+    use crate::cors::CorsSnap;
 
     fn snap_with_star() -> CorsSnap {
         CorsSnap {
             allowed: vec!["*".into()],
             request_origin: Some("http://localhost:5173".into()),
+            auto_reflect_origin: false,
         }
     }
 
@@ -97,6 +98,7 @@ mod tests {
         let cors = CorsSnap {
             allowed: vec!["http://127.0.0.1:5173".into()],
             request_origin: Some("http://evil.test".into()),
+            auto_reflect_origin: false,
         };
         let resp = options_preflight(&cors);
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
@@ -108,6 +110,7 @@ mod tests {
         let cors = CorsSnap {
             allowed: vec!["http://127.0.0.1:5173".into()],
             request_origin: Some("http://127.0.0.1:5173".into()),
+            auto_reflect_origin: false,
         };
         let resp = json_ok(StatusCode::OK, &json!({}), &cors);
         assert_eq!(

@@ -40,7 +40,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         }
         Some(Command::AdminWeb { cmd }) => admin_web::admin_web(&cli.args, cmd).await,
         Some(Command::Version) => version::print_version(&cli.args),
-        Some(Command::Install(args)) => install::install(&cli.args, args).await,
+        Some(Command::Install(args)) => install::install(&cli.args, args.as_ref()).await,
         Some(Command::Certificate { cmd }) => certificate::certificate(&cli.args, cmd).await,
         Some(Command::Accounts(cmd)) => accounts::accounts(&cli.args, cmd).await,
         Some(Command::BanList) => accounts::ban_list(&cli.args).await,

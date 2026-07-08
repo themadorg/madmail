@@ -256,7 +256,10 @@ pub struct NewAccountQuery {
     pub token: String,
 }
 
-pub async fn new_account_options(State(st): State<WwwState>, headers: HeaderMap) -> impl IntoResponse {
+pub async fn new_account_options(
+    State(st): State<WwwState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     let cors = st.cors_snap(&headers).await;
     crate::response::options_preflight(&cors)
 }
@@ -424,11 +427,7 @@ pub async fn webimap_send(
     }
 
     match websmtp_deliver(&st, &user, &req.to, &req.body).await {
-        Ok(()) => cors_json(
-            StatusCode::OK,
-            json!({ "status": "sent" }),
-            &cors,
-        ),
+        Ok(()) => cors_json(StatusCode::OK, json!({ "status": "sent" }), &cors),
         Err(e) => {
             let (status, msg) = web_delivery_error(&e);
             if status == StatusCode::INTERNAL_SERVER_ERROR {
@@ -516,7 +515,9 @@ pub(crate) async fn webimap_authenticate(
     let password = headers
         .get("x-password")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| webimap_error(StatusCode::UNAUTHORIZED, "missing X-Password header", cors))?;
+        .ok_or_else(|| {
+            webimap_error(StatusCode::UNAUTHORIZED, "missing X-Password header", cors)
+        })?;
 
     let user = normalize_username(email)
         .map_err(|e| webimap_error(StatusCode::BAD_REQUEST, &e.to_string(), cors))?;
@@ -558,7 +559,11 @@ fn webimap_error(status: StatusCode, message: &str, cors: &crate::cors::CorsSnap
     crate::response::json_err(status, message, cors)
 }
 
-fn cors_json(status: StatusCode, value: serde_json::Value, cors: &crate::cors::CorsSnap) -> Response {
+fn cors_json(
+    status: StatusCode,
+    value: serde_json::Value,
+    cors: &crate::cors::CorsSnap,
+) -> Response {
     crate::response::with_cors((status, Json(value)).into_response(), cors)
 }
 

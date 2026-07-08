@@ -132,7 +132,7 @@ pub enum Command {
     #[command(name = "imap-acct")]
     ImapAcct,
     /// Install and configure the mail server.
-    Install(InstallArgs),
+    Install(Box<InstallArgs>),
     /// TLS certificates (Let's Encrypt / file / self-signed).
     Certificate {
         #[command(subcommand)]
@@ -315,11 +315,13 @@ pub enum WebmailCorsCommand {
     },
     /// Clear all CORS origins.
     Reset,
-    /// Enable WebIMAP + WebSMTP and allow CORS from ORIGIN (local dev workflow).
+    /// Enable browser access (WebIMAP + WebSMTP). ORIGIN is optional on v2.11+ (request Origin is reflected).
     Enable {
         #[arg(value_name = "ORIGIN")]
-        origin: String,
+        origin: Option<String>,
     },
+    /// Disable browser access (turn off WebIMAP + WebSMTP).
+    Disable,
 }
 
 /// `chatmail webimap` / `websmtp` — `__WEBIMAP_ENABLED__` / `__WEBSMTP_ENABLED__`.

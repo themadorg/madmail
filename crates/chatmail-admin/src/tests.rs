@@ -725,6 +725,97 @@ async fn turn_relay_port_settings_reject_control_port_in_range() {
 }
 
 #[tokio::test]
+async fn webmail_dev_enable_without_origin_sets_services_only() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let (_, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/services/webmail_dev",
+        &json!({ "action": "enable" }),
+    )
+    .await
+    .unwrap();
+    let body = body.unwrap();
+    assert_eq!(body.get("status").and_then(|v| v.as_str()), Some("enabled"));
+    assert_eq!(
+        body.get("browser_access_enabled").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+}
+
+#[tokio::test]
+async fn webmail_dev_disable_turns_off_services() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    resources::dispatch(
+        &st,
+        "POST",
+        "/admin/services/webmail_dev",
+        &json!({ "action": "enable" }),
+    )
+    .await
+    .unwrap();
+    let (_, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/services/webmail_dev",
+        &json!({ "action": "disable" }),
+    )
+    .await
+    .unwrap();
+    let body = body.unwrap();
+    assert_eq!(
+        body.get("status").and_then(|v| v.as_str()),
+        Some("disabled")
+    );
+    assert_eq!(
+        body.get("browser_access_enabled").and_then(|v| v.as_bool()),
+        Some(false)
+    );
+}
+
+#[tokio::test]
+async fn webmail_dev_enable_sets_services_and_cors() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let (_, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/services/webmail_dev",
+        &json!({
+            "action": "enable",
+            "origin": "http://127.0.0.1:5173"
+        }),
+    )
+    .await
+    .unwrap();
+    let body = body.unwrap();
+    assert_eq!(body.get("status").and_then(|v| v.as_str()), Some("enabled"));
+    assert_eq!(
+        body.get("webimap_enabled").and_then(|v| v.as_str()),
+        Some("enabled")
+    );
+    assert_eq!(
+        body.get("websmtp_enabled").and_then(|v| v.as_str()),
+        Some("enabled")
+    );
+    assert_eq!(
+        body.get("cors_origins").and_then(|v| v.as_str()),
+        Some("http://127.0.0.1:5173")
+    );
+}
+
+#[tokio::test]
 async fn p9_auth_gate_bearer() {
     use std::collections::HashMap;
     let gate = crate::auth::AuthGate::new("secret-token-01234567890123456789012345678901".into());

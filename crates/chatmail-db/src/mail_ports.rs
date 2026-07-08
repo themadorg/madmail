@@ -131,14 +131,8 @@ mod tests {
     #[test]
     fn db_ports_from_settings_http_https_enabled_flags() {
         let mut map = HashMap::new();
-        map.insert(
-            settings_keys::HTTP_ENABLED.to_string(),
-            "false".to_string(),
-        );
-        map.insert(
-            settings_keys::HTTPS_ENABLED.to_string(),
-            "true".to_string(),
-        );
+        map.insert(settings_keys::HTTP_ENABLED.to_string(), "false".to_string());
+        map.insert(settings_keys::HTTPS_ENABLED.to_string(), "true".to_string());
         let ports = db_ports_from_settings(&map);
         assert!(!ports.http_enabled);
         assert!(ports.https_enabled);
