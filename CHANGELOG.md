@@ -1,3 +1,10 @@
+## [2.11.2](https://github.com/themadorg/madmail/compare/v2.11.1...v2.11.2) (2026-07-07)
+
+
+### Bug Fixes
+
+* **storage:** avoid maildir list-cache deadlock under concurrent access ([4e28790](https://github.com/themadorg/madmail/commit/4e2879052b42e29b2bda59396d276fee4b5548c3))
+
 ## [2.11.1](https://github.com/themadorg/madmail/compare/v2.11.0...v2.11.1) (2026-06-17)
 
 

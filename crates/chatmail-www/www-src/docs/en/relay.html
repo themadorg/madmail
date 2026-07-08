@@ -238,13 +238,18 @@
         <p>First, set up the following DNS records in your domain management panel:</p>
 
         <div class="dns-records">
-            <span class="comment"># A record — point domain to server IP</span><br>
+            <span class="comment"># A record — point hostname to server IP (required before install)</span><br>
             chat.example.org. A 203.0.113.50<br>
+            <br>
+            <span class="comment"># MX record — mail domain → hostname (SMTP fallback federation)</span><br>
+            example.org. MX 10 chat.example.org.<br>
         </div>
+
+        <p>Optional for SMTP deliverability (not required for chatmail HTTP federation between relays): SPF, DKIM TXT at <code>default._domainkey</code>, and DMARC. <code>install --domain</code> obtains TLS and generates DKIM signing keys; you publish DNS TXT records yourself. See the operator guide <strong>DNS and Mail Authentication</strong> in the project docs.</p>
 
         <div class="tip-box">
             <strong>Note:</strong> After setting up records, it may take 5 minutes to 24 hours to propagate.
-            To check immediately: <code>dig +short chat.example.org A</code>
+            To check immediately: <code>dig +short chat.example.org A</code> and <code>curl -sI https://chat.example.org/mxdeliv</code>
         </div>
 
         <h2>Step 2: Choose TLS Mode</h2>

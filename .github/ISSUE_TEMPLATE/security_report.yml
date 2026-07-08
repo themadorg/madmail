@@ -1,0 +1,82 @@
+name: Security
+description: Report a vulnerability privately or propose a security improvement
+title: "[Security]: "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not post exploit details, credentials, or live attack steps in a public issue.**
+
+        If you believe you have found a **vulnerability** (auth bypass, PGP enforcement failure, data leakage, privilege escalation, etc.), report it privately:
+
+        → **[Report a vulnerability](https://github.com/themadorg/madmail/security/advisories/new)** (GitHub Security Advisories)
+
+        Use this template only for **non-sensitive** security topics: hardening ideas, threat-model questions, or documentation gaps. For general questions, use [Discussions](https://github.com/themadorg/madmail/discussions).
+
+  - type: dropdown
+    id: report_type
+    attributes:
+      label: Report type
+      options:
+        - Security hardening / improvement (not an active vulnerability)
+        - Security documentation gap
+        - Threat model / design question
+        - I have a vulnerability — I will report it privately instead
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Authentication / JIT registration
+        - PGP enforcement gate
+        - Admin API / admin token handling
+        - Federation /mxdeliv
+        - SMTP / IMAP session handling
+        - TLS / ACME / certificates
+        - Logging / No-Log policy
+        - Storage / quota / data retention
+        - TURN / Iroh / relay credentials
+        - Configuration / secrets handling
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the concern or improvement. Do not include working exploits, live credentials, or customer data.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact (if known)
+      description: Who or what could be affected? What is the worst reasonable outcome?
+      placeholder: e.g. Unauthenticated access to admin API, message content exposure, account takeover
+    validations:
+      required: false
+
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Suggested mitigation or references
+      description: Ideas, relevant TDD sections, or links to standards/RFCs
+      placeholder: e.g. docs/TDD/12-security.md, rate-limit on …, stricter validation in …
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Reporter checklist
+      options:
+        - label: I did not include exploit code, secrets, or personal data in this issue
+          required: true
+        - label: If this is an active vulnerability, I will (or have) reported it via GitHub Security Advisories instead
+          required: true

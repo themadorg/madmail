@@ -1,0 +1,77 @@
+name: Feature request
+description: Propose a new capability or improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem you want solved. For large changes, check whether a [TDD document](https://github.com/themadorg/madmail/tree/main/docs/TDD) or design note already exists.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - SMTP
+        - IMAP
+        - Federation
+        - Authentication / registration
+        - Admin API / admin web UI
+        - TURN / STUN / Iroh relay
+        - TLS / ACME
+        - Storage / quota
+        - Configuration / CLI
+        - Operator / deployment experience
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What pain point or gap does this address?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should Madmail behave? Include operator or Delta Chat user impact if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about, or workarounds in use today
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Estimated scope
+      options:
+        - Small (localized change, one crate or doc)
+        - Medium (cross-crate, new API surface, new tests)
+        - Large (new subsystem — likely needs TDD / plan doc first)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Design constraints
+      description: Madmail aims for a single binary and simple ops — note anything that affects these
+      options:
+        - label: Should preserve behavior parity with Madmail v1 (Go) where applicable
+          required: false
+        - label: Affects PGP enforcement, auth, admin tokens, or logging (No-Log)
+          required: false
+        - label: Requires a new external process or mandatory sidecar
+          required: false

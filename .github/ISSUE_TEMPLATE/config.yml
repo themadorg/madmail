@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & general discussion
+    url: https://github.com/themadorg/madmail/discussions
+    about: Ask questions, share ideas, or discuss deployment — not everything needs an issue.
+  - name: Report a vulnerability (private)
+    url: https://github.com/themadorg/madmail/security/advisories/new
+    about: Do not post security vulnerabilities publicly — use GitHub Security Advisories.
+  - name: Documentation index
+    url: https://github.com/themadorg/madmail/tree/main/docs/project
+    about: Developer and operator guides live in docs/project/ and docs/project/user-guide/.

@@ -93,6 +93,14 @@ madmail install --simple --domain mail.example.org \
 ### Cons
 - You need to control DNS for the domain (or at least be able to point it at your IP).
 
+### DNS records (domain)
+
+Before install, point an **`A` or `AAAA`** record at your server and keep port **80** free for Let's Encrypt. After install, add an **`MX`** record for SMTP fallback federation.
+
+`install --domain` obtains TLS and generates DKIM signing keys on the server; it does **not** publish SPF, DKIM TXT, or DMARC in your DNS. Federation with other chatmail servers does not require those records.
+
+Full checklist, examples, and verification commands: **[DNS and Mail Authentication](./12-dns-mail-auth.md)**.
+
 ## 4. Domain Server + No Trusted Certificate (Self-signed)
 
 You have a domain, but for some reason you don't want (or can't get) a real certificate right now.

@@ -40,6 +40,8 @@ sudo systemctl enable --now madmail
 
 Port **80** must be free during install when autocert issuance runs (default for valid DNS names).
 
+**Before install (domain):** create an **`A` or `AAAA`** record for the hostname pointing at this machine. See [DNS and Mail Authentication](../project/user-guide/12-dns-mail-auth.md) for the full checklist (MX, SPF, DKIM, DMARC, federation).
+
 ### Local / dev — custom paths (no root)
 
 ```bash
@@ -374,12 +376,16 @@ Regenerate with `make man`; the rendered `docs/man/madmail.1` is embedded at bui
 | TLS renewal (autocert) | In-process `renew-certificate` task while server runs |
 | Re-issue cert | `madmail certificate get` or `regenerate` |
 
+**Domain deployments:** add **`MX`** if you did not before install; optionally publish SPF, DKIM TXT (`default._domainkey`), and DMARC. Verify federation: `curl -sI https://<hostname>/mxdeliv` (405/400 = reachable). Details: [DNS and Mail Authentication](../project/user-guide/12-dns-mail-auth.md).
+
 For IP/self-signed relays, Delta Chat clients may need to accept self-signed certificates or use `turn_off_tls` (set by default on `--simple --ip` without `--auto-ip-cert`).
 
 ---
 
 ## Related docs
 
+- [DNS and Mail Authentication](../project/user-guide/12-dns-mail-auth.md) — records, SPF/DKIM/DMARC, federation checks
+- [Sending and federation](../project/user-guide/05-sending-receiving-and-federation.md) — how `/mxdeliv` works
 - [Docker deployment guide](docker.md) — container layout, volumes, `install` with `--skip-systemd`
 - [Install: public IP + Let's Encrypt](../install-simple-ip-acme.md) — `--auto-ip-cert` details
 - [CLI command reference](cli/README.md) — one page per `madmail` subcommand

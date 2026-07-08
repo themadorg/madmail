@@ -25,6 +25,7 @@ It is written in the same spirit as the original Madmail "chatmail" documentatio
 | Browser access, WebIMAP, sharing contacts | [09-browser-and-web-access.md](./09-browser-and-web-access.md) | End users |
 | Common problems & how to fix them | [10-troubleshooting.md](./10-troubleshooting.md) | Everyone |
 | IP-only vs Domain, with or without certificates | [11-deployment-ip-domain-certs.md](./11-deployment-ip-domain-certs.md) | Operators (very common question) |
+| DNS, SPF, DKIM, DMARC, federation reachability | [12-dns-mail-auth.md](./12-dns-mail-auth.md) | Operators (very common question) |
 | Advanced / stealth deployment options | [12-advanced-deployment.md](./12-advanced-deployment.md) | Experienced operators |
 | Customizing the HTML pages and web UI | [17-customizing-html-pages.md](./17-customizing-html-pages.md) | Operators who want to brand or modify the public site |
 | Endpoint Rewrite (push-push / domain redirection) | [15-endpoint-rewrite.md](./15-endpoint-rewrite.md) | Advanced operators |
@@ -33,7 +34,7 @@ It is written in the same spirit as the original Madmail "chatmail" documentatio
 ## How to Read These Guides
 
 - **Normal users** (people with Delta Chat accounts on your server): Read 01, 04, 05, 06, 09.
-- **Server operators / admins**: Read everything, especially 02, 03, 07, 08, 10, 11.
+- **Server operators / admins**: Read everything, especially 02, 03, 07, 08, 10, 11, 12 (DNS).
 - **Power users / Delta Chat enthusiasts**: All of them.
 
 ## Relationship to Other Documentation

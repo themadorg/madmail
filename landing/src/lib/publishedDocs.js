@@ -11,6 +11,7 @@ export const COMPILED_DOC_ROUTES = [
 	'project/user-guide/09-browser-and-web-access',
 	'project/user-guide/10-troubleshooting',
 	'project/user-guide/11-deployment-ip-domain-certs',
+	'project/user-guide/12-dns-mail-auth',
 	'project/user-guide/15-endpoint-rewrite',
 	'project/user-guide/16-exchangers',
 	'project/user-guide/17-customizing-html-pages',

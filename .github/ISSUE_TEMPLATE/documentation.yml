@@ -1,0 +1,91 @@
+name: Documentation
+description: Report missing, unclear, or incorrect documentation
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve Madmail's docs. For code bugs or feature requests, use the other issue templates.
+
+        Doc locations:
+        - [User & operator guide](https://github.com/themadorg/madmail/tree/main/docs/project/user-guide) — practical setup and usage
+        - [Developer tour](https://github.com/themadorg/madmail/tree/main/docs/project) — architecture and codebase (01–17 series)
+        - [TDD](https://github.com/themadorg/madmail/tree/main/docs/TDD) — design decisions
+        - [Local dev](https://github.com/themadorg/madmail/blob/main/docs/local-dev.md) / [install guides](https://github.com/themadorg/madmail/tree/main/docs)
+
+  - type: dropdown
+    id: doc_set
+    attributes:
+      label: Documentation set
+      options:
+        - User & operator guide (`docs/project/user-guide/`)
+        - Developer tour (`docs/project/`)
+        - TDD (`docs/TDD/`)
+        - Install / deployment guide
+        - Local development guide
+        - README or landing site
+        - In-server docs (`/docs/` HTML)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: page
+    attributes:
+      label: Page or file (if known)
+      description: Path or URL to the doc in question
+      placeholder: e.g. docs/project/user-guide/02-quick-start.md
+    validations:
+      required: false
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Primary audience
+      options:
+        - Server operator
+        - End user (Delta Chat)
+        - Developer / contributor
+        - All of the above
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue type
+      options:
+        - Missing documentation
+        - Unclear or confusing explanation
+        - Incorrect or outdated information
+        - Broken link or reference
+        - Typo / formatting
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing?
+      description: What did you expect to find, and what did you find instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: How should the doc read? Include draft wording if helpful.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Reporter checklist
+      options:
+        - label: I searched existing issues for duplicates
+          required: true
+        - label: I am willing to open a PR with a doc fix (optional — not required)
+          required: false
