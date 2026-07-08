@@ -92,9 +92,21 @@ pub struct InstallArgs {
     #[arg(long)]
     pub binary_path: Option<PathBuf>,
 
-    /// Obtain Let's Encrypt cert during install (`autocert` mode only; needs port 80).
-    #[arg(long, default_value_t = true)]
+    /// Obtain Let's Encrypt cert during install (`autocert`, or `file` when PEMs are missing; needs port 80).
+    #[arg(long, action = clap::ArgAction::SetTrue)]
     pub obtain_certificate: bool,
+
+    /// Skip Let's Encrypt issuance during install (use with existing PEMs or `self_signed`).
+    #[arg(long = "no-obtain-certificate", action = clap::ArgAction::SetTrue)]
+    pub no_obtain_certificate: bool,
+
+    /// Only create TLS directories and obtain a certificate; skip config, DB, and systemd.
+    #[arg(long)]
+    pub cert_only: bool,
+
+    /// HTTP-01 listener for certificate issuance (port 80 must be free).
+    #[arg(long, default_value = "0.0.0.0:80")]
+    pub http_listen: String,
 
     /// Obtain a Let's Encrypt short-lived certificate for `--ip` (HTTP-01 on port 80).
     #[arg(long)]

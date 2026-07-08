@@ -31,7 +31,8 @@ use serde_json::json;
 
 use crate::gate::{is_webimap_enabled, service_disabled};
 use crate::handlers::webimap_authenticate;
-use crate::response::{json_err, json_ok, options_preflight};
+use crate::cors::CorsSnap;
+use crate::response::{json_err, json_ok, options_preflight as cors_options_preflight};
 use crate::WwwState;
 
 #[derive(Serialize)]
@@ -185,10 +186,14 @@ fn chrono_lite_now() -> String {
     format!("{secs}")
 }
 
-pub(crate) async fn load_entries(st: &WwwState, user: &str) -> Result<Vec<InboxEntry>, Response> {
+pub(crate) async fn load_entries(
+    st: &WwwState,
+    user: &str,
+    cors: &CorsSnap,
+) -> Result<Vec<InboxEntry>, Response> {
     list_inbox(&st.app.mailbox_store, user)
         .await
-        .map_err(|e| json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))
+        .map_err(|e| json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string(), cors))
 }
 
 pub(crate) async fn find_entry(entries: &[InboxEntry], uid: u32) -> Option<InboxEntry> {
@@ -199,10 +204,11 @@ pub(crate) async fn build_detail(
     st: &WwwState,
     user: &str,
     entry: &InboxEntry,
+    cors: &CorsSnap,
 ) -> Result<MessageDetail, Response> {
     let raw = read_blob(&st.app.mailbox_store, user, "INBOX", &entry.msg_id)
         .await
-        .map_err(|e| json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+        .map_err(|e| json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string(), cors))?;
     let (envelope, body) = parse_envelope(&raw);
     let date = if envelope.date.is_empty() {
         chrono_lite_now()
@@ -222,21 +228,23 @@ pub(crate) async fn build_detail(
     })
 }
 
-/// OPTIONS preflight for WebIMAP REST routes.
-pub async fn options() -> Response {
-    options_preflight()
+/// OPTIONS preflight for WebIMAP / WebSMTP REST routes.
+pub async fn options_preflight(State(st): State<WwwState>, headers: HeaderMap) -> Response {
+    let cors = st.cors_snap(&headers).await;
+    cors_options_preflight(&cors)
 }
 
 /// GET `/webimap/mailboxes`
 pub async fn mailboxes(State(st): State<WwwState>, headers: HeaderMap) -> Response {
+    let cors = st.cors_snap(&headers).await;
     if !is_webimap_enabled(&st.pool).await {
-        return service_disabled();
+        return service_disabled(&cors);
     }
-    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers, &cors).await {
         Ok(u) => u,
         Err(r) => return r,
     };
-    let entries = match load_entries(&st, &user).await {
+    let entries = match load_entries(&st, &user, &cors).await {
         Ok(e) => e,
         Err(r) => return r,
     };
@@ -249,6 +257,7 @@ pub async fn mailboxes(State(st): State<WwwState>, headers: HeaderMap) -> Respon
             messages: unseen,
             unseen,
         }],
+        &cors,
     )
 }
 
@@ -258,22 +267,23 @@ pub async fn messages(
     headers: HeaderMap,
     Query(q): Query<MessagesQuery>,
 ) -> Response {
+    let cors = st.cors_snap(&headers).await;
     if !is_webimap_enabled(&st.pool).await {
-        return service_disabled();
+        return service_disabled(&cors);
     }
-    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers, &cors).await {
         Ok(u) => u,
         Err(r) => return r,
     };
     if q.mailbox.as_deref().is_some_and(|m| m != "INBOX") {
-        return json_err(StatusCode::BAD_REQUEST, "unknown mailbox");
+        return json_err(StatusCode::BAD_REQUEST, "unknown mailbox", &cors);
     }
     let since = q.since_uid.unwrap_or(0);
     let wait = q.wait.unwrap_or(0).min(120);
     let deadline = tokio::time::Instant::now() + Duration::from_secs(wait as u64);
 
     loop {
-        let entries = match load_entries(&st, &user).await {
+        let entries = match load_entries(&st, &user, &cors).await {
             Ok(e) => e,
             Err(r) => return r,
         };
@@ -281,12 +291,14 @@ pub async fn messages(
         for entry in entries.iter().filter(|e| e.uid > since) {
             let raw = match read_blob(&st.app.mailbox_store, &user, "INBOX", &entry.msg_id).await {
                 Ok(b) => b,
-                Err(e) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+                Err(e) => {
+                    return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string(), &cors);
+                }
             };
             out.push(entry_to_summary(entry, &raw));
         }
         if !out.is_empty() || tokio::time::Instant::now() >= deadline {
-            return json_ok(StatusCode::OK, &out);
+            return json_ok(StatusCode::OK, &out, &cors);
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
@@ -299,25 +311,26 @@ pub async fn message_get(
     axum::extract::Path(path): axum::extract::Path<MessagePath>,
     Query(q): Query<MessageQuery>,
 ) -> Response {
+    let cors = st.cors_snap(&headers).await;
     if !is_webimap_enabled(&st.pool).await {
-        return service_disabled();
+        return service_disabled(&cors);
     }
-    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers, &cors).await {
         Ok(u) => u,
         Err(r) => return r,
     };
     if q.mailbox.as_deref().is_some_and(|m| m != "INBOX") {
-        return json_err(StatusCode::BAD_REQUEST, "unknown mailbox");
+        return json_err(StatusCode::BAD_REQUEST, "unknown mailbox", &cors);
     }
-    let entries = match load_entries(&st, &user).await {
+    let entries = match load_entries(&st, &user, &cors).await {
         Ok(e) => e,
         Err(r) => return r,
     };
     let Some(entry) = find_entry(&entries, path.uid).await else {
-        return json_err(StatusCode::NOT_FOUND, "message not found");
+        return json_err(StatusCode::NOT_FOUND, "message not found", &cors);
     };
-    match build_detail(&st, &user, &entry).await {
-        Ok(d) => json_ok(StatusCode::OK, &d),
+    match build_detail(&st, &user, &entry, &cors).await {
+        Ok(d) => json_ok(StatusCode::OK, &d, &cors),
         Err(r) => r,
     }
 }
@@ -347,27 +360,28 @@ async fn delete_by_uid(
     uid: u32,
     mailbox: Option<String>,
 ) -> Response {
+    let cors = st.cors_snap(&headers).await;
     if !is_webimap_enabled(&st.pool).await {
-        return service_disabled();
+        return service_disabled(&cors);
     }
-    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers, &cors).await {
         Ok(u) => u,
         Err(r) => return r,
     };
     if mailbox.as_deref().is_some_and(|m| m != "INBOX") {
-        return json_err(StatusCode::BAD_REQUEST, "unknown mailbox");
+        return json_err(StatusCode::BAD_REQUEST, "unknown mailbox", &cors);
     }
-    let entries = match load_entries(st, &user).await {
+    let entries = match load_entries(st, &user, &cors).await {
         Ok(e) => e,
         Err(r) => return r,
     };
     let Some(entry) = find_entry(&entries, uid).await else {
-        return json_err(StatusCode::NOT_FOUND, "message not found");
+        return json_err(StatusCode::NOT_FOUND, "message not found", &cors);
     };
     if let Err(e) = delete_blob(&st.app.mailbox_store, &user, &entry.msg_id).await {
-        return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+        return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string(), &cors);
     }
-    json_ok(StatusCode::OK, &json!({ "status": "deleted" }))
+    json_ok(StatusCode::OK, &json!({ "status": "deleted" }), &cors)
 }
 
 #[derive(Deserialize)]
@@ -384,21 +398,23 @@ pub async fn message_flags(
     headers: HeaderMap,
     Json(req): Json<FlagRequest>,
 ) -> Response {
+    let cors = st.cors_snap(&headers).await;
     if !is_webimap_enabled(&st.pool).await {
-        return service_disabled();
+        return service_disabled(&cors);
     }
-    let _user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
+    let _user = match webimap_authenticate(&st.app, &st.pool, &headers, &cors).await {
         Ok(u) => u,
         Err(r) => return r,
     };
     if req.mailbox != "INBOX" {
-        return json_err(StatusCode::BAD_REQUEST, "unknown mailbox");
+        return json_err(StatusCode::BAD_REQUEST, "unknown mailbox", &cors);
     }
     match req.op.as_str() {
-        "add" | "remove" | "set" => json_ok(StatusCode::OK, &json!({ "status": "ok" })),
+        "add" | "remove" | "set" => json_ok(StatusCode::OK, &json!({ "status": "ok" }), &cors),
         _ => json_err(
             StatusCode::BAD_REQUEST,
             "invalid op: must be add, remove, or set",
+            &cors,
         ),
     }
 }
@@ -406,11 +422,18 @@ pub async fn message_flags(
 /// GET `/webimap/ws` — Madmail bidirectional WebSocket + `new_message` push.
 pub async fn websocket(
     State(st): State<WwwState>,
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
     Query(q): Query<WsQuery>,
 ) -> impl IntoResponse {
+    let cors = st.cors_snap(&headers).await;
     if !is_webimap_enabled(&st.pool).await {
-        return service_disabled();
+        return service_disabled(&cors);
+    }
+    if let Some(origin) = cors.request_origin.as_deref() {
+        if cors.allows_cross_origin() && !cors.is_origin_allowed(origin) {
+            return StatusCode::FORBIDDEN.into_response();
+        }
     }
     let st = st.clone();
     ws.on_upgrade(move |socket| async move {
@@ -488,6 +511,9 @@ mod tests {
         let pool = init_memory_db().await.unwrap();
         if webimap_enabled {
             set_setting(&pool, settings_keys::WEBIMAP_ENABLED, "true")
+                .await
+                .unwrap();
+            set_setting(&pool, settings_keys::WEBMAIL_CORS_ORIGINS, "*")
                 .await
                 .unwrap();
         }

@@ -180,7 +180,10 @@ If `--tls-mode` is omitted, install **auto-detects**:
 |------|---------|-------------|
 | `--auto-ip-cert` | off | With `--simple --ip`: use Let's Encrypt IP certificate instead of self-signed. Needs a **public** routable IP and `--acme-email` (must be `user@domain`, not `user@IP`). |
 | `--acme-email` | empty (auto-filled for DNS autocert) | ACME account email. **Required** with `--auto-ip-cert`. |
-| `--obtain-certificate` | **on** (`true`) | When TLS mode is `autocert`, obtain certificate during install (port 80 must be free). There is currently no `--no-obtain-certificate` flag; use `file` / `self_signed` modes to skip ACME issuance. |
+| `--obtain-certificate` | **on** (default) | Obtain a Let's Encrypt certificate during install when mode is `autocert`, or when mode is `file` and PEMs are missing. Port 80 must be free on `--http-listen` (default `0.0.0.0:80`). |
+| `--no-obtain-certificate` | off | Skip ACME issuance (use with existing PEMs or `self_signed`). |
+| `--cert-only` | off | Only create TLS directories and obtain a certificate; skip config, database, and systemd. Run full install afterward with `--tls-mode file --no-obtain-certificate`. |
+| `--http-listen` | `0.0.0.0:80` | HTTP-01 bind address for certificate issuance during install. |
 | `--turn-off-tls` | off | Sets `turn_off_tls yes` in `chatmail` blocks (plain HTTP registration, insecure IMAP/SMTP auth). Default for `--simple --ip` without `--auto-ip-cert`. |
 | `--cert-path` | `{config-dir}/certs/fullchain.pem` | TLS certificate PEM path written into config |
 | `--key-path` | `{config-dir}/certs/privkey.pem` | TLS private key PEM path |
@@ -274,16 +277,38 @@ sudo madmail install --non-interactive --domain example.org \
   --hostname example.org --acme-email admin@example.org
 ```
 
+### Obtain certificate, then install (two-step)
+
+Use when you want HTTP-01 on port 80 **before** writing config or starting systemd:
+
+```bash
+sudo madmail install --simple --domain example.org \
+  --acme-email admin@example.org --cert-only
+
+sudo madmail install --simple --domain example.org \
+  --tls-mode file --no-obtain-certificate --lang en
+sudo systemctl enable --now madmail
+```
+
+### Obtain certificate during `file` mode install (one-step)
+
+If PEM paths do not exist yet, install can obtain them when `--acme-email` is set (default obtain is on):
+
+```bash
+sudo madmail install --simple --domain example.org \
+  --tls-mode file --acme-email admin@example.org --lang en
+```
+
 ### Bring your own certificates
 
 ```bash
 sudo madmail install --simple --domain example.org \
-  --tls-mode file \
+  --tls-mode file --no-obtain-certificate \
   --cert-path /etc/madmail/certs/fullchain.pem \
   --key-path /etc/madmail/certs/privkey.pem
 ```
 
-PEM files must exist before install runs.
+PEM files must exist when `--no-obtain-certificate` is used.
 
 ### Preview without changes
 

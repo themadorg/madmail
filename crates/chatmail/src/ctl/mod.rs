@@ -50,6 +50,7 @@ mod tasks;
 mod uninstall;
 mod util;
 mod version;
+mod webmail_cors;
 
 #[cfg(test)]
 mod dispatch_tests;

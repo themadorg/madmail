@@ -126,36 +126,39 @@ impl WwwState {
 pub fn www_router(state: WwwState) -> Router {
     Router::new()
         .route("/madmail", get(handlers::binary_download))
-        .route("/new", post(handlers::new_account))
+        .route(
+            "/new",
+            post(handlers::new_account).options(handlers::new_account_options),
+        )
         .route(
             "/webimap/send",
-            post(handlers::webimap_send).options(webimap::options),
+            post(handlers::webimap_send).options(webimap::options_preflight),
         )
         .route(
             "/websmtp/send",
-            post(handlers::webimap_send).options(webimap::options),
+            post(handlers::webimap_send).options(webimap::options_preflight),
         )
         .route(
             "/webimap/mailboxes",
-            get(webimap::mailboxes).options(webimap::options),
+            get(webimap::mailboxes).options(webimap::options_preflight),
         )
         .route(
             "/webimap/messages",
-            get(webimap::messages).options(webimap::options),
+            get(webimap::messages).options(webimap::options_preflight),
         )
         .route(
             "/webimap/message/{uid}",
             get(webimap::message_get)
                 .delete(webimap::message_delete)
-                .options(webimap::options),
+                .options(webimap::options_preflight),
         )
         .route(
             "/webimap/messages/{mailbox}/{uid}",
-            delete(webimap::messages_delete).options(webimap::options),
+            delete(webimap::messages_delete).options(webimap::options_preflight),
         )
         .route(
             "/webimap/message/flags",
-            post(webimap::message_flags).options(webimap::options),
+            post(webimap::message_flags).options(webimap::options_preflight),
         )
         .route("/webimap/ws", get(webimap::websocket))
         .route(

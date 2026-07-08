@@ -88,6 +88,17 @@ pub async fn run(socket: WebSocket, st: WwwState, q: WsQuery) -> Result<(), Stri
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
                 Message::Text(text) => {
+                    // Client keepalive (`{ "type": "ping" }`) — not a WsRequest.
+                    if text.contains("\"type\":\"ping\"") || text.contains("\"type\": \"ping\"") {
+                        writer_cmd
+                            .send_json(WsResponse {
+                                req_id: String::new(),
+                                action: "pong".into(),
+                                data: json!({}),
+                            })
+                            .await?;
+                        continue;
+                    }
                     let req: WsRequest = match serde_json::from_str(&text) {
                         Ok(r) => r,
                         Err(_) => {
@@ -124,27 +135,38 @@ pub async fn run(socket: WebSocket, st: WwwState, q: WsQuery) -> Result<(), Stri
                         Ok(_) => {}
                         Err(RecvError::Lagged(_)) => {
                             st_push.app.events.record_lag();
-                            continue;
                         }
-                        Err(RecvError::Closed) => break,
+                        // Sender may be recreated; resubscribe instead of tearing down WS.
+                        Err(RecvError::Closed) => {
+                            events = st_push.app.events.subscribe(&user_push);
+                        }
                     }
                 }
             }
-            let summaries = summaries_since(&st_push, &user_push, last_uid).await?;
+            let summaries = match summaries_since(&st_push, &user_push, last_uid).await {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(user = %user_push, error = %e, "webimap push tick failed");
+                    continue;
+                }
+            };
             for summary in summaries {
                 if summary.uid > last_uid {
                     last_uid = summary.uid;
                 }
-                writer_push
+                if let Err(e) = writer_push
                     .send_json(WsResponse {
                         req_id: String::new(),
                         action: "new_message".into(),
                         data: serde_json::to_value(&summary).map_err(|e| e.to_string())?,
                     })
-                    .await?;
+                    .await
+                {
+                    tracing::debug!(user = %user_push, error = %e, "webimap push send failed");
+                    return Err(e);
+                }
             }
         }
-        Ok::<(), String>(())
     };
 
     tokio::select! {
@@ -220,21 +242,23 @@ async fn handle_ws_request(st: &WwwState, user: &str, req: &WsRequest) -> WsResp
             if d.mailbox != "INBOX" {
                 return respond_err("unknown mailbox");
             }
-            let entries = match load_entries(st, user).await {
+            let no_cors = crate::cors::CorsSnap::empty();
+            let entries = match load_entries(st, user, &no_cors).await {
                 Ok(e) => e,
                 Err(_) => return respond_err("failed to load messages"),
             };
             let Some(entry) = find_entry(&entries, d.uid).await else {
                 return respond_err("message not found");
             };
-            let detail = match build_detail(st, user, &entry).await {
+            let detail = match build_detail(st, user, &entry, &no_cors).await {
                 Ok(d) => d,
                 Err(_) => return respond_err("failed to load message"),
             };
             respond(serde_json::to_value(detail).unwrap_or(json!(null)))
         }
         "list_mailboxes" => {
-            let entries = match load_entries(st, user).await {
+            let no_cors = crate::cors::CorsSnap::empty();
+            let entries = match load_entries(st, user, &no_cors).await {
                 Ok(e) => e,
                 Err(_) => return respond_err("failed to list mailboxes"),
             };
@@ -355,7 +379,7 @@ async fn ws_authenticate(
         "x-password",
         HeaderValue::from_str(password).map_err(|e| e.to_string())?,
     );
-    webimap_authenticate(app, pool, &headers)
+    webimap_authenticate(app, pool, &headers, &crate::cors::CorsSnap::empty())
         .await
         .map_err(|resp| format!("auth failed ({})", resp.status()))
 }

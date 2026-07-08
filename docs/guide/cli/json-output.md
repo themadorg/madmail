@@ -659,7 +659,8 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
   "data": {
     "services": [
       { "name": "smtp", "port": "25", "mode": "public" },
-      { "name": "https", "port": "443", "mode": "public" }
+      { "name": "http", "port": "80", "mode": "public", "enabled": true },
+      { "name": "https", "port": "443", "mode": "public", "enabled": true }
     ]
   }
 }
@@ -675,6 +676,38 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
   "data": {
     "name": "smtp",
     "port": "2525"
+  }
+}
+```
+
+### `port http` / `port https` status
+
+`enabled` is present for HTTP and HTTPS only.
+
+```json
+{
+  "ok": true,
+  "command": "port",
+  "data": {
+    "name": "https",
+    "port": "443",
+    "mode": "public",
+    "enabled": true
+  }
+}
+```
+
+### `port http enable` / `disable` / `port https enable` / `disable`
+
+```json
+{
+  "ok": true,
+  "command": "port",
+  "message": "https disabled",
+  "data": {
+    "name": "https",
+    "enabled": false,
+    "reload_required": true
   }
 }
 ```

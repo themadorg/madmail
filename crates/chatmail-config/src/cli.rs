@@ -202,6 +202,16 @@ pub enum Command {
     /// Enable, disable, or inspect WebSMTP HTTP send API.
     #[command(subcommand)]
     Websmtp(ServiceToggleCommand),
+    /// Browser CORS origins for WebIMAP, WebSMTP, and `/new` (`__WEBMAIL_CORS_ORIGINS__`).
+    #[command(
+        name = "webmail-cors",
+        visible_aliases = ["webmail-dev"],
+        subcommand_required = false
+    )]
+    WebmailCors {
+        #[command(subcommand)]
+        cmd: Option<WebmailCorsCommand>,
+    },
     /// Delta Chat push notifications (`auto` / `on` / `off`).
     #[command(subcommand)]
     Push(PushCommand),
@@ -281,6 +291,35 @@ pub enum PushCommand {
     On,
     /// Force push off.
     Off,
+}
+
+/// `madmail webmail-cors` — `__WEBMAIL_CORS_ORIGINS__` (+ dev enable workflow).
+#[derive(Debug, Subcommand, Clone)]
+pub enum WebmailCorsCommand {
+    /// Show CORS origins and WebIMAP/WebSMTP status (default).
+    Status,
+    /// Replace the full origins list (comma or newline separated; `*` = any).
+    Set {
+        #[arg(value_name = "ORIGINS")]
+        value: String,
+    },
+    /// Append one allowed browser origin.
+    Add {
+        #[arg(value_name = "ORIGIN")]
+        origin: String,
+    },
+    /// Remove one origin from the list.
+    Remove {
+        #[arg(value_name = "ORIGIN")]
+        origin: String,
+    },
+    /// Clear all CORS origins.
+    Reset,
+    /// Enable WebIMAP + WebSMTP and allow CORS from ORIGIN (local dev workflow).
+    Enable {
+        #[arg(value_name = "ORIGIN")]
+        origin: String,
+    },
 }
 
 /// `chatmail webimap` / `websmtp` — `__WEBIMAP_ENABLED__` / `__WEBSMTP_ENABLED__`.
@@ -411,6 +450,10 @@ pub enum PortServiceCommand {
     Local,
     /// Listen on all interfaces.
     Public,
+    /// Start the listener (HTTP/HTTPS only).
+    Enable,
+    /// Stop the listener (HTTP/HTTPS only).
+    Disable,
 }
 
 /// `chatmail federation` — policy and domain rules.

@@ -29,8 +29,12 @@ madmail install [OPTIONS]
 # Public IP relay (self-signed TLS)
 sudo madmail install --simple --ip 203.0.113.50 --lang en
 
-# DNS domain with Let's Encrypt
-sudo madmail install --simple --domain example.org   --acme-email admin@example.org --lang en
+# DNS domain with Let's Encrypt (obtains cert during install; port 80 must be free)
+sudo madmail install --simple --domain example.org --acme-email admin@example.org --lang en
+
+# Two-step: obtain cert first, then finish install
+sudo madmail install --simple --domain example.org --acme-email admin@example.org --cert-only
+sudo madmail install --simple --domain example.org --tls-mode file --no-obtain-certificate --lang en
 
 # Local dev (no root)
 madmail install --simple --ip 127.0.0.1   --config-dir /tmp/mm --state-dir /tmp/sd
@@ -45,7 +49,7 @@ madmail install --simple --ip 127.0.0.1   --config-dir /tmp/mm --state-dir /tmp/
 | `--ip`, `--domain`, `--hostname` | Server identity |
 | `--config-dir`, `--state-dir` | Override FHS paths |
 | `--tls-mode` | `autocert`, `file`, or `self_signed` |
-| `--acme-email`, `--auto-ip-cert`, `--obtain-certificate` | TLS issuance |
+| `--acme-email`, `--auto-ip-cert`, `--obtain-certificate`, `--no-obtain-certificate`, `--cert-only`, `--http-listen` | TLS issuance |
 | `--lang` | UI language: `en`, `fa`, `ru`, `es` |
 | `--skip-systemd`, `--skip-user` | Container / CI installs |
 | `--dry-run` | Preview resolved paths without writing |

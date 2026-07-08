@@ -358,6 +358,11 @@ pub async fn all_settings(st: &AdminState, method: &str) -> AdminResult {
     );
     insert_setting(
         &mut body,
+        "webmail_cors_origins",
+        setting_value(pool, settings_keys::WEBMAIL_CORS_ORIGINS, "").await?,
+    );
+    insert_setting(
+        &mut body,
         "appendlimit",
         setting_value(pool, settings_keys::APPENDLIMIT, "").await?,
     );
@@ -510,6 +515,7 @@ fn named_routes() -> HashMap<&'static str, NamedRoute> {
         ("max_message_size", k::MAX_MESSAGE_SIZE),
         ("max_federation_size", k::MAX_FEDERATION_SIZE),
         ("message_retention", k::MESSAGE_RETENTION),
+        ("webmail_cors_origins", k::WEBMAIL_CORS_ORIGINS),
     ] {
         m.insert(path, value(key));
     }
@@ -738,6 +744,28 @@ fn validate_setting_value(key: &str, value: &str) -> Result<(), (u16, String)> {
                 400,
                 "invalid retention: use Go-style duration (e.g. 30d, 720h, 24h)".into(),
             ));
+        }
+        return Ok(());
+    }
+
+    if key == settings_keys::WEBMAIL_CORS_ORIGINS {
+        if value.len() > 4096 {
+            return Err((400, "cors origins list too long (max 4096)".into()));
+        }
+        if value == "*" {
+            return Ok(());
+        }
+        for origin in value
+            .split(&[',', '\n', '\r'][..])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            if !origin.starts_with("http://") && !origin.starts_with("https://") {
+                return Err((
+                    400,
+                    format!("invalid origin {origin}: must start with http:// or https://"),
+                ));
+            }
         }
         return Ok(());
     }

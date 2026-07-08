@@ -18,6 +18,7 @@
 pub mod assets;
 mod contact_sharing;
 pub mod context_cache;
+pub mod cors;
 pub mod export;
 pub mod gate;
 mod go_template;

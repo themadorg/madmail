@@ -21,6 +21,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use chatmail_db::{get_bool_setting, settings_keys, DbPool};
 
+use crate::cors::CorsSnap;
 use crate::response::json_err;
 
 /// Disabled by default unless the DB setting is exactly `"true"`.
@@ -38,8 +39,8 @@ pub async fn is_websmtp_enabled(pool: &DbPool) -> bool {
 }
 
 /// Madmail returns HTTP 404 with `{"error":"not found"}` when a service is disabled.
-pub fn service_disabled() -> Response {
-    json_err(StatusCode::NOT_FOUND, "not found")
+pub fn service_disabled(cors: &CorsSnap) -> Response {
+    json_err(StatusCode::NOT_FOUND, "not found", cors)
 }
 
 #[cfg(test)]
@@ -81,7 +82,7 @@ mod tests {
 
     #[tokio::test]
     async fn service_disabled_returns_madmail_404_json() {
-        let resp = service_disabled();
+        let resp = service_disabled(&crate::cors::CorsSnap::empty());
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         assert_eq!(body.as_ref(), br#"{"error":"not found"}"#);
