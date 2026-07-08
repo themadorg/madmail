@@ -1,3 +1,15 @@
+# [2.12.0](https://github.com/themadorg/madmail/compare/v2.11.2...v2.12.0) (2026-07-08)
+
+
+### Bug Fixes
+
+* **contact-sharing:** implement contact sharing functionality ([aa27055](https://github.com/themadorg/madmail/commit/aa27055434d2644d320983b38622eb461438e6d4))
+
+
+### Features
+
+* add cors handeling ([1b57402](https://github.com/themadorg/madmail/commit/1b574026c26f2d5ec914fe30bced46bca9c37ebd))
+
 ## [2.11.2](https://github.com/themadorg/madmail/compare/v2.11.1...v2.11.2) (2026-07-07)
 
 
