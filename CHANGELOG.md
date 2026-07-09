@@ -1,3 +1,10 @@
+## [2.13.1](https://github.com/themadorg/madmail/compare/v2.13.0...v2.13.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* deliver /mxdeliv federation mail to all X-Mail-To recipients ([64c50ea](https://github.com/themadorg/madmail/commit/64c50ea586e66744565640b80d4c9afe38bb3845))
+
 # [2.13.0](https://github.com/themadorg/madmail/compare/v2.12.0...v2.13.0) (2026-07-08)
 
 
