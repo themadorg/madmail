@@ -21,24 +21,27 @@ madmail upgrade <PATH_OR_URL>
 
 | Argument | Description |
 |----------|-------------|
-| `PATH_OR_URL` | Local path to signed binary, or URL to download one (max 100 MB) |
+| `PATH_OR_URL` | Local path to signed binary, or URL to download a raw signed binary or `.tar.gz` / `.tgz` release archive (max 100 MB) |
 
 ## How it works
 
 1. Downloads the file if a URL is given (TLS verification is skipped for self-signed peers).
-2. Verifies an **Ed25519 signature** in the last 64 bytes of the file.
-3. Replaces the current executable and restarts the systemd service when applicable.
+2. If the URL ends in `.tar.gz` or `.tgz`, extracts the `madmail` binary from the archive first.
+3. Verifies an **Ed25519 signature** in the last 64 bytes of the binary.
+4. Replaces the current executable and restarts the systemd service when applicable.
 
 ## Examples
 
 ```bash
 madmail upgrade /tmp/madmail-signed
 madmail upgrade https://relay.example/releases/madmail
+madmail upgrade https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz
 ```
 
 ## Notes
 
 - Only binaries signed with the official release key are accepted.
+- Download URLs may be a raw signed binary or a GitHub-style `.tar.gz` / `.tgz` archive containing one. Other archive formats (`.zip`, `.tar.bz2`, …) are rejected with a clear error.
 - Requires appropriate permissions to replace `/usr/local/bin/madmail`.
 
 ## JSON output (`--json`)

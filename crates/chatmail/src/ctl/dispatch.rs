@@ -33,7 +33,13 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
             "internal error: dispatch called for server run",
         )),
         Some(Command::Upgrade { path_or_url }) | Some(Command::Update { path_or_url }) => {
-            crate::upgrade::upgrade_command(path_or_url, cli.args.json)
+            // Blocking HTTP download + filesystem replace must not run on the async
+            // runtime (reqwest::blocking creates its own runtime).
+            let path = path_or_url.clone();
+            let json = cli.args.json;
+            tokio::task::spawn_blocking(move || crate::upgrade::upgrade_command(&path, json))
+                .await
+                .map_err(|e| ChatmailError::config(format!("upgrade task failed: {e}")))?
         }
         Some(Command::AdminToken { raw, no_qr }) => {
             admin_token::admin_token(&cli.args, *raw, *no_qr).await

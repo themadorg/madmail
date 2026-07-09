@@ -21,16 +21,17 @@ madmail update <PATH_OR_URL>
 
 | Argument | Description |
 |----------|-------------|
-| `PATH_OR_URL` | Same as `upgrade` — local signed binary or `http://` / `https://` URL |
+| `PATH_OR_URL` | Same as `upgrade` — local signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive |
 
 ## Examples
 
 ```bash
 madmail update /tmp/madmail-signed
 madmail update https://relay.example/releases/madmail
+madmail update https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz
 ```
 
-See [upgrade](upgrade.md) for full behavior (signature verify, systemd stop/replace/start).
+See [upgrade](upgrade.md) for full behavior (archive extract, signature verify, systemd stop/replace/start).
 
 ## JSON output (`--json`)
 

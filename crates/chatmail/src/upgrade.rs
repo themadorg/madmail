@@ -18,15 +18,17 @@
 //! Signed binary upgrade.
 
 use std::fs::{self, File};
-use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::io::{self, Read, Write};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
 use chatmail_types::{ChatmailError, Result};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
+use tar::Archive;
 
 /// Madmail release signing public key (`internal/auth/signature_key.go`).
 const PUBLIC_KEY_HEX: &str = "7cb0bcc1d8e91e51f631c9ad6025e8e6e0222a27c3eeaf8608cf1c8430a6c6b0";
@@ -72,6 +74,172 @@ fn is_download_url(input: &str) -> bool {
     s.starts_with("http://") || s.starts_with("https://")
 }
 
+/// Path without `?query` / `#fragment` (for suffix checks on download URLs).
+fn url_path(url: &str) -> &str {
+    url.trim().split(['?', '#']).next().unwrap_or(url)
+}
+
+/// True when the URL points at a `.tar.gz` / `.tgz` release archive.
+fn is_tar_gz_url(url: &str) -> bool {
+    let path = url_path(url).to_ascii_lowercase();
+    path.ends_with(".tar.gz") || path.ends_with(".tgz")
+}
+
+/// Reject archive formats other than `.tar.gz` / `.tgz` on download URLs.
+fn check_supported_url_archive(url: &str) -> Result<()> {
+    let path = url_path(url).to_ascii_lowercase();
+    if path.ends_with(".tar.gz") || path.ends_with(".tgz") {
+        return Ok(());
+    }
+    for ext in [".zip", ".tar.bz2", ".tar.xz", ".tar", ".7z", ".rar"] {
+        if path.ends_with(ext) {
+            return Err(ChatmailError::config(format!(
+                "unsupported archive format '{ext}': only .tar.gz / .tgz archives are supported \
+                 (or a raw signed binary URL)"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn is_safe_tar_member(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let path = Path::new(name);
+    if path.is_absolute() {
+        return false;
+    }
+    !path.components().any(|c| {
+        matches!(
+            c,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    })
+}
+
+/// Extract the signed binary from a release `.tar.gz` (usually a single `madmail` member).
+fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
+    let file = File::open(archive_path).map_err(|e| {
+        ChatmailError::config(format!(
+            "failed to open archive {}: {e}",
+            archive_path.display()
+        ))
+    })?;
+    let mut archive = Archive::new(GzDecoder::new(file));
+
+    let mut chosen: Option<(String, u64)> = None;
+    // First pass: prefer a member named `madmail`, else the sole regular file.
+    let mut files: Vec<(String, u64)> = Vec::new();
+    for entry in archive.entries().map_err(|e| {
+        ChatmailError::config(format!(
+            "failed to read archive (is this a valid .tar.gz?): {e}"
+        ))
+    })? {
+        let entry = entry.map_err(|e| ChatmailError::config(format!("corrupt archive: {e}")))?;
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
+        let name = entry
+            .path()
+            .map_err(|e| ChatmailError::config(format!("invalid archive path: {e}")))?
+            .to_string_lossy()
+            .into_owned();
+        if !is_safe_tar_member(&name) {
+            continue;
+        }
+        let size = entry.header().size().unwrap_or(0);
+        let base = Path::new(&name)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&name);
+        if base.eq_ignore_ascii_case("madmail") {
+            chosen = Some((name, size));
+            break;
+        }
+        files.push((name, size));
+    }
+
+    let (member, size) = if let Some(c) = chosen {
+        c
+    } else if files.len() == 1 {
+        files.pop().unwrap()
+    } else if files.is_empty() {
+        return Err(ChatmailError::config(
+            "archive contains no extractable files (expected a signed madmail binary)",
+        ));
+    } else {
+        return Err(ChatmailError::config(
+            "archive has multiple files and none named 'madmail'; use a release .tar.gz or a raw binary URL",
+        ));
+    };
+
+    if size > MAX_DOWNLOAD_SIZE {
+        return Err(ChatmailError::config(format!(
+            "archive member too large: {size} bytes (max {} MB)",
+            MAX_DOWNLOAD_SIZE / (1024 * 1024)
+        )));
+    }
+
+    eprintln!("📦 Extracting binary from archive...");
+
+    // Re-open and extract the chosen member.
+    let file = File::open(archive_path).map_err(|e| {
+        ChatmailError::config(format!(
+            "failed to open archive {}: {e}",
+            archive_path.display()
+        ))
+    })?;
+    let mut archive = Archive::new(GzDecoder::new(file));
+    for entry in archive
+        .entries()
+        .map_err(|e| ChatmailError::config(format!("failed to read archive: {e}")))?
+    {
+        let entry = entry.map_err(|e| ChatmailError::config(format!("corrupt archive: {e}")))?;
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
+        let name = entry
+            .path()
+            .map_err(|e| ChatmailError::config(format!("invalid archive path: {e}")))?
+            .to_string_lossy()
+            .into_owned();
+        if name != member {
+            continue;
+        }
+
+        let mut out = File::create(dest).map_err(|e| {
+            ChatmailError::config(format!(
+                "failed to create extracted binary {}: {e}",
+                dest.display()
+            ))
+        })?;
+        let mut limited = entry.take(MAX_DOWNLOAD_SIZE + 1);
+        let n = io::copy(&mut limited, &mut out)
+            .map_err(|e| ChatmailError::config(format!("failed to extract archive member: {e}")))?;
+        out.flush().ok();
+        out.sync_all().ok();
+        if n > MAX_DOWNLOAD_SIZE {
+            let _ = fs::remove_file(dest);
+            return Err(ChatmailError::config(format!(
+                "extracted binary exceeded maximum size of {} MB, aborting",
+                MAX_DOWNLOAD_SIZE / (1024 * 1024)
+            )));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(dest, fs::Permissions::from_mode(0o755))?;
+        }
+        eprintln!("✅ Extracted {n} bytes");
+        return Ok(());
+    }
+
+    Err(ChatmailError::config(format!(
+        "archive member '{member}' not found during extraction"
+    )))
+}
+
 /// Entry point for `chatmail upgrade` and `chatmail update` (Madmail `upgradeCommand`).
 pub fn upgrade_command(input: &str, json: bool) -> Result<()> {
     let input = input.trim();
@@ -104,8 +272,10 @@ fn build_download_client() -> Result<Client> {
         .map_err(|e| ChatmailError::config(format!("HTTP client: {e}")))
 }
 
-/// Download signed binary to a temp file, then run `perform_upgrade` (Madmail `handleUpdateURL`).
+/// Download signed binary (or `.tar.gz`) to a temp file, then run `perform_upgrade`.
 fn handle_update_url(url: &str) -> Result<()> {
+    check_supported_url_archive(url)?;
+
     let tmp_path = std::env::temp_dir().join(format!("madmail-update-{}", std::process::id()));
     let mut tmp_file = File::create(&tmp_path).map_err(|e| {
         ChatmailError::config(format!(
@@ -167,8 +337,27 @@ fn handle_update_url(url: &str) -> Result<()> {
         .len();
     eprintln!("✅ Downloaded {n} bytes");
 
-    let result = perform_upgrade(&tmp_path);
-    cleanup();
+    // Release artifacts may be raw signed binaries or `.tar.gz` archives containing one.
+    let (bin_path, extracted_tmp) = if is_tar_gz_url(url) {
+        let extracted =
+            std::env::temp_dir().join(format!("madmail-update-bin-{}", std::process::id()));
+        if let Err(e) = extract_binary_from_tar_gz(&tmp_path, &extracted) {
+            cleanup();
+            let _ = fs::remove_file(&extracted);
+            return Err(e);
+        }
+        cleanup(); // archive no longer needed
+        (extracted, true)
+    } else {
+        (tmp_path.clone(), false)
+    };
+
+    let result = perform_upgrade(&bin_path);
+    if extracted_tmp {
+        let _ = fs::remove_file(&bin_path);
+    } else {
+        cleanup();
+    }
     result
 }
 
@@ -285,6 +474,23 @@ fn refresh_cli_docs_after_upgrade() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use tar::Header;
+
+    fn write_tar_gz(path: &Path, members: &[(&str, &[u8])]) {
+        let file = File::create(path).unwrap();
+        let enc = GzEncoder::new(file, Compression::default());
+        let mut builder = tar::Builder::new(enc);
+        for (name, data) in members {
+            let mut header = Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder.append_data(&mut header, *name, *data).unwrap();
+        }
+        builder.finish().unwrap();
+    }
 
     #[test]
     fn is_download_url_detects_http_and_https() {
@@ -295,8 +501,95 @@ mod tests {
     }
 
     #[test]
+    fn is_tar_gz_url_detects_suffixes() {
+        assert!(is_tar_gz_url(
+            "https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz"
+        ));
+        assert!(is_tar_gz_url("https://example.com/a.tgz?token=x"));
+        assert!(!is_tar_gz_url("https://example.com/madmail"));
+        assert!(!is_tar_gz_url("https://example.com/madmail.tar.gz.asc"));
+    }
+
+    #[test]
+    fn check_supported_url_archive_rejects_zip() {
+        let err = check_supported_url_archive("https://example.com/madmail.zip").unwrap_err();
+        assert!(err.to_string().contains("unsupported archive format"));
+        assert!(check_supported_url_archive("https://example.com/madmail").is_ok());
+        assert!(check_supported_url_archive("https://example.com/a.tar.gz").is_ok());
+    }
+
+    #[test]
     fn upgrade_command_requires_input() {
         let err = upgrade_command("  ", false).unwrap_err();
         assert!(err.to_string().contains("PATH or URL is required"));
+    }
+
+    #[test]
+    fn upgrade_command_rejects_zip_url_without_download() {
+        // Must fail before any network I/O.
+        let err = upgrade_command("https://example.com/madmail.zip", false).unwrap_err();
+        assert!(
+            err.to_string().contains("unsupported archive format"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn extract_binary_prefers_madmail_member() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("release.tar.gz");
+        let dest = dir.path().join("out");
+        let payload = b"signed-binary-bytes";
+        write_tar_gz(&archive, &[("README", b"hi"), ("madmail", payload)]);
+        extract_binary_from_tar_gz(&archive, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), payload);
+    }
+
+    #[test]
+    fn extract_binary_prefers_nested_madmail_basename() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("nested.tar.gz");
+        let dest = dir.path().join("out");
+        let payload = b"nested-madmail";
+        write_tar_gz(&archive, &[("docs/README", b"x"), ("bin/madmail", payload)]);
+        extract_binary_from_tar_gz(&archive, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), payload);
+    }
+
+    #[test]
+    fn is_safe_tar_member_blocks_traversal() {
+        assert!(is_safe_tar_member("madmail"));
+        assert!(is_safe_tar_member("bin/madmail"));
+        assert!(!is_safe_tar_member("../evil"));
+        assert!(!is_safe_tar_member("/abs/path"));
+        assert!(!is_safe_tar_member(""));
+    }
+
+    #[test]
+    fn extract_binary_accepts_sole_member() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("sole.tgz");
+        let dest = dir.path().join("out");
+        write_tar_gz(&archive, &[("madmail-linux-amd64", b"only-one")]);
+        extract_binary_from_tar_gz(&archive, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"only-one");
+    }
+
+    #[test]
+    fn extract_binary_rejects_empty_and_ambiguous() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("empty.tar.gz");
+        write_tar_gz(&empty, &[]);
+        assert!(extract_binary_from_tar_gz(&empty, &dir.path().join("x"))
+            .unwrap_err()
+            .to_string()
+            .contains("no extractable files"));
+
+        let multi = dir.path().join("multi.tar.gz");
+        write_tar_gz(&multi, &[("a", b"1"), ("b", b"2")]);
+        assert!(extract_binary_from_tar_gz(&multi, &dir.path().join("y"))
+            .unwrap_err()
+            .to_string()
+            .contains("multiple files"));
     }
 }

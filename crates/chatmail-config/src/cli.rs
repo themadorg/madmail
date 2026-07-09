@@ -45,13 +45,13 @@ pub enum Command {
     Run,
     /// Replace this executable from a signed local file or URL.
     Upgrade {
-        /// Path to signed binary, or `http://` / `https://` URL to download one.
+        /// Path to signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive.
         #[arg(value_name = "PATH_OR_URL")]
         path_or_url: String,
     },
     /// Replace this executable from a signed local file or URL (alias for `upgrade`).
     Update {
-        /// Path to signed binary, or `http://` / `https://` URL to download one.
+        /// Path to signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive.
         #[arg(value_name = "PATH_OR_URL")]
         path_or_url: String,
     },

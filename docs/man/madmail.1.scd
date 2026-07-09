@@ -66,7 +66,8 @@ Extended documentation:
 	preserve selected artifacts.
 
 *upgrade*, *update*
-	Replace this executable from a signed local file or URL.
+	Replace this executable from a signed local file or URL
+	(raw binary or .tar.gz / .tgz archive).
 
 *reload*
 	Apply database configuration overrides and restart via the admin API.
