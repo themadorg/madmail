@@ -1,3 +1,10 @@
+## [2.13.2](https://github.com/themadorg/madmail/compare/v2.13.1...v2.13.2) (2026-07-11)
+
+
+### Bug Fixes
+
+* **db:** ensure tables on Go Madmail upgrade without bare sqlx migrate ([75e9051](https://github.com/themadorg/madmail/commit/75e9051a62daf473bc8696942cf4aa6d160eaf8d)), closes [#67](https://github.com/themadorg/madmail/issues/67) [#80](https://github.com/themadorg/madmail/issues/80) [#67](https://github.com/themadorg/madmail/issues/67)
+
 ## [2.13.1](https://github.com/themadorg/madmail/compare/v2.13.0...v2.13.1) (2026-07-09)
 
 
