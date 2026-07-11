@@ -285,44 +285,245 @@ fn parse_libpq_dsn(dsn: &str) -> std::result::Result<HashMap<String, String>, St
 }
 
 pub(crate) async fn run_migrations(pool: &DbPool) -> Result<()> {
+    if crate::schema::legacy_madmail_schema_present(pool).await? {
+        tracing::info!(
+            backend = ?pool.backend(),
+            "skipping madmail-v2 sqlx migrations (existing Madmail / go-imap-sql schema); ensuring application tables"
+        );
+        apply_legacy_schema_tables(pool).await?;
+        return Ok(());
+    }
+
     match pool {
         DbPool::Sqlite(p) => sqlx::migrate!("./migrations/sqlite")
             .run(p)
             .await
             .map_err(map_migration_error)?,
-        DbPool::Postgres(p) => {
-            if crate::schema::madmail_postgres_schema_present(pool).await? {
-                tracing::info!(
-                    "skipping madmail-v2 PostgreSQL migrations (existing Madmail schema)"
-                );
-                apply_postgres_extension_tables(p).await?;
-            } else {
-                sqlx::migrate!("./migrations/postgres")
-                    .run(p)
+        DbPool::Postgres(p) => sqlx::migrate!("./migrations/postgres")
+            .run(p)
+            .await
+            .map_err(map_migration_error)?,
+    }
+    Ok(())
+}
+
+/// Ensure application tables when skipping full sqlx migrations.
+///
+/// Go Madmail / go-imap-sql databases already have some GORM tables (and often
+/// `schema_version`). Bare sqlx `CREATE TABLE` migrations then fail (#67:
+/// `registration_tokens already exists`) or are skipped on Postgres when
+/// `schema_version` is present — leaving gaps such as missing `federation_rules`
+/// on pre-federation installs (v0.28 → 2.x).
+///
+/// Every statement uses `IF NOT EXISTS` / upsert no-ops so complete schemas are
+/// left unchanged.
+async fn apply_legacy_schema_tables(pool: &DbPool) -> Result<()> {
+    let stmts = match pool.backend() {
+        DbBackend::Sqlite => SQLITE_ENSURE_TABLE_STATEMENTS,
+        DbBackend::Postgres => POSTGRES_ENSURE_TABLE_STATEMENTS,
+    };
+    for sql in stmts {
+        match pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query(sql)
+                    .execute(p)
                     .await
-                    .map_err(map_migration_error)?;
+                    .map_err(ChatmailError::from)?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query(sql)
+                    .execute(p)
+                    .await
+                    .map_err(ChatmailError::from)?;
             }
         }
     }
     Ok(())
 }
 
-/// Tables added by madmail-v2 that are not created by Madmail Go migrations.
-async fn apply_postgres_extension_tables(pool: &sqlx::PgPool) -> Result<()> {
-    const FEDERATION_SILENT_DISMISS: &str =
-        include_str!("../migrations/postgres/20240501000000_federation_silent_dismiss.sql");
-    sqlx::query(FEDERATION_SILENT_DISMISS)
-        .execute(pool)
-        .await
-        .map_err(ChatmailError::from)?;
-    const MAILBOX_MODSEQ: &str =
-        include_str!("../migrations/postgres/20240601000000_mailbox_modseq.sql");
-    sqlx::query(MAILBOX_MODSEQ)
-        .execute(pool)
-        .await
-        .map_err(ChatmailError::from)?;
-    Ok(())
-}
+/// Single-statement DDL/DML for the SQLite legacy-schema ensure path.
+const SQLITE_ENSURE_TABLE_STATEMENTS: &[&str] = &[
+    r#"CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS quotas (
+    username TEXT PRIMARY KEY NOT NULL,
+    max_storage INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT 0,
+    first_login_at INTEGER NOT NULL DEFAULT 0,
+    last_login_at INTEGER NOT NULL DEFAULT 0,
+    used_token TEXT
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS blocked_users (
+    username TEXT PRIMARY KEY NOT NULL,
+    reason TEXT NOT NULL,
+    blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS registration_tokens (
+    token TEXT PRIMARY KEY NOT NULL,
+    max_uses INTEGER NOT NULL DEFAULT 1,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    comment TEXT,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS dns_overrides (
+    lookup_key TEXT PRIMARY KEY NOT NULL,
+    target_host TEXT NOT NULL,
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"#,
+    // Only when missing; existing Madmail `key`/`value` passwords tables are kept.
+    r#"CREATE TABLE IF NOT EXISTS passwords (
+    username TEXT PRIMARY KEY NOT NULL,
+    hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS push_tokens (
+    username TEXT NOT NULL,
+    device_token TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (username, device_token)
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS federation_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS federation_server_stats (
+    domain TEXT PRIMARY KEY NOT NULL,
+    queued_messages INTEGER NOT NULL DEFAULT 0,
+    failed_http INTEGER NOT NULL DEFAULT 0,
+    failed_https INTEGER NOT NULL DEFAULT 0,
+    failed_smtp INTEGER NOT NULL DEFAULT 0,
+    success_http INTEGER NOT NULL DEFAULT 0,
+    success_https INTEGER NOT NULL DEFAULT 0,
+    success_smtp INTEGER NOT NULL DEFAULT 0,
+    inbound_deliveries INTEGER NOT NULL DEFAULT 0,
+    successful_deliveries INTEGER NOT NULL DEFAULT 0,
+    total_latency_ms INTEGER NOT NULL DEFAULT 0,
+    last_active INTEGER NOT NULL DEFAULT 0
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS message_stats (
+    name TEXT PRIMARY KEY NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0
+)"#,
+    r#"INSERT OR IGNORE INTO message_stats (name, count) VALUES
+    ('sent_messages', 0),
+    ('outbound_messages', 0),
+    ('received_messages', 0)"#,
+    r#"CREATE TABLE IF NOT EXISTS exchangers (
+    name TEXT PRIMARY KEY NOT NULL,
+    url TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    poll_interval INTEGER NOT NULL DEFAULT 60,
+    last_poll_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS federation_silent_dismiss (
+    domain TEXT PRIMARY KEY NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS mailbox_modseq (
+    username TEXT PRIMARY KEY NOT NULL,
+    modseq INTEGER NOT NULL DEFAULT 0
+)"#,
+];
+
+/// Single-statement DDL/DML for the PostgreSQL legacy-schema ensure path.
+const POSTGRES_ENSURE_TABLE_STATEMENTS: &[&str] = &[
+    r#"CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS quotas (
+    username TEXT PRIMARY KEY NOT NULL,
+    max_storage BIGINT NOT NULL DEFAULT 0,
+    created_at BIGINT NOT NULL DEFAULT 0,
+    first_login_at BIGINT NOT NULL DEFAULT 0,
+    last_login_at BIGINT NOT NULL DEFAULT 0,
+    used_token TEXT
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS blocked_users (
+    username TEXT PRIMARY KEY NOT NULL,
+    reason TEXT NOT NULL,
+    blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS registration_tokens (
+    token TEXT PRIMARY KEY NOT NULL,
+    max_uses INTEGER NOT NULL DEFAULT 1,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    comment TEXT,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS dns_overrides (
+    lookup_key TEXT PRIMARY KEY NOT NULL,
+    target_host TEXT NOT NULL,
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS passwords (
+    username TEXT PRIMARY KEY NOT NULL,
+    hash TEXT NOT NULL,
+    created_at BIGINT NOT NULL DEFAULT (FLOOR(EXTRACT(EPOCH FROM NOW())))
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS push_tokens (
+    username TEXT NOT NULL,
+    device_token TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (username, device_token)
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS federation_rules (
+    id SERIAL PRIMARY KEY,
+    domain TEXT NOT NULL UNIQUE,
+    created_at BIGINT NOT NULL DEFAULT (FLOOR(EXTRACT(EPOCH FROM NOW())))
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS federation_server_stats (
+    domain TEXT PRIMARY KEY NOT NULL,
+    queued_messages BIGINT NOT NULL DEFAULT 0,
+    failed_http BIGINT NOT NULL DEFAULT 0,
+    failed_https BIGINT NOT NULL DEFAULT 0,
+    failed_smtp BIGINT NOT NULL DEFAULT 0,
+    success_http BIGINT NOT NULL DEFAULT 0,
+    success_https BIGINT NOT NULL DEFAULT 0,
+    success_smtp BIGINT NOT NULL DEFAULT 0,
+    inbound_deliveries BIGINT NOT NULL DEFAULT 0,
+    successful_deliveries BIGINT NOT NULL DEFAULT 0,
+    total_latency_ms BIGINT NOT NULL DEFAULT 0,
+    last_active BIGINT NOT NULL DEFAULT 0
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS message_stats (
+    name TEXT PRIMARY KEY NOT NULL,
+    count BIGINT NOT NULL DEFAULT 0
+)"#,
+    r#"INSERT INTO message_stats (name, count) VALUES
+    ('sent_messages', 0),
+    ('outbound_messages', 0),
+    ('received_messages', 0)
+ON CONFLICT (name) DO NOTHING"#,
+    r#"CREATE TABLE IF NOT EXISTS exchangers (
+    name TEXT PRIMARY KEY NOT NULL,
+    url TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    poll_interval INTEGER NOT NULL DEFAULT 60,
+    last_poll_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS federation_silent_dismiss (
+    domain TEXT PRIMARY KEY NOT NULL,
+    created_at BIGINT NOT NULL DEFAULT (FLOOR(EXTRACT(EPOCH FROM NOW())))
+)"#,
+    r#"CREATE TABLE IF NOT EXISTS mailbox_modseq (
+    username TEXT PRIMARY KEY NOT NULL,
+    modseq BIGINT NOT NULL DEFAULT 0
+)"#,
+];
 
 /// Rewrite SQLite `?` placeholders to PostgreSQL `$1`, `$2`, …
 pub fn pg_sql(sql: &str) -> String {
@@ -372,5 +573,138 @@ mod tests {
             "host=127.0.0.1 port=5432 user=test password=test dbname=test sslmode=disable",
         )
         .expect("libpq DSN should parse");
+    }
+
+    /// Existing-schema skip path must create federation_rules (0.28 → 2.x Postgres upgrades).
+    #[test]
+    fn ensure_statements_cover_boot_required_tables() {
+        for (label, stmts) in [
+            ("sqlite", SQLITE_ENSURE_TABLE_STATEMENTS),
+            ("postgres", POSTGRES_ENSURE_TABLE_STATEMENTS),
+        ] {
+            let joined = stmts.join("\n");
+            for table in [
+                "federation_rules",
+                "message_stats",
+                "federation_server_stats",
+                "federation_silent_dismiss",
+                "mailbox_modseq",
+                "settings",
+                "passwords",
+                "registration_tokens",
+            ] {
+                assert!(
+                    joined.contains(table),
+                    "{label} ensure list missing table {table}"
+                );
+            }
+            let federation = stmts
+                .iter()
+                .find(|s| s.contains("federation_rules") && s.contains("CREATE TABLE"))
+                .expect("federation_rules CREATE");
+            assert!(
+                federation.contains("domain TEXT NOT NULL UNIQUE"),
+                "{label} federation_rules domain unique"
+            );
+            for sql in stmts {
+                let trimmed = sql.trim().trim_end_matches(';');
+                assert!(
+                    !trimmed.contains(';'),
+                    "{label} multi-statement ensure SQL is not supported: {sql}"
+                );
+            }
+        }
+    }
+
+    /// GitHub #67: Go Madmail already created `registration_tokens`; bare sqlx migrate fails.
+    #[tokio::test]
+    async fn legacy_sqlite_skips_migrate_when_registration_tokens_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("imapsql-like.db");
+        let options = SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path.display()))
+            .unwrap()
+            .create_if_missing(true);
+        let sqlite = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        // Minimal GORM-like tables from Go Madmail (imapsql / combined DB).
+        sqlx::query(
+            "CREATE TABLE registration_tokens (
+                token TEXT PRIMARY KEY NOT NULL,
+                max_uses INTEGER NOT NULL DEFAULT 1,
+                used_count INTEGER NOT NULL DEFAULT 0
+            )",
+        )
+        .execute(&sqlite)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE passwords (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL
+            )",
+        )
+        .execute(&sqlite)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO passwords (key, value) VALUES ('user@test.local', 'hash')")
+            .execute(&sqlite)
+            .await
+            .unwrap();
+
+        let pool = DbPool::Sqlite(sqlite);
+        assert!(crate::schema::legacy_madmail_schema_present(&pool)
+            .await
+            .unwrap());
+        run_migrations(&pool)
+            .await
+            .expect("legacy ensure must not fail like bare CREATE TABLE");
+        assert!(crate::schema::table_exists(&pool, "federation_rules")
+            .await
+            .unwrap());
+        assert!(crate::schema::table_exists(&pool, "settings")
+            .await
+            .unwrap());
+        // Madmail KV passwords shape preserved (not replaced with username/hash).
+        assert!(matches!(
+            crate::schema::passwords_layout(&pool).await.unwrap(),
+            crate::schema::PasswordsLayout::MadmailKv
+        ));
+        // sqlx must not have taken ownership (still legacy path on re-run).
+        assert!(crate::schema::legacy_madmail_schema_present(&pool)
+            .await
+            .unwrap());
+        run_migrations(&pool).await.expect("idempotent ensure");
+    }
+
+    /// Fresh SQLite still gets full sqlx migrations (no legacy markers).
+    #[tokio::test]
+    async fn fresh_sqlite_still_runs_sqlx_migrations() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("fresh.db");
+        let options = SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path.display()))
+            .unwrap()
+            .create_if_missing(true);
+        let sqlite = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        let pool = DbPool::Sqlite(sqlite);
+        assert!(!crate::schema::legacy_madmail_schema_present(&pool)
+            .await
+            .unwrap());
+        run_migrations(&pool).await.unwrap();
+        assert!(crate::schema::table_exists(&pool, "federation_rules")
+            .await
+            .unwrap());
+        assert!(crate::schema::table_exists(&pool, "_sqlx_migrations")
+            .await
+            .unwrap());
+        assert!(!crate::schema::legacy_madmail_schema_present(&pool)
+            .await
+            .unwrap());
     }
 }
