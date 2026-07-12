@@ -1,3 +1,10 @@
+## [2.13.4](https://github.com/themadorg/madmail/compare/v2.13.3...v2.13.4) (2026-07-12)
+
+
+### Bug Fixes
+
+* cors issue fix for the /new also ([897a7fb](https://github.com/themadorg/madmail/commit/897a7fb47385bdb3e695af9bce604e3800f5c768))
+
 ## [2.13.3](https://github.com/themadorg/madmail/compare/v2.13.2...v2.13.3) (2026-07-12)
 
 
