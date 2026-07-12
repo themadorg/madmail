@@ -857,11 +857,13 @@ mod tests {
         .expect("ON CONFLICT(username) on blocked_users after ensure");
     }
 
-
     /// Postgres e2e: constraint-less message_stats (reporter schema). Opt-in via MADMAIL_TEST_PG_DSN.
     #[tokio::test]
     async fn legacy_postgres_constraintless_message_stats_ensure() {
-        let Some(dsn) = std::env::var("MADMAIL_TEST_PG_DSN").ok().filter(|s| !s.is_empty()) else {
+        let Some(dsn) = std::env::var("MADMAIL_TEST_PG_DSN")
+            .ok()
+            .filter(|s| !s.is_empty())
+        else {
             eprintln!("skip: set MADMAIL_TEST_PG_DSN for Postgres e2e");
             return;
         };
@@ -869,7 +871,9 @@ mod tests {
             driver: chatmail_config::DbDriver::Postgres,
             dsn,
         };
-        let pool = crate::connect_database(&config).await.expect("connect postgres");
+        let pool = crate::connect_database(&config)
+            .await
+            .expect("connect postgres");
         assert!(
             crate::schema::legacy_madmail_schema_present(&pool)
                 .await
@@ -894,12 +898,11 @@ mod tests {
                 .execute(p)
                 .await
                 .expect("runtime ON CONFLICT after ensure");
-                let row: (i64,) = sqlx::query_as(
-                    "SELECT count FROM message_stats WHERE name = 'sent_messages'",
-                )
-                .fetch_one(p)
-                .await
-                .unwrap();
+                let row: (i64,) =
+                    sqlx::query_as("SELECT count FROM message_stats WHERE name = 'sent_messages'")
+                        .fetch_one(p)
+                        .await
+                        .unwrap();
                 assert_eq!(row.0, 123);
                 // passwords KV preserved
                 let layout = crate::schema::passwords_layout(&pool).await.unwrap();
