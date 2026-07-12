@@ -1,3 +1,10 @@
+## [2.13.3](https://github.com/themadorg/madmail/compare/v2.13.2...v2.13.3) (2026-07-12)
+
+
+### Bug Fixes
+
+* **db:** add unique indexes on legacy schema ensure path ([f00fdaf](https://github.com/themadorg/madmail/commit/f00fdaf740fa0d5003c9768323d3e03bad4e23b8)), closes [#83](https://github.com/themadorg/madmail/issues/83) [#81](https://github.com/themadorg/madmail/issues/81) [#80](https://github.com/themadorg/madmail/issues/80) [#67](https://github.com/themadorg/madmail/issues/67)
+
 ## [2.13.2](https://github.com/themadorg/madmail/compare/v2.13.1...v2.13.2) (2026-07-11)
 
 
