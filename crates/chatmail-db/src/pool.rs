@@ -315,6 +315,13 @@ pub(crate) async fn run_migrations(pool: &DbPool) -> Result<()> {
 /// `schema_version` is present — leaving gaps such as missing `federation_rules`
 /// on pre-federation installs (v0.28 → 2.x).
 ///
+/// Some Go / SQLite→Postgres imports leave tables **without** PRIMARY KEY or
+/// UNIQUE constraints (seen on `message_stats`, `blocked_users`, `dns_overrides`).
+/// `CREATE TABLE IF NOT EXISTS` is a no-op for those, but seed/runtime
+/// `ON CONFLICT (col)` then fails with:
+/// `there is no unique or exclusion constraint matching the ON CONFLICT specification`.
+/// Unique indexes are therefore created with `IF NOT EXISTS` before any upsert.
+///
 /// Every statement uses `IF NOT EXISTS` / upsert no-ops so complete schemas are
 /// left unchanged.
 async fn apply_legacy_schema_tables(pool: &DbPool) -> Result<()> {
@@ -360,6 +367,8 @@ const SQLITE_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     reason TEXT NOT NULL,
     blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"#,
+    // Existing GORM/import tables may lack a UNIQUE on username (ON CONFLICT needs it).
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS blocked_users_username_key ON blocked_users (username)"#,
     r#"CREATE TABLE IF NOT EXISTS registration_tokens (
     token TEXT PRIMARY KEY NOT NULL,
     max_uses INTEGER NOT NULL DEFAULT 1,
@@ -368,6 +377,7 @@ const SQLITE_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS registration_tokens_token_key ON registration_tokens (token)"#,
     r#"CREATE TABLE IF NOT EXISTS dns_overrides (
     lookup_key TEXT PRIMARY KEY NOT NULL,
     target_host TEXT NOT NULL,
@@ -375,6 +385,7 @@ const SQLITE_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS dns_overrides_lookup_key_key ON dns_overrides (lookup_key)"#,
     // Only when missing; existing Madmail `key`/`value` passwords tables are kept.
     r#"CREATE TABLE IF NOT EXISTS passwords (
     username TEXT PRIMARY KEY NOT NULL,
@@ -392,6 +403,7 @@ const SQLITE_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     domain TEXT NOT NULL UNIQUE,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS federation_rules_domain_key ON federation_rules (domain)"#,
     r#"CREATE TABLE IF NOT EXISTS federation_server_stats (
     domain TEXT PRIMARY KEY NOT NULL,
     queued_messages INTEGER NOT NULL DEFAULT 0,
@@ -406,10 +418,13 @@ const SQLITE_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     total_latency_ms INTEGER NOT NULL DEFAULT 0,
     last_active INTEGER NOT NULL DEFAULT 0
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS federation_server_stats_domain_key ON federation_server_stats (domain)"#,
     r#"CREATE TABLE IF NOT EXISTS message_stats (
     name TEXT PRIMARY KEY NOT NULL,
     count INTEGER NOT NULL DEFAULT 0
 )"#,
+    // Critical: Go / import schemas often have message_stats with no UNIQUE on name.
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS message_stats_name_key ON message_stats (name)"#,
     r#"INSERT OR IGNORE INTO message_stats (name, count) VALUES
     ('sent_messages', 0),
     ('outbound_messages', 0),
@@ -423,14 +438,17 @@ const SQLITE_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS exchangers_name_key ON exchangers (name)"#,
     r#"CREATE TABLE IF NOT EXISTS federation_silent_dismiss (
     domain TEXT PRIMARY KEY NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS federation_silent_dismiss_domain_key ON federation_silent_dismiss (domain)"#,
     r#"CREATE TABLE IF NOT EXISTS mailbox_modseq (
     username TEXT PRIMARY KEY NOT NULL,
     modseq INTEGER NOT NULL DEFAULT 0
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS mailbox_modseq_username_key ON mailbox_modseq (username)"#,
 ];
 
 /// Single-statement DDL/DML for the PostgreSQL legacy-schema ensure path.
@@ -452,6 +470,8 @@ const POSTGRES_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     reason TEXT NOT NULL,
     blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"#,
+    // Existing GORM/import tables may lack a UNIQUE on username (ON CONFLICT needs it).
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS blocked_users_username_key ON blocked_users (username)"#,
     r#"CREATE TABLE IF NOT EXISTS registration_tokens (
     token TEXT PRIMARY KEY NOT NULL,
     max_uses INTEGER NOT NULL DEFAULT 1,
@@ -460,6 +480,7 @@ const POSTGRES_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS registration_tokens_token_key ON registration_tokens (token)"#,
     r#"CREATE TABLE IF NOT EXISTS dns_overrides (
     lookup_key TEXT PRIMARY KEY NOT NULL,
     target_host TEXT NOT NULL,
@@ -467,6 +488,7 @@ const POSTGRES_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS dns_overrides_lookup_key_key ON dns_overrides (lookup_key)"#,
     r#"CREATE TABLE IF NOT EXISTS passwords (
     username TEXT PRIMARY KEY NOT NULL,
     hash TEXT NOT NULL,
@@ -483,6 +505,7 @@ const POSTGRES_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     domain TEXT NOT NULL UNIQUE,
     created_at BIGINT NOT NULL DEFAULT (FLOOR(EXTRACT(EPOCH FROM NOW())))
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS federation_rules_domain_key ON federation_rules (domain)"#,
     r#"CREATE TABLE IF NOT EXISTS federation_server_stats (
     domain TEXT PRIMARY KEY NOT NULL,
     queued_messages BIGINT NOT NULL DEFAULT 0,
@@ -497,10 +520,14 @@ const POSTGRES_ENSURE_TABLE_STATEMENTS: &[&str] = &[
     total_latency_ms BIGINT NOT NULL DEFAULT 0,
     last_active BIGINT NOT NULL DEFAULT 0
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS federation_server_stats_domain_key ON federation_server_stats (domain)"#,
     r#"CREATE TABLE IF NOT EXISTS message_stats (
     name TEXT PRIMARY KEY NOT NULL,
     count BIGINT NOT NULL DEFAULT 0
 )"#,
+    // Critical: Go / import schemas often have message_stats with no UNIQUE on name.
+    // Without this, seed INSERT … ON CONFLICT (name) fails on Postgres.
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS message_stats_name_key ON message_stats (name)"#,
     r#"INSERT INTO message_stats (name, count) VALUES
     ('sent_messages', 0),
     ('outbound_messages', 0),
@@ -515,14 +542,17 @@ ON CONFLICT (name) DO NOTHING"#,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS exchangers_name_key ON exchangers (name)"#,
     r#"CREATE TABLE IF NOT EXISTS federation_silent_dismiss (
     domain TEXT PRIMARY KEY NOT NULL,
     created_at BIGINT NOT NULL DEFAULT (FLOOR(EXTRACT(EPOCH FROM NOW())))
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS federation_silent_dismiss_domain_key ON federation_silent_dismiss (domain)"#,
     r#"CREATE TABLE IF NOT EXISTS mailbox_modseq (
     username TEXT PRIMARY KEY NOT NULL,
     modseq BIGINT NOT NULL DEFAULT 0
 )"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS mailbox_modseq_username_key ON mailbox_modseq (username)"#,
 ];
 
 /// Rewrite SQLite `?` placeholders to PostgreSQL `$1`, `$2`, …
@@ -606,6 +636,29 @@ mod tests {
                 federation.contains("domain TEXT NOT NULL UNIQUE"),
                 "{label} federation_rules domain unique"
             );
+            // Unique indexes before ON CONFLICT seed/upsert (constraint-less GORM imports).
+            for idx in [
+                "message_stats_name_key",
+                "blocked_users_username_key",
+                "dns_overrides_lookup_key_key",
+            ] {
+                assert!(
+                    joined.contains(idx),
+                    "{label} ensure list missing unique index {idx}"
+                );
+            }
+            let msg_stats_idx = stmts
+                .iter()
+                .position(|s| s.contains("message_stats_name_key"))
+                .expect("message_stats unique index");
+            let msg_stats_seed = stmts
+                .iter()
+                .position(|s| s.contains("INSERT") && s.contains("message_stats"))
+                .expect("message_stats seed");
+            assert!(
+                msg_stats_idx < msg_stats_seed,
+                "{label} message_stats unique index must precede seed INSERT"
+            );
             for sql in stmts {
                 let trimmed = sql.trim().trim_end_matches(';');
                 assert!(
@@ -677,6 +730,183 @@ mod tests {
             .await
             .unwrap());
         run_migrations(&pool).await.expect("idempotent ensure");
+    }
+
+    /// Constraint-less legacy tables (Postgres 0.28 import / GORM) must still allow
+    /// `ON CONFLICT` seed — reproduces:
+    /// `there is no unique or exclusion constraint matching the ON CONFLICT specification`.
+    #[tokio::test]
+    async fn legacy_ensure_adds_unique_when_message_stats_lacks_pk() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("constraintless.db");
+        let options = SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path.display()))
+            .unwrap()
+            .create_if_missing(true);
+        let sqlite = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+
+        // go-imap-sql marker + tables shaped like the reporter's Postgres dump:
+        // present, but without PRIMARY KEY / UNIQUE on natural keys.
+        sqlx::query("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+            .execute(&sqlite)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO schema_version (version) VALUES (6)")
+            .execute(&sqlite)
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE message_stats (
+                name TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0
+            )",
+        )
+        .execute(&sqlite)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE blocked_users (
+                username TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                blocked_at TIMESTAMP
+            )",
+        )
+        .execute(&sqlite)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE dns_overrides (
+                lookup_key TEXT NOT NULL,
+                target_host TEXT NOT NULL,
+                comment TEXT,
+                created_at TIMESTAMP,
+                updated_at TIMESTAMP
+            )",
+        )
+        .execute(&sqlite)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE passwords (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL
+            )",
+        )
+        .execute(&sqlite)
+        .await
+        .unwrap();
+
+        let pool = DbPool::Sqlite(sqlite);
+        assert!(crate::schema::legacy_madmail_schema_present(&pool)
+            .await
+            .unwrap());
+        run_migrations(&pool)
+            .await
+            .expect("ensure must not fail ON CONFLICT without unique");
+
+        // Unique indexes installed for runtime upserts.
+        let idx: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE '%message_stats%'",
+        )
+        .fetch_all(match &pool {
+            DbPool::Sqlite(p) => p,
+            _ => unreachable!(),
+        })
+        .await
+        .unwrap();
+        assert!(
+            idx.iter().any(|(n,)| n.contains("message_stats")),
+            "expected message_stats unique index, got {idx:?}"
+        );
+
+        // Seed rows present; second ensure is idempotent.
+        let count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM message_stats WHERE name = 'sent_messages'")
+                .fetch_one(match &pool {
+                    DbPool::Sqlite(p) => p,
+                    _ => unreachable!(),
+                })
+                .await
+                .unwrap();
+        assert_eq!(count.0, 1);
+        run_migrations(&pool).await.expect("idempotent ensure");
+
+        // Runtime-style ON CONFLICT must succeed after ensure.
+        sqlx::query(
+            "INSERT INTO message_stats (name, count) VALUES ('sent_messages', 42)
+             ON CONFLICT(name) DO UPDATE SET count = excluded.count",
+        )
+        .execute(match &pool {
+            DbPool::Sqlite(p) => p,
+            _ => unreachable!(),
+        })
+        .await
+        .expect("ON CONFLICT(name) after ensure");
+        sqlx::query(
+            "INSERT INTO blocked_users (username, reason) VALUES ('u@test', 'x')
+             ON CONFLICT(username) DO UPDATE SET reason = excluded.reason",
+        )
+        .execute(match &pool {
+            DbPool::Sqlite(p) => p,
+            _ => unreachable!(),
+        })
+        .await
+        .expect("ON CONFLICT(username) on blocked_users after ensure");
+    }
+
+
+    /// Postgres e2e: constraint-less message_stats (reporter schema). Opt-in via MADMAIL_TEST_PG_DSN.
+    #[tokio::test]
+    async fn legacy_postgres_constraintless_message_stats_ensure() {
+        let Some(dsn) = std::env::var("MADMAIL_TEST_PG_DSN").ok().filter(|s| !s.is_empty()) else {
+            eprintln!("skip: set MADMAIL_TEST_PG_DSN for Postgres e2e");
+            return;
+        };
+        let config = chatmail_config::DatabaseConfig {
+            driver: chatmail_config::DbDriver::Postgres,
+            dsn,
+        };
+        let pool = crate::connect_database(&config).await.expect("connect postgres");
+        assert!(
+            crate::schema::legacy_madmail_schema_present(&pool)
+                .await
+                .unwrap(),
+            "expected legacy schema detection"
+        );
+        // This is the boot path that failed for the reporter.
+        super::run_migrations(&pool)
+            .await
+            .expect("legacy ensure must succeed on constraint-less message_stats");
+        super::run_migrations(&pool)
+            .await
+            .expect("idempotent ensure");
+
+        // Runtime ON CONFLICT used by message_stats flush.
+        match &pool {
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    "INSERT INTO message_stats (name, count) VALUES ('sent_messages', 123)
+                     ON CONFLICT (name) DO UPDATE SET count = excluded.count",
+                )
+                .execute(p)
+                .await
+                .expect("runtime ON CONFLICT after ensure");
+                let row: (i64,) = sqlx::query_as(
+                    "SELECT count FROM message_stats WHERE name = 'sent_messages'",
+                )
+                .fetch_one(p)
+                .await
+                .unwrap();
+                assert_eq!(row.0, 123);
+                // passwords KV preserved
+                let layout = crate::schema::passwords_layout(&pool).await.unwrap();
+                assert!(matches!(layout, crate::schema::PasswordsLayout::MadmailKv));
+            }
+            _ => panic!("expected postgres"),
+        }
     }
 
     /// Fresh SQLite still gets full sqlx migrations (no legacy markers).
