@@ -22,6 +22,43 @@ pub fn prepare_template(input: &str) -> String {
     post_process(&go_to_minijinja(input))
 }
 
+/// True when `src` still uses Madmail Go `html/template` markers (not native Minijinja).
+///
+/// Used by `html-migrate` / upgrade to decide whether on-disk custom `www_dir` HTML
+/// should be rewritten. Pure Minijinja (`{% if %}`, `{{ Field }}` without a leading `.`)
+/// returns false.
+pub fn looks_like_go_template(src: &str) -> bool {
+    // Control / field forms unique to Go html/template in Madmail pages.
+    if src.contains("{{if .")
+        || src.contains("{{ if .")
+        || src.contains("{{end}}")
+        || src.contains("{{ end }}")
+        || src.contains("{{else}}")
+        || src.contains("{{ else }}")
+        || src.contains("{{if eq .")
+        || src.contains("{{ if eq .")
+    {
+        return true;
+    }
+    // `{{.Field}}` / `{{ .Field }}` (leading dot after `{{`)
+    if src.contains("{{.") || src.contains("{{ .") {
+        return true;
+    }
+    // Go filter names (Minijinja uses snake_case)
+    if src.contains("| cleanDomain")
+        || src.contains("|cleanDomain")
+        || src.contains("| safeHTML")
+        || src.contains("|safeHTML")
+        || src.contains("| formatBytes")
+        || src.contains("|formatBytes")
+        || src.contains("| safeURL")
+        || src.contains("|safeURL")
+    {
+        return true;
+    }
+    false
+}
+
 fn go_to_minijinja(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let bytes = input.as_bytes();
@@ -102,5 +139,15 @@ mod tests {
     fn leaves_minijinja_unchanged() {
         let s = r#"{% if RegistrationOpen %}{{ MailDomain }}{% endif %}"#;
         assert_eq!(prepare_template(s), s);
+    }
+
+    #[test]
+    fn looks_like_go_template_markers() {
+        assert!(looks_like_go_template("{{if .X}}"));
+        assert!(looks_like_go_template("{{.MailDomain}}"));
+        assert!(looks_like_go_template("x | cleanDomain y"));
+        assert!(!looks_like_go_template(
+            "{% if X %}{{ MailDomain }}{% endif %}"
+        ));
     }
 }

@@ -33,7 +33,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
             "internal error: dispatch called for server run",
         )),
         Some(Command::Upgrade { path_or_url }) | Some(Command::Update { path_or_url }) => {
-            crate::upgrade::upgrade_command(path_or_url, cli.args.json)
+            crate::upgrade::upgrade_command(path_or_url, &cli.args)
         }
         Some(Command::AdminToken { raw, no_qr }) => {
             admin_token::admin_token(&cli.args, *raw, *no_qr).await
@@ -55,6 +55,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         }) => delete_cmd::delete(&cli.args, username, *yes, reason).await,
         Some(Command::HtmlExport { dest }) => html::html_export(&cli.args, dest).await,
         Some(Command::HtmlServe { www_dir }) => html::html_serve(&cli.args, www_dir).await,
+        Some(Command::HtmlMigrate { yes }) => html::html_migrate(&cli.args, *yes).await,
         Some(Command::Language { command }) => {
             language::language(&cli.args, command.as_ref()).await
         }
@@ -112,7 +113,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
          See docs/TDD/14-cli-tools.md and context/madmail/docs/chatmail/commands.md.\n\
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, language, \
-         html-export, html-serve, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
+         html-export, html-serve, html-migrate, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
          status, uninstall, endpoint-cache, port, proxy, reload, message-size, tasks, completion"
     )))
 }
@@ -136,6 +137,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Hash => "hash",
         Command::HtmlExport { .. } => "html-export",
         Command::HtmlServe { .. } => "html-serve",
+        Command::HtmlMigrate { .. } => "html-migrate",
         Command::ImapMboxes => "imap-mboxes",
         Command::ImapMsgs => "imap-msgs",
         Command::ImapAcct => "imap-acct",

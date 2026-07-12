@@ -30,7 +30,7 @@ madmail update /tmp/madmail-signed
 madmail update https://relay.example/releases/madmail
 ```
 
-See [upgrade](upgrade.md) for full behavior (signature verify, systemd stop/replace/start).
+See [upgrade](upgrade.md) for full behavior (signature verify, systemd stop/replace/start, custom www template migration).
 
 ## JSON output (`--json`)
 

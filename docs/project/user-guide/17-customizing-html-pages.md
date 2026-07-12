@@ -102,6 +102,18 @@ after changing files in your `www_dir`. A full restart is rarely required for HT
 
 Users may need to do a hard refresh (Ctrl+Shift+R or Cmd+Shift+R) in their browser to see updated static assets.
 
+## Go Madmail → madmail-v2 (template syntax)
+
+Older Go Madmail pages used Go `html/template` markers such as `{{if .RegistrationOpen}}` and `{{.MailDomain | cleanDomain}}`. madmail-v2 renders with **Minijinja** (`{% if RegistrationOpen %}`, `{{ MailDomain | clean_domain }}`).
+
+If you keep a customized `www_dir` from Go Madmail:
+
+1. After binary upgrade, `madmail update` / `upgrade` offers to convert those files (or run `madmail html-migrate` yourself).
+2. Accepting creates `*.go-template.bak` backups and rewrites HTML in place.
+3. The server can still convert many Go forms at render time, but migrating on disk keeps your sources consistent with the v2 engine.
+
+See the CLI reference: [html-migrate](../../guide/cli/html-migrate.md).
+
 ## Common Examples
 
 - Community servers adding local rules and support contact information.

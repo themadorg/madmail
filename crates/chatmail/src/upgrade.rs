@@ -24,6 +24,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+use chatmail_config::Args;
 use chatmail_types::{ChatmailError, Result};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use reqwest::blocking::Client;
@@ -73,17 +74,17 @@ fn is_download_url(input: &str) -> bool {
 }
 
 /// Entry point for `chatmail upgrade` and `chatmail update` (Madmail `upgradeCommand`).
-pub fn upgrade_command(input: &str, json: bool) -> Result<()> {
+pub fn upgrade_command(input: &str, args: &Args) -> Result<()> {
     let input = input.trim();
     if input.is_empty() {
         return Err(ChatmailError::config("PATH or URL is required"));
     }
     let result = if is_download_url(input) {
-        handle_update_url(input)
+        handle_update_url(input, args)
     } else {
-        perform_upgrade(Path::new(input))
+        perform_upgrade(Path::new(input), args)
     };
-    if result.is_ok() && json {
+    if result.is_ok() && args.json {
         let envelope = serde_json::json!({
             "ok": true,
             "command": "upgrade",
@@ -105,7 +106,7 @@ fn build_download_client() -> Result<Client> {
 }
 
 /// Download signed binary to a temp file, then run `perform_upgrade` (Madmail `handleUpdateURL`).
-fn handle_update_url(url: &str) -> Result<()> {
+fn handle_update_url(url: &str, args: &Args) -> Result<()> {
     let tmp_path = std::env::temp_dir().join(format!("madmail-update-{}", std::process::id()));
     let mut tmp_file = File::create(&tmp_path).map_err(|e| {
         ChatmailError::config(format!(
@@ -167,7 +168,7 @@ fn handle_update_url(url: &str) -> Result<()> {
         .len();
     eprintln!("✅ Downloaded {n} bytes");
 
-    let result = perform_upgrade(&tmp_path);
+    let result = perform_upgrade(&tmp_path, args);
     cleanup();
     result
 }
@@ -185,7 +186,7 @@ fn run_systemctl(args: &[&str]) {
 }
 
 /// Upgrade in place: verify signature, stop service, replace executable, start service.
-pub fn perform_upgrade(new_bin_path: &Path) -> Result<()> {
+pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     eprintln!("🔍 Verifying digital signature...");
     match verify_signature(new_bin_path)? {
         true => eprintln!("✅ Signature verification successful."),
@@ -240,6 +241,10 @@ pub fn perform_upgrade(new_bin_path: &Path) -> Result<()> {
         ChatmailError::config(format!("failed to replace binary: {e}"))
     })?;
 
+    // Run post-upgrade hooks from the *new* binary so first upgrades that ship
+    // html-migrate still work (this process is still the old code).
+    run_post_upgrade_www_migrate(&real_bin_path, args);
+
     eprintln!("▶️ Starting services...");
     if !Command::new("systemctl")
         .args(["start", &service])
@@ -269,6 +274,57 @@ pub fn perform_upgrade(new_bin_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Ask the new binary to migrate custom `www_dir` Go templates (interactive).
+fn run_post_upgrade_www_migrate(new_bin: &Path, args: &Args) {
+    if !args.config.is_file() {
+        eprintln!(
+            "ℹ️ Config not found at {} — skipping custom www template check \
+             (run: madmail --config <path> html-migrate)",
+            args.config.display()
+        );
+        return;
+    }
+
+    // Never re-exec with --json: child would print a second JSON envelope on stdout
+    // and break scripted `madmail update --json` parsers. Operators can migrate later.
+    if args.json {
+        eprintln!(
+            "ℹ️ --json upgrade: not prompting for www template migration. \
+             If you use a custom www_dir with Go templates, run: \
+             madmail --config {} html-migrate",
+            args.config.display()
+        );
+        return;
+    }
+
+    eprintln!("🌐 Checking custom www templates (Go → Minijinja)...");
+    let mut cmd = Command::new(new_bin);
+    cmd.arg("--config").arg(&args.config).arg("html-migrate");
+    // Inherit stdin so interactive [y/N] works when the operator is at a TTY.
+    cmd.stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit());
+
+    match cmd.status() {
+        Ok(st) if st.success() => {}
+        Ok(st) => {
+            eprintln!(
+                "⚠️ html-migrate exited with status {st} — you can re-run: \
+                 madmail --config {} html-migrate",
+                args.config.display()
+            );
+        }
+        Err(e) => {
+            eprintln!(
+                "⚠️ Could not run html-migrate on the new binary ({e}). \
+                 If you use a custom www_dir with Go templates, run: \
+                 madmail --config {} html-migrate",
+                args.config.display()
+            );
+        }
+    }
+}
+
 /// Rewrite man page and shell tab-completion scripts after the binary is replaced.
 fn refresh_cli_docs_after_upgrade() {
     let name = crate::ctl::argv_binary_name();
@@ -296,7 +352,13 @@ mod tests {
 
     #[test]
     fn upgrade_command_requires_input() {
-        let err = upgrade_command("  ", false).unwrap_err();
+        let args = Args {
+            config: PathBuf::from("/nonexistent/madmail.conf"),
+            state_dir: PathBuf::from("/tmp"),
+            boot_once: false,
+            json: false,
+        };
+        let err = upgrade_command("  ", &args).unwrap_err();
         assert!(err.to_string().contains("PATH or URL is required"));
     }
 }
