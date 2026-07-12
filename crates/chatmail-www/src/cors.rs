@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Configurable CORS for WebIMAP / WebSMTP browser clients (`__WEBMAIL_CORS_ORIGINS__`).
+//! Configurable CORS for WebIMAP / WebSMTP / `POST /new` browser clients (`__WEBMAIL_CORS_ORIGINS__`).
 
 use axum::http::{header, HeaderMap};
 use chatmail_db::{get_setting, settings_keys, DbPool};

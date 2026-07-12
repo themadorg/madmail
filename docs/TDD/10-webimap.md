@@ -28,7 +28,7 @@ Admin GET/POST use `enable` / `disable` actions (same as other service toggles).
 
 Query params on upgrade: `?email=USER&password=PASS` (optional `mailbox`, `since_uid`).
 
-CORS: `Access-Control-Allow-Origin: *` on all WebIMAP/WebSMTP responses. `OPTIONS` → **204** with allowed methods/headers.
+CORS (shared with `POST /new`): when browser access is on (WebIMAP **and** WebSMTP enabled), valid request `Origin` values are reflected; optional `__WEBMAIL_CORS_ORIGINS__` whitelist (or `*`). `OPTIONS` → **204** with allowed methods/headers when the origin is allowed.
 
 ## REST routes
 

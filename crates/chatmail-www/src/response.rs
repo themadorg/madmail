@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Shared JSON + CORS helpers for WebIMAP / WebSMTP.
+//! Shared JSON + CORS helpers for WebIMAP / WebSMTP / `POST /new`.
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};

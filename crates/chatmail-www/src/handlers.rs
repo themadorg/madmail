@@ -396,7 +396,11 @@ pub async fn new_account(
             &cors,
         );
     }
-    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    cors_json(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        json!({"error": "failed to create account"}),
+        &cors,
+    )
 }
 
 #[derive(Deserialize)]

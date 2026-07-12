@@ -616,3 +616,71 @@ async fn contact_sharing_post_and_slug_view() {
     assert!(page.contains("Alice"));
     assert!(page.contains("openpgp4fpr:"));
 }
+
+/// Dev browser access (WebIMAP + WebSMTP) also applies CORS to `POST /new` / OPTIONS.
+#[tokio::test]
+async fn new_account_cors_reflects_origin_when_browser_access_enabled() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let pool = init_memory_db().await.unwrap();
+    set_setting(&pool, settings_keys::WEBIMAP_ENABLED, "true")
+        .await
+        .unwrap();
+    set_setting(&pool, settings_keys::WEBSMTP_ENABLED, "true")
+        .await
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = AppConfig::default();
+    let app_state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    app_state.auth.hydrate(&pool).await.unwrap();
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg, dir.path()));
+
+    let origin = "http://127.0.0.1:5173";
+
+    let preflight = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("OPTIONS")
+                .uri("/new")
+                .header("origin", origin)
+                .header("access-control-request-method", "POST")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        preflight
+            .headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok()),
+        Some(origin)
+    );
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/new")
+                .header("origin", origin)
+                .header("host", "example.org")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok()),
+        Some(origin)
+    );
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(v.get("email").and_then(|e| e.as_str()).is_some());
+}
