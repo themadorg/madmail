@@ -1,3 +1,10 @@
+## [2.13.5](https://github.com/themadorg/madmail/compare/v2.13.4...v2.13.5) (2026-07-12)
+
+
+### Bug Fixes
+
+* resolve the webimap federation issue ([be1f1ff](https://github.com/themadorg/madmail/commit/be1f1fff82ff505a3ccd88615ecc29b84a0adebb))
+
 ## [2.13.4](https://github.com/themadorg/madmail/compare/v2.13.3...v2.13.4) (2026-07-12)
 
 
