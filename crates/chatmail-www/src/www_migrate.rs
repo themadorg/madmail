@@ -55,7 +55,7 @@ pub fn scan_www_dir_for_go_templates(www_dir: &Path) -> Result<Vec<PathBuf>> {
         )));
     }
     let mut out = Vec::new();
-    walk_html(www_dir, www_dir, &mut |path| {
+    walk_html(www_dir, &mut |path| {
         let src = fs::read_to_string(path).map_err(ChatmailError::from)?;
         if looks_like_go_template(&src) {
             out.push(path.to_path_buf());
@@ -103,7 +103,7 @@ pub fn migrate_www_dir(www_dir: &Path, apply: bool) -> Result<MigrateReport> {
     }
 
     let mut all_html = Vec::new();
-    walk_html(www_dir, www_dir, &mut |path| {
+    walk_html(www_dir, &mut |path| {
         all_html.push(path.to_path_buf());
         Ok(())
     })?;
@@ -154,13 +154,13 @@ fn backup_path(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-fn walk_html(root: &Path, dir: &Path, f: &mut dyn FnMut(&Path) -> Result<()>) -> Result<()> {
+fn walk_html(dir: &Path, f: &mut dyn FnMut(&Path) -> Result<()>) -> Result<()> {
     let entries = fs::read_dir(dir).map_err(ChatmailError::from)?;
     for entry in entries {
         let entry = entry.map_err(ChatmailError::from)?;
         let path = entry.path();
         if path.is_dir() {
-            walk_html(root, &path, f)?;
+            walk_html(&path, f)?;
         } else if path
             .extension()
             .and_then(|e| e.to_str())
@@ -266,9 +266,11 @@ mod tests {
         fs::write(dir.path().join("index.html"), go).unwrap();
 
         // Before migrate: external www still renders Go syntax via prepare_template.
-        let mut cfg = AppConfig::default();
-        cfg.www_dir = Some(dir.path().to_path_buf());
-        cfg.mail_domain = Some("example.org".into());
+        let cfg = AppConfig {
+            www_dir: Some(dir.path().to_path_buf()),
+            mail_domain: Some("example.org".into()),
+            ..Default::default()
+        };
         let engine = TemplateEngine::from_config(&cfg);
         let ctx = WwwContext {
             MailDomain: "example.org".into(),
