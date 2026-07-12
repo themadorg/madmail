@@ -47,11 +47,18 @@ CORS (shared with `POST /new`): when browser access is on (WebIMAP **and** WebSM
 
 ## WebSMTP delivery
 
-Shared `websmtp_deliver()` in `handlers.rs`:
+Shared `websmtp_deliver()` in `handlers.rs` uses the **same authenticated submission
+path as SMTP AUTH (587/465)**:
 
 1. `validate_submission_headers` — From/Sender must match authenticated user
 2. `enforce_encryption` — PGP-only + SecureJoin handshakes (same as SMTP submission)
-3. `DeliveryContext::route_message` — local maildir vs outbound queue by recipient domain
+3. `DeliveryContext::submit_authenticated` — local maildir **or** outbound federation
+   queue (same queue worker as SMTP submission)
+
+Outbound federation (`chatmail-delivery::deliver_remote`) tries HTTPS/HTTP `/mxdeliv`
+first, then **always falls back to SMTP :25 / :443** (even when HTTP returns 4xx).
+Previously a permanent HTTP 4xx (e.g. missing `/mxdeliv` on the peer) skipped SMTP and
+silently dropped WebSMTP/SMTP outbound to peers such as `nine.testrun.org`.
 
 ## WebSocket protocol
 

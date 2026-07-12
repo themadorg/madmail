@@ -695,6 +695,7 @@ dependencies = [
 name = "chatmail-delivery"
 version = "2.13.3"
 dependencies = [
+ "chatmail-auth",
  "chatmail-config",
  "chatmail-db",
  "chatmail-pgp",

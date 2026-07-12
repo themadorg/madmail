@@ -114,8 +114,15 @@ impl SmtpTransport {
 ///
 /// Tries port 25 (optional STARTTLS) first, then port 443 implicit TLS — required for
 /// classic Chatmail relays (`nine.testrun.org`, etc.) that expose SMTP only on :443.
-pub async fn deliver(host: &str, job: &OutboundJob) -> Result<(), String> {
+///
+/// `helo_name` is this server's identity for EHLO (primary_domain / public IP), not the remote host.
+pub async fn deliver(host: &str, job: &OutboundJob, helo_name: &str) -> Result<(), String> {
     let connect_host = host.trim_matches(|c| c == '[' || c == ']');
+    let helo = if helo_name.trim().is_empty() {
+        connect_host
+    } else {
+        helo_name.trim().trim_matches(|c| c == '[' || c == ']')
+    };
     let rcpt_domain = job
         .rcpt_to
         .rsplit_once('@')
@@ -123,7 +130,7 @@ pub async fn deliver(host: &str, job: &OutboundJob) -> Result<(), String> {
         .unwrap_or(connect_host);
 
     let endpoint25 = format!("{connect_host}:25");
-    match deliver_plain_starttls(&endpoint25, connect_host, rcpt_domain, job).await {
+    match deliver_plain_starttls(&endpoint25, connect_host, rcpt_domain, helo, job).await {
         Ok(()) => {
             info!(endpoint = %endpoint25, rcpt = %job.rcpt_to, "federation: SMTP delivery ok (port 25)");
             return Ok(());
@@ -139,7 +146,7 @@ pub async fn deliver(host: &str, job: &OutboundJob) -> Result<(), String> {
     }
 
     let endpoint443 = format!("{connect_host}:443");
-    deliver_implicit_tls(&endpoint443, connect_host, rcpt_domain, job)
+    deliver_implicit_tls(&endpoint443, connect_host, rcpt_domain, helo, job)
         .await
         .map_err(|e443| format!("smtp :25 failed; smtp :443 tls: {e443}"))
 }
@@ -149,6 +156,7 @@ async fn deliver_plain_starttls(
     endpoint: &str,
     connect_host: &str,
     rcpt_domain: &str,
+    helo_name: &str,
     job: &OutboundJob,
 ) -> Result<(), String> {
     debug!(endpoint, "federation: SMTP plain connect");
@@ -162,7 +170,7 @@ async fn deliver_plain_starttls(
     read_smtp_reply(&mut transport, 220).await?;
 
     transport
-        .write_all(format!("EHLO {connect_host}\r\n"))
+        .write_all(format!("EHLO {helo_name}\r\n"))
         .await?;
     let ehlo_plain = read_smtp_reply(&mut transport, 250).await?;
 
@@ -185,12 +193,12 @@ async fn deliver_plain_starttls(
 
         transport = SmtpTransport::Tls(Box::new(tls_stream));
         transport
-            .write_all(format!("EHLO {connect_host}\r\n"))
+            .write_all(format!("EHLO {helo_name}\r\n"))
             .await?;
         read_smtp_reply(&mut transport, 250).await?;
     }
 
-    run_smtp_transaction(&mut transport, connect_host, job).await
+    run_smtp_transaction(&mut transport, job).await
 }
 
 /// Implicit TLS on :443 (Chatmail / Delta Chat relay SMTP submission style).
@@ -198,6 +206,7 @@ async fn deliver_implicit_tls(
     endpoint: &str,
     connect_host: &str,
     rcpt_domain: &str,
+    helo_name: &str,
     job: &OutboundJob,
 ) -> Result<(), String> {
     info!(endpoint, rcpt = %job.rcpt_to, "federation: SMTP implicit TLS connect");
@@ -219,18 +228,17 @@ async fn deliver_implicit_tls(
     let mut transport = SmtpTransport::Tls(Box::new(tls_stream));
     read_smtp_reply(&mut transport, 220).await?;
     transport
-        .write_all(format!("EHLO {connect_host}\r\n"))
+        .write_all(format!("EHLO {helo_name}\r\n"))
         .await?;
     read_smtp_reply(&mut transport, 250).await?;
 
-    run_smtp_transaction(&mut transport, connect_host, job).await?;
+    run_smtp_transaction(&mut transport, job).await?;
     info!(endpoint, rcpt = %job.rcpt_to, "federation: SMTP delivery ok (port 443 TLS)");
     Ok(())
 }
 
 async fn run_smtp_transaction(
     transport: &mut SmtpTransport,
-    _connect_host: &str,
     job: &OutboundJob,
 ) -> Result<(), String> {
     transport
@@ -266,7 +274,7 @@ async fn deliver_to_endpoint(
     rcpt_domain: &str,
     job: &OutboundJob,
 ) -> Result<(), String> {
-    deliver_plain_starttls(endpoint, connect_host, rcpt_domain, job).await
+    deliver_plain_starttls(endpoint, connect_host, rcpt_domain, connect_host, job).await
 }
 
 fn smtp_tls_server_name(
