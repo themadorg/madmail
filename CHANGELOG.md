@@ -1,3 +1,10 @@
+# [2.14.0](https://github.com/themadorg/madmail/compare/v2.13.5...v2.14.0) (2026-07-13)
+
+
+### Features
+
+* **webimap:** implement multi-mailbox WS actions for madcore parity ([bc58b0c](https://github.com/themadorg/madmail/commit/bc58b0c63f2c4611c3077edff2fedad6adbc4dd2))
+
 ## [2.13.5](https://github.com/themadorg/madmail/compare/v2.13.4...v2.13.5) (2026-07-12)
 
 
