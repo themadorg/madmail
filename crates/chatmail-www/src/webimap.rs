@@ -24,7 +24,10 @@ use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use chatmail_storage::{delete_blob, list_inbox, read_blob, InboxEntry};
+use chatmail_storage::{
+    copy_message, delete_blob, list_inbox, list_mailbox_messages, mailbox_exists, move_message,
+    read_blob, store_add_flags, InboxEntry,
+};
 use mail_parser::MessageParser;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -191,9 +194,77 @@ pub(crate) async fn load_entries(
     user: &str,
     cors: &CorsSnap,
 ) -> Result<Vec<InboxEntry>, Response> {
-    list_inbox(&st.app.mailbox_store, user)
+    load_mailbox_entries(st, user, "INBOX")
         .await
-        .map_err(|e| json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string(), cors))
+        .map_err(|e| json_err(StatusCode::BAD_REQUEST, &e, cors))
+}
+
+pub(crate) async fn load_mailbox_entries(
+    st: &WwwState,
+    user: &str,
+    mailbox: &str,
+) -> Result<Vec<InboxEntry>, String> {
+    if !user_mailbox_exists(st, user, mailbox).await {
+        return Err("unknown mailbox".into());
+    }
+    if mailbox.eq_ignore_ascii_case("INBOX") {
+        return list_inbox(&st.app.mailbox_store, user)
+            .await
+            .map_err(|e| e.to_string());
+    }
+    let msgs = list_mailbox_messages(&st.app.mailbox_store, user, mailbox)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(msgs
+        .into_iter()
+        .map(|m| InboxEntry {
+            uid: m.uid,
+            msg_id: m.base_id,
+            size: m.size,
+        })
+        .collect())
+}
+
+pub(crate) async fn user_mailbox_exists(st: &WwwState, user: &str, mailbox: &str) -> bool {
+    if mailbox.eq_ignore_ascii_case("INBOX") {
+        return true;
+    }
+    mailbox_exists(&st.app.mailbox_store, user, mailbox).await
+}
+
+pub(crate) async fn list_user_mailboxes(st: &WwwState, user: &str) -> Result<Vec<MailboxInfo>, String> {
+    let mut names = vec!["INBOX".to_string()];
+    let folders = st
+        .app
+        .mailbox_store
+        .maildir_for_user(user)
+        .root
+        .parent()
+        .map(|p| p.join("folders"));
+    if let Some(dir) = folders {
+        if dir.is_dir() {
+            let mut rd = tokio::fs::read_dir(&dir).await.map_err(|e| e.to_string())?;
+            while let Some(ent) = rd.next_entry().await.map_err(|e| e.to_string())? {
+                if ent.file_type().await.map_err(|e| e.to_string())?.is_dir() {
+                    names.push(ent.file_name().to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    let mut out = Vec::new();
+    for name in names {
+        let entries = load_mailbox_entries(st, user, &name).await?;
+        let count = entries.len() as u32;
+        out.push(MailboxInfo {
+            name,
+            attributes: vec![],
+            messages: count,
+            unseen: count,
+        });
+    }
+    Ok(out)
 }
 
 pub(crate) async fn find_entry(entries: &[InboxEntry], uid: u32) -> Option<InboxEntry> {
@@ -203,10 +274,11 @@ pub(crate) async fn find_entry(entries: &[InboxEntry], uid: u32) -> Option<Inbox
 pub(crate) async fn build_detail(
     st: &WwwState,
     user: &str,
+    mailbox: &str,
     entry: &InboxEntry,
     cors: &CorsSnap,
 ) -> Result<MessageDetail, Response> {
-    let raw = read_blob(&st.app.mailbox_store, user, "INBOX", &entry.msg_id)
+    let raw = read_blob(&st.app.mailbox_store, user, mailbox, &entry.msg_id)
         .await
         .map_err(|e| json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string(), cors))?;
     let (envelope, body) = parse_envelope(&raw);
@@ -244,21 +316,11 @@ pub async fn mailboxes(State(st): State<WwwState>, headers: HeaderMap) -> Respon
         Ok(u) => u,
         Err(r) => return r,
     };
-    let entries = match load_entries(&st, &user, &cors).await {
-        Ok(e) => e,
-        Err(r) => return r,
+    let list = match list_user_mailboxes(&st, &user).await {
+        Ok(l) => l,
+        Err(e) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e, &cors),
     };
-    let unseen = entries.len() as u32;
-    json_ok(
-        StatusCode::OK,
-        &[MailboxInfo {
-            name: "INBOX".into(),
-            attributes: vec![],
-            messages: unseen,
-            unseen,
-        }],
-        &cors,
-    )
+    json_ok(StatusCode::OK, &list, &cors)
 }
 
 /// GET `/webimap/messages`
@@ -275,7 +337,8 @@ pub async fn messages(
         Ok(u) => u,
         Err(r) => return r,
     };
-    if q.mailbox.as_deref().is_some_and(|m| m != "INBOX") {
+    let mailbox = q.mailbox.as_deref().unwrap_or("INBOX");
+    if !user_mailbox_exists(&st, &user, mailbox).await {
         return json_err(StatusCode::BAD_REQUEST, "unknown mailbox", &cors);
     }
     let since = q.since_uid.unwrap_or(0);
@@ -283,13 +346,13 @@ pub async fn messages(
     let deadline = tokio::time::Instant::now() + Duration::from_secs(wait as u64);
 
     loop {
-        let entries = match load_entries(&st, &user, &cors).await {
+        let entries = match load_mailbox_entries(&st, &user, mailbox).await {
             Ok(e) => e,
-            Err(r) => return r,
+            Err(e) => return json_err(StatusCode::BAD_REQUEST, &e, &cors),
         };
         let mut out = Vec::new();
         for entry in entries.iter().filter(|e| e.uid > since) {
-            let raw = match read_blob(&st.app.mailbox_store, &user, "INBOX", &entry.msg_id).await {
+            let raw = match read_blob(&st.app.mailbox_store, &user, mailbox, &entry.msg_id).await {
                 Ok(b) => b,
                 Err(e) => {
                     return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string(), &cors);
@@ -319,17 +382,18 @@ pub async fn message_get(
         Ok(u) => u,
         Err(r) => return r,
     };
-    if q.mailbox.as_deref().is_some_and(|m| m != "INBOX") {
+    let mailbox = q.mailbox.as_deref().unwrap_or("INBOX");
+    if !user_mailbox_exists(&st, &user, mailbox).await {
         return json_err(StatusCode::BAD_REQUEST, "unknown mailbox", &cors);
     }
-    let entries = match load_entries(&st, &user, &cors).await {
+    let entries = match load_mailbox_entries(&st, &user, mailbox).await {
         Ok(e) => e,
-        Err(r) => return r,
+        Err(e) => return json_err(StatusCode::BAD_REQUEST, &e, &cors),
     };
     let Some(entry) = find_entry(&entries, path.uid).await else {
         return json_err(StatusCode::NOT_FOUND, "message not found", &cors);
     };
-    match build_detail(&st, &user, &entry, &cors).await {
+    match build_detail(&st, &user, mailbox, &entry, &cors).await {
         Ok(d) => json_ok(StatusCode::OK, &d, &cors),
         Err(r) => r,
     }
@@ -368,18 +432,17 @@ async fn delete_by_uid(
         Ok(u) => u,
         Err(r) => return r,
     };
-    if mailbox.as_deref().is_some_and(|m| m != "INBOX") {
+    let mailbox = mailbox.as_deref().unwrap_or("INBOX");
+    if !user_mailbox_exists(st, &user, mailbox).await {
         return json_err(StatusCode::BAD_REQUEST, "unknown mailbox", &cors);
     }
-    let entries = match load_entries(st, &user, &cors).await {
-        Ok(e) => e,
-        Err(r) => return r,
-    };
-    let Some(entry) = find_entry(&entries, uid).await else {
-        return json_err(StatusCode::NOT_FOUND, "message not found", &cors);
-    };
-    if let Err(e) = delete_blob(&st.app.mailbox_store, &user, &entry.msg_id).await {
-        return json_err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string(), &cors);
+    if let Err(e) = delete_uid(st, &user, mailbox, uid).await {
+        let code = if e == "message not found" {
+            StatusCode::NOT_FOUND
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        };
+        return json_err(code, &e, &cors);
     }
     json_ok(StatusCode::OK, &json!({ "status": "deleted" }), &cors)
 }
@@ -402,11 +465,11 @@ pub async fn message_flags(
     if !is_webimap_enabled(&st.pool).await {
         return service_disabled(&cors);
     }
-    let _user = match webimap_authenticate(&st.app, &st.pool, &headers, &cors).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers, &cors).await {
         Ok(u) => u,
         Err(r) => return r,
     };
-    if req.mailbox != "INBOX" {
+    if !user_mailbox_exists(&st, &user, &req.mailbox).await {
         return json_err(StatusCode::BAD_REQUEST, "unknown mailbox", &cors);
     }
     match req.op.as_str() {
@@ -447,14 +510,13 @@ pub async fn websocket(
 pub(crate) async fn summaries_since(
     st: &WwwState,
     user: &str,
+    mailbox: &str,
     since_uid: u32,
 ) -> Result<Vec<MessageSummary>, String> {
-    let entries = list_inbox(&st.app.mailbox_store, user)
-        .await
-        .map_err(|e| e.to_string())?;
+    let entries = load_mailbox_entries(st, user, mailbox).await?;
     let mut out = Vec::new();
     for entry in entries.iter().filter(|e| e.uid > since_uid) {
-        let raw = read_blob(&st.app.mailbox_store, user, "INBOX", &entry.msg_id)
+        let raw = read_blob(&st.app.mailbox_store, user, mailbox, &entry.msg_id)
             .await
             .map_err(|e| e.to_string())?;
         out.push(entry_to_summary(entry, &raw));
@@ -463,17 +525,185 @@ pub(crate) async fn summaries_since(
 }
 
 /// Delete a message by UID (WebSocket `delete`).
-pub(crate) async fn delete_uid(st: &WwwState, user: &str, uid: u32) -> Result<(), String> {
-    let entries = list_inbox(&st.app.mailbox_store, user)
-        .await
-        .map_err(|e| e.to_string())?;
+pub(crate) async fn delete_uid(
+    st: &WwwState,
+    user: &str,
+    mailbox: &str,
+    uid: u32,
+) -> Result<(), String> {
+    let entries = load_mailbox_entries(st, user, mailbox).await?;
     let Some(entry) = entries.iter().find(|e| e.uid == uid) else {
         return Err("message not found".into());
     };
-    delete_blob(&st.app.mailbox_store, user, &entry.msg_id)
+    if mailbox.eq_ignore_ascii_case("INBOX") {
+        delete_blob(&st.app.mailbox_store, user, &entry.msg_id)
+            .await
+            .map_err(|e| e.to_string())?;
+    } else {
+        store_add_flags(
+            &st.app.mailbox_store,
+            user,
+            mailbox,
+            &entry.msg_id,
+            false,
+            true,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn search_messages(
+    st: &WwwState,
+    user: &str,
+    query: &str,
+) -> Result<Vec<MessageSummary>, String> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Err("empty query".into());
+    }
+    let entries = load_mailbox_entries(st, user, "INBOX").await?;
+    let mut out = Vec::new();
+    for entry in entries {
+        let raw = read_blob(&st.app.mailbox_store, user, "INBOX", &entry.msg_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let (envelope, body) = parse_envelope(&raw);
+        let hay = format!(
+            "{} {} {} {}",
+            envelope.subject,
+            envelope
+                .from
+                .iter()
+                .map(|a| format!("{}@{}", a.mailbox, a.host))
+                .collect::<Vec<_>>()
+                .join(" "),
+            body,
+            envelope.message_id
+        )
+        .to_lowercase();
+        if hay.contains(&q) {
+            out.push(entry_to_summary(&entry, &raw));
+        }
+    }
+    Ok(out)
+}
+
+pub(crate) async fn create_user_mailbox(st: &WwwState, user: &str, name: &str) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("missing mailbox name".into());
+    }
+    if name.eq_ignore_ascii_case("INBOX") {
+        return Err("cannot create INBOX".into());
+    }
+    st.app
+        .mailbox_store
+        .init_mailbox_dir(user, name)
         .await
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+pub(crate) async fn delete_user_mailbox(st: &WwwState, user: &str, name: &str) -> Result<(), String> {
+    if name.eq_ignore_ascii_case("INBOX") {
+        return Err("cannot delete INBOX".into());
+    }
+    if !mailbox_exists(&st.app.mailbox_store, user, name).await {
+        return Err("unknown mailbox".into());
+    }
+    let folder = mailbox_folder(st, user, name);
+    if folder.exists() {
+        tokio::fs::remove_dir_all(&folder)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn rename_user_mailbox(
+    st: &WwwState,
+    user: &str,
+    old_name: &str,
+    new_name: &str,
+) -> Result<(), String> {
+    if old_name.eq_ignore_ascii_case("INBOX") || new_name.eq_ignore_ascii_case("INBOX") {
+        return Err("cannot rename INBOX".into());
+    }
+    if !mailbox_exists(&st.app.mailbox_store, user, old_name).await {
+        return Err("unknown mailbox".into());
+    }
+    if mailbox_exists(&st.app.mailbox_store, user, new_name).await {
+        return Err("mailbox already exists".into());
+    }
+    let old_folder = mailbox_folder(st, user, old_name);
+    let new_folder = mailbox_folder(st, user, new_name);
+    if let Some(parent) = new_folder.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    tokio::fs::rename(&old_folder, &new_folder)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub(crate) async fn copy_uid(
+    st: &WwwState,
+    user: &str,
+    mailbox: &str,
+    uid: u32,
+    dest_mailbox: &str,
+) -> Result<(), String> {
+    let entries = load_mailbox_entries(st, user, mailbox).await?;
+    let Some(entry) = entries.iter().find(|e| e.uid == uid) else {
+        return Err("message not found".into());
+    };
+    copy_message(
+        &st.app.mailbox_store,
+        user,
+        mailbox,
+        dest_mailbox,
+        &entry.msg_id,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub(crate) async fn move_uid(
+    st: &WwwState,
+    user: &str,
+    mailbox: &str,
+    uid: u32,
+    dest_mailbox: &str,
+) -> Result<(), String> {
+    let entries = load_mailbox_entries(st, user, mailbox).await?;
+    let Some(entry) = entries.iter().find(|e| e.uid == uid) else {
+        return Err("message not found".into());
+    };
+    move_message(
+        &st.app.mailbox_store,
+        user,
+        mailbox,
+        dest_mailbox,
+        &entry.msg_id,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn mailbox_folder(st: &WwwState, user: &str, mailbox: &str) -> std::path::PathBuf {
+    st.app
+        .mailbox_store
+        .maildir_for_mailbox(user, mailbox)
+        .root
+        .parent()
+        .expect("mailbox folder")
+        .to_path_buf()
 }
 
 #[cfg(test)]
@@ -591,13 +821,13 @@ mod tests {
         let (st, _dir) = test_www_state(true).await;
         seed_inbox(&st).await;
 
-        let summaries = summaries_since(&st, USER, 0).await.unwrap();
+        let summaries = summaries_since(&st, USER, "INBOX", 0).await.unwrap();
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].envelope.subject, "WebIMAP test");
 
         let uid = summaries[0].uid;
-        delete_uid(&st, USER, uid).await.unwrap();
-        assert!(summaries_since(&st, USER, 0).await.unwrap().is_empty());
+        delete_uid(&st, USER, "INBOX", uid).await.unwrap();
+        assert!(summaries_since(&st, USER, "INBOX", 0).await.unwrap().is_empty());
     }
 
     #[tokio::test]
