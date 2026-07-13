@@ -169,9 +169,7 @@ async fn deliver_plain_starttls(
     let mut transport = SmtpTransport::Plain(stream);
     read_smtp_reply(&mut transport, 220).await?;
 
-    transport
-        .write_all(format!("EHLO {helo_name}\r\n"))
-        .await?;
+    transport.write_all(format!("EHLO {helo_name}\r\n")).await?;
     let ehlo_plain = read_smtp_reply(&mut transport, 250).await?;
 
     if ehlo_advertises_starttls(&ehlo_plain) {
@@ -192,9 +190,7 @@ async fn deliver_plain_starttls(
         .map_err(|e| format!("smtp starttls: {e}"))?;
 
         transport = SmtpTransport::Tls(Box::new(tls_stream));
-        transport
-            .write_all(format!("EHLO {helo_name}\r\n"))
-            .await?;
+        transport.write_all(format!("EHLO {helo_name}\r\n")).await?;
         read_smtp_reply(&mut transport, 250).await?;
     }
 
@@ -227,9 +223,7 @@ async fn deliver_implicit_tls(
 
     let mut transport = SmtpTransport::Tls(Box::new(tls_stream));
     read_smtp_reply(&mut transport, 220).await?;
-    transport
-        .write_all(format!("EHLO {helo_name}\r\n"))
-        .await?;
+    transport.write_all(format!("EHLO {helo_name}\r\n")).await?;
     read_smtp_reply(&mut transport, 250).await?;
 
     run_smtp_transaction(&mut transport, job).await?;

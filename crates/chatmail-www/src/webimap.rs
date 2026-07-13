@@ -189,16 +189,6 @@ fn chrono_lite_now() -> String {
     format!("{secs}")
 }
 
-pub(crate) async fn load_entries(
-    st: &WwwState,
-    user: &str,
-    cors: &CorsSnap,
-) -> Result<Vec<InboxEntry>, Response> {
-    load_mailbox_entries(st, user, "INBOX")
-        .await
-        .map_err(|e| json_err(StatusCode::BAD_REQUEST, &e, cors))
-}
-
 pub(crate) async fn load_mailbox_entries(
     st: &WwwState,
     user: &str,
@@ -232,7 +222,10 @@ pub(crate) async fn user_mailbox_exists(st: &WwwState, user: &str, mailbox: &str
     mailbox_exists(&st.app.mailbox_store, user, mailbox).await
 }
 
-pub(crate) async fn list_user_mailboxes(st: &WwwState, user: &str) -> Result<Vec<MailboxInfo>, String> {
+pub(crate) async fn list_user_mailboxes(
+    st: &WwwState,
+    user: &str,
+) -> Result<Vec<MailboxInfo>, String> {
     let mut names = vec!["INBOX".to_string()];
     let folders = st
         .app
@@ -590,7 +583,11 @@ pub(crate) async fn search_messages(
     Ok(out)
 }
 
-pub(crate) async fn create_user_mailbox(st: &WwwState, user: &str, name: &str) -> Result<(), String> {
+pub(crate) async fn create_user_mailbox(
+    st: &WwwState,
+    user: &str,
+    name: &str,
+) -> Result<(), String> {
     let name = name.trim();
     if name.is_empty() {
         return Err("missing mailbox name".into());
@@ -606,7 +603,11 @@ pub(crate) async fn create_user_mailbox(st: &WwwState, user: &str, name: &str) -
     Ok(())
 }
 
-pub(crate) async fn delete_user_mailbox(st: &WwwState, user: &str, name: &str) -> Result<(), String> {
+pub(crate) async fn delete_user_mailbox(
+    st: &WwwState,
+    user: &str,
+    name: &str,
+) -> Result<(), String> {
     if name.eq_ignore_ascii_case("INBOX") {
         return Err("cannot delete INBOX".into());
     }
@@ -827,7 +828,10 @@ mod tests {
 
         let uid = summaries[0].uid;
         delete_uid(&st, USER, "INBOX", uid).await.unwrap();
-        assert!(summaries_since(&st, USER, "INBOX", 0).await.unwrap().is_empty());
+        assert!(summaries_since(&st, USER, "INBOX", 0)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
