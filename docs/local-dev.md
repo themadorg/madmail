@@ -7,14 +7,14 @@
 
 ## Build
 
-```bash
+```
 make build
 # or: cargo build --workspace
 ```
 
 ## Run empty server (boot only)
 
-```bash
+```
 make run-debug
 # or: cargo run -p chatmail -- --state-dir ./data --config ./data/chatmail.toml
 # (set `debug true` / `log stderr` in that file to enable tracing)
@@ -22,21 +22,21 @@ make run-debug
 
 Background instance (restart after code changes):
 
-```bash
+```
 make restart
 make logs
 ```
 
 Flags:
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--config` | `/etc/maddy/maddy.conf` | Static config (TOML or Madmail `.conf`) |
-| `--state-dir` | `/var/lib/maddy` | DB, `admin_token`, runtime state |
+| Flag          | Default                     | Description                             |
+| ------------- | ---------------------------- | --------------------------------------- |
+| `--config`    | `/etc/madmail/madmail.conf` | Static config (TOML or Madmail `.conf`) |
+| `--state-dir` | `/var/lib/madmail`          | DB, `admin_token`, runtime state        |
 
 CLI (Madmail-compatible subcommands). From the repo root, paths default to **`./data`** when that directory exists (same as `make run-bg`):
 
-```bash
+```
 cargo run -p chatmail -- --help
 cargo run -p chatmail -- admin-token   # reads ./data/admin_token (not stored in SQLite)
 cargo run -p chatmail -- version
@@ -46,7 +46,7 @@ The admin bearer token lives in **`{state_dir}/admin_token`** (created on first 
 
 **Admin web dashboard** (SvelteKit SPA from `external/madmail-admin-web` git submodule):
 
-```bash
+```
 git submodule update --init external/madmail-admin-web
 
 # Build SPA + re-embed into chatmail (must run cargo from madmail root, not admin-web/)
@@ -63,16 +63,16 @@ cargo run -p chatmail -- admin-web path /xxx   # remount after restart
 
 Deploy to Madmail test servers (signed binary, same flow as `context/madmail`):
 
-```bash
+```
 make push    # needs ../imp/private_key.hex and REMOTE1/REMOTE2 in .env or context/madmail/.env
 make log1    # journalctl on REMOTE1
 ```
 
-Full CLI parity plan: [`docs/TDD/14-cli-tools.md`](TDD/14-cli-tools.md).
+Full CLI parity plan: [`docs/TDD/14-cli-tools.md`](https://github.com/themadorg/madmail/blob/main/docs/TDD/14-cli-tools.md).
 
 Example TOML (`./data/chatmail.toml` is not auto-loaded; pass `--config`):
 
-```toml
+```
 hostname = "mail.example.org"
 primary_domain = "example.org"
 state_dir = "./data"
@@ -81,23 +81,23 @@ tls_mode = "autocert"
 
 ## Inspect artifacts
 
-```bash
+```
 sqlite3 ./data/chatmail.db ".schema"
 ls -la ./data/admin_token
 ```
 
 ## No-Log check
 
-Logging is off by default. With `log off` (or no `log` line) in `maddy.conf` / `chatmail.toml`, startup should not print INFO lines unless `debug true` is set in that file:
+Logging is off by default. With `log off` (or no `log` line) in `madmail.conf` / `chatmail.toml`, startup should not print INFO lines unless `debug true` is set in that file:
 
-```bash
+```
 cargo run -p chatmail -- --state-dir ./data
 # Enable tracing only via config, e.g. `log stderr` + restart
 ```
 
 ## Tests
 
-```bash
+```
 make test
 make test-integration
 make test-imap
@@ -105,17 +105,17 @@ make test-imap
 
 IMAP/SMTP/Secure Join against local chatmail (requires `make run-bg` and two `dclogin:` URIs in `.env`):
 
-```bash
+```
 cp .env.example .env
 # edit DCLOGIN1 / DCLOGIN2
 make test-dclogin
 ```
 
-```bash
+```
 cargo test -p chatmail-integration boot_test
 ```
 
 ## Docs
 
-- Phase 1 steps: [plans/b1/README.md](plans/b1/README.md)
-- TDD index: [TDD/README.md](TDD/README.md)
+- Phase 1 steps: [plans/b1/README.md](https://github.com/themadorg/madmail/blob/main/docs/plans/b1/README.md)
+- TDD index: [TDD/README.md](https://github.com/themadorg/madmail/blob/main/docs/TDD/README.md)
