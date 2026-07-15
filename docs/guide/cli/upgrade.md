@@ -27,7 +27,10 @@ madmail upgrade <PATH_OR_URL>
 
 1. Downloads the file if a URL is given (TLS verification is skipped for self-signed peers).
 2. Verifies an **Ed25519 signature** in the last 64 bytes of the file.
-3. Replaces the current executable and restarts the systemd service when applicable.
+3. Stops the systemd service (and iroh-relay when present).
+4. Replaces the current executable.
+5. **Custom www templates:** runs the new binary’s [`html-migrate`](html-migrate.md) against `--config`. If `www_dir` points at a custom site that still uses Go `html/template` syntax, you are prompted to convert files to Minijinja (backups as `*.go-template.bak`). Decline or non-interactive sessions leave files unchanged; re-run `madmail html-migrate` later if needed.
+6. Restarts the systemd service when applicable and refreshes man/completions.
 
 ## Examples
 
