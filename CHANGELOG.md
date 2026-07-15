@@ -1,3 +1,10 @@
+# [2.15.0](https://github.com/themadorg/madmail/compare/v2.14.0...v2.15.0) (2026-07-15)
+
+
+### Features
+
+* **logging:** flexible bool flags and maddy-compatible log destinations ([4c45778](https://github.com/themadorg/madmail/commit/4c45778ea6982013ea469e1370347b6dafd184f7))
+
 # [2.14.0](https://github.com/themadorg/madmail/compare/v2.13.5...v2.14.0) (2026-07-13)
 
 
