@@ -213,15 +213,15 @@
     -p 80:80 \
     -p 443:443 \
     -p 1080:1080 \
-    -v ./maddy.conf:/data/maddy.conf \
+    -v ./madmail.conf:/data/madmail.conf \
     -v ./data:/data \
     -v ./tls:/data/tls \
-    -e MADDY_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА \
-    -e MADDY_DOMAIN="[IP_ВАШЕГО_СЕРВЕРА]" \
-    -e MADDY_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА \
+    -e madmail_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА \
+    -e madmail_DOMAIN="[IP_ВАШЕГО_СЕРВЕРА]" \
+    -e madmail_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА \
     ghcr.io/themadorg/madmail:latest</div>
 
-        <p>Вам понадобятся файлы <code>docker-compose.yml</code> и <code>maddy.conf</code>.
+        <p>Вам понадобятся файлы <code>docker-compose.yml</code> и <code>madmail.conf</code>.
             В этом режиме автоматически генерируются самоподписанные TLS-сертификаты (self-signed).</p>
 
         <div class="code-container">
@@ -240,19 +240,19 @@
       - "443:443"    # HTTPS
       - "1080:1080"  # Shadowsocks
     volumes:
-      - ./maddy.conf:/data/maddy.conf
+      - ./madmail.conf:/data/madmail.conf
       - ./data:/data
       - ./tls:/data/tls
     environment:
-      - MADDY_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА
-      - MADDY_DOMAIN=[IP_ВАШЕГО_СЕРВЕРА]
-      - MADDY_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА
-      - MADDY_SQLITE_UNSAFE_SYNC_OFF=1</pre>
+      - madmail_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА
+      - madmail_DOMAIN=[IP_ВАШЕГО_СЕРВЕРА]
+      - madmail_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА
+      - madmail_SQLITE_UNSAFE_SYNC_OFF=1</pre>
         </div>
 
         <div class="tip-box">
             <strong>Примечание:</strong> При использовании IP вместо домена необходимо обернуть его в квадратные скобки
-            в <code>MADDY_DOMAIN</code>: <code>[203.0.113.50]</code>
+            в <code>madmail_DOMAIN</code>: <code>[203.0.113.50]</code>
         </div>
 
         <h2>Метод 2: С использованием PostgreSQL</h2>
@@ -275,13 +275,13 @@
       - "443:443"
       - "1080:1080"
     volumes:
-      - ./maddy.conf:/data/maddy.conf
+      - ./madmail.conf:/data/madmail.conf
       - ./data:/data
       - ./tls:/data/tls
     environment:
-      - MADDY_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА
-      - MADDY_DOMAIN=[IP_ВАШЕГО_СЕРВЕРА]
-      - MADDY_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА
+      - madmail_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА
+      - madmail_DOMAIN=[IP_ВАШЕГО_СЕРВЕРА]
+      - madmail_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА
       - POSTGRES_USER=madmail
       - POSTGRES_PASSWORD=madmail_pass
       - POSTGRES_DB=madmail
@@ -326,13 +326,13 @@
       - "443:443"
       - "1080:1080"
     volumes:
-      - ./maddy.conf:/data/maddy.conf
+      - ./madmail.conf:/data/madmail.conf
       - ./data:/data
     environment:
-      - MADDY_HOSTNAME=chat.example.org
-      - MADDY_DOMAIN=chat.example.org
-      - MADDY_PUBLIC_IP=203.0.113.50
-      - MADDY_ACME_EMAIL=admin@example.org</pre>
+      - madmail_HOSTNAME=chat.example.org
+      - madmail_DOMAIN=chat.example.org
+      - madmail_PUBLIC_IP=203.0.113.50
+      - madmail_ACME_EMAIL=admin@example.org</pre>
         </div>
 
         <div class="tip-box">
@@ -368,7 +368,7 @@
                 <th>Путь в контейнере</th>
                 <th>Описание</th>
             </tr>
-            <tr><td><code>/data/maddy.conf</code></td><td>Файл конфигурации сервера</td></tr>
+            <tr><td><code>/data/madmail.conf</code></td><td>Файл конфигурации сервера</td></tr>
             <tr><td><code>/data</code></td><td>Директория состояния (БД, ключи, сертификаты)</td></tr>
             <tr><td><code>/data/tls</code></td><td>Файлы TLS-сертификатов</td></tr>
         </table>

@@ -213,15 +213,15 @@
     -p 80:80 \
     -p 443:443 \
     -p 1080:1080 \
-    -v ./maddy.conf:/data/maddy.conf \
+    -v ./madmail.conf:/data/madmail.conf \
     -v ./data:/data \
     -v ./tls:/data/tls \
-    -e MADDY_HOSTNAME=SERVER_IP \
-    -e MADDY_DOMAIN="[SERVER_IP]" \
-    -e MADDY_PUBLIC_IP=SERVER_IP \
+    -e madmail_HOSTNAME=SERVER_IP \
+    -e madmail_DOMAIN="[SERVER_IP]" \
+    -e madmail_PUBLIC_IP=SERVER_IP \
     ghcr.io/themadorg/madmail:latest</div>
 
-        <p>You need a <code>docker-compose.yml</code> and a <code>maddy.conf</code> file.
+        <p>You need a <code>docker-compose.yml</code> and a <code>madmail.conf</code> file.
             In this mode, self-signed TLS certificates are automatically generated.</p>
 
         <div class="code-container">
@@ -240,22 +240,22 @@
       - "443:443"    # HTTPS
       - "1080:1080"  # Shadowsocks
     volumes:
-      - ./maddy.conf:/data/maddy.conf
+      - ./madmail.conf:/data/madmail.conf
       - ./data:/data
       - ./tls:/data/tls
     environment:
-      - MADDY_HOSTNAME=SERVER_IP
-      - MADDY_DOMAIN=[SERVER_IP]
-      - MADDY_PUBLIC_IP=SERVER_IP
-      - MADDY_SQLITE_UNSAFE_SYNC_OFF=1</pre>
+      - madmail_HOSTNAME=SERVER_IP
+      - madmail_DOMAIN=[SERVER_IP]
+      - madmail_PUBLIC_IP=SERVER_IP
+      - madmail_SQLITE_UNSAFE_SYNC_OFF=1</pre>
         </div>
 
         <div class="code-container">
-            <div class="code-header">maddy.conf</div>
-            <pre class="code-box">$(hostname) = {env:MADDY_HOSTNAME}
-$(primary_domain) = {env:MADDY_DOMAIN}
+            <div class="code-header">madmail.conf</div>
+            <pre class="code-box">$(hostname) = {env:madmail_HOSTNAME}
+$(primary_domain) = {env:madmail_DOMAIN}
 $(local_domains) = $(primary_domain) $(hostname)
-$(public_ip) = {env:MADDY_PUBLIC_IP}
+$(public_ip) = {env:madmail_PUBLIC_IP}
 
 tls file /data/tls/fullchain.pem /data/tls/privkey.pem
 
@@ -389,7 +389,7 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
 
         <div class="tip-box">
             <strong>Note:</strong> When using an IP instead of a domain, you must wrap it in brackets
-            in <code>MADDY_DOMAIN</code>: <code>[203.0.113.50]</code>
+            in <code>madmail_DOMAIN</code>: <code>[203.0.113.50]</code>
         </div>
 
         <h2>Method 2: With PostgreSQL</h2>
@@ -412,13 +412,13 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
       - "443:443"
       - "1080:1080"
     volumes:
-      - ./maddy.conf:/data/maddy.conf
+      - ./madmail.conf:/data/madmail.conf
       - ./data:/data
       - ./tls:/data/tls
     environment:
-      - MADDY_HOSTNAME=SERVER_IP
-      - MADDY_DOMAIN=[SERVER_IP]
-      - MADDY_PUBLIC_IP=SERVER_IP
+      - madmail_HOSTNAME=SERVER_IP
+      - madmail_DOMAIN=[SERVER_IP]
+      - madmail_PUBLIC_IP=SERVER_IP
       - POSTGRES_USER=madmail
       - POSTGRES_PASSWORD=madmail_pass
       - POSTGRES_DB=madmail
@@ -463,13 +463,13 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
       - "443:443"
       - "1080:1080"
     volumes:
-      - ./maddy.conf:/data/maddy.conf
+      - ./madmail.conf:/data/madmail.conf
       - ./data:/data
     environment:
-      - MADDY_HOSTNAME=chat.example.org
-      - MADDY_DOMAIN=chat.example.org
-      - MADDY_PUBLIC_IP=203.0.113.50
-      - MADDY_ACME_EMAIL=admin@example.org</pre>
+      - madmail_HOSTNAME=chat.example.org
+      - madmail_DOMAIN=chat.example.org
+      - madmail_PUBLIC_IP=203.0.113.50
+      - madmail_ACME_EMAIL=admin@example.org</pre>
         </div>
 
         <div class="tip-box">
@@ -510,7 +510,7 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
                 <th>Container Path</th>
                 <th>Description</th>
             </tr>
-            <tr><td><code>/data/maddy.conf</code></td><td>Server configuration file</td></tr>
+            <tr><td><code>/data/madmail.conf</code></td><td>Server configuration file</td></tr>
             <tr><td><code>/data</code></td><td>State directory (databases, keys, certs)</td></tr>
             <tr><td><code>/data/tls</code></td><td>TLS certificate files</td></tr>
         </table>

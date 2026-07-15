@@ -300,8 +300,8 @@
         <div class="mode-card">
             <h3>🏆 Режим autocert <span class="badge badge-recommended">Рекомендуется</span></h3>
             <div class="code-container">
-                <div class="code-header">Установка (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">Установка (madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode autocert \
   --acme-email admin@example.org \
@@ -313,17 +313,17 @@
                 <li>Madmail запускает HTTP-сервер на порту 80 для ACME-проверки</li>
                 <li>Let's Encrypt отправляет запрос на порт 80 для подтверждения владения доменом</li>
                 <li>Выпускается сертификат (выдается на 90 дней, продлевается автоматически)</li>
-                <li>Сертификаты хранятся в <code>/var/lib/maddy/autocert/</code></li>
+                <li>Сертификаты хранятся в <code>/var/lib/madmail/autocert/</code></li>
             </ol>
 
-            <p>В файле конфигурации (maddy.conf):</p>
+            <p>В файле конфигурации (madmail.conf):</p>
             <div class="code-container">
-                <div class="code-header">maddy.conf</div>
+                <div class="code-header">madmail.conf</div>
                 <pre class="code-box">tls {
     loader autocert {
         hostname chat.example.org
         email admin@example.org
-        cache_dir /var/lib/maddy/autocert
+        cache_dir /var/lib/madmail/autocert
         agreed
     }
 }</pre>
@@ -333,8 +333,8 @@
         <div class="mode-card">
             <h3>🔐 Режим acme (DNS-01) <span class="badge badge-advanced">Продвинутый</span></h3>
             <div class="code-container">
-                <div class="code-header">Установка (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">Установка (madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode acme \
   --acme-email admin@example.org \
@@ -350,8 +350,8 @@
         <div class="mode-card">
             <h3>📄 Режим file (Готовый сертификат)</h3>
             <div class="code-container">
-                <div class="code-header">Установка (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">Установка (madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode file \
   --cert-path /etc/letsencrypt/live/chat.example.org/fullchain.pem \
@@ -363,21 +363,21 @@
             <div class="code-box">tls file /путь/к/fullchain.pem /путь/к/privkey.pem</div>
 
             <div class="tip-box">
-                <strong>Продление:</strong> Настройте certbot-хук для перезапуска maddy после продления:
-                <div class="code-box" style="margin-top: 5px;">systemctl restart maddy</div>
+                <strong>Продление:</strong> Настройте certbot-хук для перезапуска madmail после продления:
+                <div class="code-box" style="margin-top: 5px;">systemctl restart madmail</div>
             </div>
         </div>
 
         <div class="mode-card">
             <h3>🧪 Режим self_signed (Тестирование)</h3>
             <div class="code-container">
-                <div class="code-header">Установка (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">Установка (madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --simple --ip ВАШ_IP_СЕРВЕРА \
   --tls-mode self_signed \
   --turn-off-tls</pre>
             </div>
-            <p>Сертификаты хранятся в <code>/var/lib/maddy/certs/</code> и используются при последующих запусках.</p>
+            <p>Сертификаты хранятся в <code>/var/lib/madmail/certs/</code> и используются при последующих запусках.</p>
         </div>
 
         <h2>Шаг 3: Проверка сертификата</h2>
@@ -396,12 +396,12 @@ notAfter=May 22 15:41:46 2026 GMT</div>
         <h3>С self_signed на autocert</h3>
         <div class="code-container">
             <div class="code-header">Удаление старых сертификатов</div>
-            <pre class="code-box">sudo rm /var/lib/maddy/certs/fullchain.pem /var/lib/maddy/certs/privkey.pem</pre>
+            <pre class="code-box">sudo rm /var/lib/madmail/certs/fullchain.pem /var/lib/madmail/certs/privkey.pem</pre>
         </div>
 
         <div class="code-container">
             <div class="code-header">Переустановка с autocert</div>
-            <pre class="code-box">sudo maddy install \
+            <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode autocert \
   --acme-email admin@example.org \
@@ -411,7 +411,7 @@ notAfter=May 22 15:41:46 2026 GMT</div>
 
         <div class="code-container">
             <div class="code-header">Финальный перезапуск</div>
-            <pre class="code-box">sudo systemctl restart maddy</pre>
+            <pre class="code-box">sudo systemctl restart madmail</pre>
         </div>
 
         <h2>Решение проблем</h2>
@@ -421,7 +421,7 @@ notAfter=May 22 15:41:46 2026 GMT</div>
             <p>Выполните следующие команды для исправления прав доступа:</p>
             <div class="code-container">
                 <div class="code-header">Исправить права доступа</div>
-                <pre class="code-box">sudo chown root:maddy /path/to/cert.pem /path/to/key.pem
+                <pre class="code-box">sudo chown root:madmail /path/to/cert.pem /path/to/key.pem
 sudo chmod 640 /path/to/cert.pem /path/to/key.pem</pre>
             </div>
         </div>

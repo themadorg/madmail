@@ -300,8 +300,8 @@
         <div class="mode-card">
             <h3>🏆 autocert mode <span class="badge badge-recommended">Recommended</span></h3>
             <div class="code-container">
-                <div class="code-header">Install (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">Install (madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode autocert \
   --acme-email admin@example.org \
@@ -313,17 +313,17 @@
                 <li>Madmail starts an HTTP server on port 80 for the ACME challenge</li>
                 <li>Let's Encrypt sends a request to port 80 to verify domain ownership</li>
                 <li>A certificate is issued (valid for 90 days, auto-renewed)</li>
-                <li>Certificates are stored in <code>/var/lib/maddy/autocert/</code></li>
+                <li>Certificates are stored in <code>/var/lib/madmail/autocert/</code></li>
             </ol>
 
-            <p>In the configuration file (maddy.conf):</p>
+            <p>In the configuration file (madmail.conf):</p>
             <div class="code-container">
-                <div class="code-header">maddy.conf</div>
+                <div class="code-header">madmail.conf</div>
                 <pre class="code-box">tls {
     loader autocert {
         hostname chat.example.org
         email admin@example.org
-        cache_dir /var/lib/maddy/autocert
+        cache_dir /var/lib/madmail/autocert
         agreed
     }
 }</pre>
@@ -333,8 +333,8 @@
         <div class="mode-card">
             <h3>🔐 acme mode (DNS-01) <span class="badge badge-advanced">Advanced</span></h3>
             <div class="code-container">
-                <div class="code-header">Install (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">Install (madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode acme \
   --acme-email admin@example.org \
@@ -350,8 +350,8 @@
         <div class="mode-card">
             <h3>📄 file mode (Existing certificate)</h3>
             <div class="code-container">
-                <div class="code-header">Install (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">Install (madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode file \
   --cert-path /etc/letsencrypt/live/chat.example.org/fullchain.pem \
@@ -363,21 +363,21 @@
             <div class="code-box">tls file /path/to/fullchain.pem /path/to/privkey.pem</div>
 
             <div class="tip-box">
-                <strong>Renewal:</strong> Set up a certbot hook to restart maddy after renewal:
-                <div class="code-box" style="margin-top: 5px;">systemctl restart maddy</div>
+                <strong>Renewal:</strong> Set up a certbot hook to restart madmail after renewal:
+                <div class="code-box" style="margin-top: 5px;">systemctl restart madmail</div>
             </div>
         </div>
 
         <div class="mode-card">
             <h3>🧪 self_signed mode (Testing)</h3>
             <div class="code-container">
-                <div class="code-header">Install (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">Install (madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --simple --ip YOUR_SERVER_IP \
   --tls-mode self_signed \
   --turn-off-tls</pre>
             </div>
-            <p>Certificates are stored in <code>/var/lib/maddy/certs/</code> and reused on subsequent restarts.</p>
+            <p>Certificates are stored in <code>/var/lib/madmail/certs/</code> and reused on subsequent restarts.</p>
         </div>
 
         <h2>Step 3: Verify Certificate</h2>
@@ -396,12 +396,12 @@ notAfter=May 22 15:41:46 2026 GMT</div>
         <h3>From self_signed to autocert</h3>
         <div class="code-container">
             <div class="code-header">Remove old certificates</div>
-            <pre class="code-box">sudo rm /var/lib/maddy/certs/fullchain.pem /var/lib/maddy/certs/privkey.pem</pre>
+            <pre class="code-box">sudo rm /var/lib/madmail/certs/fullchain.pem /var/lib/madmail/certs/privkey.pem</pre>
         </div>
 
         <div class="code-container">
             <div class="code-header">Reinstall with autocert</div>
-            <pre class="code-box">sudo maddy install \
+            <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode autocert \
   --acme-email admin@example.org \
@@ -411,7 +411,7 @@ notAfter=May 22 15:41:46 2026 GMT</div>
 
         <div class="code-container">
             <div class="code-header">Final restart</div>
-            <pre class="code-box">sudo systemctl restart maddy</pre>
+            <pre class="code-box">sudo systemctl restart madmail</pre>
         </div>
 
         <h2>Troubleshooting</h2>
@@ -421,7 +421,7 @@ notAfter=May 22 15:41:46 2026 GMT</div>
             <p>Run the following commands to fix file ownership and permissions:</p>
             <div class="code-container">
                 <div class="code-header">Fix Permissions</div>
-                <pre class="code-box">sudo chown root:maddy /path/to/cert.pem /path/to/key.pem
+                <pre class="code-box">sudo chown root:madmail /path/to/cert.pem /path/to/key.pem
 sudo chmod 640 /path/to/cert.pem /path/to/key.pem</pre>
             </div>
         </div>

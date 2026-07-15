@@ -60,7 +60,7 @@
         <h2>PostgreSQL</h2>
         <p>Para usar PostgreSQL, cree primero una base en su servidor (puede usar el
             <code>docker-compose.yml</code> incluido en el proyecto).</p>
-        <p>Ejemplo en <code>maddy.conf</code>:</p>
+        <p>Ejemplo en <code>madmail.conf</code>:</p>
         <pre><code>storage.imapsql local_mail {
     driver postgres
     dsn "host=localhost user=test password=test dbname=test port=5432 sslmode=disable"
@@ -80,7 +80,7 @@
 
         <h2>Cachés en memoria frente al estado en disco</h2>
         <p>Por rendimiento, el servidor en ejecución puede mantener en RAM una copia de las filas de credenciales (<code>auth.pass_table</code>) y los totales de cuota por usuario (<code>storage.imapsql</code>). Los datos autoritativos siguen estando en los archivos de la base.</p>
-        <p>Si modifica esas bases con la CLI (por ejemplo <code>maddy creds</code>, <code>maddy accounts</code> o <code>maddy imap-acct</code>) mientras el demonio sigue en marcha, invoque una vez el recurso de la API de administración <code>POST /admin/cache/reload</code> para que el proceso vuelva a leer las tablas. También puede reiniciar el servicio.</p>
+        <p>Si modifica esas bases con la CLI (por ejemplo <code>madmail creds</code>, <code>madmail accounts</code> o <code>madmail imap-acct</code>) mientras el demonio sigue en marcha, invoque una vez el recurso de la API de administración <code>POST /admin/cache/reload</code> para que el proceso vuelva a leer las tablas. También puede reiniciar el servicio.</p>
 
         <h2>Migración</h2>
         <p>El servicio crea o actualiza las tablas necesarias en el primer arranque. No hace falta ejecutar SQL
