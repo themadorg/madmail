@@ -1,3 +1,16 @@
+# [2.16.0](https://github.com/themadorg/madmail/compare/v2.15.0...v2.16.0) (2026-07-15)
+
+
+### Bug Fixes
+
+* **www:** convert Go if-not template actions for custom www_dir ([93d350d](https://github.com/themadorg/madmail/commit/93d350d074e6437bc3af584486ef935043736e3d))
+* **www:** silence clippy on html-migrate walk/tests ([57a6301](https://github.com/themadorg/madmail/commit/57a63014e828ad4667385234cb487e159a41212d))
+
+
+### Features
+
+* **www:** migrate custom Go templates on update ([c857e23](https://github.com/themadorg/madmail/commit/c857e2380ccbdac046bf3459e8f4688e5a9e3142))
+
 # [2.15.0](https://github.com/themadorg/madmail/compare/v2.14.0...v2.15.0) (2026-07-15)
 
 
