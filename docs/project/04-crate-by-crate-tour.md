@@ -19,7 +19,7 @@ This is your map of the Rust source. For each crate you will find:
 - `servers.rs` — listener wiring + HTTP router merging (admin + admin-web + www)
 - `ctl/` — huge directory with ~25 submodules for every CLI command (`accounts`, `blocklist`, `install`, `reload`, `tasks`, `federation`, etc.)
 - `turn_boot.rs`, `iroh_boot.rs`, `ss_boot.rs` — sidecar supervisors
-- `logging.rs` — tracing setup + No-Log support
+- `logging.rs` — tracing setup, No-Log default, `log stderr` / file destinations
 
 **Depends on**: almost everything.
 

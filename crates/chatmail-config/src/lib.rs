@@ -16,6 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 pub mod autoconfig;
+pub mod bool_str;
 pub mod cli;
 pub mod client_mail;
 pub mod config_autocert;
@@ -38,6 +39,7 @@ pub use config_www::update_config_www_dir;
 use std::path::PathBuf;
 
 pub use autoconfig::{build_autoconfig_xml, AutoconfigParams};
+pub use bool_str::{is_falsy, is_truthy, parse_bool_str, parse_bool_str_opt};
 pub use cli::{
     AdminWebCommand, Args, Cli, Command, CompletionShell, EndpointCacheCommand, FederationCommand,
     LanguageCommand, PortCommand, PortServiceCommand, ProxyCommand, ProxySettingCommand,

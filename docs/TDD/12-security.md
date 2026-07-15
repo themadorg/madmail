@@ -19,11 +19,17 @@ Rejected with `523 Encryption Needed`:
 
 ### 2. No-Log Policy
 When `log off` in config (the default if `log` is omitted):
-- Use `tracing` subscriber that discards everything (or `NopSubscriber`)
-- No persistent log files
-- Only critical boot errors go to stderr/journal
+- Use `tracing` with filter `off` (no protocol/DB chatter)
+- No log destinations opened (no stderr fan-out, no log files)
+- Only critical boot errors go to stderr via `boot_error` (not tracing)
 
-Debug mode (`debug = true` in config) **overrides** No-Log. Logging is not toggled via CLI or admin API.
+Operators opt in with the static `log` directive (maddy-compatible):
+- `log stderr` / `log on` / `log stderr_ts` — write tracing to stderr
+- `log /path/to/file` — append to a file (create parents as needed)
+- `log stderr /var/lib/madmail/madmail.log` — both
+- `log syslog` — currently maps to stderr (dedicated syslog backend not wired yet)
+
+Debug mode (`debug true` / `yes` / `1` / `enable` / …) **overrides** No-Log: forces `debug` filter level and stderr if no `log` target is set. Logging is not toggled via CLI or admin API.
 
 ### 3. Federation Policy Engine
 - `ACCEPT` (default) + blocklist rules

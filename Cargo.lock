@@ -836,6 +836,7 @@ dependencies = [
 name = "chatmail-push"
 version = "2.14.0"
 dependencies = [
+ "chatmail-config",
  "chatmail-db",
  "chatmail-types",
  "reqwest",

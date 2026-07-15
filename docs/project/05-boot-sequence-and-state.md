@@ -35,8 +35,9 @@ High-level steps (with file:line anchors):
 
 2. **Initialize logging** (respecting No-Log / maddy `log off`)
    ```rust
-   let log_reload = init_logging(debug);
-   if should_disable_logging(...) { set_no_log(...) }
+   // log_target: off/omit (default), stderr, file path, or "stderr /path"
+   // debug true/yes/1/enable overrides No-Log and sets filter level `debug`
+   let _log_reload = init_logging(debug, file_config.log_target.as_deref());
    ```
 
 3. **State dir + DB + admin token**

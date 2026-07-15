@@ -35,10 +35,13 @@ impl PushMode {
     }
 
     pub fn parse(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
+        let v = value.trim().to_ascii_lowercase();
+        match v.as_str() {
             "auto" => Some(Self::Auto),
-            "on" | "enabled" | "true" => Some(Self::On),
-            "off" | "disabled" | "false" => Some(Self::Off),
+            // Flexible enable: on/true/yes/1/enable/enabled/…
+            s if chatmail_config::is_truthy(s) => Some(Self::On),
+            // Flexible disable: off/false/no/0/disable/disabled/…
+            s if chatmail_config::is_falsy(s) && !s.is_empty() => Some(Self::Off),
             _ => None,
         }
     }

@@ -242,17 +242,16 @@ async fn seed_bool_if_unset(pool: &DbPool, key: &str, value: bool) -> Result<()>
 pub async fn get_bool_setting(pool: &DbPool, key: &str, default: bool) -> Result<bool> {
     match get_setting(pool, key).await? {
         None => Ok(default),
-        Some(value) => Ok(matches!(
-            value.to_ascii_lowercase().as_str(),
-            "true" | "1" | "yes"
-        )),
+        // true/yes/1/enable/… ; false/no/0/disable/… ; unknown → false
+        Some(value) => Ok(chatmail_config::parse_bool_str(&value)),
     }
 }
 
 pub async fn get_enabled_setting(pool: &DbPool, key: &str, default_enabled: bool) -> Result<bool> {
     match get_setting(pool, key).await? {
         None => Ok(default_enabled),
-        Some(value) => Ok(value.eq_ignore_ascii_case("enabled")),
+        // Same flexible forms as get_bool_setting (`enabled`, `true`, `yes`, `1`, …)
+        Some(value) => Ok(chatmail_config::parse_bool_str(&value)),
     }
 }
 
@@ -365,6 +364,51 @@ mod tests {
                 .await
                 .unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn bool_setting_accepts_flexible_enable_disable_forms() {
+        let pool = init_memory_db().await.unwrap();
+        for on in ["True", "yes", "1", "enable", "enabled", "on", "Y"] {
+            set_setting(&pool, settings_keys::REGISTRATION_OPEN, on)
+                .await
+                .unwrap();
+            assert!(
+                get_bool_setting(&pool, settings_keys::REGISTRATION_OPEN, false)
+                    .await
+                    .unwrap(),
+                "expected enabled for {on:?}"
+            );
+            set_setting(&pool, settings_keys::AUTO_PURGE_SEEN, on)
+                .await
+                .unwrap();
+            assert!(
+                get_enabled_setting(&pool, settings_keys::AUTO_PURGE_SEEN, false)
+                    .await
+                    .unwrap(),
+                "expected get_enabled_setting for {on:?}"
+            );
+        }
+        for off in ["False", "no", "0", "disable", "disabled", "off", "N"] {
+            set_setting(&pool, settings_keys::REGISTRATION_OPEN, off)
+                .await
+                .unwrap();
+            assert!(
+                !get_bool_setting(&pool, settings_keys::REGISTRATION_OPEN, true)
+                    .await
+                    .unwrap(),
+                "expected disabled for {off:?}"
+            );
+            set_setting(&pool, settings_keys::AUTO_PURGE_SEEN, off)
+                .await
+                .unwrap();
+            assert!(
+                !get_enabled_setting(&pool, settings_keys::AUTO_PURGE_SEEN, true)
+                    .await
+                    .unwrap(),
+                "expected get_enabled_setting off for {off:?}"
+            );
+        }
     }
 
     #[tokio::test]

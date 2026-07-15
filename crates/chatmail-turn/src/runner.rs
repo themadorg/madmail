@@ -75,14 +75,22 @@ impl TurnSpawnOpts {
 pub fn turn_force_relay_test_from_env() -> bool {
     std::env::var("CHATMAIL_TURN_TEST_FORCE_RELAY")
         .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .is_some_and(|v| env_flag_enabled(&v))
 }
 
-/// `CHATMAIL_TURN_DEBUG=1` or `true` enables verbose logging.
+/// `CHATMAIL_TURN_DEBUG=1` / `true` / `yes` / `enable` / … enables verbose logging.
 pub fn turn_debug_from_env() -> bool {
     std::env::var("CHATMAIL_TURN_DEBUG")
         .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .is_some_and(|v| env_flag_enabled(&v))
+}
+
+/// Flexible env flag: `1`, `true`, `yes`, `on`, `enable`, `enabled` (case-insensitive).
+fn env_flag_enabled(s: &str) -> bool {
+    matches!(
+        s.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "y" | "on" | "enable" | "enabled" | "t"
+    )
 }
 
 /// Running TURN server (kept alive until dropped).

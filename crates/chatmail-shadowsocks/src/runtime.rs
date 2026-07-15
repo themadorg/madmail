@@ -135,12 +135,7 @@ fn string_from_settings(map: &HashMap<String, String>, key: &str, default: &str)
 
 fn bool_from_settings(map: &HashMap<String, String>, key: &str, default: bool) -> bool {
     map.get(key)
-        .map(|v| {
-            matches!(
-                v.to_ascii_lowercase().as_str(),
-                "true" | "1" | "yes" | "enabled"
-            )
-        })
+        .map(|v| chatmail_config::parse_bool_str(v))
         .unwrap_or(default)
 }
 
