@@ -104,7 +104,9 @@ Users may need to do a hard refresh (Ctrl+Shift+R or Cmd+Shift+R) in their brows
 
 ## Go Madmail → madmail-v2 (template syntax)
 
-Older Go Madmail pages used Go `html/template` markers such as `{{if .RegistrationOpen}}` and `{{.MailDomain | cleanDomain}}`. madmail-v2 renders with **Minijinja** (`{% if RegistrationOpen %}`, `{{ MailDomain | clean_domain }}`).
+Older Go Madmail pages used Go `html/template` markers such as `{{if .RegistrationOpen}}`, **`{{if not .RegistrationOpen}}`**, and `{{.MailDomain | cleanDomain}}`. madmail-v2 renders with **Minijinja** (`{% if RegistrationOpen %}`, `{% if not RegistrationOpen %}`, `{{ MailDomain | clean_domain }}`).
+
+Leaving Go `{{if not .…}}` unconverted caused template errors (`unexpected '.'`). Runtime conversion and `html-migrate` both handle that form.
 
 If you keep a customized `www_dir` from Go Madmail:
 

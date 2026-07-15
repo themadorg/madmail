@@ -30,10 +30,18 @@ madmail html-migrate --yes
 
 1. Reads `www_dir` from the config (`chatmail { www_dir … }` or `www_dir` in TOML).
 2. If **no** custom `www_dir` (embedded site) → nothing to do.
-3. Scans `*.html` under `www_dir` for Go-style markers (`{{if .Field}}`, `{{.MailDomain}}`, `| cleanDomain`, …).
+3. Scans `*.html` under `www_dir` for Go-style markers (`{{if .Field}}`, `{{if not .Field}}`, `{{.MailDomain}}`, `| cleanDomain`, …).
 4. If none found → already Minijinja-style (or no templates).
 5. If found → list sample paths and ask **`[y/N]`** (unless `--yes`).
 6. On yes: rewrite files in place using the same conversion as the server (`prepare_template`), writing a sibling `*.go-template.bak` backup for each changed file.
+
+Converted examples:
+
+| Go (`html/template`) | Minijinja (on disk / after convert) |
+|----------------------|-------------------------------------|
+| `{{if .RegistrationOpen}}…{{end}}` | `{% if RegistrationOpen %}…{% endif %}` |
+| `{{if not .RegistrationOpen}}…{{end}}` | `{% if not RegistrationOpen %}…{% endif %}` |
+| `{{.MailDomain \| cleanDomain}}` | `{{ MailDomain \| clean_domain }}` |
 
 ## Examples
 

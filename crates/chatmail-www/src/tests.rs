@@ -260,6 +260,60 @@ async fn external_www_go_template_syntax() {
     );
 }
 
+/// Regression for operator custom pages: `{{if not .RegistrationOpen}}` must render,
+/// not fail with Minijinja `unexpected '.'` (was index.html:234-class failures).
+#[tokio::test]
+async fn external_www_go_if_not_registration_open() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("index.html"),
+        r#"<!DOCTYPE html><html><body>
+{{if not .RegistrationOpen}}
+<p id="closed">registration is closed</p>
+{{else}}
+<p id="open">registration is open</p>
+{{end}}
+<span>{{.MailDomain | cleanDomain}}</span>
+</body></html>"#,
+    )
+    .unwrap();
+
+    let mut cfg = AppConfig::default();
+    cfg.www_dir = Some(dir.path().to_path_buf());
+    cfg.mail_domain = Some("example.org".into());
+
+    let engine = TemplateEngine::from_config(&cfg);
+    let pool = init_memory_db().await.unwrap();
+    // Force registration closed for deterministic branch.
+    chatmail_db::set_setting(
+        &pool,
+        chatmail_db::settings_keys::REGISTRATION_OPEN,
+        "false",
+    )
+    .await
+    .unwrap();
+    let cache = WwwContextCache::new();
+    let ctx = build_context(&pool, &cfg, None, None, None, dir.path(), &cache)
+        .await
+        .unwrap();
+    assert!(
+        !ctx.RegistrationOpen,
+        "test setup: registration should be closed"
+    );
+
+    let html = engine
+        .render("index.html", &ctx)
+        .expect("if not .RegistrationOpen must convert and render");
+    assert!(
+        html.contains("registration is closed"),
+        "expected closed branch, got: {html}"
+    );
+    assert!(!html.contains("registration is open"), "got: {html}");
+    assert!(html.contains("example.org"), "got: {html}");
+    assert!(!html.contains("{{if"), "Go markers leaked: {html}");
+    assert!(!html.contains(".RegistrationOpen"), "got: {html}");
+}
+
 #[test]
 fn www_credential_policy_from_maddy_conf() {
     let content = r#"

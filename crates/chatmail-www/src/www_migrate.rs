@@ -187,6 +187,109 @@ mod tests {
         ));
         assert!(looks_like_go_template(r#"hello {{.WebDomain}}"#));
         assert!(!looks_like_go_template(r#"hello {{ WebDomain }}"#));
+        // Operator custom pages often use `if not` (Go html/template).
+        assert!(looks_like_go_template(
+            r#"{{if not .RegistrationOpen}}registration closed{{end}}"#
+        ));
+    }
+
+    /// On-disk HTML with only `{{if not .Field}}` must convert and render closed/open correctly.
+    #[test]
+    fn migrate_if_not_registration_open_renders() {
+        use crate::template::{TemplateEngine, WwwContext};
+        use chatmail_config::AppConfig;
+
+        let dir = tempfile::tempdir().unwrap();
+        // Minimal snippet matching the failure mode (unexpected '.' in Minijinja).
+        let go = r#"<!DOCTYPE html><body>
+{{if not .RegistrationOpen}}registration is closed{{else}}registration is open{{end}}
+</body></html>"#;
+        fs::write(dir.path().join("index.html"), go).unwrap();
+
+        let cfg = AppConfig {
+            www_dir: Some(dir.path().to_path_buf()),
+            mail_domain: Some("example.org".into()),
+            ..Default::default()
+        };
+        let ctx_closed = WwwContext {
+            MailDomain: "example.org".into(),
+            MXDomain: String::new(),
+            WebDomain: "example.org".into(),
+            PublicIP: String::new(),
+            Version: "test".into(),
+            RegistrationOpen: false,
+            JitRegistrationEnabled: false,
+            Language: "en".into(),
+            ClientHost: String::new(),
+            ImapPortTLS: "993".into(),
+            ImapPortStartTLS: "143".into(),
+            SmtpPortTLS: "465".into(),
+            SmtpPortStartTLS: "587".into(),
+            DcloginImapSecurity: String::new(),
+            DcloginSmtpSecurity: String::new(),
+            DefaultQuota: 0,
+            SSURL: String::new(),
+            V2rayNGConfigWS: String::new(),
+            V2rayNGConfigGRPC: String::new(),
+            MessageRetentionLine: None,
+            Custom: None,
+        };
+        let mut ctx_open = ctx_closed.clone();
+        ctx_open.RegistrationOpen = true;
+
+        // Runtime prepare_template path (no on-disk migrate yet).
+        let engine = TemplateEngine::from_config(&cfg);
+        let rendered = engine.render("index.html", &ctx_closed).unwrap();
+        assert!(
+            rendered.contains("registration is closed"),
+            "got: {rendered}"
+        );
+        assert!(!rendered.contains("{{if"));
+        let rendered_open = engine.render("index.html", &ctx_open).unwrap();
+        assert!(
+            rendered_open.contains("registration is open"),
+            "got: {rendered_open}"
+        );
+
+        // On-disk migrate then re-render both branches.
+        let report = migrate_www_dir(dir.path(), true).unwrap();
+        assert_eq!(report.migrated.len(), 1);
+        let disk = fs::read_to_string(dir.path().join("index.html")).unwrap();
+        assert!(
+            disk.contains("{% if not RegistrationOpen %}"),
+            "disk: {disk}"
+        );
+        assert!(!looks_like_go_template(&disk));
+
+        let engine2 = TemplateEngine::from_config(&cfg);
+        let after = engine2.render("index.html", &ctx_closed).unwrap();
+        assert!(after.contains("registration is closed"), "got: {after}");
+        let after_open = engine2.render("index.html", &ctx_open).unwrap();
+        assert!(
+            after_open.contains("registration is open"),
+            "got: {after_open}"
+        );
+
+        // Second migrate is a no-op.
+        let again = migrate_www_dir(dir.path(), true).unwrap();
+        assert!(again.migrated.is_empty(), "expected idempotent migrate");
+    }
+
+    #[test]
+    fn migrate_detects_if_not_only_file() {
+        let dir = tempfile::tempdir().unwrap();
+        // File with ONLY `if not` (no `{{if .` / `{{.Field}}`) must still be detected.
+        fs::write(
+            dir.path().join("closed.html"),
+            r#"{{if not .RegistrationOpen}}closed{{end}}"#,
+        )
+        .unwrap();
+        let found = scan_www_dir_for_go_templates(dir.path()).unwrap();
+        assert_eq!(found.len(), 1);
+        let report = migrate_www_dir(dir.path(), true).unwrap();
+        assert_eq!(report.migrated.len(), 1);
+        let body = fs::read_to_string(dir.path().join("closed.html")).unwrap();
+        assert_eq!(body, "{% if not RegistrationOpen %}closed{% endif %}");
     }
 
     #[test]
