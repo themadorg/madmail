@@ -690,6 +690,18 @@ mod tests {
         assert_eq!(created.action, "result");
         assert_eq!(created.data["status"], "created");
 
+        let listed = handle_ws_request(&st, USER, &ws_req("list_mailboxes", json!({}))).await;
+        assert_eq!(listed.action, "result");
+        let names: Vec<&str> = listed
+            .data
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|m| m["name"].as_str())
+            .collect();
+        assert!(names.contains(&"INBOX"));
+        assert!(names.contains(&"Archive"));
+
         let renamed = handle_ws_request(
             &st,
             USER,
@@ -710,6 +722,26 @@ mod tests {
         .await;
         assert_eq!(deleted.action, "result");
         assert_eq!(deleted.data["status"], "deleted");
+    }
+
+    #[tokio::test]
+    async fn search_matches_subject_and_body() {
+        let (st, _dir) = test_www_state().await;
+        seed_inbox(&st).await;
+        let hit =
+            handle_ws_request(&st, USER, &ws_req("search", json!({ "query": "WS test" }))).await;
+        assert_eq!(hit.action, "result");
+        assert_eq!(hit.data.as_array().unwrap().len(), 1);
+        assert_eq!(hit.data[0]["envelope"]["subject"], "WS test");
+
+        let miss = handle_ws_request(
+            &st,
+            USER,
+            &ws_req("search", json!({ "query": "no-such-token-xyz" })),
+        )
+        .await;
+        assert_eq!(miss.action, "result");
+        assert!(miss.data.as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

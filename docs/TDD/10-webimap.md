@@ -76,13 +76,15 @@ Server reply:
 
 | Action | Gate | Status |
 |--------|------|--------|
-| `list_mailboxes` | WebIMAP | Implemented (INBOX) |
+| `list_mailboxes` | WebIMAP | Implemented (INBOX + user folders under `folders/`) |
 | `list_messages` | WebIMAP | Implemented |
 | `fetch` | WebIMAP | Implemented |
 | `delete` | WebIMAP | Implemented |
 | `flags` | WebIMAP | Ack only (maildir) |
 | `send` | WebSMTP | Implemented |
-| `move`, `copy`, `search`, mailbox CRUD | WebIMAP | Error: INBOX-only storage |
+| `search` | WebIMAP | Implemented (INBOX full-text over subject/from/body/Message-ID) |
+| `create_mailbox` / `rename_mailbox` / `delete_mailbox` | WebIMAP | Implemented (maildir subfolders; cannot touch INBOX) |
+| `copy` / `move` | WebIMAP | Implemented between INBOX and user folders |
 
 Push (no `req_id`):
 
@@ -94,8 +96,9 @@ Poll interval: 2s; also wakes on `AppState` mailbox events.
 
 ## Deviations from full IMAP backend (Madmail Go)
 
-- Single mailbox **INBOX** backed by maildir index (`chatmail-storage`)
-- No EXPUNGE/move/copy/search across folders until multi-mailbox storage lands
+- Default delivery is still **INBOX** maildir; user folders live under per-user `folders/`
+- SEARCH is a simple substring scan (not full IMAP SEARCH criteria)
+- Flags are acknowledged without durable flag persistence (maildir v1)
 - REST long-poll uses sleep loop (not IMAP IDLE)
 
 ## Testing
