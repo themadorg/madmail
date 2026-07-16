@@ -1,3 +1,10 @@
+## [2.16.1](https://github.com/themadorg/madmail/compare/v2.16.0...v2.16.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* **webimap:** ship multi-mailbox search/create via green CI ([5a31600](https://github.com/themadorg/madmail/commit/5a316002f6d8e81937fba6dea1993f512229fbe6))
+
 # [2.16.0](https://github.com/themadorg/madmail/compare/v2.15.0...v2.16.0) (2026-07-15)
 
 
