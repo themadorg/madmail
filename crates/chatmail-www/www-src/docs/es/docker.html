@@ -216,9 +216,9 @@
     -v ./madmail.conf:/data/madmail.conf \
     -v ./data:/data \
     -v ./tls:/data/tls \
-    -e madmail_HOSTNAME=SERVER_IP \
-    -e madmail_DOMAIN="[SERVER_IP]" \
-    -e madmail_PUBLIC_IP=SERVER_IP \
+    -e MADMAIL_HOSTNAME=SERVER_IP \
+    -e MADMAIL_DOMAIN="[SERVER_IP]" \
+    -e MADMAIL_PUBLIC_IP=SERVER_IP \
     ghcr.io/themadorg/madmail:latest</div>
 
         <p>Necesita un <code>docker-compose.yml</code> y un <code>madmail.conf</code>.
@@ -244,18 +244,18 @@
       - ./data:/data
       - ./tls:/data/tls
     environment:
-      - madmail_HOSTNAME=SERVER_IP
-      - madmail_DOMAIN=[SERVER_IP]
-      - madmail_PUBLIC_IP=SERVER_IP
-      - madmail_SQLITE_UNSAFE_SYNC_OFF=1</pre>
+      - MADMAIL_HOSTNAME=SERVER_IP
+      - MADMAIL_DOMAIN=[SERVER_IP]
+      - MADMAIL_PUBLIC_IP=SERVER_IP
+      - MADMAIL_SQLITE_UNSAFE_SYNC_OFF=1</pre>
         </div>
 
         <div class="code-container">
             <div class="code-header">madmail.conf</div>
-            <pre class="code-box">$(hostname) = {env:madmail_HOSTNAME}
-$(primary_domain) = {env:madmail_DOMAIN}
+            <pre class="code-box">$(hostname) = {env:MADMAIL_HOSTNAME}
+$(primary_domain) = {env:MADMAIL_DOMAIN}
 $(local_domains) = $(primary_domain) $(hostname)
-$(public_ip) = {env:madmail_PUBLIC_IP}
+$(public_ip) = {env:MADMAIL_PUBLIC_IP}
 
 tls file /data/tls/fullchain.pem /data/tls/privkey.pem
 
@@ -389,7 +389,7 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
 
         <div class="tip-box">
             <strong>Nota:</strong> si usa una IP en lugar de un dominio, debe ponerla entre corchetes
-            en <code>madmail_DOMAIN</code>: <code>[203.0.113.50]</code>
+            en <code>MADMAIL_DOMAIN</code>: <code>[203.0.113.50]</code>
         </div>
 
         <h2>Método 2: con PostgreSQL</h2>
@@ -416,9 +416,9 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
       - ./data:/data
       - ./tls:/data/tls
     environment:
-      - madmail_HOSTNAME=SERVER_IP
-      - madmail_DOMAIN=[SERVER_IP]
-      - madmail_PUBLIC_IP=SERVER_IP
+      - MADMAIL_HOSTNAME=SERVER_IP
+      - MADMAIL_DOMAIN=[SERVER_IP]
+      - MADMAIL_PUBLIC_IP=SERVER_IP
       - POSTGRES_USER=madmail
       - POSTGRES_PASSWORD=madmail_pass
       - POSTGRES_DB=madmail
@@ -466,10 +466,10 @@ chatmail tls://0.0.0.0:443 tcp://0.0.0.0:80 {
       - ./madmail.conf:/data/madmail.conf
       - ./data:/data
     environment:
-      - madmail_HOSTNAME=chat.example.org
-      - madmail_DOMAIN=chat.example.org
-      - madmail_PUBLIC_IP=203.0.113.50
-      - madmail_ACME_EMAIL=admin@example.org</pre>
+      - MADMAIL_HOSTNAME=chat.example.org
+      - MADMAIL_DOMAIN=chat.example.org
+      - MADMAIL_PUBLIC_IP=203.0.113.50
+      - MADMAIL_ACME_EMAIL=admin@example.org</pre>
         </div>
 
         <div class="tip-box">

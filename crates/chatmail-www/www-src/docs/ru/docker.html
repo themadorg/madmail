@@ -216,9 +216,9 @@
     -v ./madmail.conf:/data/madmail.conf \
     -v ./data:/data \
     -v ./tls:/data/tls \
-    -e madmail_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА \
-    -e madmail_DOMAIN="[IP_ВАШЕГО_СЕРВЕРА]" \
-    -e madmail_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА \
+    -e MADMAIL_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА \
+    -e MADMAIL_DOMAIN="[IP_ВАШЕГО_СЕРВЕРА]" \
+    -e MADMAIL_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА \
     ghcr.io/themadorg/madmail:latest</div>
 
         <p>Вам понадобятся файлы <code>docker-compose.yml</code> и <code>madmail.conf</code>.
@@ -244,15 +244,15 @@
       - ./data:/data
       - ./tls:/data/tls
     environment:
-      - madmail_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА
-      - madmail_DOMAIN=[IP_ВАШЕГО_СЕРВЕРА]
-      - madmail_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА
-      - madmail_SQLITE_UNSAFE_SYNC_OFF=1</pre>
+      - MADMAIL_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА
+      - MADMAIL_DOMAIN=[IP_ВАШЕГО_СЕРВЕРА]
+      - MADMAIL_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА
+      - MADMAIL_SQLITE_UNSAFE_SYNC_OFF=1</pre>
         </div>
 
         <div class="tip-box">
             <strong>Примечание:</strong> При использовании IP вместо домена необходимо обернуть его в квадратные скобки
-            в <code>madmail_DOMAIN</code>: <code>[203.0.113.50]</code>
+            в <code>MADMAIL_DOMAIN</code>: <code>[203.0.113.50]</code>
         </div>
 
         <h2>Метод 2: С использованием PostgreSQL</h2>
@@ -279,9 +279,9 @@
       - ./data:/data
       - ./tls:/data/tls
     environment:
-      - madmail_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА
-      - madmail_DOMAIN=[IP_ВАШЕГО_СЕРВЕРА]
-      - madmail_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА
+      - MADMAIL_HOSTNAME=IP_ВАШЕГО_СЕРВЕРА
+      - MADMAIL_DOMAIN=[IP_ВАШЕГО_СЕРВЕРА]
+      - MADMAIL_PUBLIC_IP=IP_ВАШЕГО_СЕРВЕРА
       - POSTGRES_USER=madmail
       - POSTGRES_PASSWORD=madmail_pass
       - POSTGRES_DB=madmail
@@ -329,10 +329,10 @@
       - ./madmail.conf:/data/madmail.conf
       - ./data:/data
     environment:
-      - madmail_HOSTNAME=chat.example.org
-      - madmail_DOMAIN=chat.example.org
-      - madmail_PUBLIC_IP=203.0.113.50
-      - madmail_ACME_EMAIL=admin@example.org</pre>
+      - MADMAIL_HOSTNAME=chat.example.org
+      - MADMAIL_DOMAIN=chat.example.org
+      - MADMAIL_PUBLIC_IP=203.0.113.50
+      - MADMAIL_ACME_EMAIL=admin@example.org</pre>
         </div>
 
         <div class="tip-box">
