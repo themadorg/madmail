@@ -24,18 +24,24 @@ pub fn prepare_template(input: &str) -> String {
 
 fn go_to_minijinja(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    let bytes = input.as_bytes();
-    let mut i = 0usize;
-    while i < bytes.len() {
-        if bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
-            if let Some((converted, new_i)) = convert_action(input, i) {
-                out.push_str(&converted);
-                i = new_i;
-                continue;
+    let mut chars = input.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c == '{' {
+            if let Some(&(_, '{')) = chars.peek() {
+                if let Some((converted, new_i)) = convert_action(input, i) {
+                    out.push_str(&converted);
+                    while let Some(&(idx, _)) = chars.peek() {
+                        if idx < new_i {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    continue;
+                }
             }
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        out.push(c);
     }
     out
 }
