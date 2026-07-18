@@ -1,6 +1,6 @@
 {
   "name": "madmail-v2",
-  "version": "2.16.1",
+  "version": "2.16.2",
   "description": "Madmail v2 — Rust chatmail relay (Delta Chat optimized)",
   "private": true,
   "repository": {

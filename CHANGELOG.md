@@ -1,3 +1,10 @@
+## [2.16.2](https://github.com/themadorg/madmail/compare/v2.16.1...v2.16.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* **www:** correct UTF-8 corruption in Go-template-to-Minijinja conversion ([1bf1759](https://github.com/themadorg/madmail/commit/1bf17598f052cf2d8218260528f3c8150ae38a05))
+
 ## [2.16.1](https://github.com/themadorg/madmail/compare/v2.16.0...v2.16.1) (2026-07-16)
 
 
