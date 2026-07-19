@@ -48,12 +48,24 @@ pub enum Command {
         /// Path to signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive.
         #[arg(value_name = "PATH_OR_URL")]
         path_or_url: String,
+        /// Allow HTTPS downloads with self-signed or otherwise untrusted TLS certificates.
+        ///
+        /// Without this flag, certificate verification is enforced; on failure an interactive
+        /// TTY may prompt `[y/N]`. Binary Ed25519 signature verification always still applies.
+        #[arg(long)]
+        accept_unsafe: bool,
     },
     /// Replace this executable from a signed local file or URL (alias for `upgrade`).
     Update {
         /// Path to signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive.
         #[arg(value_name = "PATH_OR_URL")]
         path_or_url: String,
+        /// Allow HTTPS downloads with self-signed or otherwise untrusted TLS certificates.
+        ///
+        /// Without this flag, certificate verification is enforced; on failure an interactive
+        /// TTY may prompt `[y/N]`. Binary Ed25519 signature verification always still applies.
+        #[arg(long)]
+        accept_unsafe: bool,
     },
     /// Display the admin API credentials.
     #[command(name = "admin-token")]
@@ -785,13 +797,52 @@ mod tests {
             .unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Upgrade { path_or_url }) if path_or_url == "https://relay.example/bin/madmail"
+            Some(Command::Upgrade {
+                path_or_url,
+                accept_unsafe: false,
+            }) if path_or_url == "https://relay.example/bin/madmail"
         ));
 
         let cli = Cli::try_parse_from(["madmail", "update", "/tmp/madmail-signed"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Update { path_or_url }) if path_or_url == "/tmp/madmail-signed"
+            Some(Command::Update {
+                path_or_url,
+                accept_unsafe: false,
+            }) if path_or_url == "/tmp/madmail-signed"
+        ));
+    }
+
+    #[test]
+    fn upgrade_and_update_accept_unsafe_flag() {
+        let cli = Cli::try_parse_from([
+            "madmail",
+            "upgrade",
+            "--accept-unsafe",
+            "https://relay.example/bin/madmail",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Upgrade {
+                accept_unsafe: true,
+                ..
+            })
+        ));
+
+        let cli = Cli::try_parse_from([
+            "madmail",
+            "update",
+            "https://relay.example/a.tar.gz",
+            "--accept-unsafe",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Update {
+                accept_unsafe: true,
+                path_or_url,
+            }) if path_or_url == "https://relay.example/a.tar.gz"
         ));
     }
 

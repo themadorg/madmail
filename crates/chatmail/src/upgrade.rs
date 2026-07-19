@@ -331,13 +331,16 @@ fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
 }
 
 /// Entry point for `chatmail upgrade` and `chatmail update` (Madmail `upgradeCommand`).
-pub fn upgrade_command(input: &str, args: &Args) -> Result<()> {
+///
+/// `accept_unsafe` maps to `--accept-unsafe`: allow HTTPS with untrusted TLS certs.
+/// Without it, TLS is verified; on certificate failure an interactive TTY may prompt.
+pub fn upgrade_command(input: &str, args: &Args, accept_unsafe: bool) -> Result<()> {
     let input = input.trim();
     if input.is_empty() {
         return Err(ChatmailError::config("PATH or URL is required"));
     }
     let result = if is_download_url(input) {
-        handle_update_url(input, args)
+        handle_update_url(input, args, accept_unsafe)
     } else {
         perform_upgrade(Path::new(input), args)
     };
@@ -354,12 +357,110 @@ pub fn upgrade_command(input: &str, args: &Args) -> Result<()> {
     result
 }
 
-fn build_download_client() -> Result<Client> {
-    Client::builder()
-        .timeout(Duration::from_secs(300))
-        .danger_accept_invalid_certs(true)
+fn build_download_client(accept_invalid_certs: bool) -> Result<Client> {
+    let mut builder = Client::builder().timeout(Duration::from_secs(300));
+    if accept_invalid_certs {
+        builder = builder.danger_accept_invalid_certs(true);
+    }
+    builder
         .build()
         .map_err(|e| ChatmailError::config(format!("HTTP client: {e}")))
+}
+
+/// True when a reqwest error is (or wraps) a TLS/certificate failure.
+fn is_tls_certificate_error(err: &reqwest::Error) -> bool {
+    let mut blob = String::new();
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = cur {
+        blob.push(' ');
+        blob.push_str(&e.to_string());
+        cur = e.source();
+    }
+    tls_error_blob_matches(&blob)
+}
+
+fn tls_error_blob_matches(blob: &str) -> bool {
+    let s = blob.to_ascii_lowercase();
+    s.contains("certificate")
+        || s.contains("unknown issuer")
+        || s.contains("not valid for name")
+        || s.contains("invalid peer certificate")
+        || (s.contains("cert")
+            && (s.contains("tls") || s.contains("ssl") || s.contains("handshake")))
+        || s.contains("pkix")
+        || s.contains("self-signed")
+        || s.contains("self signed")
+}
+
+/// Decide whether to disable TLS certificate verification for this download.
+///
+/// - `--accept-unsafe` → yes
+/// - interactive TTY (and not `--json`) → prompt `[y/N]`
+/// - otherwise → error (tell operator to pass `--accept-unsafe`)
+fn allow_unsafe_tls(accept_unsafe: bool, args: &Args) -> Result<bool> {
+    if accept_unsafe {
+        return Ok(true);
+    }
+    use std::io::IsTerminal;
+    if args.json || !std::io::stdin().is_terminal() {
+        return Err(ChatmailError::config(
+            "TLS certificate verification failed. Re-run with --accept-unsafe to allow \
+             self-signed or untrusted certificates (Ed25519 signature verification of the \
+             binary still applies after download).",
+        ));
+    }
+    eprintln!("⚠️ TLS certificate verification failed for this download URL.");
+    eprintln!(
+        "   If you continue, transport TLS will not authenticate the server. \
+         The downloaded binary is still checked with Ed25519 before install."
+    );
+    let ok = crate::ctl::util::confirm("Accept unsafe TLS and continue?", false)?;
+    if !ok {
+        return Err(ChatmailError::config(
+            "upgrade aborted: unsafe TLS not accepted",
+        ));
+    }
+    Ok(true)
+}
+
+/// GET `url` with TLS certificate verification by default.
+///
+/// - `--accept-unsafe` → skip verification for this download immediately
+/// - certificate error + interactive yes → retry without verification
+/// - certificate error + non-interactive → error mentioning `--accept-unsafe`
+fn download_url_response(
+    url: &str,
+    args: &Args,
+    accept_unsafe: bool,
+) -> Result<reqwest::blocking::Response> {
+    if accept_unsafe {
+        eprintln!(
+            "⚠️ Downloading with TLS certificate verification disabled (--accept-unsafe). \
+             Binary Ed25519 signature verification still applies."
+        );
+        let client = build_download_client(true)?;
+        return client
+            .get(url)
+            .send()
+            .map_err(|e| ChatmailError::config(format!("failed to download (unsafe TLS): {e}")));
+    }
+
+    let client = build_download_client(false)?;
+    match client.get(url).send() {
+        Ok(resp) => Ok(resp),
+        Err(e) if is_tls_certificate_error(&e) => {
+            // Interactive prompt (or hard error when non-interactive / --json).
+            let _ = allow_unsafe_tls(false, args)?;
+            eprintln!(
+                "⚠️ Proceeding without TLS certificate verification (operator confirmed)."
+            );
+            let client = build_download_client(true)?;
+            client.get(url).send().map_err(|e2| {
+                ChatmailError::config(format!("failed to download (unsafe TLS): {e2}"))
+            })
+        }
+        Err(e) => Err(ChatmailError::config(format!("failed to download: {e}"))),
+    }
 }
 
 /// Download from a URL, then run the **same** [`perform_upgrade`] path used for
@@ -370,7 +471,7 @@ fn build_download_client() -> Result<Client> {
 ///
 /// Local path upgrades never enter this function (`upgrade_command` calls
 /// `perform_upgrade` directly).
-fn handle_update_url(url: &str, args: &Args) -> Result<()> {
+fn handle_update_url(url: &str, args: &Args, accept_unsafe: bool) -> Result<()> {
     check_supported_url_archive(url)?;
 
     let (download_path, mut tmp_file) = create_private_temp_file("madmail-update")?;
@@ -381,11 +482,13 @@ fn handle_update_url(url: &str, args: &Args) -> Result<()> {
 
     eprintln!("📥 Downloading {url}...");
 
-    let client = build_download_client()?;
-    let resp = client.get(url).send().map_err(|e| {
-        cleanup_download();
-        ChatmailError::config(format!("failed to download: {e}"))
-    })?;
+    let resp = match download_url_response(url, args, accept_unsafe) {
+        Ok(r) => r,
+        Err(e) => {
+            cleanup_download();
+            return Err(e);
+        }
+    };
 
     if !resp.status().is_success() {
         cleanup_download();
@@ -715,14 +818,14 @@ mod tests {
 
     #[test]
     fn upgrade_command_requires_input() {
-        let err = upgrade_command("  ", &test_args()).unwrap_err();
+        let err = upgrade_command("  ", &test_args(), false).unwrap_err();
         assert!(err.to_string().contains("PATH or URL is required"));
     }
 
     #[test]
     fn upgrade_command_rejects_zip_url_without_download() {
         // Must fail before any network I/O.
-        let err = upgrade_command("https://example.com/madmail.zip", &test_args()).unwrap_err();
+        let err = upgrade_command("https://example.com/madmail.zip", &test_args(), false).unwrap_err();
         assert!(
             err.to_string().contains("unsupported archive format"),
             "got: {err}"
@@ -732,7 +835,7 @@ mod tests {
     #[test]
     fn upgrade_command_rejects_tar_bz2_url_without_download() {
         let err =
-            upgrade_command("https://example.com/madmail.tar.bz2", &test_args()).unwrap_err();
+            upgrade_command("https://example.com/madmail.tar.bz2", &test_args(), false).unwrap_err();
         assert!(
             err.to_string().contains("unsupported archive format"),
             "got: {err}"
@@ -855,7 +958,7 @@ mod tests {
         let body = fs::read(&archive).unwrap();
         let (url, server) = serve_once(body);
 
-        let err = upgrade_command(&url, &test_args()).unwrap_err();
+        let err = upgrade_command(&url, &test_args(), false).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("INVALID SIGNATURE"),
@@ -886,7 +989,7 @@ mod tests {
         ready_rx.recv().unwrap();
         let url = format!("http://{addr}/madmail");
 
-        let err = upgrade_command(&url, &test_args()).unwrap_err();
+        let err = upgrade_command(&url, &test_args(), false).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("INVALID SIGNATURE"),
@@ -901,7 +1004,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("madmail-signed");
         fs::write(&bin, vec![b'L'; 128]).unwrap();
-        let err = upgrade_command(bin.to_str().unwrap(), &test_args()).unwrap_err();
+        let err = upgrade_command(bin.to_str().unwrap(), &test_args(), false).unwrap_err();
         assert!(
             err.to_string().contains("INVALID SIGNATURE"),
             "got: {err}"
@@ -944,7 +1047,7 @@ mod tests {
         // Full URL pipeline: download .tar.gz → extract → perform_upgrade verify.
         let body = fs::read(&archive).unwrap();
         let (url, server) = serve_once(body);
-        let err = upgrade_command(&url, &test_args()).unwrap_err();
+        let err = upgrade_command(&url, &test_args(), false).unwrap_err();
         let msg = err.to_string();
         // Signature OK; non-root should fail before replace (or root-only env).
         assert!(
@@ -977,5 +1080,167 @@ mod tests {
             .status()
             .expect("run sign.py");
         assert!(status.success(), "sign.py failed: {status}");
+    }
+
+    #[test]
+    fn allow_unsafe_tls_respects_accept_unsafe_flag() {
+        assert!(allow_unsafe_tls(true, &test_args()).unwrap());
+    }
+
+    #[test]
+    fn allow_unsafe_tls_errors_without_flag_when_noninteractive() {
+        // Tests run without a TTY stdin → must not hang; require --accept-unsafe.
+        let err = allow_unsafe_tls(false, &test_args()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--accept-unsafe"),
+            "expected --accept-unsafe guidance, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn allow_unsafe_tls_errors_under_json_without_flag() {
+        let mut args = test_args();
+        args.json = true;
+        let err = allow_unsafe_tls(false, &args).unwrap_err();
+        assert!(err.to_string().contains("--accept-unsafe"));
+    }
+
+    #[test]
+    fn is_tls_certificate_error_detects_common_phrases() {
+        assert!(tls_error_blob_matches(
+            "error sending request for url error trying to connect invalid peer certificate: UnknownIssuer"
+        ));
+        assert!(tls_error_blob_matches(
+            "connection failed: self-signed certificate in certificate chain"
+        ));
+        assert!(!tls_error_blob_matches(
+            "error sending request: connection refused"
+        ));
+    }
+
+    /// One-shot Python HTTPS server with a self-signed cert (single GET).
+    fn serve_https_once(
+        body: &[u8],
+    ) -> Option<(String, tempfile::TempDir, std::process::Child)> {
+        let dir = tempfile::tempdir().ok()?;
+        let cert = dir.path().join("cert.pem");
+        let key = dir.path().join("key.pem");
+        let body_path = dir.path().join("payload.bin");
+        fs::write(&body_path, body).ok()?;
+
+        let status = Command::new("openssl")
+            .args([
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-keyout",
+                key.to_str()?,
+                "-out",
+                cert.to_str()?,
+                "-days",
+                "1",
+                "-nodes",
+                "-subj",
+                "/CN=localhost",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .ok()?;
+        if !status.success() {
+            return None;
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").ok()?;
+        let port = listener.local_addr().ok()?.port();
+        drop(listener);
+
+        let script = dir.path().join("serve.py");
+        fs::write(
+            &script,
+            format!(
+                r#"
+import http.server, ssl
+from pathlib import Path
+port = {port}
+body = Path({body:?}).read_bytes()
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *a):
+        pass
+httpd = http.server.HTTPServer(("127.0.0.1", port), H)
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx.load_cert_chain({cert:?}, {key:?})
+httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+httpd.handle_request()
+"#,
+                port = port,
+                body = body_path,
+                cert = cert,
+                key = key,
+            ),
+        )
+        .ok()?;
+
+        let child = Command::new("python3")
+            .arg(&script)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        // Wait for the port to be bound. Do NOT TcpStream::connect: that would
+        // consume the one-shot HTTPServer accept without completing TLS.
+        for _ in 0..100 {
+            if TcpListener::bind(("127.0.0.1", port)).is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        thread::sleep(Duration::from_millis(80));
+        Some((format!("https://127.0.0.1:{port}/madmail"), dir, child))
+    }
+
+    #[test]
+    fn https_self_signed_fails_without_accept_unsafe() {
+        let Some((url, _dir, mut child)) =
+            serve_https_once(b"unsigned-payload-bytes-xxxxxxxxxxxx")
+        else {
+            eprintln!("skip: openssl/python HTTPS harness unavailable");
+            return;
+        };
+        let err = upgrade_command(&url, &test_args(), false).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--accept-unsafe")
+                || msg.to_ascii_lowercase().contains("certificate")
+                || msg.to_ascii_lowercase().contains("tls"),
+            "expected TLS rejection guidance, got: {msg}"
+        );
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[test]
+    fn https_self_signed_downloads_with_accept_unsafe() {
+        // --accept-unsafe uses unsafe client immediately (one request).
+        let body = vec![b'S'; 128];
+        let Some((url, _dir, mut child)) = serve_https_once(&body) else {
+            eprintln!("skip: openssl/python HTTPS harness unavailable");
+            return;
+        };
+        let err = upgrade_command(&url, &test_args(), true).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("INVALID SIGNATURE"),
+            "expected download+signature path with --accept-unsafe, got: {msg}"
+        );
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
