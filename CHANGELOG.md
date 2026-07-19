@@ -1,3 +1,17 @@
+# [2.17.0](https://github.com/themadorg/madmail/compare/v2.16.2...v2.17.0) (2026-07-19)
+
+
+### Bug Fixes
+
+* **upgrade:** extract only madmail from tar.gz into traditional path ([20ed7e1](https://github.com/themadorg/madmail/commit/20ed7e1e37f0a66f73b3a31d39b84982ed3fa93f))
+* **upgrade:** harden temp files and tar member path checks ([a822208](https://github.com/themadorg/madmail/commit/a8222086694a8623897fcf253f6686f95fe4d0b2))
+
+
+### Features
+
+* **upgrade:** support .tar.gz release archives in update/upgrade ([4af64c0](https://github.com/themadorg/madmail/commit/4af64c0640aec0918ca265a3950a5ec863c41e1e)), closes [#46](https://github.com/themadorg/madmail/issues/46)
+* **upgrade:** verify TLS by default; --accept-unsafe or interactive y/N ([e54720e](https://github.com/themadorg/madmail/commit/e54720ecde2b5d6c9bbae14af627bac1efe099a8))
+
 ## [2.16.2](https://github.com/themadorg/madmail/compare/v2.16.1...v2.16.2) (2026-07-18)
 
 
