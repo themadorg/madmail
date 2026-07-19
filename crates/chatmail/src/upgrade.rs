@@ -17,7 +17,7 @@
 
 //! Signed binary upgrade.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -103,13 +103,17 @@ fn check_supported_url_archive(url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Archive member path is safe to consider (no absolute paths, `..`, etc.).
+/// Archive member path is safe to consider (no absolute paths, `..`, NUL, etc.).
 ///
 /// We never unpack the archive into a directory tree — only stream the chosen
 /// member into a caller-owned temp file — but still reject traversal names so a
 /// malicious archive cannot select a surprising member path.
 fn is_safe_tar_member(name: &str) -> bool {
-    if name.is_empty() {
+    if name.is_empty() || name.contains('\0') {
+        return false;
+    }
+    // Reject backslash paths that some unpackers treat as directory separators.
+    if name.contains('\\') {
         return false;
     }
     let path = Path::new(name);
@@ -122,6 +126,49 @@ fn is_safe_tar_member(name: &str) -> bool {
             Component::ParentDir | Component::RootDir | Component::Prefix(_)
         )
     })
+}
+
+fn private_temp_path(prefix: &str) -> PathBuf {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!(
+        "{prefix}-{}-{}",
+        std::process::id(),
+        unique
+    ))
+}
+
+/// Create a new private temp file (`O_CREAT|O_EXCL`, mode `0600` on Unix).
+///
+/// Avoids classic `/tmp` races: no follow/replace of a pre-planted symlink, and
+/// contents are not world-readable while the signed binary sits on disk.
+fn create_private_temp_file(prefix: &str) -> Result<(PathBuf, File)> {
+    // Retry a few times if the rare name collision hits `create_new`.
+    for _ in 0..8 {
+        let path = private_temp_path(prefix);
+        let mut opts = OpenOptions::new();
+        opts.write(true).read(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        match opts.open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => {
+                return Err(ChatmailError::config(format!(
+                    "failed to create private temp file {}: {e}",
+                    path.display()
+                )));
+            }
+        }
+    }
+    Err(ChatmailError::config(
+        "failed to create private temp file: too many name collisions",
+    ))
 }
 
 fn tar_member_basename(name: &str) -> &str {
@@ -240,7 +287,16 @@ fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
             continue;
         }
 
-        let mut out = File::create(dest).map_err(|e| {
+        // `create_new` → O_EXCL: do not follow a pre-planted symlink at `dest`.
+        let mut opts = OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // Owner-only until after signature verification in perform_upgrade.
+            opts.mode(0o600);
+        }
+        let mut out = opts.open(dest).map_err(|e| {
             ChatmailError::config(format!(
                 "failed to create extracted binary {}: {e}",
                 dest.display()
@@ -258,10 +314,12 @@ fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
                 MAX_DOWNLOAD_SIZE / (1024 * 1024)
             )));
         }
+        // Executable bit only for the owner until root install replaces the binary;
+        // perform_upgrade re-sets 0o755 on the installed path.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(dest, fs::Permissions::from_mode(0o755))?;
+            fs::set_permissions(dest, fs::Permissions::from_mode(0o700))?;
         }
         eprintln!("✅ Extracted madmail binary ({n} bytes)");
         return Ok(());
@@ -315,22 +373,7 @@ fn build_download_client() -> Result<Client> {
 fn handle_update_url(url: &str, args: &Args) -> Result<()> {
     check_supported_url_archive(url)?;
 
-    // Unique suffix so concurrent upgrade attempts (and unit tests) do not collide.
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let download_path = std::env::temp_dir().join(format!(
-        "madmail-update-{}-{}",
-        std::process::id(),
-        unique
-    ));
-    let mut tmp_file = File::create(&download_path).map_err(|e| {
-        ChatmailError::config(format!(
-            "failed to create temp file {}: {e}",
-            download_path.display()
-        ))
-    })?;
+    let (download_path, mut tmp_file) = create_private_temp_file("madmail-update")?;
 
     let cleanup_download = || {
         let _ = fs::remove_file(&download_path);
@@ -388,11 +431,8 @@ fn handle_update_url(url: &str, args: &Args) -> Result<()> {
     // If the URL is a release archive, extract the signed `madmail` binary first.
     // Signature verification must never run on the .tar.gz bytes themselves.
     let (bin_path, extracted_tmp) = if is_tar_gz_url(url) {
-        let extracted = std::env::temp_dir().join(format!(
-            "madmail-update-bin-{}-{}",
-            std::process::id(),
-            unique
-        ));
+        // Unique path; extract opens with create_new (O_EXCL) + mode 0600.
+        let extracted = private_temp_path("madmail-update-bin");
         if let Err(e) = extract_binary_from_tar_gz(&download_path, &extracted) {
             cleanup_download();
             let _ = fs::remove_file(&extracted);
@@ -729,6 +769,8 @@ mod tests {
         assert!(!is_safe_tar_member("../evil"));
         assert!(!is_safe_tar_member("/abs/path"));
         assert!(!is_safe_tar_member(""));
+        assert!(!is_safe_tar_member("evil\0madmail"));
+        assert!(!is_safe_tar_member("foo\\bar"));
         assert!(is_madmail_member("madmail"));
         assert!(is_madmail_member("bin/madmail"));
         assert!(!is_madmail_member("madmail-linux-amd64"));
