@@ -277,7 +277,16 @@ fn build_download_client() -> Result<Client> {
 fn handle_update_url(url: &str, args: &Args) -> Result<()> {
     check_supported_url_archive(url)?;
 
-    let tmp_path = std::env::temp_dir().join(format!("madmail-update-{}", std::process::id()));
+    // Unique suffix so concurrent upgrade attempts (and unit tests) do not collide.
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp_path = std::env::temp_dir().join(format!(
+        "madmail-update-{}-{}",
+        std::process::id(),
+        unique
+    ));
     let mut tmp_file = File::create(&tmp_path).map_err(|e| {
         ChatmailError::config(format!(
             "failed to create temp file {}: {e}",
@@ -340,8 +349,11 @@ fn handle_update_url(url: &str, args: &Args) -> Result<()> {
 
     // Release artifacts may be raw signed binaries or `.tar.gz` archives containing one.
     let (bin_path, extracted_tmp) = if is_tar_gz_url(url) {
-        let extracted =
-            std::env::temp_dir().join(format!("madmail-update-bin-{}", std::process::id()));
+        let extracted = std::env::temp_dir().join(format!(
+            "madmail-update-bin-{}-{}",
+            std::process::id(),
+            unique
+        ));
         if let Err(e) = extract_binary_from_tar_gz(&tmp_path, &extracted) {
             cleanup();
             let _ = fs::remove_file(&extracted);
@@ -532,7 +544,20 @@ mod tests {
     use super::*;
     use flate2::write::GzEncoder;
     use flate2::Compression;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
     use tar::Header;
+
+    fn test_args() -> Args {
+        Args {
+            config: PathBuf::from("/nonexistent/madmail.conf"),
+            state_dir: PathBuf::from("/tmp"),
+            boot_once: false,
+            json: false,
+        }
+    }
 
     fn write_tar_gz(path: &Path, members: &[(&str, &[u8])]) {
         let file = File::create(path).unwrap();
@@ -546,6 +571,27 @@ mod tests {
             builder.append_data(&mut header, *name, *data).unwrap();
         }
         builder.finish().unwrap();
+    }
+
+    /// Minimal HTTP server: one GET returns `body` then exits.
+    fn serve_once(body: Vec<u8>) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            ready_tx.send(()).unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(header.as_bytes()).unwrap();
+            stream.write_all(&body).unwrap();
+        });
+        ready_rx.recv().unwrap();
+        (format!("http://{addr}/madmail-linux-amd64.tar.gz"), handle)
     }
 
     #[test]
@@ -567,35 +613,46 @@ mod tests {
     }
 
     #[test]
-    fn check_supported_url_archive_rejects_zip() {
-        let err = check_supported_url_archive("https://example.com/madmail.zip").unwrap_err();
-        assert!(err.to_string().contains("unsupported archive format"));
+    fn check_supported_url_archive_rejects_unsupported_formats() {
+        for url in [
+            "https://example.com/madmail.zip",
+            "https://example.com/madmail.tar.bz2",
+            "https://example.com/a.tar.xz?x=1",
+            "https://example.com/bin.7z",
+            "https://example.com/bin.rar",
+            "https://example.com/plain.tar",
+        ] {
+            let err = check_supported_url_archive(url).unwrap_err();
+            assert!(
+                err.to_string().contains("unsupported archive format"),
+                "url={url} got: {err}"
+            );
+        }
         assert!(check_supported_url_archive("https://example.com/madmail").is_ok());
         assert!(check_supported_url_archive("https://example.com/a.tar.gz").is_ok());
+        assert!(check_supported_url_archive("https://example.com/a.tgz#frag").is_ok());
     }
 
     #[test]
     fn upgrade_command_requires_input() {
-        let args = Args {
-            config: PathBuf::from("/nonexistent/madmail.conf"),
-            state_dir: PathBuf::from("/tmp"),
-            boot_once: false,
-            json: false,
-        };
-        let err = upgrade_command("  ", &args).unwrap_err();
+        let err = upgrade_command("  ", &test_args()).unwrap_err();
         assert!(err.to_string().contains("PATH or URL is required"));
     }
 
     #[test]
     fn upgrade_command_rejects_zip_url_without_download() {
         // Must fail before any network I/O.
-        let args = Args {
-            config: PathBuf::from("/nonexistent/madmail.conf"),
-            state_dir: PathBuf::from("/tmp"),
-            boot_once: false,
-            json: false,
-        };
-        let err = upgrade_command("https://example.com/madmail.zip", &args).unwrap_err();
+        let err = upgrade_command("https://example.com/madmail.zip", &test_args()).unwrap_err();
+        assert!(
+            err.to_string().contains("unsupported archive format"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn upgrade_command_rejects_tar_bz2_url_without_download() {
+        let err =
+            upgrade_command("https://example.com/madmail.tar.bz2", &test_args()).unwrap_err();
         assert!(
             err.to_string().contains("unsupported archive format"),
             "got: {err}"
@@ -634,6 +691,25 @@ mod tests {
     }
 
     #[test]
+    fn extract_binary_prefers_madmail_among_many_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("many.tar.gz");
+        let dest = dir.path().join("out");
+        let payload = b"safe-madmail";
+        write_tar_gz(
+            &archive,
+            &[
+                ("docs/README", b"x"),
+                ("notes.txt", b"y"),
+                ("madmail", payload),
+                ("extra/bin", b"z"),
+            ],
+        );
+        extract_binary_from_tar_gz(&archive, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), payload);
+    }
+
+    #[test]
     fn extract_binary_accepts_sole_member() {
         let dir = tempfile::tempdir().unwrap();
         let archive = dir.path().join("sole.tgz");
@@ -659,5 +735,56 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("multiple files"));
+    }
+
+    #[test]
+    fn handle_update_url_extracts_tar_gz_then_signature_check() {
+        // End-to-end URL path (download → extract → verify) without root replace.
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("release.tar.gz");
+        // >64 bytes so verification runs; content is not Ed25519-signed.
+        let payload = vec![b'U'; 128];
+        write_tar_gz(&archive, &[("madmail", &payload)]);
+        let body = fs::read(&archive).unwrap();
+        let (url, server) = serve_once(body);
+
+        let err = upgrade_command(&url, &test_args()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("INVALID SIGNATURE"),
+            "expected signature failure after extract, got: {msg}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn handle_update_url_raw_binary_skips_extract() {
+        // Raw URL must not require tar format; unsigned body fails at signature.
+        let body = vec![b'R'; 128];
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let server = thread::spawn(move || {
+            ready_tx.send(()).unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(header.as_bytes()).unwrap();
+            stream.write_all(&body).unwrap();
+        });
+        ready_rx.recv().unwrap();
+        let url = format!("http://{addr}/madmail");
+
+        let err = upgrade_command(&url, &test_args()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("INVALID SIGNATURE"),
+            "expected signature failure on raw URL, got: {msg}"
+        );
+        server.join().unwrap();
     }
 }
