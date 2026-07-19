@@ -133,11 +133,7 @@ fn private_temp_path(prefix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    std::env::temp_dir().join(format!(
-        "{prefix}-{}-{}",
-        std::process::id(),
-        unique
-    ))
+    std::env::temp_dir().join(format!("{prefix}-{}-{}", std::process::id(), unique))
 }
 
 /// Create a new private temp file (`O_CREAT|O_EXCL`, mode `0600` on Unix).
@@ -451,9 +447,7 @@ fn download_url_response(
         Err(e) if is_tls_certificate_error(&e) => {
             // Interactive prompt (or hard error when non-interactive / --json).
             let _ = allow_unsafe_tls(false, args)?;
-            eprintln!(
-                "⚠️ Proceeding without TLS certificate verification (operator confirmed)."
-            );
+            eprintln!("⚠️ Proceeding without TLS certificate verification (operator confirmed).");
             let client = build_download_client(true)?;
             client.get(url).send().map_err(|e2| {
                 ChatmailError::config(format!("failed to download (unsafe TLS): {e2}"))
@@ -825,7 +819,8 @@ mod tests {
     #[test]
     fn upgrade_command_rejects_zip_url_without_download() {
         // Must fail before any network I/O.
-        let err = upgrade_command("https://example.com/madmail.zip", &test_args(), false).unwrap_err();
+        let err =
+            upgrade_command("https://example.com/madmail.zip", &test_args(), false).unwrap_err();
         assert!(
             err.to_string().contains("unsupported archive format"),
             "got: {err}"
@@ -834,8 +829,8 @@ mod tests {
 
     #[test]
     fn upgrade_command_rejects_tar_bz2_url_without_download() {
-        let err =
-            upgrade_command("https://example.com/madmail.tar.bz2", &test_args(), false).unwrap_err();
+        let err = upgrade_command("https://example.com/madmail.tar.bz2", &test_args(), false)
+            .unwrap_err();
         assert!(
             err.to_string().contains("unsupported archive format"),
             "got: {err}"
@@ -1005,10 +1000,7 @@ mod tests {
         let bin = dir.path().join("madmail-signed");
         fs::write(&bin, vec![b'L'; 128]).unwrap();
         let err = upgrade_command(bin.to_str().unwrap(), &test_args(), false).unwrap_err();
-        assert!(
-            err.to_string().contains("INVALID SIGNATURE"),
-            "got: {err}"
-        );
+        assert!(err.to_string().contains("INVALID SIGNATURE"), "got: {err}");
     }
 
     /// When the official signing key is available, prove signed `madmail` inside
@@ -1022,7 +1014,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let payload = dir.path().join("madmail");
         // Small fake binary body (not a real ELF); signature is what matters.
-        fs::write(&payload, b"MADMAIL_TEST_PAYLOAD_FOR_SIGNATURE_CHECK_0123456789").unwrap();
+        fs::write(
+            &payload,
+            b"MADMAIL_TEST_PAYLOAD_FOR_SIGNATURE_CHECK_0123456789",
+        )
+        .unwrap();
         sign_with_official_key(&payload, &key_path);
 
         assert!(
@@ -1071,10 +1067,7 @@ mod tests {
 
     fn sign_with_official_key(file: &Path, key_path: &Path) {
         let status = Command::new("python3")
-            .arg(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../scripts/publish/sign.py"),
-            )
+            .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/publish/sign.py"))
             .arg(file)
             .arg(key_path)
             .status()
@@ -1120,9 +1113,7 @@ mod tests {
     }
 
     /// One-shot Python HTTPS server with a self-signed cert (single GET).
-    fn serve_https_once(
-        body: &[u8],
-    ) -> Option<(String, tempfile::TempDir, std::process::Child)> {
+    fn serve_https_once(body: &[u8]) -> Option<(String, tempfile::TempDir, std::process::Child)> {
         let dir = tempfile::tempdir().ok()?;
         let cert = dir.path().join("cert.pem");
         let key = dir.path().join("key.pem");
@@ -1208,8 +1199,7 @@ httpd.handle_request()
 
     #[test]
     fn https_self_signed_fails_without_accept_unsafe_https() {
-        let Some((url, _dir, mut child)) =
-            serve_https_once(b"unsigned-payload-bytes-xxxxxxxxxxxx")
+        let Some((url, _dir, mut child)) = serve_https_once(b"unsigned-payload-bytes-xxxxxxxxxxxx")
         else {
             eprintln!("skip: openssl/python HTTPS harness unavailable");
             return;
