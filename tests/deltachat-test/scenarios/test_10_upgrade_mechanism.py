@@ -3,6 +3,7 @@ import sys
 import subprocess
 import shutil
 import http.server
+import tarfile
 import threading
 import time
 
@@ -125,6 +126,35 @@ def run_test(madmail_bin, private_key_path, test_dir):
             print(f"Stdout: {result.stdout}")
             print(f"Stderr: {result.stderr}")
             raise Exception("Failure: Update from URL verification failed!")
+
+        # Same signed binary packaged as a release-style .tar.gz archive.
+        tarball = os.path.join(test_dir, "madmail_v2.tar.gz")
+        with tarfile.open(tarball, "w:gz") as tf:
+            tf.add(dummy_path, arcname="madmail")
+
+        madmail_for_tgz = os.path.join(test_dir, "madmail_for_tgz")
+        shutil.copy2(madmail_bin, madmail_for_tgz)
+        os.chmod(madmail_for_tgz, 0o755)
+
+        tgz_url = f"http://localhost:{port}/madmail_v2.tar.gz"
+        result = subprocess.run(
+            [madmail_for_tgz, "update", tgz_url],
+            capture_output=True,
+            text=True,
+        )
+        tgz_out = result.stdout + result.stderr
+        if (
+            (
+                "Extracting madmail binary from archive" in tgz_out
+                or "Extracting binary from archive" in tgz_out
+            )
+            and "Signature verification successful" in tgz_out
+        ):
+            print("✓ Success: Update from .tar.gz URL (extract + verify) passed")
+        else:
+            print(f"Stdout: {result.stdout}")
+            print(f"Stderr: {result.stderr}")
+            raise Exception("Failure: Update from .tar.gz URL verification failed!")
     finally:
         os.chdir(original_cwd)
         httpd.shutdown()

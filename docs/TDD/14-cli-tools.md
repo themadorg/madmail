@@ -217,7 +217,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 - Binary name **`chatmail`** in development; production installs use **`madmail`** (`cli.rs` `name = "madmail"`).
 - **`--json`** on all ctl commands (see [`json-output.md`](../guide/cli/json-output.md)).
-- **`upgrade` / `update`:** HTTP(S) download (100 MB cap), then signed replace.
+- **`upgrade` / `update`:** HTTP(S) download (100 MB cap); `.tar.gz` / `.tgz` URLs extract the binary first, then signed replace.
 - **`certificate autocert`:** writes `tls_mode autocert` + `acme_email` to config; optional immediate `get` ([`certificate-autocert-enable.md`](../guide/cli/certificate-autocert-enable.md)).
 - **`federation dismiss`:** silent-dismiss cache (`chatmail-state::silent_dismiss`) — extra vs base Madmail CLI surface.
 
