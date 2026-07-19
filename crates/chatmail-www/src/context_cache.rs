@@ -157,7 +157,7 @@ impl WwwContextCache {
 
 fn bool_setting(map: &std::collections::HashMap<String, String>, key: &str, default: bool) -> bool {
     map.get(key)
-        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
+        .map(|v| chatmail_config::parse_bool_str(v))
         .unwrap_or(default)
 }
 

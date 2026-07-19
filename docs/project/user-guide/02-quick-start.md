@@ -105,7 +105,8 @@ sudo madmail upgrade <path-or-url>
   4. If the signature is invalid or missing, the upgrade is **aborted** — the binary is never installed. This protects against compromised or tampered releases.
   5. Stops the `madmail.service` (and iroh-relay if present).
   6. Atomically replaces the running binary.
-  7. Restarts the service(s).
+  7. May prompt to convert custom `www_dir` Go templates to Minijinja (`html-migrate`).
+  8. Restarts the service(s).
 
 This is the supported way to update a production server with signature verification.
 

@@ -88,11 +88,15 @@ ls -la ./data/admin_token
 
 ## No-Log check
 
-Logging is off by default. With `log off` (or no `log` line) in `maddy.conf` / `chatmail.toml`, startup should not print INFO lines unless `debug true` is set in that file:
+Logging is off by default. With `log off` (or no `log` line) in `maddy.conf` / `chatmail.toml`, startup should not print INFO lines unless `debug true` (or `yes` / `1` / `enable`) is set in that file:
 
 ```bash
 cargo run -p chatmail -- --state-dir ./data
-# Enable tracing only via config, e.g. `log stderr` + restart
+# Enable tracing only via config, e.g.:
+#   log stderr
+#   log /var/lib/madmail/madmail.log
+#   log stderr /path/to/madmail.log
+# then restart
 ```
 
 ## Tests

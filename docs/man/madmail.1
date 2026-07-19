@@ -82,6 +82,8 @@ preserve selected artifacts.\&
 .RS 4
 Replace this executable from a signed local file or URL
 (raw binary or .tar.gz / .tgz archive).\&
+After replace, may prompt to convert custom \fBwww_dir\fR Go templates
+to Minijinja (see \fBhtml-migrate\fR).\&
 .PP
 .RE
 \fBreload\fR
@@ -232,6 +234,12 @@ Export default HTML/CSS assets to a directory.\&
 .RS 4
 Serve the web UI from an external directory (\fBembedded\fR reverts to
 built-in files).\&
+.PP
+.RE
+\fBhtml-migrate\fR
+.RS 4
+Convert custom \fBwww_dir\fR HTML from Go \fBhtml/template\fR syntax to
+Minijinja (interactive; \fB--yes\fR for scripts).\&
 .PP
 .RE
 \fBhash\fR

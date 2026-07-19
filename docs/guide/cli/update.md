@@ -31,7 +31,7 @@ madmail update https://relay.example/releases/madmail
 madmail update https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz
 ```
 
-See [upgrade](upgrade.md) for full behavior (archive extract, signature verify, systemd stop/replace/start).
+See [upgrade](upgrade.md) for full behavior (archive extract, signature verify, systemd stop/replace/start, custom www template migration).
 
 ## JSON output (`--json`)
 

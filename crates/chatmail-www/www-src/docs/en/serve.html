@@ -45,23 +45,23 @@
         <p class="mt-md">You can change the appearance of all web pages of your server without modifying the source code or recompiling.</p>
 
         <h3 class="mt-lg">Step 1 — Extract original files</h3>
-        <p>First, extract the default files into a folder. Our recommended folder is <code>/var/lib/maddy/www</code>.</p>
-        <div class="code-block">sudo maddy extract-www /var/lib/maddy/www</div>
+        <p>First, extract the default files into a folder. Our recommended folder is <code>/var/lib/madmail/www</code>.</p>
+        <div class="code-block">sudo madmail extract-www /var/lib/madmail/www</div>
 
         <h3 class="mt-lg">Step 2 — Set permissions</h3>
-        <p>For the server to read the files, change folder ownership to the <code>maddy</code> user.</p>
-        <div class="code-block">sudo chown -R maddy:maddy /var/lib/maddy/www</div>
+        <p>For the server to read the files, change folder ownership to the <code>madmail</code> user.</p>
+        <div class="code-block">sudo chown -R madmail:madmail /var/lib/madmail/www</div>
 
         <h3 class="mt-lg">Step 3 — Enable in server</h3>
-        <p>Update the server config file (maddy.conf) to use the new folder.</p>
-        <div class="code-block">sudo sed -i '/chatmail.*{/a\    www_dir /var/lib/maddy/www' /etc/maddy/maddy.conf</div>
+        <p>Update the server config file (madmail.conf) to use the new folder.</p>
+        <div class="code-block">sudo sed -i '/chatmail.*{/a\    www_dir /var/lib/madmail/www' /etc/madmail/madmail.conf</div>
 
         <h3 class="mt-lg">Step 4 — Apply changes</h3>
         <p>Finally, restart the service for changes to take effect.</p>
-        <div class="code-block">sudo systemctl restart maddy</div>
+        <div class="code-block">sudo systemctl restart madmail</div>
 
         <div class="alert alert--warning mt-lg">
-            <strong>Important:</strong> After performing the above steps, you can open files inside <code>/var/lib/maddy/www</code> with an editor (like nano) and modify them. Changes take effect immediately (after page refresh).
+            <strong>Important:</strong> After performing the above steps, you can open files inside <code>/var/lib/madmail/www</code> with an editor (like nano) and modify them. Changes take effect immediately (after page refresh).
         </div>
 
         <h3 class="mt-lg">Note about Just-In-Time (JIT) registration</h3>
@@ -74,8 +74,8 @@
 
         <h3 class="mt-lg">Reset to default</h3>
         <p>If you want to use the program's built-in files again:</p>
-        <div class="code-block">sudo sed -i '/www_dir/d' /etc/maddy/maddy.conf
-sudo systemctl restart maddy</div>
+        <div class="code-block">sudo sed -i '/www_dir/d' /etc/madmail/madmail.conf
+sudo systemctl restart madmail</div>
     </div>
 </body>
 

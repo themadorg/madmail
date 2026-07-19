@@ -195,6 +195,14 @@ lint: fmt-check check
 	cargo clippy --workspace --all-targets -- -D warnings
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
+# RustSec advisory scan of Cargo.lock (install: cargo install cargo-audit)
+audit:
+	@command -v cargo-audit >/dev/null || { \
+		echo "cargo-audit not found. Install with: cargo install cargo-audit --locked"; \
+		exit 1; \
+	}
+	cargo audit
+
 fmt:
 	cargo fmt --all
 

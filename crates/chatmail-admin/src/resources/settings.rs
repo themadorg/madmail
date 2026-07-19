@@ -23,7 +23,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use chatmail_config::{
-    format_data_size, parse_duration, turn_relay_ports::TurnRelayPortRange, AppConfig,
+    format_data_size, parse_bool_str, parse_duration, turn_relay_ports::TurnRelayPortRange,
+    AppConfig,
 };
 use chatmail_db::{
     delete_setting, format_retention_days, get_bool_setting, get_setting, set_setting,
@@ -410,8 +411,11 @@ async fn get_toggle(pool: &DbPool, key: &str, default_on: bool) -> Result<String
         } else {
             "disabled".into()
         }),
-        Some(v) if v == "false" => Ok("disabled".into()),
-        Some(_) => Ok("enabled".into()),
+        Some(v) => Ok(if parse_bool_str(&v) {
+            "enabled".into()
+        } else {
+            "disabled".into()
+        }),
     }
 }
 
@@ -419,8 +423,11 @@ async fn get_toggle(pool: &DbPool, key: &str, default_on: bool) -> Result<String
 async fn get_toggle_disabled_default(pool: &DbPool, key: &str) -> Result<String, (u16, String)> {
     match get_setting(pool, key).await.map_err(db_err)? {
         None => Ok("disabled".into()),
-        Some(v) if v == "true" => Ok("enabled".into()),
-        Some(_) => Ok("disabled".into()),
+        Some(v) => Ok(if parse_bool_str(&v) {
+            "enabled".into()
+        } else {
+            "disabled".into()
+        }),
     }
 }
 
@@ -655,7 +662,7 @@ async fn db_toggle_setting(
                 "disable" => false,
                 "set" => {
                     let v = body_value_as_string(&req.value);
-                    matches!(v.as_str(), "true" | "1" | "yes" | "on" | "enabled")
+                    parse_bool_str(&v)
                 }
                 _ => {
                     return Err((

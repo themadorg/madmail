@@ -111,11 +111,54 @@ pub async fn quota_table(pool: &DbPool) -> Result<&'static str> {
 }
 
 /// Existing Madmail PostgreSQL DB (from Go binary) — skip madmail-v2 migrations.
+///
+/// Prefer [`legacy_madmail_schema_present`], which covers SQLite and Postgres.
 pub async fn madmail_postgres_schema_present(pool: &DbPool) -> Result<bool> {
     if !pool.is_postgres() {
         return Ok(false);
     }
-    table_exists(pool, "schema_version").await
+    legacy_madmail_schema_present(pool).await
+}
+
+/// True when this database was created by Go Madmail / go-imap-sql / GORM and has
+/// **not** been managed by madmail-v2 sqlx migrations yet.
+///
+/// Used to skip bare `CREATE TABLE` migrations that fail with
+/// `table registration_tokens already exists` (#67) and to ensure missing tables
+/// such as `federation_rules` on older installs (e.g. v0.28 → 2.x on Postgres).
+pub async fn legacy_madmail_schema_present(pool: &DbPool) -> Result<bool> {
+    if sqlx_migrations_applied(pool).await? {
+        // Already a madmail-v2-managed database — use normal sqlx migrate.
+        return Ok(false);
+    }
+
+    // go-imap-sql (imapsql) marker — also present when auth+imapsql share one Postgres DB.
+    if table_exists(pool, "schema_version").await? {
+        return Ok(true);
+    }
+    // Go credentials DB layout (`key`/`value` passwords).
+    if matches!(passwords_layout(pool).await?, PasswordsLayout::MadmailKv) {
+        return Ok(true);
+    }
+    // GORM AutoMigrate tables (registration tokens, singular quota, message counters).
+    if table_exists(pool, "registration_tokens").await?
+        || table_exists(pool, "quota").await?
+        || table_exists(pool, "message_stats").await?
+        || table_exists(pool, "blocked_users").await?
+    {
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// Whether sqlx has recorded at least one applied migration on this pool.
+async fn sqlx_migrations_applied(pool: &DbPool) -> Result<bool> {
+    if !table_exists(pool, "_sqlx_migrations").await? {
+        return Ok(false);
+    }
+    let row: Option<(i32,)> =
+        db_fetch_optional!(pool, (i32,), "SELECT 1 FROM _sqlx_migrations LIMIT 1")?;
+    Ok(row.is_some())
 }
 
 /// Madmail Go uses `failed_http_s` / `success_http_s`; madmail-v2 uses `failed_https` / `success_https`.

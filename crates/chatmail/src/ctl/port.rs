@@ -361,7 +361,7 @@ fn service_mode(settings: &HashMap<String, String>, spec: &PortSpec) -> &'static
     for key in spec.local_keys {
         if settings
             .get(*key)
-            .map(|v| v.eq_ignore_ascii_case("true"))
+            .map(|v| chatmail_config::parse_bool_str(v))
             .unwrap_or(false)
         {
             return "local";

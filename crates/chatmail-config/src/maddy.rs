@@ -443,7 +443,7 @@ fn parse_go_duration(s: &str) -> Result<std::time::Duration, ParseDurationError>
 }
 
 fn parse_bool(s: &str) -> bool {
-    matches!(s.to_ascii_lowercase().as_str(), "1" | "true" | "on" | "yes")
+    crate::parse_bool_str(s)
 }
 
 /// Convert `tcp://0.0.0.0:25` / `tls://0.0.0.0:465` to `0.0.0.0:25` (Madmail `config.Endpoint::Address`).
@@ -634,6 +634,24 @@ chatmail tcp://0.0.0.0:80 {
         let content = "auth.pass_table db {\nauto_create on\n}\n";
         let cfg = parse_maddy_config(content).unwrap();
         assert!(cfg.auth_auto_create);
+
+        // Enable forms: True / true / yes / 1 / enable / enabled / on
+        for token in ["True", "true", "yes", "1", "enable", "enabled", "on"] {
+            let content = format!("debug {token}\n");
+            let cfg = parse_maddy_config(&content).unwrap();
+            assert!(cfg.debug, "expected debug on for {token:?}");
+        }
+
+        // Disable forms (default for privacy / No-Log unless opted in)
+        for token in ["False", "false", "no", "0", "disable", "disabled", "off"] {
+            let content = format!("debug {token}\n");
+            let cfg = parse_maddy_config(&content).unwrap();
+            assert!(!cfg.debug, "expected debug off for {token:?}");
+        }
+
+        // Omitted / bare → disabled
+        let cfg = parse_maddy_config("hostname mail.example.org\n").unwrap();
+        assert!(!cfg.debug);
     }
 
     #[test]

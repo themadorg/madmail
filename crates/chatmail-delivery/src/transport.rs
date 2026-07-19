@@ -49,11 +49,12 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
         }
     };
 
+    // Outbound recipient-domain policy (ACCEPT blocklist / REJECT allowlist).
     let policy_mode = ctx.state.federation_policy.global_mode();
     if !ctx
         .state
         .federation_policy
-        .allows_sender(&domain, &ctx.local_domains, policy_mode)
+        .check_policy(&domain, policy_mode)
     {
         return DeliveryOutcome::Permanent {
             reason: "Federation policy rejection".into(),
@@ -64,8 +65,10 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
 
     let target = resolve_federation_target(ctx, &domain).await;
     let client = federation_http_client();
+    // HELO/EHLO must identify *this* server, not the remote MX host.
+    let helo = helo_name_for(ctx);
 
-    let last_reason = match &target {
+    let http_reason = match &target {
         FederationTarget::MxdelivUrl(url) => {
             debug!(%url, rcpt = %job.rcpt_to, "federation: endpoint rewrite URL");
             match try_mxdeliv_url(client, url, job).await {
@@ -74,10 +77,17 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
                     return DeliveryOutcome::Success;
                 }
                 Err(e) => {
-                    if e.permanent {
-                        record_failure(ctx, &domain, scheme_label(url));
-                        return DeliveryOutcome::Permanent { reason: e.reason };
-                    }
+                    // Always fall through to SMTP after HTTP failure.
+                    // Peers like nine.testrun.org often only accept real SMTP on :443;
+                    // treating 4xx from missing /mxdeliv as permanent skipped SMTP entirely
+                    // and broke WebSMTP/SMTP federation equally once HTTP returned 404.
+                    warn!(
+                        %url,
+                        rcpt = %job.rcpt_to,
+                        permanent = e.permanent,
+                        error = %e.reason,
+                        "federation: HTTP /mxdeliv failed, trying SMTP fallback"
+                    );
                     e.reason
                 }
             }
@@ -90,10 +100,13 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
                     return DeliveryOutcome::Success;
                 }
                 Err(e) => {
-                    if e.permanent {
-                        record_failure(ctx, &domain, "HTTPS");
-                        return DeliveryOutcome::Permanent { reason: e.reason };
-                    }
+                    warn!(
+                        %host,
+                        rcpt = %job.rcpt_to,
+                        permanent = e.permanent,
+                        error = %e.reason,
+                        "federation: HTTP /mxdeliv failed, trying SMTP fallback"
+                    );
                     e.reason
                 }
             }
@@ -106,7 +119,7 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
             host_from_mxdeliv_url(url).unwrap_or_else(|| domain.clone())
         }
     };
-    match crate::federation_smtp::deliver(&smtp_host, job).await {
+    match crate::federation_smtp::deliver(&smtp_host, job, &helo).await {
         Ok(()) => {
             record_success(ctx, &domain, "SMTP");
             DeliveryOutcome::Success
@@ -120,9 +133,23 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
             );
             record_failure(ctx, &domain, "SMTP");
             DeliveryOutcome::Temporary {
-                reason: format!("federation failed (last: {last_reason}; smtp: {e})"),
+                reason: format!("federation failed (http: {http_reason}; smtp: {e})"),
             }
         }
+    }
+}
+
+fn helo_name_for(ctx: &DeliveryContext) -> String {
+    let raw = ctx.primary_domain.trim();
+    if raw.is_empty() {
+        return "localhost".into();
+    }
+    // EHLO identity: bare IPv4, or bracketed form stripped for HELO text conventions.
+    let bare = raw.trim_matches(|c| c == '[' || c == ']');
+    if is_ipv4_literal(bare) {
+        bare.to_string()
+    } else {
+        bare.to_ascii_lowercase()
     }
 }
 

@@ -1026,6 +1026,28 @@ Certificate renewal task:
 
 Setting `embedded` reverts to built-in HTML.
 
+### `html-migrate`
+
+```json
+{
+  "ok": true,
+  "command": "html-migrate",
+  "message": "Migrated 3 file(s)",
+  "data": {
+    "config": "/etc/maddy/maddy.conf",
+    "www_dir": "/var/lib/maddy/www",
+    "scanned": 12,
+    "go_style_files": ["index.html", "info.html"],
+    "migrated": ["index.html", "info.html"],
+    "backups": ["/var/lib/maddy/www/index.html.go-template.bak"],
+    "errors": [],
+    "action": "migrated"
+  }
+}
+```
+
+`action` may be `noop_embedded`, `noop_already_migrated`, `skipped_noninteractive`, `declined`, or `migrated`. Use `--yes` with `--json` to apply without a TTY.
+
 ---
 
 ## Planned commands

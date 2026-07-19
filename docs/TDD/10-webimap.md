@@ -28,7 +28,7 @@ Admin GET/POST use `enable` / `disable` actions (same as other service toggles).
 
 Query params on upgrade: `?email=USER&password=PASS` (optional `mailbox`, `since_uid`).
 
-CORS: `Access-Control-Allow-Origin: *` on all WebIMAP/WebSMTP responses. `OPTIONS` → **204** with allowed methods/headers.
+CORS (shared with `POST /new`): when browser access is on (WebIMAP **and** WebSMTP enabled), valid request `Origin` values are reflected; optional `__WEBMAIL_CORS_ORIGINS__` whitelist (or `*`). `OPTIONS` → **204** with allowed methods/headers when the origin is allowed.
 
 ## REST routes
 
@@ -47,11 +47,18 @@ CORS: `Access-Control-Allow-Origin: *` on all WebIMAP/WebSMTP responses. `OPTION
 
 ## WebSMTP delivery
 
-Shared `websmtp_deliver()` in `handlers.rs`:
+Shared `websmtp_deliver()` in `handlers.rs` uses the **same authenticated submission
+path as SMTP AUTH (587/465)**:
 
 1. `validate_submission_headers` — From/Sender must match authenticated user
 2. `enforce_encryption` — PGP-only + SecureJoin handshakes (same as SMTP submission)
-3. `DeliveryContext::route_message` — local maildir vs outbound queue by recipient domain
+3. `DeliveryContext::submit_authenticated` — local maildir **or** outbound federation
+   queue (same queue worker as SMTP submission)
+
+Outbound federation (`chatmail-delivery::deliver_remote`) tries HTTPS/HTTP `/mxdeliv`
+first, then **always falls back to SMTP :25 / :443** (even when HTTP returns 4xx).
+Previously a permanent HTTP 4xx (e.g. missing `/mxdeliv` on the peer) skipped SMTP and
+silently dropped WebSMTP/SMTP outbound to peers such as `nine.testrun.org`.
 
 ## WebSocket protocol
 
@@ -69,13 +76,15 @@ Server reply:
 
 | Action | Gate | Status |
 |--------|------|--------|
-| `list_mailboxes` | WebIMAP | Implemented (INBOX) |
+| `list_mailboxes` | WebIMAP | Implemented (INBOX + user folders under `folders/`) |
 | `list_messages` | WebIMAP | Implemented |
 | `fetch` | WebIMAP | Implemented |
 | `delete` | WebIMAP | Implemented |
 | `flags` | WebIMAP | Ack only (maildir) |
 | `send` | WebSMTP | Implemented |
-| `move`, `copy`, `search`, mailbox CRUD | WebIMAP | Error: INBOX-only storage |
+| `search` | WebIMAP | Implemented (INBOX full-text over subject/from/body/Message-ID) |
+| `create_mailbox` / `rename_mailbox` / `delete_mailbox` | WebIMAP | Implemented (maildir subfolders; cannot touch INBOX) |
+| `copy` / `move` | WebIMAP | Implemented between INBOX and user folders |
 
 Push (no `req_id`):
 
@@ -87,8 +96,9 @@ Poll interval: 2s; also wakes on `AppState` mailbox events.
 
 ## Deviations from full IMAP backend (Madmail Go)
 
-- Single mailbox **INBOX** backed by maildir index (`chatmail-storage`)
-- No EXPUNGE/move/copy/search across folders until multi-mailbox storage lands
+- Default delivery is still **INBOX** maildir; user folders live under per-user `folders/`
+- SEARCH is a simple substring scan (not full IMAP SEARCH criteria)
+- Flags are acknowledged without durable flag persistence (maildir v1)
 - REST long-poll uses sleep loop (not IMAP IDLE)
 
 ## Testing

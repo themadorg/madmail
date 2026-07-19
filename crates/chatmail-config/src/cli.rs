@@ -122,6 +122,13 @@ pub enum Command {
         #[arg(value_name = "WWW_DIR")]
         www_dir: String,
     },
+    /// Convert custom `www_dir` Go templates to Minijinja (interactive).
+    #[command(name = "html-migrate")]
+    HtmlMigrate {
+        /// Apply migration without prompting (default: ask when Go-style HTML is found).
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
     /// IMAP mailboxes (folders) management.
     #[command(name = "imap-mboxes")]
     ImapMboxes,
@@ -785,6 +792,20 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(Command::Update { path_or_url }) if path_or_url == "/tmp/madmail-signed"
+        ));
+    }
+
+    #[test]
+    fn html_migrate_accepts_yes_flag() {
+        let cli = Cli::try_parse_from(["madmail", "html-migrate"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::HtmlMigrate { yes: false })
+        ));
+        let cli = Cli::try_parse_from(["madmail", "html-migrate", "-y"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::HtmlMigrate { yes: true })
         ));
     }
 

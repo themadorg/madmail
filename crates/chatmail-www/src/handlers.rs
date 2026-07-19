@@ -396,7 +396,11 @@ pub async fn new_account(
             &cors,
         );
     }
-    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    cors_json(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        json!({"error": "failed to create account"}),
+        &cors,
+    )
 }
 
 #[derive(Deserialize)]
@@ -469,6 +473,10 @@ pub(crate) fn web_delivery_error(e: &ChatmailError) -> (StatusCode, String) {
 }
 
 /// Shared WebSMTP delivery for REST and WebSocket `send`.
+///
+/// Uses the **same authenticated submission path** as SMTP AUTH (587/465):
+/// `validate_submission_headers` → PGP/SecureJoin gate → `submit_authenticated`
+/// (local maildir or outbound federation queue + HTTP/SMTP peer delivery).
 pub async fn websmtp_deliver(
     st: &WwwState,
     user: &str,
@@ -499,7 +507,8 @@ pub async fn websmtp_deliver(
         local_domains: st.local_domains.clone(),
     };
 
-    delivery.route_message(user, to, raw).await
+    // Same function path as SMTP submission after AUTH + DATA.
+    delivery.submit_authenticated(user, to, raw).await
 }
 
 pub(crate) async fn webimap_authenticate(

@@ -26,8 +26,10 @@ Important keys (see `AppConfig` struct):
 - `turn_*` (enable, secret, port, etc.)
 - `iroh_*`, `ss_*` (shadowsocks)
 - `queue.*` (outbound retry settings)
-- `debug`, `log_target`
+- `debug`, `log_target` (`log` directive: `off` / `stderr` / file path / combinations)
 - Many more (see the full struct and the parser)
+
+Boolean fields (`debug`, `turn_enable`, `auth_auto_create`, …) accept flexible enable/disable strings via `chatmail_config::parse_bool_str` (see [TDD 13-configuration](../TDD/13-configuration.md)).
 
 The file is read **once at boot**. Changes require a reload or restart (depending on the key).
 

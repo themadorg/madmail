@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+chatmail-config = { workspace = true }
 chatmail-db = { workspace = true }
 chatmail-types = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

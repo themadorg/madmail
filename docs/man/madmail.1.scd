@@ -68,6 +68,8 @@ Extended documentation:
 *upgrade*, *update*
 	Replace this executable from a signed local file or URL
 	(raw binary or .tar.gz / .tgz archive).
+	After replace, may prompt to convert custom *www_dir* Go templates
+	to Minijinja (see *html\-migrate*).
 
 *reload*
 	Apply database configuration overrides and restart via the admin API.
@@ -164,6 +166,10 @@ Extended documentation:
 *html\-serve*
 	Serve the web UI from an external directory (*embedded* reverts to
 	built\-in files).
+
+*html\-migrate*
+	Convert custom *www_dir* HTML from Go *html/template* syntax to
+	Minijinja (interactive; *--yes* for scripts).
 
 *hash*
 	Generate password hashes for *pass_table* configuration.

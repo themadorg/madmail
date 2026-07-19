@@ -260,6 +260,60 @@ async fn external_www_go_template_syntax() {
     );
 }
 
+/// Regression for operator custom pages: `{{if not .RegistrationOpen}}` must render,
+/// not fail with Minijinja `unexpected '.'` (was index.html:234-class failures).
+#[tokio::test]
+async fn external_www_go_if_not_registration_open() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("index.html"),
+        r#"<!DOCTYPE html><html><body>
+{{if not .RegistrationOpen}}
+<p id="closed">registration is closed</p>
+{{else}}
+<p id="open">registration is open</p>
+{{end}}
+<span>{{.MailDomain | cleanDomain}}</span>
+</body></html>"#,
+    )
+    .unwrap();
+
+    let mut cfg = AppConfig::default();
+    cfg.www_dir = Some(dir.path().to_path_buf());
+    cfg.mail_domain = Some("example.org".into());
+
+    let engine = TemplateEngine::from_config(&cfg);
+    let pool = init_memory_db().await.unwrap();
+    // Force registration closed for deterministic branch.
+    chatmail_db::set_setting(
+        &pool,
+        chatmail_db::settings_keys::REGISTRATION_OPEN,
+        "false",
+    )
+    .await
+    .unwrap();
+    let cache = WwwContextCache::new();
+    let ctx = build_context(&pool, &cfg, None, None, None, dir.path(), &cache)
+        .await
+        .unwrap();
+    assert!(
+        !ctx.RegistrationOpen,
+        "test setup: registration should be closed"
+    );
+
+    let html = engine
+        .render("index.html", &ctx)
+        .expect("if not .RegistrationOpen must convert and render");
+    assert!(
+        html.contains("registration is closed"),
+        "expected closed branch, got: {html}"
+    );
+    assert!(!html.contains("registration is open"), "got: {html}");
+    assert!(html.contains("example.org"), "got: {html}");
+    assert!(!html.contains("{{if"), "Go markers leaked: {html}");
+    assert!(!html.contains(".RegistrationOpen"), "got: {html}");
+}
+
 #[test]
 fn www_credential_policy_from_maddy_conf() {
     let content = r#"
@@ -615,4 +669,72 @@ async fn contact_sharing_post_and_slug_view() {
     let page = String::from_utf8_lossy(&view_body);
     assert!(page.contains("Alice"));
     assert!(page.contains("openpgp4fpr:"));
+}
+
+/// Dev browser access (WebIMAP + WebSMTP) also applies CORS to `POST /new` / OPTIONS.
+#[tokio::test]
+async fn new_account_cors_reflects_origin_when_browser_access_enabled() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let pool = init_memory_db().await.unwrap();
+    set_setting(&pool, settings_keys::WEBIMAP_ENABLED, "true")
+        .await
+        .unwrap();
+    set_setting(&pool, settings_keys::WEBSMTP_ENABLED, "true")
+        .await
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = AppConfig::default();
+    let app_state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    app_state.auth.hydrate(&pool).await.unwrap();
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg, dir.path()));
+
+    let origin = "http://127.0.0.1:5173";
+
+    let preflight = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("OPTIONS")
+                .uri("/new")
+                .header("origin", origin)
+                .header("access-control-request-method", "POST")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        preflight
+            .headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok()),
+        Some(origin)
+    );
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/new")
+                .header("origin", origin)
+                .header("host", "example.org")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok()),
+        Some(origin)
+    );
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(v.get("email").and_then(|e| e.as_str()).is_some());
 }

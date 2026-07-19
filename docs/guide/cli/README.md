@@ -244,6 +244,9 @@ Alias: [`pr`](pr.md).
 
 ### [`html-serve`](html-serve.md)
 
+
+### [`html-migrate`](html-migrate.md)
+
 ## IMAP tooling
 
 ### [`imap-acct`](imap-acct.md) *(planned)*
