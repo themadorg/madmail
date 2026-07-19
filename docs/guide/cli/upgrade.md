@@ -44,7 +44,7 @@ madmail upgrade https://github.com/themadorg/madmail/releases/latest/download/ma
 ## Notes
 
 - Only binaries signed with the official release key are accepted.
-- Download URLs may be a raw signed binary or a GitHub-style `.tar.gz` / `.tgz` archive containing one. Other archive formats (`.zip`, `.tar.bz2`, …) are rejected with a clear error.
+- Download URLs may be a raw signed binary or a GitHub-style `.tar.gz` / `.tgz` archive that contains a member named `madmail` (the signed binary). The archive is extracted first; signature verification always runs on that binary, never on the archive itself. Other archive formats (`.zip`, `.tar.bz2`, …) are rejected with a clear error.
 - Requires appropriate permissions to replace `/usr/local/bin/madmail`.
 
 ## JSON output (`--json`)

@@ -144,7 +144,10 @@ def run_test(madmail_bin, private_key_path, test_dir):
         )
         tgz_out = result.stdout + result.stderr
         if (
-            "Extracting binary from archive" in tgz_out
+            (
+                "Extracting madmail binary from archive" in tgz_out
+                or "Extracting binary from archive" in tgz_out
+            )
             and "Signature verification successful" in tgz_out
         ):
             print("✓ Success: Update from .tar.gz URL (extract + verify) passed")

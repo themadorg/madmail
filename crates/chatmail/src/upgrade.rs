@@ -103,6 +103,11 @@ fn check_supported_url_archive(url: &str) -> Result<()> {
     Ok(())
 }
 
+/// Archive member path is safe to consider (no absolute paths, `..`, etc.).
+///
+/// We never unpack the archive into a directory tree — only stream the chosen
+/// member into a caller-owned temp file — but still reject traversal names so a
+/// malicious archive cannot select a surprising member path.
 fn is_safe_tar_member(name: &str) -> bool {
     if name.is_empty() {
         return false;
@@ -119,7 +124,33 @@ fn is_safe_tar_member(name: &str) -> bool {
     })
 }
 
-/// Extract the signed binary from a release `.tar.gz` (usually a single `madmail` member).
+fn tar_member_basename(name: &str) -> &str {
+    Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(name)
+}
+
+/// True when the archive member is the release binary (`madmail`, any safe path).
+///
+/// Official packaging (`scripts/publish.sh`) always puts a single member named
+/// `madmail` in `madmail-linux-*.tar.gz`. Nested names like `bin/madmail` are
+/// also accepted.
+fn is_madmail_member(name: &str) -> bool {
+    tar_member_basename(name).eq_ignore_ascii_case("madmail")
+}
+
+/// Open a release `.tar.gz` / `.tgz` and extract the signed `madmail` binary to `dest`.
+///
+/// Safety properties:
+/// - only regular file members are considered (no dirs/symlinks/hardlinks)
+/// - member paths with `..` or absolute components are ignored
+/// - only a member whose basename is `madmail` is extracted
+/// - bytes are streamed into `dest` (never unpack the whole archive to disk)
+/// - size is capped at [`MAX_DOWNLOAD_SIZE`]
+///
+/// The extracted file is the same object a local/`raw URL` upgrade would use;
+/// callers must still run [`perform_upgrade`] (signature check, replace, …).
 fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
     let file = File::open(archive_path).map_err(|e| {
         ChatmailError::config(format!(
@@ -129,15 +160,16 @@ fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
     })?;
     let mut archive = Archive::new(GzDecoder::new(file));
 
+    // Pass 1: locate the `madmail` member (official release layout).
     let mut chosen: Option<(String, u64)> = None;
-    // First pass: prefer a member named `madmail`, else the sole regular file.
-    let mut files: Vec<(String, u64)> = Vec::new();
+    let mut safe_file_count = 0u32;
     for entry in archive.entries().map_err(|e| {
         ChatmailError::config(format!(
             "failed to read archive (is this a valid .tar.gz?): {e}"
         ))
     })? {
         let entry = entry.map_err(|e| ChatmailError::config(format!("corrupt archive: {e}")))?;
+        // Regular files only — never follow/extract symlinks or special nodes.
         if !entry.header().entry_type().is_file() {
             continue;
         }
@@ -149,30 +181,27 @@ fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
         if !is_safe_tar_member(&name) {
             continue;
         }
-        let size = entry.header().size().unwrap_or(0);
-        let base = Path::new(&name)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&name);
-        if base.eq_ignore_ascii_case("madmail") {
+        safe_file_count += 1;
+        if is_madmail_member(&name) {
+            let size = entry.header().size().unwrap_or(0);
             chosen = Some((name, size));
             break;
         }
-        files.push((name, size));
     }
 
-    let (member, size) = if let Some(c) = chosen {
-        c
-    } else if files.len() == 1 {
-        files.pop().unwrap()
-    } else if files.is_empty() {
-        return Err(ChatmailError::config(
-            "archive contains no extractable files (expected a signed madmail binary)",
-        ));
-    } else {
-        return Err(ChatmailError::config(
-            "archive has multiple files and none named 'madmail'; use a release .tar.gz or a raw binary URL",
-        ));
+    let (member, size) = match chosen {
+        Some(c) => c,
+        None if safe_file_count == 0 => {
+            return Err(ChatmailError::config(
+                "archive contains no extractable files (expected a signed madmail binary)",
+            ));
+        }
+        None => {
+            return Err(ChatmailError::config(
+                "archive has no member named 'madmail' (official releases pack the signed \
+                 binary as 'madmail' inside the .tar.gz)",
+            ));
+        }
     };
 
     if size > MAX_DOWNLOAD_SIZE {
@@ -182,9 +211,11 @@ fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
         )));
     }
 
-    eprintln!("📦 Extracting binary from archive...");
+    eprintln!("📦 Extracting madmail binary from archive...");
 
-    // Re-open and extract the chosen member.
+    // Pass 2: re-open and stream only the chosen member into `dest`.
+    // We deliberately do not call Archive::unpack — that would write member
+    // paths to disk and is harder to make path-safe.
     let file = File::open(archive_path).map_err(|e| {
         ChatmailError::config(format!(
             "failed to open archive {}: {e}",
@@ -232,7 +263,7 @@ fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(dest, fs::Permissions::from_mode(0o755))?;
         }
-        eprintln!("✅ Extracted {n} bytes");
+        eprintln!("✅ Extracted madmail binary ({n} bytes)");
         return Ok(());
     }
 
@@ -273,7 +304,14 @@ fn build_download_client() -> Result<Client> {
         .map_err(|e| ChatmailError::config(format!("HTTP client: {e}")))
 }
 
-/// Download signed binary (or `.tar.gz`) to a temp file, then run `perform_upgrade`.
+/// Download from a URL, then run the **same** [`perform_upgrade`] path used for
+/// local binaries.
+///
+/// - raw binary URL → temp file → `perform_upgrade` (signature, replace, …)
+/// - `.tar.gz` / `.tgz` URL → temp archive → extract `madmail` → `perform_upgrade`
+///
+/// Local path upgrades never enter this function (`upgrade_command` calls
+/// `perform_upgrade` directly).
 fn handle_update_url(url: &str, args: &Args) -> Result<()> {
     check_supported_url_archive(url)?;
 
@@ -282,32 +320,32 @@ fn handle_update_url(url: &str, args: &Args) -> Result<()> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let tmp_path = std::env::temp_dir().join(format!(
+    let download_path = std::env::temp_dir().join(format!(
         "madmail-update-{}-{}",
         std::process::id(),
         unique
     ));
-    let mut tmp_file = File::create(&tmp_path).map_err(|e| {
+    let mut tmp_file = File::create(&download_path).map_err(|e| {
         ChatmailError::config(format!(
             "failed to create temp file {}: {e}",
-            tmp_path.display()
+            download_path.display()
         ))
     })?;
 
-    let cleanup = || {
-        let _ = fs::remove_file(&tmp_path);
+    let cleanup_download = || {
+        let _ = fs::remove_file(&download_path);
     };
 
     eprintln!("📥 Downloading {url}...");
 
     let client = build_download_client()?;
     let resp = client.get(url).send().map_err(|e| {
-        cleanup();
+        cleanup_download();
         ChatmailError::config(format!("failed to download: {e}"))
     })?;
 
     if !resp.status().is_success() {
-        cleanup();
+        cleanup_download();
         return Err(ChatmailError::config(format!(
             "download failed with status: {}",
             resp.status()
@@ -316,7 +354,7 @@ fn handle_update_url(url: &str, args: &Args) -> Result<()> {
 
     if let Some(len) = resp.content_length() {
         if len > MAX_DOWNLOAD_SIZE {
-            cleanup();
+            cleanup_download();
             return Err(ChatmailError::config(format!(
                 "file too large: {len} bytes (max {} MB)",
                 MAX_DOWNLOAD_SIZE / (1024 * 1024)
@@ -326,50 +364,52 @@ fn handle_update_url(url: &str, args: &Args) -> Result<()> {
 
     let mut limited = resp.take(MAX_DOWNLOAD_SIZE + 1);
     let n = io::copy(&mut limited, &mut tmp_file).map_err(|e| {
-        cleanup();
+        cleanup_download();
         ChatmailError::config(format!("failed to save download: {e}"))
     })?;
     drop(tmp_file);
 
     if n > MAX_DOWNLOAD_SIZE {
-        cleanup();
+        cleanup_download();
         return Err(ChatmailError::config(format!(
             "download exceeded maximum size of {} MB, aborting",
             MAX_DOWNLOAD_SIZE / (1024 * 1024)
         )));
     }
 
-    let n = fs::metadata(&tmp_path)
+    let n = fs::metadata(&download_path)
         .map_err(|e| {
-            cleanup();
+            cleanup_download();
             ChatmailError::config(format!("temp file metadata: {e}"))
         })?
         .len();
     eprintln!("✅ Downloaded {n} bytes");
 
-    // Release artifacts may be raw signed binaries or `.tar.gz` archives containing one.
+    // If the URL is a release archive, extract the signed `madmail` binary first.
+    // Signature verification must never run on the .tar.gz bytes themselves.
     let (bin_path, extracted_tmp) = if is_tar_gz_url(url) {
         let extracted = std::env::temp_dir().join(format!(
             "madmail-update-bin-{}-{}",
             std::process::id(),
             unique
         ));
-        if let Err(e) = extract_binary_from_tar_gz(&tmp_path, &extracted) {
-            cleanup();
+        if let Err(e) = extract_binary_from_tar_gz(&download_path, &extracted) {
+            cleanup_download();
             let _ = fs::remove_file(&extracted);
             return Err(e);
         }
-        cleanup(); // archive no longer needed
+        cleanup_download(); // archive no longer needed
         (extracted, true)
     } else {
-        (tmp_path.clone(), false)
+        (download_path.clone(), false)
     };
 
+    // Traditional upgrade path (identical to local-path upgrades).
     let result = perform_upgrade(&bin_path, args);
     if extracted_tmp {
         let _ = fs::remove_file(&bin_path);
     } else {
-        cleanup();
+        let _ = fs::remove_file(&download_path);
     }
     result
 }
@@ -660,18 +700,19 @@ mod tests {
     }
 
     #[test]
-    fn extract_binary_prefers_madmail_member() {
+    fn extract_binary_requires_madmail_member() {
         let dir = tempfile::tempdir().unwrap();
         let archive = dir.path().join("release.tar.gz");
         let dest = dir.path().join("out");
         let payload = b"signed-binary-bytes";
+        // Official layout: other files may exist; only `madmail` is extracted.
         write_tar_gz(&archive, &[("README", b"hi"), ("madmail", payload)]);
         extract_binary_from_tar_gz(&archive, &dest).unwrap();
         assert_eq!(fs::read(&dest).unwrap(), payload);
     }
 
     #[test]
-    fn extract_binary_prefers_nested_madmail_basename() {
+    fn extract_binary_accepts_nested_madmail_basename() {
         let dir = tempfile::tempdir().unwrap();
         let archive = dir.path().join("nested.tar.gz");
         let dest = dir.path().join("out");
@@ -688,6 +729,9 @@ mod tests {
         assert!(!is_safe_tar_member("../evil"));
         assert!(!is_safe_tar_member("/abs/path"));
         assert!(!is_safe_tar_member(""));
+        assert!(is_madmail_member("madmail"));
+        assert!(is_madmail_member("bin/madmail"));
+        assert!(!is_madmail_member("madmail-linux-amd64"));
     }
 
     #[test]
@@ -710,18 +754,17 @@ mod tests {
     }
 
     #[test]
-    fn extract_binary_accepts_sole_member() {
+    fn extract_binary_rejects_without_madmail_member() {
         let dir = tempfile::tempdir().unwrap();
-        let archive = dir.path().join("sole.tgz");
-        let dest = dir.path().join("out");
-        write_tar_gz(&archive, &[("madmail-linux-amd64", b"only-one")]);
-        extract_binary_from_tar_gz(&archive, &dest).unwrap();
-        assert_eq!(fs::read(&dest).unwrap(), b"only-one");
-    }
+        // Sole member with a different name is not enough — must be `madmail`.
+        let sole = dir.path().join("sole.tgz");
+        write_tar_gz(&sole, &[("madmail-linux-amd64", b"only-one")]);
+        let err = extract_binary_from_tar_gz(&sole, &dir.path().join("out")).unwrap_err();
+        assert!(
+            err.to_string().contains("no member named 'madmail'"),
+            "got: {err}"
+        );
 
-    #[test]
-    fn extract_binary_rejects_empty_and_ambiguous() {
-        let dir = tempfile::tempdir().unwrap();
         let empty = dir.path().join("empty.tar.gz");
         write_tar_gz(&empty, &[]);
         assert!(extract_binary_from_tar_gz(&empty, &dir.path().join("x"))
@@ -734,15 +777,37 @@ mod tests {
         assert!(extract_binary_from_tar_gz(&multi, &dir.path().join("y"))
             .unwrap_err()
             .to_string()
-            .contains("multiple files"));
+            .contains("no member named 'madmail'"));
+    }
+
+    /// Archive bytes themselves are not a signed binary — verification on the
+    /// `.tar.gz` must fail; only the extracted `madmail` member is signed.
+    #[test]
+    fn signature_runs_on_extracted_binary_not_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("release.tar.gz");
+        let extracted = dir.path().join("madmail");
+        // Payload large enough for a signature trailer; not actually signed.
+        let payload = vec![b'P'; 200];
+        write_tar_gz(&archive, &[("madmail", &payload)]);
+
+        // Archive as a whole is not the signed object.
+        assert!(
+            !verify_signature(&archive).unwrap_or(false),
+            "archive itself must not pass signature verification"
+        );
+
+        extract_binary_from_tar_gz(&archive, &extracted).unwrap();
+        assert_eq!(fs::read(&extracted).unwrap(), payload);
+        // Extracted payload is what perform_upgrade will verify (unsigned here).
+        assert!(!verify_signature(&extracted).unwrap());
     }
 
     #[test]
     fn handle_update_url_extracts_tar_gz_then_signature_check() {
-        // End-to-end URL path (download → extract → verify) without root replace.
+        // URL path: download → extract madmail → traditional verify.
         let dir = tempfile::tempdir().unwrap();
         let archive = dir.path().join("release.tar.gz");
-        // >64 bytes so verification runs; content is not Ed25519-signed.
         let payload = vec![b'U'; 128];
         write_tar_gz(&archive, &[("madmail", &payload)]);
         let body = fs::read(&archive).unwrap();
@@ -759,7 +824,7 @@ mod tests {
 
     #[test]
     fn handle_update_url_raw_binary_skips_extract() {
-        // Raw URL must not require tar format; unsigned body fails at signature.
+        // Raw binary URL: no archive step; same traditional verify.
         let body = vec![b'R'; 128];
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
@@ -786,5 +851,89 @@ mod tests {
             "expected signature failure on raw URL, got: {msg}"
         );
         server.join().unwrap();
+    }
+
+    #[test]
+    fn local_path_upgrade_still_verifies_signature() {
+        // Local binary path must not attempt archive extraction.
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail-signed");
+        fs::write(&bin, vec![b'L'; 128]).unwrap();
+        let err = upgrade_command(bin.to_str().unwrap(), &test_args()).unwrap_err();
+        assert!(
+            err.to_string().contains("INVALID SIGNATURE"),
+            "got: {err}"
+        );
+    }
+
+    /// When the official signing key is available, prove signed `madmail` inside
+    /// `.tar.gz` passes verification (the full traditional check) after extract.
+    #[test]
+    fn signed_madmail_inside_tar_gz_passes_verify_after_extract() {
+        let Some(key_path) = official_private_key_path() else {
+            eprintln!("skip: official private key not found");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let payload = dir.path().join("madmail");
+        // Small fake binary body (not a real ELF); signature is what matters.
+        fs::write(&payload, b"MADMAIL_TEST_PAYLOAD_FOR_SIGNATURE_CHECK_0123456789").unwrap();
+        sign_with_official_key(&payload, &key_path);
+
+        assert!(
+            verify_signature(&payload).unwrap(),
+            "signed payload must verify before packaging"
+        );
+
+        let archive = dir.path().join("madmail-linux-amd64.tar.gz");
+        let bytes = fs::read(&payload).unwrap();
+        write_tar_gz(&archive, &[("madmail", &bytes)]);
+
+        // Archive itself is NOT the signed binary.
+        assert!(!verify_signature(&archive).unwrap_or(false));
+
+        let extracted = dir.path().join("extracted");
+        extract_binary_from_tar_gz(&archive, &extracted).unwrap();
+        assert!(
+            verify_signature(&extracted).unwrap(),
+            "extracted madmail must pass the traditional signature check"
+        );
+
+        // Full URL pipeline: download .tar.gz → extract → perform_upgrade verify.
+        let body = fs::read(&archive).unwrap();
+        let (url, server) = serve_once(body);
+        let err = upgrade_command(&url, &test_args()).unwrap_err();
+        let msg = err.to_string();
+        // Signature OK; non-root should fail before replace (or root-only env).
+        assert!(
+            msg.contains("must be run as root") || msg.contains("Upgrade complete"),
+            "expected post-signature traditional path, got: {msg}"
+        );
+        server.join().unwrap();
+    }
+
+    fn official_private_key_path() -> Option<PathBuf> {
+        // Workspace is crates/chatmail → sibling `../imp` under the monorepo parent
+        // is the release signing key that matches PUBLIC_KEY_HEX. Do not pick
+        // `madmail/imp/private_key.hex` first — that may be a different local key.
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let preferred = manifest.join("../../../imp/private_key.hex");
+        if preferred.is_file() {
+            return Some(preferred);
+        }
+        None
+    }
+
+    fn sign_with_official_key(file: &Path, key_path: &Path) {
+        let status = Command::new("python3")
+            .arg(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../scripts/publish/sign.py"),
+            )
+            .arg(file)
+            .arg(key_path)
+            .status()
+            .expect("run sign.py");
+        assert!(status.success(), "sign.py failed: {status}");
     }
 }
