@@ -6,7 +6,7 @@ Replace the running binary with a **signed** build from a local path or `http://
 ## Synopsis
 
 ```bash
-madmail upgrade <PATH_OR_URL> [--accept-unsafe]
+madmail upgrade <PATH_OR_URL> [--accept-unsafe-https]
 ```
 
 ## Global flags
@@ -20,7 +20,7 @@ madmail upgrade <PATH_OR_URL> [--accept-unsafe]
 
 | Flag | Description |
 |------|-------------|
-| `--accept-unsafe` | Allow HTTPS downloads when the server TLS certificate is self-signed or otherwise untrusted. Without this flag, certificate verification is enforced; on an interactive TTY you may be prompted `[y/N]`. Ed25519 signature verification of the binary always still runs. |
+| `--accept-unsafe-https` | Allow HTTPS downloads when the server TLS certificate is self-signed or otherwise untrusted. Without this flag, certificate verification is enforced; on an interactive TTY you may be prompted `[y/N]`. Ed25519 signature verification of the binary always still runs. |
 
 ## Arguments
 
@@ -30,7 +30,7 @@ madmail upgrade <PATH_OR_URL> [--accept-unsafe]
 
 ## How it works
 
-1. Downloads the file if a URL is given. **HTTPS verifies TLS certificates by default.** Self-signed/untrusted certs require `--accept-unsafe` or an interactive yes. `http://` is unchanged.
+1. Downloads the file if a URL is given. **HTTPS verifies TLS certificates by default.** Self-signed/untrusted certs require `--accept-unsafe-https` or an interactive yes. `http://` is unchanged.
 2. If the URL ends in `.tar.gz` or `.tgz`, extracts the `madmail` binary from the archive first.
 3. Verifies an **Ed25519 signature** in the last 64 bytes of the binary.
 4. Stops the systemd service (and iroh-relay when present).
@@ -43,16 +43,16 @@ madmail upgrade <PATH_OR_URL> [--accept-unsafe]
 ```bash
 madmail upgrade /tmp/madmail-signed
 madmail upgrade https://relay.example/releases/madmail
-madmail upgrade --accept-unsafe https://self-signed.example/madmail
+madmail upgrade --accept-unsafe-https https://self-signed.example/madmail
 madmail upgrade https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz
 ```
 
 ## Notes
 
-- Only binaries signed with the official release key are accepted.
+- Only binaries signed with the official release key are accepted. There is **no** flag to install an unsigned or bad-signed binary — verification always runs and aborts on failure.
 - Download URLs may be a raw signed binary or a GitHub-style `.tar.gz` / `.tgz` archive that contains a member named `madmail` (the signed binary). The archive is extracted first; signature verification always runs on that binary, never on the archive itself. Other archive formats (`.zip`, `.tar.bz2`, …) are rejected with a clear error.
-- `--accept-unsafe` only relaxes **transport** TLS; it does **not** skip binary signature checks.
-- Non-interactive / `--json` sessions cannot prompt; pass `--accept-unsafe` explicitly when needed.
+- `--accept-unsafe-https` only relaxes **HTTPS transport** certificate checks (self-signed peers); it never weakens Ed25519 signature verification.
+- Non-interactive / `--json` sessions cannot prompt; pass `--accept-unsafe-https` explicitly when needed.
 - Requires appropriate permissions to replace `/usr/local/bin/madmail`.
 
 ## JSON output (`--json`)

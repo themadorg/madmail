@@ -34,19 +34,19 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         )),
         Some(Command::Upgrade {
             path_or_url,
-            accept_unsafe,
+            accept_unsafe_https,
         })
         | Some(Command::Update {
             path_or_url,
-            accept_unsafe,
+            accept_unsafe_https,
         }) => {
             // Blocking HTTP download + filesystem replace must not run on the async
             // runtime (reqwest::blocking creates its own runtime).
             let path = path_or_url.clone();
-            let accept_unsafe = *accept_unsafe;
+            let accept_unsafe_https = *accept_unsafe_https;
             let args = cli.args.clone();
             tokio::task::spawn_blocking(move || {
-                crate::upgrade::upgrade_command(&path, &args, accept_unsafe)
+                crate::upgrade::upgrade_command(&path, &args, accept_unsafe_https)
             })
             .await
             .map_err(|e| ChatmailError::config(format!("upgrade task failed: {e}")))?

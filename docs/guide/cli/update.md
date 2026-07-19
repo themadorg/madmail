@@ -6,7 +6,7 @@ Alias for [`upgrade`](upgrade.md). Accepts the same signed local path or URL.
 ## Synopsis
 
 ```bash
-madmail update <PATH_OR_URL> [--accept-unsafe]
+madmail update <PATH_OR_URL> [--accept-unsafe-https]
 ```
 
 ## Global flags
@@ -20,7 +20,7 @@ madmail update <PATH_OR_URL> [--accept-unsafe]
 
 | Flag | Description |
 |------|-------------|
-| `--accept-unsafe` | Same as [`upgrade`](upgrade.md) — allow HTTPS with untrusted TLS certificates (signature check still applies) |
+| `--accept-unsafe-https` | Same as [`upgrade`](upgrade.md) — allow HTTPS with untrusted TLS certificates (signature check still applies) |
 
 ## Arguments
 
@@ -33,7 +33,7 @@ madmail update <PATH_OR_URL> [--accept-unsafe]
 ```bash
 madmail update /tmp/madmail-signed
 madmail update https://relay.example/releases/madmail
-madmail update --accept-unsafe https://self-signed.example/madmail
+madmail update --accept-unsafe-https https://self-signed.example/madmail
 madmail update https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz
 ```
 
