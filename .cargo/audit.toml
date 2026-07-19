@@ -1,0 +1,15 @@
+# rustsec/cargo-audit configuration (https://github.com/rustsec/rustsec)
+# Path: .cargo/audit.toml (project-local; see cargo-audit audit.toml.example).
+
+[advisories]
+ignore = [
+    # Marvin timing sidechannel. No fixed rsa release exists.
+    # Only appears via sqlx-mysql in Cargo.lock; we enable sqlite+postgres only.
+    "RUSTSEC-2023-0071",
+
+    # quick-xml DoS advisories still hit 0.26.x via optional chatmail feature
+    # `pprof` → pprof → inferno. Not in default production builds; no upstream
+    # bump available yet. plist path already updated to quick-xml >= 0.41.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
