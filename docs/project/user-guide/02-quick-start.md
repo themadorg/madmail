@@ -100,15 +100,17 @@ sudo madmail upgrade <path-or-url>
 
 - If you give it a local file or a download URL, `madmail upgrade`:
   1. Downloads the new binary (if a URL was provided).
-  2. **Verifies the digital signature** (Ed25519) that is appended to the release binary.
-  3. If the signature is invalid or missing, the upgrade is **aborted** — the binary is never installed. This protects against compromised or tampered releases.
-  4. Stops the `madmail.service` (and iroh-relay if present).
-  5. Atomically replaces the running binary.
-  6. Restarts the service(s).
+  2. If the URL is a `.tar.gz` / `.tgz` release archive, extracts the binary first.
+  3. **Verifies the digital signature** (Ed25519) that is appended to the release binary.
+  4. If the signature is invalid or missing, the upgrade is **aborted** — the binary is never installed. This protects against compromised or tampered releases.
+  5. Stops the `madmail.service` (and iroh-relay if present).
+  6. Atomically replaces the running binary.
+  7. May prompt to convert custom `www_dir` Go templates to Minijinja (`html-migrate`).
+  8. Restarts the service(s).
 
 This is the supported way to update a production server with signature verification.
 
-The same signed binaries from https://github.com/themadorg/madmail/releases can be used with `madmail upgrade`.
+The same signed binaries and `.tar.gz` assets from https://github.com/themadorg/madmail/releases can be used with `madmail upgrade`.
 
 ## Option 1: Public Server on a Real IP
 

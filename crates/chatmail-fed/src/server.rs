@@ -96,8 +96,10 @@ pub async fn run_http_listener(
                     };
                     let io = TokioIo::new(tls_stream);
                     let hyper_svc = TowerToHyperService::new(app);
+                    // WebSocket upgrades (WebIMAP /webimap/ws) require the upgrade-aware
+                    // connection driver; plain serve_connection closes right after 101.
                     if let Err(e) = Builder::new(TokioExecutor::new())
-                        .serve_connection(io, hyper_svc)
+                        .serve_connection_with_upgrades(io, hyper_svc)
                         .await
                     {
                         tracing::debug!(%peer, error = %e, "HTTP connection ended");

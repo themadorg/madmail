@@ -26,7 +26,10 @@ use chatmail_auth::{
     hash_password, normalize_username, schedule_hash_upgrade_if_needed, verify_password,
 };
 use chatmail_config::{build_dclogin_link, DcloginMailSettings};
-use chatmail_db::{get_bool_setting, passwords, registration_tokens, settings_keys};
+use chatmail_db::{
+    create_sharing_contact, get_bool_setting, get_sharing_contact, normalize_sharing_url,
+    passwords, registration_tokens, settings_keys, sharing_slug_exists, validate_slug,
+};
 use chatmail_delivery::DeliveryContext;
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
 use chatmail_smtp::protocol::validate_submission_headers;
@@ -36,6 +39,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::assets::www_html_exists;
+use crate::contact_sharing::is_reserved_slug;
 use crate::gate::{is_websmtp_enabled, service_disabled};
 use crate::template::{build_context, CustomFields};
 use crate::WwwState;
@@ -136,6 +140,9 @@ async fn doc_lang(st: &WwwState, name: &str, headers: &HeaderMap) -> Response {
 }
 
 pub async fn share_get(State(st): State<WwwState>, headers: HeaderMap) -> impl IntoResponse {
+    if st.sharing.is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     render_template(&st, "contact_share.html", None, client_host(&headers)).await
 }
 
@@ -144,14 +151,81 @@ pub async fn share_post(
     headers: HeaderMap,
     axum::Form(form): axum::Form<ShareForm>,
 ) -> impl IntoResponse {
-    let slug = form
+    let Some(sharing) = st.sharing.as_ref() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let raw_url = form.url.as_deref().unwrap_or("").trim();
+    if raw_url.is_empty() {
+        return plain_error(StatusCode::BAD_REQUEST, "Invite URL is required");
+    }
+    if !raw_url.starts_with("https://i.delta.chat/#") {
+        return plain_error(
+            StatusCode::BAD_REQUEST,
+            "Only Delta Chat web invite links (https://i.delta.chat/#...) are accepted.",
+        );
+    }
+
+    let url = match normalize_sharing_url(raw_url) {
+        Ok(u) => u,
+        Err(e) => return plain_error(StatusCode::BAD_REQUEST, &e.to_string()),
+    };
+    if url.contains(' ') {
+        return plain_error(StatusCode::BAD_REQUEST, "Invalid Delta Chat invite URL.");
+    }
+
+    let name = form.name.as_deref().unwrap_or("").trim().to_string();
+    let slug = match form
         .slug
-        .filter(|s| s.len() >= 3)
-        .unwrap_or_else(|| random_alnum(8));
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => random_alnum(8),
+        Some(s) => {
+            if s.len() < 3 {
+                return plain_error(
+                    StatusCode::BAD_REQUEST,
+                    "Path name must be at least 3 characters.",
+                );
+            }
+            if let Err(e) = validate_slug(s) {
+                return plain_error(StatusCode::BAD_REQUEST, &e.to_string());
+            }
+            if is_reserved_slug(s) {
+                return plain_error(StatusCode::BAD_REQUEST, "This path name is reserved.");
+            }
+            s.to_string()
+        }
+    };
+
+    let pool = match sharing.pool().await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!(error = %e, "contact sharing DB unavailable");
+            return plain_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create shareable link",
+            );
+        }
+    };
+
+    if sharing_slug_exists(pool, &slug).await.unwrap_or(false) {
+        return plain_error(StatusCode::BAD_REQUEST, "This path name is already taken.");
+    }
+
+    if let Err(e) = create_sharing_contact(pool, &slug, &url, &name).await {
+        tracing::error!(error = %e, slug = %slug, "failed to store contact share");
+        return plain_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to create shareable link",
+        );
+    }
+
     let custom = CustomFields {
         Slug: slug,
-        URL: form.url.unwrap_or_default(),
-        Name: form.name.unwrap_or_default(),
+        URL: url,
+        Name: name,
     };
     render_template(
         &st,
@@ -182,12 +256,21 @@ pub struct NewAccountQuery {
     pub token: String,
 }
 
+pub async fn new_account_options(
+    State(st): State<WwwState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let cors = st.cors_snap(&headers).await;
+    crate::response::options_preflight(&cors)
+}
+
 pub async fn new_account(
     State(st): State<WwwState>,
     headers: HeaderMap,
     Query(query): Query<NewAccountQuery>,
     body: Result<Json<NewAccountRequest>, axum::extract::rejection::JsonRejection>,
 ) -> impl IntoResponse {
+    let cors = st.cors_snap(&headers).await;
     let mut registration_token = query.token;
     if registration_token.is_empty() {
         if let Ok(Json(req)) = body {
@@ -200,30 +283,30 @@ pub async fn new_account(
         if let Err(e) =
             registration_tokens::validate_registration_token(&st.pool, &registration_token).await
         {
-            return (
+            return cors_json(
                 StatusCode::FORBIDDEN,
-                Json(json!({"error": format!("Invalid registration token: {e}")})),
-            )
-                .into_response();
+                json!({"error": format!("Invalid registration token: {e}")}),
+                &cors,
+            );
         }
     } else if get_bool_setting(&st.pool, settings_keys::REGISTRATION_TOKEN_REQUIRED, false)
         .await
         .unwrap_or(false)
     {
-        return (
+        return cors_json(
             StatusCode::FORBIDDEN,
-            Json(json!({"error": "Registration token is required"})),
-        )
-            .into_response();
+            json!({"error": "Registration token is required"}),
+            &cors,
+        );
     } else if !get_bool_setting(&st.pool, settings_keys::REGISTRATION_OPEN, true)
         .await
         .unwrap_or(false)
     {
-        return (
+        return cors_json(
             StatusCode::FORBIDDEN,
-            Json(json!({"error": "Registration is closed"})),
-        )
-            .into_response();
+            json!({"error": "Registration is closed"}),
+            &cors,
+        );
     }
 
     const MAX_ATTEMPTS: u32 = 5;
@@ -239,11 +322,11 @@ pub async fn new_account(
         )) {
             Ok(u) => u,
             Err(e) => {
-                return (
+                return cors_json(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": e.to_string()})),
-                )
-                    .into_response();
+                    json!({"error": e.to_string()}),
+                    &cors,
+                );
             }
         };
         if st.app.auth.is_blocked(&user) {
@@ -253,11 +336,11 @@ pub async fn new_account(
         let hash = match hash_password(&password) {
             Ok(h) => h,
             Err(e) => {
-                return (
+                return cors_json(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": e.to_string()})),
-                )
-                    .into_response();
+                    json!({"error": e.to_string()}),
+                    &cors,
+                );
             }
         };
         if passwords::create_user(&st.pool, &user, &hash)
@@ -268,15 +351,19 @@ pub async fn new_account(
         }
         if st.app.mailbox_store.init_user_dir(&user).await.is_err() {
             let _ = passwords::delete_user(&st.pool, &user).await;
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            return cors_json(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({"error": "failed to init mailbox"}),
+                &cors,
+            );
         }
         if let Err(e) = registration_tokens::ensure_new_account_quota(&st.pool, &user).await {
             let _ = passwords::delete_user(&st.pool, &user).await;
-            return (
+            return cors_json(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            )
-                .into_response();
+                json!({"error": e.to_string()}),
+                &cors,
+            );
         }
         if !registration_token.is_empty() {
             if let Err(e) =
@@ -289,24 +376,31 @@ pub async fn new_account(
                     "DELETE FROM quotas WHERE username = ?",
                     user
                 );
-                return (
+                return cors_json(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": e.to_string()})),
-                )
-                    .into_response();
+                    json!({"error": e.to_string()}),
+                    &cors,
+                );
             }
         }
         st.app.auth.insert(&user, &hash);
         let mail = dclogin_mail_settings(&st, &headers).await;
         let dclogin_url = build_dclogin_link(&user, &password, &mail);
-        return Json(json!({
-            "email": user,
-            "password": password,
-            "dclogin_url": dclogin_url,
-        }))
-        .into_response();
+        return cors_json(
+            StatusCode::OK,
+            json!({
+                "email": user,
+                "password": password,
+                "dclogin_url": dclogin_url,
+            }),
+            &cors,
+        );
     }
-    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    cors_json(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        json!({"error": "failed to create account"}),
+        &cors,
+    )
 }
 
 #[derive(Deserialize)]
@@ -322,27 +416,28 @@ pub async fn webimap_send(
     headers: HeaderMap,
     Json(mut req): Json<WebimapSendRequest>,
 ) -> impl IntoResponse {
+    let cors = st.cors_snap(&headers).await;
     if !is_websmtp_enabled(&st.pool).await {
-        return service_disabled();
+        return service_disabled(&cors);
     }
-    let user = match webimap_authenticate(&st.app, &st.pool, &headers).await {
+    let user = match webimap_authenticate(&st.app, &st.pool, &headers, &cors).await {
         Ok(u) => u,
         Err(resp) => return resp,
     };
 
     req.from = user.clone();
     if req.to.is_empty() {
-        return webimap_error(StatusCode::BAD_REQUEST, "missing recipients");
+        return webimap_error(StatusCode::BAD_REQUEST, "missing recipients", &cors);
     }
 
     match websmtp_deliver(&st, &user, &req.to, &req.body).await {
-        Ok(()) => Json(json!({ "status": "sent" })).into_response(),
+        Ok(()) => cors_json(StatusCode::OK, json!({ "status": "sent" }), &cors),
         Err(e) => {
             let (status, msg) = web_delivery_error(&e);
             if status == StatusCode::INTERNAL_SERVER_ERROR {
                 tracing::error!(error = %msg, "webimap send delivery failed");
             }
-            webimap_error(status, &msg)
+            webimap_error(status, &msg, &cors)
         }
     }
 }
@@ -378,6 +473,10 @@ pub(crate) fn web_delivery_error(e: &ChatmailError) -> (StatusCode, String) {
 }
 
 /// Shared WebSMTP delivery for REST and WebSocket `send`.
+///
+/// Uses the **same authenticated submission path** as SMTP AUTH (587/465):
+/// `validate_submission_headers` → PGP/SecureJoin gate → `submit_authenticated`
+/// (local maildir or outbound federation queue + HTTP/SMTP peer delivery).
 pub async fn websmtp_deliver(
     st: &WwwState,
     user: &str,
@@ -408,43 +507,49 @@ pub async fn websmtp_deliver(
         local_domains: st.local_domains.clone(),
     };
 
-    delivery.route_message(user, to, raw).await
+    // Same function path as SMTP submission after AUTH + DATA.
+    delivery.submit_authenticated(user, to, raw).await
 }
 
 pub(crate) async fn webimap_authenticate(
     app: &chatmail_state::AppState,
     pool: &chatmail_db::DbPool,
     headers: &HeaderMap,
+    cors: &crate::cors::CorsSnap,
 ) -> Result<String, Response> {
     let email = headers
         .get("x-email")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| webimap_error(StatusCode::UNAUTHORIZED, "missing X-Email header"))?;
+        .ok_or_else(|| webimap_error(StatusCode::UNAUTHORIZED, "missing X-Email header", cors))?;
     let password = headers
         .get("x-password")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| webimap_error(StatusCode::UNAUTHORIZED, "missing X-Password header"))?;
+        .ok_or_else(|| {
+            webimap_error(StatusCode::UNAUTHORIZED, "missing X-Password header", cors)
+        })?;
 
     let user = normalize_username(email)
-        .map_err(|e| webimap_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+        .map_err(|e| webimap_error(StatusCode::BAD_REQUEST, &e.to_string(), cors))?;
 
     if app.auth.is_blocked(&user) {
-        return Err(webimap_error(StatusCode::FORBIDDEN, "user blocked"));
+        return Err(webimap_error(StatusCode::FORBIDDEN, "user blocked", cors));
     }
 
     let Some(hash) = app.auth.get_hash(&user) else {
         return Err(webimap_error(
             StatusCode::UNAUTHORIZED,
             "invalid credentials",
+            cors,
         ));
     };
 
     if !verify_password(password, &hash)
-        .map_err(|e| webimap_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?
+        .map_err(|e| webimap_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string(), cors))?
     {
         return Err(webimap_error(
             StatusCode::UNAUTHORIZED,
             "invalid credentials",
+            cors,
         ));
     }
 
@@ -459,8 +564,16 @@ pub(crate) async fn webimap_authenticate(
     Ok(user)
 }
 
-fn webimap_error(status: StatusCode, message: &str) -> Response {
-    (status, Json(json!({ "error": message }))).into_response()
+fn webimap_error(status: StatusCode, message: &str, cors: &crate::cors::CorsSnap) -> Response {
+    crate::response::json_err(status, message, cors)
+}
+
+fn cors_json(
+    status: StatusCode,
+    value: serde_json::Value,
+    cors: &crate::cors::CorsSnap,
+) -> Response {
+    crate::response::with_cors((status, Json(value)).into_response(), cors)
 }
 
 /// Serve the running executable at `GET /madmail` (Madmail `handleBinaryDownload`).
@@ -553,7 +666,39 @@ pub async fn catch_all(
     if let Some(resp) = serve_bytes(&st, &path) {
         return resp.into_response();
     }
+    if let Some(contact) = lookup_shared_contact(&st, &path).await {
+        return render_template(
+            &st,
+            "contact_view.html",
+            Some(contact),
+            client_host(&headers),
+        )
+        .await
+        .into_response();
+    }
     StatusCode::NOT_FOUND.into_response()
+}
+
+fn plain_error(status: StatusCode, message: &str) -> Response {
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .body(Body::from(message.to_string()))
+        .unwrap_or_else(|_| status.into_response())
+}
+
+async fn lookup_shared_contact(st: &WwwState, path: &str) -> Option<CustomFields> {
+    if path.contains('.') || path.contains('/') || is_reserved_slug(path) {
+        return None;
+    }
+    let sharing = st.sharing.as_ref()?;
+    let pool = sharing.pool().await.ok()?;
+    let contact = get_sharing_contact(pool, path).await.ok()??;
+    Some(CustomFields {
+        Slug: contact.slug,
+        URL: contact.url,
+        Name: contact.name,
+    })
 }
 
 fn serve_bytes(st: &WwwState, path: &str) -> Option<Response> {

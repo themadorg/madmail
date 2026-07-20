@@ -60,6 +60,76 @@ fn e2e_registration_and_webimap() {
 }
 
 #[test]
+fn e2e_webmail_cors_enable() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    chatmail()
+        .args(base.clone())
+        .args(["webmail-cors", "enable", "http://127.0.0.1:5173"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("127.0.0.1:5173"));
+
+    let db_path = effective_app_db_path(dir.path(), &AppConfig::default());
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let pool = init_db(&db_path).await.unwrap();
+        assert!(
+            get_bool_setting(&pool, settings_keys::WEBIMAP_ENABLED, false)
+                .await
+                .unwrap()
+        );
+        assert!(
+            get_bool_setting(&pool, settings_keys::WEBSMTP_ENABLED, false)
+                .await
+                .unwrap()
+        );
+        let cors = get_setting(&pool, settings_keys::WEBMAIL_CORS_ORIGINS)
+            .await
+            .unwrap()
+            .unwrap_or_default();
+        assert!(cors.contains("http://127.0.0.1:5173"));
+    });
+}
+
+#[test]
+fn e2e_webmail_cors_enable_disable_no_origin() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    chatmail()
+        .args(base.clone())
+        .args(["webmail-cors", "enable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Browser access enabled"));
+
+    chatmail()
+        .args(base.clone())
+        .args(["webmail-cors", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Browser access:  enabled"));
+
+    chatmail()
+        .args(base.clone())
+        .args(["webmail-cors", "disable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Browser access disabled"));
+
+    chatmail()
+        .args(base)
+        .args(["webmail-cors", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Browser access:  disabled"));
+}
+
+#[test]
 fn e2e_language_set() {
     let dir = TempDir::new().expect("tempdir");
     let state = dir.path().to_string_lossy().to_string();

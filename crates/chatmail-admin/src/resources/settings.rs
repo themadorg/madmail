@@ -23,7 +23,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use chatmail_config::{
-    format_data_size, parse_duration, turn_relay_ports::TurnRelayPortRange, AppConfig,
+    format_data_size, parse_bool_str, parse_duration, turn_relay_ports::TurnRelayPortRange,
+    AppConfig,
 };
 use chatmail_db::{
     delete_setting, format_retention_days, get_bool_setting, get_setting, set_setting,
@@ -358,6 +359,11 @@ pub async fn all_settings(st: &AdminState, method: &str) -> AdminResult {
     );
     insert_setting(
         &mut body,
+        "webmail_cors_origins",
+        setting_value(pool, settings_keys::WEBMAIL_CORS_ORIGINS, "").await?,
+    );
+    insert_setting(
+        &mut body,
         "appendlimit",
         setting_value(pool, settings_keys::APPENDLIMIT, "").await?,
     );
@@ -405,8 +411,11 @@ async fn get_toggle(pool: &DbPool, key: &str, default_on: bool) -> Result<String
         } else {
             "disabled".into()
         }),
-        Some(v) if v == "false" => Ok("disabled".into()),
-        Some(_) => Ok("enabled".into()),
+        Some(v) => Ok(if parse_bool_str(&v) {
+            "enabled".into()
+        } else {
+            "disabled".into()
+        }),
     }
 }
 
@@ -414,8 +423,11 @@ async fn get_toggle(pool: &DbPool, key: &str, default_on: bool) -> Result<String
 async fn get_toggle_disabled_default(pool: &DbPool, key: &str) -> Result<String, (u16, String)> {
     match get_setting(pool, key).await.map_err(db_err)? {
         None => Ok("disabled".into()),
-        Some(v) if v == "true" => Ok("enabled".into()),
-        Some(_) => Ok("disabled".into()),
+        Some(v) => Ok(if parse_bool_str(&v) {
+            "enabled".into()
+        } else {
+            "disabled".into()
+        }),
     }
 }
 
@@ -510,6 +522,7 @@ fn named_routes() -> HashMap<&'static str, NamedRoute> {
         ("max_message_size", k::MAX_MESSAGE_SIZE),
         ("max_federation_size", k::MAX_FEDERATION_SIZE),
         ("message_retention", k::MESSAGE_RETENTION),
+        ("webmail_cors_origins", k::WEBMAIL_CORS_ORIGINS),
     ] {
         m.insert(path, value(key));
     }
@@ -649,7 +662,7 @@ async fn db_toggle_setting(
                 "disable" => false,
                 "set" => {
                     let v = body_value_as_string(&req.value);
-                    matches!(v.as_str(), "true" | "1" | "yes" | "on" | "enabled")
+                    parse_bool_str(&v)
                 }
                 _ => {
                     return Err((
@@ -738,6 +751,28 @@ fn validate_setting_value(key: &str, value: &str) -> Result<(), (u16, String)> {
                 400,
                 "invalid retention: use Go-style duration (e.g. 30d, 720h, 24h)".into(),
             ));
+        }
+        return Ok(());
+    }
+
+    if key == settings_keys::WEBMAIL_CORS_ORIGINS {
+        if value.len() > 4096 {
+            return Err((400, "cors origins list too long (max 4096)".into()));
+        }
+        if value == "*" {
+            return Ok(());
+        }
+        for origin in value
+            .split(&[',', '\n', '\r'][..])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            if !origin.starts_with("http://") && !origin.starts_with("https://") {
+                return Err((
+                    400,
+                    format!("invalid origin {origin}: must start with http:// or https://"),
+                ));
+            }
         }
         return Ok(());
     }

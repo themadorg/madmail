@@ -31,6 +31,7 @@ mod settings;
 mod status_storage;
 mod toggles;
 mod tokens;
+mod webmail_dev;
 
 use serde_json::Value;
 
@@ -99,6 +100,7 @@ pub async fn dispatch(st: &AdminState, method: &str, resource: &str, body: &Valu
             )
             .await
         }
+        "/admin/services/webmail_dev" => webmail_dev::webmail_dev(st, method, body).await,
         "/admin/services/shadowsocks" => {
             proxy::proxy_service(st, method, body, chatmail_db::settings_keys::SS_ENABLED).await
         }

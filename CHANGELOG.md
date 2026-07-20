@@ -1,3 +1,112 @@
+# [2.17.0](https://github.com/themadorg/madmail/compare/v2.16.2...v2.17.0) (2026-07-19)
+
+
+### Bug Fixes
+
+* **upgrade:** extract only madmail from tar.gz into traditional path ([20ed7e1](https://github.com/themadorg/madmail/commit/20ed7e1e37f0a66f73b3a31d39b84982ed3fa93f))
+* **upgrade:** harden temp files and tar member path checks ([a822208](https://github.com/themadorg/madmail/commit/a8222086694a8623897fcf253f6686f95fe4d0b2))
+
+
+### Features
+
+* **upgrade:** support .tar.gz release archives in update/upgrade ([4af64c0](https://github.com/themadorg/madmail/commit/4af64c0640aec0918ca265a3950a5ec863c41e1e)), closes [#46](https://github.com/themadorg/madmail/issues/46)
+* **upgrade:** verify TLS by default; --accept-unsafe or interactive y/N ([e54720e](https://github.com/themadorg/madmail/commit/e54720ecde2b5d6c9bbae14af627bac1efe099a8))
+
+## [2.16.2](https://github.com/themadorg/madmail/compare/v2.16.1...v2.16.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* **www:** correct UTF-8 corruption in Go-template-to-Minijinja conversion ([1bf1759](https://github.com/themadorg/madmail/commit/1bf17598f052cf2d8218260528f3c8150ae38a05))
+
+## [2.16.1](https://github.com/themadorg/madmail/compare/v2.16.0...v2.16.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* **webimap:** ship multi-mailbox search/create via green CI ([5a31600](https://github.com/themadorg/madmail/commit/5a316002f6d8e81937fba6dea1993f512229fbe6))
+
+# [2.16.0](https://github.com/themadorg/madmail/compare/v2.15.0...v2.16.0) (2026-07-15)
+
+
+### Bug Fixes
+
+* **www:** convert Go if-not template actions for custom www_dir ([93d350d](https://github.com/themadorg/madmail/commit/93d350d074e6437bc3af584486ef935043736e3d))
+* **www:** silence clippy on html-migrate walk/tests ([57a6301](https://github.com/themadorg/madmail/commit/57a63014e828ad4667385234cb487e159a41212d))
+
+
+### Features
+
+* **www:** migrate custom Go templates on update ([c857e23](https://github.com/themadorg/madmail/commit/c857e2380ccbdac046bf3459e8f4688e5a9e3142))
+
+# [2.15.0](https://github.com/themadorg/madmail/compare/v2.14.0...v2.15.0) (2026-07-15)
+
+
+### Features
+
+* **logging:** flexible bool flags and maddy-compatible log destinations ([4c45778](https://github.com/themadorg/madmail/commit/4c45778ea6982013ea469e1370347b6dafd184f7))
+
+# [2.14.0](https://github.com/themadorg/madmail/compare/v2.13.5...v2.14.0) (2026-07-13)
+
+
+### Features
+
+* **webimap:** implement multi-mailbox WS actions for madcore parity ([bc58b0c](https://github.com/themadorg/madmail/commit/bc58b0c63f2c4611c3077edff2fedad6adbc4dd2))
+
+## [2.13.5](https://github.com/themadorg/madmail/compare/v2.13.4...v2.13.5) (2026-07-12)
+
+
+### Bug Fixes
+
+* resolve the webimap federation issue ([be1f1ff](https://github.com/themadorg/madmail/commit/be1f1fff82ff505a3ccd88615ecc29b84a0adebb))
+
+## [2.13.4](https://github.com/themadorg/madmail/compare/v2.13.3...v2.13.4) (2026-07-12)
+
+
+### Bug Fixes
+
+* cors issue fix for the /new also ([897a7fb](https://github.com/themadorg/madmail/commit/897a7fb47385bdb3e695af9bce604e3800f5c768))
+
+## [2.13.3](https://github.com/themadorg/madmail/compare/v2.13.2...v2.13.3) (2026-07-12)
+
+
+### Bug Fixes
+
+* **db:** add unique indexes on legacy schema ensure path ([f00fdaf](https://github.com/themadorg/madmail/commit/f00fdaf740fa0d5003c9768323d3e03bad4e23b8)), closes [#83](https://github.com/themadorg/madmail/issues/83) [#81](https://github.com/themadorg/madmail/issues/81) [#80](https://github.com/themadorg/madmail/issues/80) [#67](https://github.com/themadorg/madmail/issues/67)
+
+## [2.13.2](https://github.com/themadorg/madmail/compare/v2.13.1...v2.13.2) (2026-07-11)
+
+
+### Bug Fixes
+
+* **db:** ensure tables on Go Madmail upgrade without bare sqlx migrate ([75e9051](https://github.com/themadorg/madmail/commit/75e9051a62daf473bc8696942cf4aa6d160eaf8d)), closes [#67](https://github.com/themadorg/madmail/issues/67) [#80](https://github.com/themadorg/madmail/issues/80) [#67](https://github.com/themadorg/madmail/issues/67)
+
+## [2.13.1](https://github.com/themadorg/madmail/compare/v2.13.0...v2.13.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* deliver /mxdeliv federation mail to all X-Mail-To recipients ([64c50ea](https://github.com/themadorg/madmail/commit/64c50ea586e66744565640b80d4c9afe38bb3845))
+
+# [2.13.0](https://github.com/themadorg/madmail/compare/v2.12.0...v2.13.0) (2026-07-08)
+
+
+### Features
+
+* reflect request Origin for WebIMAP/WebSMTP browser access ([ae009a3](https://github.com/themadorg/madmail/commit/ae009a3c4feed5d52c0e0aa6dd53bb4ca402ad3e))
+
+# [2.12.0](https://github.com/themadorg/madmail/compare/v2.11.2...v2.12.0) (2026-07-08)
+
+
+### Bug Fixes
+
+* **contact-sharing:** implement contact sharing functionality ([aa27055](https://github.com/themadorg/madmail/commit/aa27055434d2644d320983b38622eb461438e6d4))
+
+
+### Features
+
+* add cors handeling ([1b57402](https://github.com/themadorg/madmail/commit/1b574026c26f2d5ec914fe30bced46bca9c37ebd))
+
 ## [2.11.2](https://github.com/themadorg/madmail/compare/v2.11.1...v2.11.2) (2026-07-07)
 
 

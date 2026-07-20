@@ -58,7 +58,7 @@ pub(crate) async fn build_http_extra(
     );
     let admin_web_extra =
         chatmail_admin_web::router_if_configured(file_config, pool.clone()).await?;
-    let www_extra = www_router(WwwState::new(pool, app, file_config.clone()));
+    let www_extra = www_router(WwwState::new(pool, app, file_config.clone(), state_dir));
     Ok(merge_http_routers(admin_extra, admin_web_extra, www_extra))
 }
 

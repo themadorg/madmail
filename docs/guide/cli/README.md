@@ -29,6 +29,7 @@ Details: [global-flags.md](global-flags.md) · [JSON schemas](json-output.md)
 | [`update`](update.md) | [`upgrade`](upgrade.md) |
 | [`ban-list`](ban-list.md) | [`accounts ban-list`](accounts-ban-list.md) |
 | [`create-user`](create-user.md) | [`accounts create-random`](accounts-create-random.md) |
+| [`pr`](pr.md) | [`proxy`](proxy.md) |
 
 Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `imap-tls`, `ss` → `shadowsocks`.
 
@@ -208,6 +209,22 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 - [`on`](push-on.md)
 - [`status`](push-status.md)
 
+### [`proxy`](proxy.md)
+
+Alias: [`pr`](pr.md).
+
+- [`status`](proxy-status.md)
+- [`enable`](proxy-enable.md)
+- [`disable`](proxy-disable.md)
+- [`cipher`](proxy-cipher.md)
+- [`cipher status`](proxy-cipher-status.md)
+- [`cipher set`](proxy-cipher-set.md)
+- [`cipher reset`](proxy-cipher-reset.md)
+- [`password`](proxy-password.md)
+- [`password status`](proxy-password-status.md)
+- [`password set`](proxy-password-set.md)
+- [`password reset`](proxy-password-reset.md)
+
 ### [`language`](language.md)
 
 - [`reset`](language-reset.md)
@@ -226,6 +243,9 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 
 
 ### [`html-serve`](html-serve.md)
+
+
+### [`html-migrate`](html-migrate.md)
 
 ## IMAP tooling
 

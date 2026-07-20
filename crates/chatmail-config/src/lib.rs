@@ -16,6 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 pub mod autoconfig;
+pub mod bool_str;
 pub mod cli;
 pub mod client_mail;
 pub mod config_autocert;
@@ -38,6 +39,7 @@ pub use config_www::update_config_www_dir;
 use std::path::PathBuf;
 
 pub use autoconfig::{build_autoconfig_xml, AutoconfigParams};
+pub use bool_str::{is_falsy, is_truthy, parse_bool_str, parse_bool_str_opt};
 pub use cli::{
     AdminWebCommand, Args, Cli, Command, CompletionShell, EndpointCacheCommand, FederationCommand,
     LanguageCommand, PortCommand, PortServiceCommand, ProxyCommand, ProxySettingCommand,
@@ -134,6 +136,10 @@ pub struct AppConfig {
     /// External www directory (`chatmail { www_dir ... }` / `html-serve`).
     /// Unset = default site from embedded RAM in the binary (fast; no disk reads).
     pub www_dir: Option<PathBuf>,
+    /// `enable_contact_sharing` — Delta Chat `/share` pages and slug URLs.
+    pub enable_contact_sharing: bool,
+    /// `sharing_dsn` — SQLite path for contact links (default `{state_dir}/sharing.db`).
+    pub sharing_dsn: Option<String>,
     /// `admin_path` (default `/api/admin`).
     pub admin_path: Option<String>,
     /// `admin_web_path` — URL path for the embedded admin-web SPA (e.g. `/admin`).
@@ -195,6 +201,18 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// Path to the contact-sharing SQLite DB (`sharing.db` by default).
+    pub fn sharing_db_path(&self, state_dir: &std::path::Path) -> std::path::PathBuf {
+        if let Some(ref dsn) = self.sharing_dsn {
+            let path = std::path::PathBuf::from(dsn);
+            if path.is_absolute() {
+                return path;
+            }
+            return state_dir.join(path);
+        }
+        state_dir.join("sharing.db")
+    }
+
     /// Shadowsocks is configured in `maddy.conf` (`ss_addr` + `ss_password`).
     pub fn ss_configured(&self) -> bool {
         self.ss_addr.as_ref().is_some_and(|s| !s.is_empty())

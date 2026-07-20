@@ -29,7 +29,9 @@ use tokio::sync::{broadcast::error::RecvError, Mutex};
 use crate::gate::is_websmtp_enabled;
 use crate::handlers::{webimap_authenticate, websmtp_deliver};
 use crate::webimap::{
-    build_detail, delete_uid, find_entry, load_entries, summaries_since, MailboxInfo, WsQuery,
+    build_detail, copy_uid, create_user_mailbox, delete_uid, delete_user_mailbox, find_entry,
+    list_user_mailboxes, load_mailbox_entries, move_uid, rename_user_mailbox, search_messages,
+    summaries_since, WsQuery,
 };
 use crate::WwwState;
 
@@ -88,6 +90,17 @@ pub async fn run(socket: WebSocket, st: WwwState, q: WsQuery) -> Result<(), Stri
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
                 Message::Text(text) => {
+                    // Client keepalive (`{ "type": "ping" }`) — not a WsRequest.
+                    if text.contains("\"type\":\"ping\"") || text.contains("\"type\": \"ping\"") {
+                        writer_cmd
+                            .send_json(WsResponse {
+                                req_id: String::new(),
+                                action: "pong".into(),
+                                data: json!({}),
+                            })
+                            .await?;
+                        continue;
+                    }
                     let req: WsRequest = match serde_json::from_str(&text) {
                         Ok(r) => r,
                         Err(_) => {
@@ -124,27 +137,38 @@ pub async fn run(socket: WebSocket, st: WwwState, q: WsQuery) -> Result<(), Stri
                         Ok(_) => {}
                         Err(RecvError::Lagged(_)) => {
                             st_push.app.events.record_lag();
-                            continue;
                         }
-                        Err(RecvError::Closed) => break,
+                        // Sender may be recreated; resubscribe instead of tearing down WS.
+                        Err(RecvError::Closed) => {
+                            events = st_push.app.events.subscribe(&user_push);
+                        }
                     }
                 }
             }
-            let summaries = summaries_since(&st_push, &user_push, last_uid).await?;
+            let summaries = match summaries_since(&st_push, &user_push, "INBOX", last_uid).await {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(user = %user_push, error = %e, "webimap push tick failed");
+                    continue;
+                }
+            };
             for summary in summaries {
                 if summary.uid > last_uid {
                     last_uid = summary.uid;
                 }
-                writer_push
+                if let Err(e) = writer_push
                     .send_json(WsResponse {
                         req_id: String::new(),
                         action: "new_message".into(),
                         data: serde_json::to_value(&summary).map_err(|e| e.to_string())?,
                     })
-                    .await?;
+                    .await
+                {
+                    tracing::debug!(user = %user_push, error = %e, "webimap push send failed");
+                    return Err(e);
+                }
             }
         }
-        Ok::<(), String>(())
     };
 
     tokio::select! {
@@ -217,36 +241,24 @@ async fn handle_ws_request(st: &WwwState, user: &str, req: &WsRequest) -> WsResp
                     };
                 }
             };
-            if d.mailbox != "INBOX" {
-                return respond_err("unknown mailbox");
-            }
-            let entries = match load_entries(st, user).await {
+            let no_cors = crate::cors::CorsSnap::empty();
+            let entries = match load_mailbox_entries(st, user, &d.mailbox).await {
                 Ok(e) => e,
-                Err(_) => return respond_err("failed to load messages"),
+                Err(e) => return respond_err(&e),
             };
             let Some(entry) = find_entry(&entries, d.uid).await else {
                 return respond_err("message not found");
             };
-            let detail = match build_detail(st, user, &entry).await {
+            let detail = match build_detail(st, user, &d.mailbox, &entry, &no_cors).await {
                 Ok(d) => d,
                 Err(_) => return respond_err("failed to load message"),
             };
             respond(serde_json::to_value(detail).unwrap_or(json!(null)))
         }
-        "list_mailboxes" => {
-            let entries = match load_entries(st, user).await {
-                Ok(e) => e,
-                Err(_) => return respond_err("failed to list mailboxes"),
-            };
-            let unseen = entries.len() as u32;
-            let list = vec![MailboxInfo {
-                name: "INBOX".into(),
-                attributes: vec![],
-                messages: unseen,
-                unseen,
-            }];
-            respond(serde_json::to_value(&list).unwrap_or(json!([])))
-        }
+        "list_mailboxes" => match list_user_mailboxes(st, user).await {
+            Ok(list) => respond(serde_json::to_value(&list).unwrap_or(json!([]))),
+            Err(e) => respond_err(&e),
+        },
         "list_messages" => {
             #[derive(Deserialize)]
             struct ListData {
@@ -264,10 +276,7 @@ async fn handle_ws_request(st: &WwwState, user: &str, req: &WsRequest) -> WsResp
                     };
                 }
             };
-            if d.mailbox != "INBOX" {
-                return respond_err("unknown mailbox");
-            }
-            match summaries_since(st, user, d.since_uid).await {
+            match summaries_since(st, user, &d.mailbox, d.since_uid).await {
                 Ok(msgs) => respond(serde_json::to_value(&msgs).unwrap_or(json!([]))),
                 Err(e) => respond_err(&e),
             }
@@ -309,16 +318,147 @@ async fn handle_ws_request(st: &WwwState, user: &str, req: &WsRequest) -> WsResp
                     };
                 }
             };
-            if d.mailbox != "INBOX" {
-                return respond_err("unknown mailbox");
-            }
-            match delete_uid(st, user, d.uid).await {
+            match delete_uid(st, user, &d.mailbox, d.uid).await {
                 Ok(()) => respond(json!({ "status": "deleted" })),
                 Err(e) => respond_err(&e),
             }
         }
-        "move" | "copy" | "search" | "create_mailbox" | "delete_mailbox" | "rename_mailbox" => {
-            respond_err("not supported on this server (INBOX-only storage)")
+        "search" => {
+            #[derive(Deserialize)]
+            struct SearchData {
+                query: String,
+            }
+            let d: SearchData = match serde_json::from_value(data) {
+                Ok(d) => d,
+                Err(e) => {
+                    return WsResponse {
+                        req_id: req_id.clone(),
+                        action: "error".into(),
+                        data: json!(format!("invalid search payload: {e}")),
+                    };
+                }
+            };
+            match search_messages(st, user, &d.query).await {
+                Ok(msgs) => respond(serde_json::to_value(&msgs).unwrap_or(json!([]))),
+                Err(e) => respond_err(&e),
+            }
+        }
+        "create_mailbox" => {
+            #[derive(Deserialize)]
+            struct CreateMailboxData {
+                name: String,
+            }
+            let d: CreateMailboxData = match serde_json::from_value(data) {
+                Ok(d) => d,
+                Err(e) => {
+                    return WsResponse {
+                        req_id: req_id.clone(),
+                        action: "error".into(),
+                        data: json!(format!("invalid create_mailbox payload: {e}")),
+                    };
+                }
+            };
+            match create_user_mailbox(st, user, &d.name).await {
+                Ok(()) => respond(json!({ "status": "created" })),
+                Err(e) => respond_err(&e),
+            }
+        }
+        "delete_mailbox" => {
+            #[derive(Deserialize)]
+            struct DeleteMailboxData {
+                name: String,
+            }
+            let d: DeleteMailboxData = match serde_json::from_value(data) {
+                Ok(d) => d,
+                Err(e) => {
+                    return WsResponse {
+                        req_id: req_id.clone(),
+                        action: "error".into(),
+                        data: json!(format!("invalid delete_mailbox payload: {e}")),
+                    };
+                }
+            };
+            match delete_user_mailbox(st, user, &d.name).await {
+                Ok(()) => respond(json!({ "status": "deleted" })),
+                Err(e) => respond_err(&e),
+            }
+        }
+        "rename_mailbox" => {
+            #[derive(Deserialize)]
+            struct RenameMailboxData {
+                #[serde(alias = "oldName")]
+                old_name: String,
+                #[serde(alias = "newName")]
+                new_name: String,
+            }
+            let d: RenameMailboxData = match serde_json::from_value(data) {
+                Ok(d) => d,
+                Err(e) => {
+                    return WsResponse {
+                        req_id: req_id.clone(),
+                        action: "error".into(),
+                        data: json!(format!("invalid rename_mailbox payload: {e}")),
+                    };
+                }
+            };
+            match rename_user_mailbox(st, user, &d.old_name, &d.new_name).await {
+                Ok(()) => respond(json!({ "status": "renamed" })),
+                Err(e) => respond_err(&e),
+            }
+        }
+        "copy" => {
+            #[derive(Deserialize)]
+            struct CopyData {
+                #[serde(default = "default_inbox")]
+                mailbox: String,
+                uid: u32,
+                #[serde(alias = "destination")]
+                dest_mailbox: Option<String>,
+            }
+            let d: CopyData = match serde_json::from_value(data) {
+                Ok(d) => d,
+                Err(e) => {
+                    return WsResponse {
+                        req_id: req_id.clone(),
+                        action: "error".into(),
+                        data: json!(format!("invalid copy payload: {e}")),
+                    };
+                }
+            };
+            let Some(dest) = d.dest_mailbox.filter(|s| !s.is_empty()) else {
+                return respond_err("missing dest_mailbox");
+            };
+            match copy_uid(st, user, &d.mailbox, d.uid, &dest).await {
+                Ok(()) => respond(json!({ "status": "copied" })),
+                Err(e) => respond_err(&e),
+            }
+        }
+        "move" => {
+            #[derive(Deserialize)]
+            struct MoveData {
+                #[serde(default = "default_inbox")]
+                mailbox: String,
+                uid: u32,
+                #[serde(alias = "destination")]
+                dest_mailbox: Option<String>,
+            }
+            let d: MoveData = match serde_json::from_value(data) {
+                Ok(d) => d,
+                Err(e) => {
+                    return WsResponse {
+                        req_id: req_id.clone(),
+                        action: "error".into(),
+                        data: json!(format!("invalid move payload: {e}")),
+                    };
+                }
+            };
+            let Some(dest) = d.dest_mailbox.filter(|s| !s.is_empty()) else {
+                return respond_err("missing dest_mailbox");
+            };
+            match move_uid(st, user, &d.mailbox, d.uid, &dest).await {
+                Ok(()) => respond(json!({ "status": "moved" })),
+                Err(e) => respond_err(&e),
+            }
         }
         other => respond_err(&format!("unknown action: {other}")),
     }
@@ -355,7 +495,7 @@ async fn ws_authenticate(
         "x-password",
         HeaderValue::from_str(password).map_err(|e| e.to_string())?,
     );
-    webimap_authenticate(app, pool, &headers)
+    webimap_authenticate(app, pool, &headers, &crate::cors::CorsSnap::empty())
         .await
         .map_err(|resp| format!("auth failed ({})", resp.status()))
 }
@@ -404,7 +544,7 @@ mod tests {
         let hash = hash_password(PASS).unwrap();
         passwords::create_user(&pool, USER, &hash).await.unwrap();
         app.auth.hydrate(&pool).await.unwrap();
-        (WwwState::new(pool, app, cfg), dir)
+        (WwwState::new(pool, app, cfg, dir.path()), dir)
     }
 
     async fn seed_inbox(st: &WwwState) {
@@ -539,15 +679,69 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unsupported_action_returns_error() {
+    async fn create_rename_delete_mailbox_roundtrip() {
         let (st, _dir) = test_www_state().await;
-        let resp = handle_ws_request(&st, USER, &ws_req("rename_mailbox", json!({}))).await;
-        assert_eq!(resp.action, "error");
-        assert!(resp
+        let created = handle_ws_request(
+            &st,
+            USER,
+            &ws_req("create_mailbox", json!({ "name": "Archive" })),
+        )
+        .await;
+        assert_eq!(created.action, "result");
+        assert_eq!(created.data["status"], "created");
+
+        let listed = handle_ws_request(&st, USER, &ws_req("list_mailboxes", json!({}))).await;
+        assert_eq!(listed.action, "result");
+        let names: Vec<&str> = listed
             .data
-            .as_str()
+            .as_array()
             .unwrap()
-            .contains("not supported on this server"));
+            .iter()
+            .filter_map(|m| m["name"].as_str())
+            .collect();
+        assert!(names.contains(&"INBOX"));
+        assert!(names.contains(&"Archive"));
+
+        let renamed = handle_ws_request(
+            &st,
+            USER,
+            &ws_req(
+                "rename_mailbox",
+                json!({ "old_name": "Archive", "new_name": "Saved" }),
+            ),
+        )
+        .await;
+        assert_eq!(renamed.action, "result");
+        assert_eq!(renamed.data["status"], "renamed");
+
+        let deleted = handle_ws_request(
+            &st,
+            USER,
+            &ws_req("delete_mailbox", json!({ "name": "Saved" })),
+        )
+        .await;
+        assert_eq!(deleted.action, "result");
+        assert_eq!(deleted.data["status"], "deleted");
+    }
+
+    #[tokio::test]
+    async fn search_matches_subject_and_body() {
+        let (st, _dir) = test_www_state().await;
+        seed_inbox(&st).await;
+        let hit =
+            handle_ws_request(&st, USER, &ws_req("search", json!({ "query": "WS test" }))).await;
+        assert_eq!(hit.action, "result");
+        assert_eq!(hit.data.as_array().unwrap().len(), 1);
+        assert_eq!(hit.data[0]["envelope"]["subject"], "WS test");
+
+        let miss = handle_ws_request(
+            &st,
+            USER,
+            &ws_req("search", json!({ "query": "no-such-token-xyz" })),
+        )
+        .await;
+        assert_eq!(miss.action, "result");
+        assert!(miss.data.as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

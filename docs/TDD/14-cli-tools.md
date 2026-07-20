@@ -13,7 +13,7 @@ madmail-v2 exposes the same **single binary** model as Madmail: one executable (
 | TLS / ACME | [`certificate.md`](../guide/cli/certificate.md) · [`certificate-autocert.md`](../guide/cli/certificate-autocert.md) |
 | Accounts & registration | [`accounts.md`](../guide/cli/accounts.md) · [`registration.md`](../guide/cli/registration.md) · [`registration-tokens.md`](../guide/cli/registration-tokens.md) |
 | Federation & routing | [`federation.md`](../guide/cli/federation.md) · [`endpoint-cache.md`](../guide/cli/endpoint-cache.md) |
-| Services & ports | [`port.md`](../guide/cli/port.md) · [`push.md`](../guide/cli/push.md) · [`webimap.md`](../guide/cli/webimap.md) · [`websmtp.md`](../guide/cli/websmtp.md) |
+| Services & ports | [`port.md`](../guide/cli/port.md) · [`proxy.md`](../guide/cli/proxy.md) · [`push.md`](../guide/cli/push.md) · [`webimap.md`](../guide/cli/webimap.md) · [`websmtp.md`](../guide/cli/websmtp.md) |
 | Maintenance | [`tasks.md`](../guide/cli/tasks.md) · [`tasks-run.md`](../guide/cli/tasks-run.md) |
 | Message limits | [`message-size.md`](../guide/cli/message-size.md) |
 
@@ -77,6 +77,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `message-size` | [message-size.md](../guide/cli/message-size.md) | `message_size.rs` | **done** |
 | `language` | [language.md](../guide/cli/language.md) | `language.rs` | **done** |
 | `push` | [push.md](../guide/cli/push.md) | `push.rs` | **done** |
+| `proxy` / `pr` | [proxy.md](../guide/cli/proxy.md) | `proxy.rs` | **done** |
 | `webimap` | [webimap.md](../guide/cli/webimap.md) | `service_toggle.rs` | **done** |
 | `websmtp` | [websmtp.md](../guide/cli/websmtp.md) | `service_toggle.rs` | **done** |
 | `tasks` | [tasks.md](../guide/cli/tasks.md) | `tasks.rs` | **done** |
@@ -144,6 +145,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | Command | Guide | Settings keys | madmail-v2 |
 |---------|-------|---------------|-------------|
 | `push` | [push.md](../guide/cli/push.md) | `__PUSH_MODE__` | **done** — [23-push-notifications.md](23-push-notifications.md) |
+| `proxy` | [proxy.md](../guide/cli/proxy.md) | `__SS_ENABLED__`, `__SS_CIPHER__`, `__SS_PASSWORD__` | **done** — [11-proxy-services.md](11-proxy-services.md) |
 | `webimap` | [webimap.md](../guide/cli/webimap.md) | `__WEBIMAP_ENABLED__` | **done** |
 | `websmtp` | [websmtp.md](../guide/cli/websmtp.md) | `__WEBSMTP_ENABLED__` | **done** |
 | `admin-web` | [admin-web.md](../guide/cli/admin-web.md) | `__ADMIN_WEB_*__` | **done** |
@@ -215,7 +217,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 - Binary name **`chatmail`** in development; production installs use **`madmail`** (`cli.rs` `name = "madmail"`).
 - **`--json`** on all ctl commands (see [`json-output.md`](../guide/cli/json-output.md)).
-- **`upgrade` / `update`:** HTTP(S) download (100 MB cap), then signed replace.
+- **`upgrade` / `update`:** HTTP(S) download (100 MB cap); `.tar.gz` / `.tgz` URLs extract the binary first, then signed replace.
 - **`certificate autocert`:** writes `tls_mode autocert` + `acme_email` to config; optional immediate `get` ([`certificate-autocert-enable.md`](../guide/cli/certificate-autocert-enable.md)).
 - **`federation dismiss`:** silent-dismiss cache (`chatmail-state::silent_dismiss`) — extra vs base Madmail CLI surface.
 

@@ -243,7 +243,15 @@ Admin: `GET /admin/settings` (bulk) or `GET|POST /admin/settings/{name}` (`set` 
 
 CLI: [`madmail port`](../guide/cli/port.md), [`madmail message-size`](../guide/cli/message-size.md). Ports and dclogin hints are read via `chatmail-config::effective_*` at listener bind and on www page render.
 
-`log off` (or omit `log`) is the default; use `log stderr` / `log syslog` in config to enable tracing. Restart required for static `log` directive.
+`log off` (or omit `log`) is the default (No-Log). Use `log stderr`, `log /path/to/file`, or both (`log stderr /var/lib/madmail/madmail.log`) to enable tracing. `log syslog` currently maps to stderr. Restart required for static `log` / `debug` directives.
+
+Boolean flags in `maddy.conf` / `chatmail.toml` and DB settings accept flexible enable/disable forms (case-insensitive):
+
+| Enable | Disable (default for unknown) |
+|--------|-------------------------------|
+| `true`, `yes`, `y`, `1`, `on`, `enable`, `enabled`, `t` | `false`, `no`, `n`, `0`, `off`, `disable`, `disabled`, `f`, empty |
+
+Shared parser: `chatmail_config::parse_bool_str` (used by config file, `get_bool_setting` / `get_enabled_setting`, admin toggles).
 
 ## Database layout vs Madmail
 

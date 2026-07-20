@@ -22,10 +22,16 @@ use std::collections::HashMap;
 use chatmail_config::DbMailPorts;
 use chatmail_types::Result;
 
-use crate::{get_setting, settings_keys, DbPool};
+use crate::{get_bool_setting, get_setting, settings_keys, DbPool};
 
 fn pick(map: &HashMap<String, String>, key: &str) -> Option<String> {
     map.get(key).filter(|s| !s.trim().is_empty()).cloned()
+}
+
+fn listener_enabled(map: &HashMap<String, String>, key: &str) -> bool {
+    map.get(key)
+        .map(|v| !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true)
 }
 
 /// Build [`DbMailPorts`] from a settings map (e.g. [`get_settings_many`](crate::get_settings_many)).
@@ -40,6 +46,8 @@ pub fn db_ports_from_settings(map: &HashMap<String, String>) -> DbMailPorts {
         dclogin_smtp_security: pick(map, settings_keys::DCLOGIN_SMTP_SECURITY),
         http_port: pick(map, settings_keys::HTTP_PORT),
         https_port: pick(map, settings_keys::HTTPS_PORT),
+        http_enabled: listener_enabled(map, settings_keys::HTTP_ENABLED),
+        https_enabled: listener_enabled(map, settings_keys::HTTPS_ENABLED),
     }
 }
 
@@ -55,6 +63,8 @@ pub async fn load_mail_port_overrides(pool: &DbPool) -> Result<DbMailPorts> {
         dclogin_smtp_security: get_setting(pool, settings_keys::DCLOGIN_SMTP_SECURITY).await?,
         http_port: get_setting(pool, settings_keys::HTTP_PORT).await?,
         https_port: get_setting(pool, settings_keys::HTTPS_PORT).await?,
+        http_enabled: get_bool_setting(pool, settings_keys::HTTP_ENABLED, true).await?,
+        https_enabled: get_bool_setting(pool, settings_keys::HTTPS_ENABLED, true).await?,
     })
 }
 
@@ -116,5 +126,15 @@ mod tests {
     fn db_ports_from_settings_empty_map_is_default() {
         let ports = db_ports_from_settings(&HashMap::new());
         assert_eq!(ports, DbMailPorts::default());
+    }
+
+    #[test]
+    fn db_ports_from_settings_http_https_enabled_flags() {
+        let mut map = HashMap::new();
+        map.insert(settings_keys::HTTP_ENABLED.to_string(), "false".to_string());
+        map.insert(settings_keys::HTTPS_ENABLED.to_string(), "true".to_string());
+        let ports = db_ports_from_settings(&map);
+        assert!(!ports.http_enabled);
+        assert!(ports.https_enabled);
     }
 }

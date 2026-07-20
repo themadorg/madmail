@@ -23,7 +23,7 @@ use chatmail_types::{ChatmailError, Result};
 
 use crate::assets::WwwAssets;
 
-/// Write all embedded `www/` files to `dest_dir` (preserves relative paths).
+/// Write all embedded `www-src/` files to `dest_dir` (preserves relative paths).
 pub fn export_www_files(dest_dir: &Path) -> Result<usize> {
     std::fs::create_dir_all(dest_dir).map_err(ChatmailError::from)?;
     let mut count = 0usize;

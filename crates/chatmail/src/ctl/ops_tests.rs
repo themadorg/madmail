@@ -76,6 +76,74 @@ async fn dispatch_language_set_and_reset() {
 }
 
 #[tokio::test]
+async fn dispatch_webmail_cors_enable_and_add() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+
+    let cli = parse_cli(
+        dir.path(),
+        &["webmail-cors", "enable", "http://127.0.0.1:5173"],
+    );
+    dispatch(&cli).await.unwrap();
+    assert!(
+        get_bool_setting(&pool, settings_keys::WEBIMAP_ENABLED, false)
+            .await
+            .unwrap()
+    );
+    assert!(
+        get_bool_setting(&pool, settings_keys::WEBSMTP_ENABLED, false)
+            .await
+            .unwrap()
+    );
+    let cors = get_setting(&pool, settings_keys::WEBMAIL_CORS_ORIGINS)
+        .await
+        .unwrap()
+        .unwrap_or_default();
+    assert!(cors.contains("http://127.0.0.1:5173"));
+
+    let cli = parse_cli(
+        dir.path(),
+        &["webmail-cors", "add", "http://localhost:5173"],
+    );
+    dispatch(&cli).await.unwrap();
+    let cors = get_setting(&pool, settings_keys::WEBMAIL_CORS_ORIGINS)
+        .await
+        .unwrap()
+        .unwrap_or_default();
+    assert!(cors.contains("http://localhost:5173"));
+}
+
+#[tokio::test]
+async fn dispatch_webmail_cors_enable_without_origin_and_disable() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+
+    let cli = parse_cli(dir.path(), &["webmail-cors", "enable"]);
+    dispatch(&cli).await.unwrap();
+    assert!(
+        get_bool_setting(&pool, settings_keys::WEBIMAP_ENABLED, false)
+            .await
+            .unwrap()
+    );
+    assert!(
+        get_bool_setting(&pool, settings_keys::WEBSMTP_ENABLED, false)
+            .await
+            .unwrap()
+    );
+
+    let cli = parse_cli(dir.path(), &["webmail-cors", "disable"]);
+    dispatch(&cli).await.unwrap();
+    assert!(
+        !get_bool_setting(&pool, settings_keys::WEBIMAP_ENABLED, true)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !get_bool_setting(&pool, settings_keys::WEBSMTP_ENABLED, true)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
 async fn dispatch_webimap_websmtp_toggle() {
     let (dir, _args, _db, pool) = setup_ctl_env().await;
 
@@ -311,6 +379,41 @@ async fn dispatch_proxy_cipher_rejects_invalid() {
 }
 
 #[tokio::test]
+async fn dispatch_port_http_enable_disable() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+
+    let cli = parse_cli(dir.path(), &["port", "http", "disable"]);
+    dispatch(&cli).await.unwrap();
+    assert_eq!(
+        get_setting(&pool, settings_keys::HTTP_ENABLED)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("false")
+    );
+
+    let cli = parse_cli(dir.path(), &["port", "http", "enable"]);
+    dispatch(&cli).await.unwrap();
+    assert_eq!(
+        get_setting(&pool, settings_keys::HTTP_ENABLED)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("true")
+    );
+
+    let cli = parse_cli(dir.path(), &["port", "https", "disable"]);
+    dispatch(&cli).await.unwrap();
+    assert_eq!(
+        get_setting(&pool, settings_keys::HTTPS_ENABLED)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("false")
+    );
+}
+
+#[tokio::test]
 async fn dispatch_port_set_and_reset() {
     let (dir, _args, _db, pool) = setup_ctl_env().await;
 
@@ -440,6 +543,22 @@ fn cli_language_and_registration_parse() {
         Some(Command::Port(PortCommand::Https(PortServiceCommand::Set {
             port
         }))) if port == "8443"
+    ));
+
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["port", "http", "disable"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Port(PortCommand::Http(
+            PortServiceCommand::Disable
+        )))
+    ));
+
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["port", "https", "enable"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Port(PortCommand::Https(
+            PortServiceCommand::Enable
+        )))
     ));
 
     let cli = parse_cli(

@@ -42,7 +42,7 @@
 
     <div class="card card--wide">
         <h1>System Administrator Documentation</h1>
-        <p>This guide explains how to manage user quotas and view server statistics using <code>maddy</code> commands.</p>
+        <p>This guide explains how to manage user quotas and view server statistics using <code>madmail</code> commands.</p>
 
         <div class="info-note"
             style="background: color-mix(in srgb, var(--link) 5%, transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
@@ -52,36 +52,36 @@
         </div>
 
         <h2>Quota Management</h2>
-        <p>You can manage user storage quotas using the <code>maddy imap-acct quota</code> subcommands.</p>
+        <p>You can manage user storage quotas using the <code>madmail imap-acct quota</code> subcommands.</p>
 
         <div class="cmd-info">
             <h3>View User Quota</h3>
             <p>Display the used space and maximum allowance for a specific user.</p>
-            <div class="code-block">maddy imap-acct quota get username@example.com</div>
+            <div class="code-block">madmail imap-acct quota get username@example.com</div>
         </div>
 
         <div class="cmd-info">
             <h3>Set User Quota</h3>
             <p>Set a custom storage limit for a user (e.g., 1GB, 500MB, or 10KB).</p>
-            <div class="code-block">maddy imap-acct quota set username@example.com 1GB</div>
+            <div class="code-block">madmail imap-acct quota set username@example.com 1GB</div>
         </div>
 
         <div class="cmd-info">
             <h3>Reset User Quota</h3>
             <p>Remove the user's custom quota and revert to the system default. The user's account creation date is preserved.</p>
-            <div class="code-block">maddy imap-acct quota reset username@example.com</div>
+            <div class="code-block">madmail imap-acct quota reset username@example.com</div>
         </div>
 
         <div class="cmd-info">
             <h3>Set System-Wide Default Quota</h3>
-            <p>Set the default storage limit for all users without a custom quota. This value is stored in the database and takes priority over the maddy.conf setting.</p>
-            <div class="code-block">maddy imap-acct quota set-default 2GB</div>
+            <p>Set the default storage limit for all users without a custom quota. This value is stored in the database and takes priority over the madmail.conf setting.</p>
+            <div class="code-block">madmail imap-acct quota set-default 2GB</div>
         </div>
 
         <div class="cmd-info">
             <h3>List All Quotas</h3>
             <p>Display all users with their used space and quota limits. The list shows whether each user's quota is custom or inherited from the system default.</p>
-            <div class="code-block">maddy imap-acct quota list</div>
+            <div class="code-block">madmail imap-acct quota list</div>
         </div>
 
         <h2>Maintenance & Cleanup</h2>
@@ -90,31 +90,31 @@
         <div class="cmd-info">
             <h3>Purge Send Queue</h3>
             <p>Remove all pending messages in the send queue related to a specific user (sender or recipient). Useful for clearing queue jams caused by spam or large messages.</p>
-            <div class="code-block">maddy queue purge username@example.com</div>
+            <div class="code-block">madmail queue purge username@example.com</div>
         </div>
 
         <div class="cmd-info">
             <h3>Purge IMAP Messages for a User</h3>
             <p>Delete all emails for a user from all mailboxes (Inbox, Sent, etc.) without deleting the account or quota settings. Useful for quickly freeing disk space.</p>
-            <div class="code-block">maddy imap-acct purge-msgs username@example.com</div>
+            <div class="code-block">madmail imap-acct purge-msgs username@example.com</div>
         </div>
 
         <div class="cmd-info">
             <h3>Purge All Messages for All Users</h3>
             <p>Delete all emails across the entire server for all users. This clears all email data while keeping user accounts, passwords, and quotas intact.</p>
-            <div class="code-block">maddy imap-acct purge-all</div>
+            <div class="code-block">madmail imap-acct purge-all</div>
         </div>
 
         <div class="cmd-info">
             <h3>Purge All Read Messages</h3>
             <p>Delete all emails marked as read (Seen) across the entire server. New unread messages are preserved. Helps optimize space without losing new messages.</p>
-            <div class="code-block">maddy imap-acct purge-read [--yes]</div>
+            <div class="code-block">madmail imap-acct purge-read [--yes]</div>
         </div>
 
         <div class="cmd-info">
             <h3>Prune Old Unread Messages</h3>
             <p>Delete unread messages older than the specified duration (e.g., 30 days). Useful for cleaning up old emails that users never opened.</p>
-            <div class="code-block">maddy imap-acct prune-unread 720h [--yes]</div>
+            <div class="code-block">madmail imap-acct prune-unread 720h [--yes]</div>
         </div>
 
         <h2>Registration Management</h2>
@@ -122,17 +122,17 @@
 
         <div class="cmd-info">
             <h3>Open Registration</h3>
-            <div class="code-block">maddy creds registration open</div>
+            <div class="code-block">madmail creds registration open</div>
         </div>
 
         <div class="cmd-info">
             <h3>Close Registration</h3>
-            <div class="code-block">maddy creds registration close</div>
+            <div class="code-block">madmail creds registration close</div>
         </div>
 
         <div class="cmd-info">
             <h3>View Current Status</h3>
-            <div class="code-block">maddy creds registration status</div>
+            <div class="code-block">madmail creds registration status</div>
         </div>
 
         <h2>Just-In-Time (JIT) Registration</h2>
@@ -141,41 +141,41 @@
         <div class="cmd-info">
             <h3>Enable JIT Registration</h3>
             <p>When enabled, accounts are automatically created on the first login or when the first email is received.</p>
-            <div class="code-block">maddy creds jit enable</div>
+            <div class="code-block">madmail creds jit enable</div>
         </div>
 
         <div class="cmd-info">
             <h3>Disable JIT Registration</h3>
             <p>When disabled, accounts can only be created via the API (web interface) and login with unregistered credentials is rejected.</p>
-            <div class="code-block">maddy creds jit disable</div>
+            <div class="code-block">madmail creds jit disable</div>
         </div>
 
         <div class="cmd-info">
             <h3>View JIT Status</h3>
-            <div class="code-block">maddy creds jit status</div>
+            <div class="code-block">madmail creds jit status</div>
         </div>
 
-        <h2>Account commands (<code>maddy accounts</code>)</h2>
-        <p>These subcommands open your <code>maddy.conf</code> and talk to the <strong>on-disk</strong> databases directly (they do not require the server to be stopped). Use <code>--cfg-block</code> and <code>--storage-cfg-block</code> if your auth or IMAP blocks are not <code>local_authdb</code> / <code>local_mailboxes</code>.</p>
+        <h2>Account commands (<code>madmail accounts</code>)</h2>
+        <p>These subcommands open your <code>madmail.conf</code> and talk to the <strong>on-disk</strong> databases directly (they do not require the server to be stopped). Use <code>--cfg-block</code> and <code>--storage-cfg-block</code> if your auth or IMAP blocks are not <code>local_authdb</code> / <code>local_mailboxes</code>.</p>
 
         <div class="cmd-info">
             <h3>Status and per-user info</h3>
-            <div class="code-block">maddy accounts status
-maddy accounts info user@example.com</div>
+            <div class="code-block">madmail accounts status
+madmail accounts info user@example.com</div>
         </div>
 
         <div class="cmd-info">
             <h3>Create login + IMAP mailbox</h3>
             <p>Creates credentials and an IMAP storage account (same end result as the admin panel random user).</p>
-            <div class="code-block">maddy accounts create user@example.com
-maddy accounts create-random [--json-only]</div>
+            <div class="code-block">madmail accounts create user@example.com
+madmail accounts create-random [--json-only]</div>
         </div>
 
         <div class="cmd-info">
             <h3>Remove or ban</h3>
             <p>Deletes password row, removes mail storage, and blocklists the address (same as admin delete). <code>ban</code> accepts an optional reason as a second argument.</p>
-            <div class="code-block">maddy accounts delete user@example.com [--yes]
-maddy accounts ban user@example.com ["reason"] [--yes]</div>
+            <div class="code-block">madmail accounts delete user@example.com [--yes]
+madmail accounts ban user@example.com ["reason"] [--yes]</div>
         </div>
 
         <div class="cmd-info">
@@ -188,17 +188,17 @@ maddy accounts ban user@example.com ["reason"] [--yes]</div>
 
         <div class="cmd-info">
             <h3>Enable Call Server</h3>
-            <div class="code-block">maddy creds turn on</div>
+            <div class="code-block">madmail creds turn on</div>
         </div>
 
         <div class="cmd-info">
             <h3>Disable Call Server</h3>
-            <div class="code-block">maddy creds turn off</div>
+            <div class="code-block">madmail creds turn off</div>
         </div>
 
         <div class="cmd-info">
             <h3>View Current Status</h3>
-            <div class="code-block">maddy creds turn status</div>
+            <div class="code-block">madmail creds turn status</div>
         </div>
 
         <h2>Log Management (No-Log Policy)</h2>
@@ -207,17 +207,17 @@ maddy accounts ban user@example.com ["reason"] [--yes]</div>
         <div class="cmd-info">
             <h3>Disable Logging</h3>
             <p>For user privacy and to prevent storing activity information.</p>
-            <div class="code-block">maddy creds log disable</div>
+            <div class="code-block">madmail creds log disable</div>
         </div>
 
         <div class="cmd-info">
             <h3>Enable Logging</h3>
-            <div class="code-block">maddy creds log enable</div>
+            <div class="code-block">madmail creds log enable</div>
         </div>
 
         <div class="cmd-info">
             <h3>View Current Status</h3>
-            <div class="code-block">maddy creds log status</div>
+            <div class="code-block">madmail creds log status</div>
         </div>
 
         <h2>Website Language</h2>
@@ -225,19 +225,19 @@ maddy accounts ban user@example.com ["reason"] [--yes]</div>
 
         <div class="cmd-info">
             <h3>View Current Language</h3>
-            <div class="code-block">maddy language</div>
+            <div class="code-block">madmail language</div>
         </div>
 
         <div class="cmd-info">
             <h3>Set Language</h3>
             <p>Switch the website to a different language.</p>
-            <div class="code-block">maddy language set fa</div>
+            <div class="code-block">madmail language set fa</div>
         </div>
 
         <div class="cmd-info">
             <h3>Reset to Default</h3>
-            <p>Remove the database override and revert to the language configured in <code>maddy.conf</code>.</p>
-            <div class="code-block">maddy language reset</div>
+            <p>Remove the database override and revert to the language configured in <code>madmail.conf</code>.</p>
+            <div class="code-block">madmail language reset</div>
         </div>
 
         <h2>Port & Configuration Settings</h2>
@@ -266,9 +266,9 @@ maddy accounts ban user@example.com ["reason"] [--yes]</div>
         </div>
 
         <h2>Disabling Admin API</h2>
-        <p>The Admin API is enabled by default. To completely disable it via the configuration file for enhanced security, set the following option in <code>maddy.conf</code> under the <code>chatmail</code> section.</p>
+        <p>The Admin API is enabled by default. To completely disable it via the configuration file for enhanced security, set the following option in <code>madmail.conf</code> under the <code>chatmail</code> section.</p>
         <div class="cmd-info">
-            <h3>maddy.conf Setting</h3>
+            <h3>madmail.conf Setting</h3>
             <p>Set <code>admin_token</code> to <code>disabled</code>:</p>
             <div class="code-block">chatmail tls://0.0.0.0:443 {
     # ... other settings ...
@@ -276,7 +276,7 @@ maddy accounts ban user@example.com ["reason"] [--yes]</div>
     # Disable the admin API entirely:
     admin_token disabled
 }</div>
-            <p>After saving the file, restart the maddy service. This will disable all web admin panel and Admin API functionality.</p>
+            <p>After saving the file, restart the madmail service. This will disable all web admin panel and Admin API functionality.</p>
         </div>
 
         <h2>DNS Cache & Address Rewriting</h2>
@@ -285,34 +285,34 @@ maddy accounts ban user@example.com ["reason"] [--yes]</div>
         <div class="cmd-info">
             <h3>View All Rewrites</h3>
             <p>Display all DNS rewrite rules stored in the database.</p>
-            <div class="code-block">maddy dns-cache list</div>
+            <div class="code-block">madmail dns-cache list</div>
         </div>
 
         <div class="cmd-info">
             <h3>Create or Edit Rewrite</h3>
             <p>Set a DNS rewrite rule. If a rule already exists for this address, it will be updated.</p>
-            <div class="code-block">maddy dns-cache set LOOKUP_KEY TARGET_HOST [COMMENT]</div>
+            <div class="code-block">madmail dns-cache set LOOKUP_KEY TARGET_HOST [COMMENT]</div>
             <p><strong>Examples:</strong></p>
             <div class="code-block"># Route domain emails to internal server
-maddy dns-cache set nine.testrun.org 10.0.0.5 "Route to staging"
+madmail dns-cache set nine.testrun.org 10.0.0.5 "Route to staging"
 
 # Rewrite IP address
-maddy dns-cache set 1.1.1.1 2.2.2.2 "Redirect IP"
+madmail dns-cache set 1.1.1.1 2.2.2.2 "Redirect IP"
 
 # Route to new server during migration
-maddy dns-cache set example.com new-mx.example.com "Migration"</div>
+madmail dns-cache set example.com new-mx.example.com "Migration"</div>
         </div>
 
         <div class="cmd-info">
             <h3>View Specific Rewrite</h3>
             <p>Display details of a DNS rewrite rule including source address, target, comments, and creation time.</p>
-            <div class="code-block">maddy dns-cache get nine.testrun.org</div>
+            <div class="code-block">madmail dns-cache get nine.testrun.org</div>
         </div>
 
         <div class="cmd-info">
             <h3>Delete Rewrite</h3>
             <p>Remove a DNS rewrite rule. After removal, emails will be routed through normal OS DNS.</p>
-            <div class="code-block">maddy dns-cache remove nine.testrun.org</div>
+            <div class="code-block">madmail dns-cache remove nine.testrun.org</div>
         </div>
 
         <div class="cmd-info">
@@ -330,16 +330,16 @@ maddy dns-cache set example.com new-mx.example.com "Migration"</div>
         <div class="cmd-info">
             <h3>View Overall Statistics</h3>
             <p>Display total storage used on the server and the number of active user accounts.</p>
-            <div class="code-block">maddy imap-acct stat</div>
+            <div class="code-block">madmail imap-acct stat</div>
         </div>
 
         <h2>Online Connection Monitoring</h2>
-        <p>The <code>maddy status</code> command shows the real-time server status. This includes active IMAP connections, TURN relays (voice/video calls), Shadowsocks, registered users, and uptime.</p>
+        <p>The <code>madmail status</code> command shows the real-time server status. This includes active IMAP connections, TURN relays (voice/video calls), Shadowsocks, registered users, and uptime.</p>
 
         <div class="cmd-info">
             <h3>View Active Connections</h3>
             <p>Display server status summary including active connections, registered users, boot time, and uptime.</p>
-            <div class="code-block">maddy status</div>
+            <div class="code-block">madmail status</div>
             <p>Sample output:</p>
             <pre class="code-block">IMAP            connections: 27     unique IPs: 7
 TURN            relays: 1
@@ -357,7 +357,7 @@ Email servers seen (since last restart):
         <div class="cmd-info">
             <h3>View Details by Port</h3>
             <p>Use the <code>--details</code> (or <code>-d</code>) flag to see connection details broken down by port.</p>
-            <div class="code-block">maddy status --details</div>
+            <div class="code-block">madmail status --details</div>
             <p>Sample output:</p>
             <pre class="code-block">PORT   PROTO   TYPE              CONNECTIONS   UNIQUE IPs
 993    tcp     IMAP TLS          25            7

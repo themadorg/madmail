@@ -48,9 +48,21 @@
 
 ### "No-Log" is not working (still seeing INFO logs)
 
-- The decision is made very early in `boot.rs` based on the static config `log_target`.
-- `maddy_log_off(None)` and `should_disable_logging` are the key functions.
-- `debug true` in the config forces some INFO lines even in No-Log mode.
+- The decision is made very early in `boot.rs` based on the static config `log` / `debug` lines.
+- `maddy_log_off`, `logging_enabled`, and `should_disable_logging` in `logging.rs` are the key functions.
+- `debug true` / `yes` / `1` / `enable` in the config **overrides** No-Log (stderr + `debug` filter).
+- Check you did not set `log stderr` or `log /path/to/file` while expecting silence.
+
+### Enable operator logs (opt-in)
+
+```conf
+log stderr
+# or: log /var/lib/madmail/madmail.log
+# or: log stderr /var/lib/madmail/madmail.log
+debug True   # optional: verbose; also accepts true/yes/1/enable
+```
+
+Restart required after changing static `log` / `debug`.
 
 ## Database Inspection Cheat Sheet
 
@@ -73,11 +85,12 @@ SELECT * FROM registration_tokens;
 
 ## Log Levels & Noise
 
-- Normal production: almost nothing (No-Log).
-- `debug true` in config + `RUST_LOG=info` → reasonable server chatter.
-- `RUST_LOG=chatmail=trace` → extremely verbose (protocol frames, every DB query, etc.). Use sparingly.
+- Normal production: almost nothing (No-Log — `log off` or omit `log`).
+- `log stderr` without `debug` → filter defaults to `warn` (or `RUST_LOG` if set).
+- `debug true` in config → filter `debug` (overrides No-Log; stderr if no log target).
+- `RUST_LOG=chatmail=trace` → extremely verbose when logging is enabled. Use sparingly.
 
-The `logging.rs` module has the reloadable `tracing` subscriber and the special `NopOutput` backend for No-Log.
+The `logging.rs` module owns the reloadable `tracing` subscriber, No-Log filter, and maddy-compatible log destinations (stderr and/or file).
 
 ## The Full Testing Story (Pyramid)
 

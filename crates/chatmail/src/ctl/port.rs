@@ -34,6 +34,8 @@ struct PortSpec {
     port_key: &'static str,
     default_port: &'static str,
     local_keys: &'static [&'static str],
+    /// `__HTTP_ENABLED__` / `__HTTPS_ENABLED__` (HTTP/HTTPS only).
+    enabled_key: Option<&'static str>,
 }
 
 const PORT_SPECS: &[PortSpec] = &[
@@ -43,6 +45,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::SMTP_PORT,
         default_port: "25",
         local_keys: &[settings_keys::SMTP_LOCAL_ONLY],
+        enabled_key: None,
     },
     PortSpec {
         name: "submission",
@@ -50,6 +53,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::SUBMISSION_PORT,
         default_port: "587",
         local_keys: &[settings_keys::SUBMISSION_LOCAL_ONLY],
+        enabled_key: None,
     },
     PortSpec {
         name: "submission-tls",
@@ -57,6 +61,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::SUBMISSION_TLS_PORT,
         default_port: "465",
         local_keys: &[settings_keys::SUBMISSION_TLS_LOCAL_ONLY],
+        enabled_key: None,
     },
     PortSpec {
         name: "imap",
@@ -64,6 +69,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::IMAP_PORT,
         default_port: "143",
         local_keys: &[settings_keys::IMAP_LOCAL_ONLY],
+        enabled_key: None,
     },
     PortSpec {
         name: "imap-tls",
@@ -71,6 +77,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::IMAP_TLS_PORT,
         default_port: "993",
         local_keys: &[settings_keys::IMAP_TLS_LOCAL_ONLY],
+        enabled_key: None,
     },
     PortSpec {
         name: "turn",
@@ -78,6 +85,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::TURN_PORT,
         default_port: "3478",
         local_keys: &[settings_keys::TURN_LOCAL_ONLY],
+        enabled_key: None,
     },
     PortSpec {
         name: "sasl",
@@ -85,6 +93,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::SASL_PORT,
         default_port: "24",
         local_keys: &[settings_keys::SASL_LOCAL_ONLY],
+        enabled_key: None,
     },
     PortSpec {
         name: "iroh",
@@ -92,6 +101,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::IROH_PORT,
         default_port: "3340",
         local_keys: &[settings_keys::IROH_LOCAL_ONLY],
+        enabled_key: None,
     },
     PortSpec {
         name: "shadowsocks",
@@ -99,6 +109,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::SS_PORT,
         default_port: "8388",
         local_keys: &[],
+        enabled_key: None,
     },
     PortSpec {
         name: "http",
@@ -106,6 +117,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::HTTP_PORT,
         default_port: "80",
         local_keys: &[settings_keys::HTTP_LOCAL_ONLY],
+        enabled_key: Some(settings_keys::HTTP_ENABLED),
     },
     PortSpec {
         name: "https",
@@ -113,6 +125,7 @@ const PORT_SPECS: &[PortSpec] = &[
         port_key: settings_keys::HTTPS_PORT,
         default_port: "443",
         local_keys: &[settings_keys::HTTPS_LOCAL_ONLY],
+        enabled_key: Some(settings_keys::HTTPS_ENABLED),
     },
 ];
 
@@ -121,6 +134,8 @@ struct PortServiceStatus {
     name: &'static str,
     port: String,
     mode: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enabled: Option<bool>,
 }
 
 pub async fn port(args: &Args, cmd: &PortCommand) -> Result<()> {
@@ -157,6 +172,7 @@ fn port_status_all(args: &Args, settings: &HashMap<String, String>) -> Result<()
                 name: spec.name,
                 port: service_port_value(settings, spec),
                 mode: service_mode(settings, spec),
+                enabled: service_enabled(settings, spec),
             })
             .collect();
         return out.emit(serde_json::json!({ "services": services }));
@@ -165,10 +181,14 @@ fn port_status_all(args: &Args, settings: &HashMap<String, String>) -> Result<()
     for spec in PORT_SPECS {
         let mode = service_mode(settings, spec);
         let port = service_port_display(settings, spec);
-        out.line(format!(
+        let mut line = format!(
             "  {:<24} port={port} mode={mode}",
             format!("{}:", spec.display)
-        ));
+        );
+        if let Some(on) = service_enabled(settings, spec) {
+            line.push_str(&format!(" enabled={}", if on { "yes" } else { "no" }));
+        }
+        out.line(line);
     }
     out.blank();
     out.line("  Note: restart service after changes.");
@@ -186,12 +206,17 @@ async fn port_service(
     let out = CtlOut::from_args(args, "port");
     match cmd {
         PortServiceCommand::Status => {
+            let enabled = service_enabled(settings, spec);
             if out.is_json() {
-                out.emit(serde_json::json!({
+                let mut data = serde_json::json!({
                     "name": spec.name,
                     "port": service_port_value(settings, spec),
                     "mode": service_mode(settings, spec),
-                }))
+                });
+                if let Some(on) = enabled {
+                    data["enabled"] = serde_json::json!(on);
+                }
+                out.emit(data)
             } else {
                 out.blank();
                 out.line(format!("  {}:", spec.display));
@@ -200,6 +225,9 @@ async fn port_service(
                     service_port_display(settings, spec)
                 ));
                 out.line(format!("    mode: {}", service_mode(settings, spec)));
+                if let Some(on) = enabled {
+                    out.line(format!("    enabled: {}", if on { "yes" } else { "no" }));
+                }
                 out.blank();
                 Ok(())
             }
@@ -236,6 +264,8 @@ async fn port_service(
         }
         PortServiceCommand::Local => set_mode(out, pool, spec, "local").await,
         PortServiceCommand::Public => set_mode(out, pool, spec, "public").await,
+        PortServiceCommand::Enable => set_listener_enabled(out, pool, spec, true).await,
+        PortServiceCommand::Disable => set_listener_enabled(out, pool, spec, false).await,
     }
 }
 
@@ -290,6 +320,40 @@ fn service_port_display(settings: &HashMap<String, String>, spec: &PortSpec) -> 
     }
 }
 
+async fn set_listener_enabled(
+    out: CtlOut,
+    pool: &chatmail_db::DbPool,
+    spec: &PortSpec,
+    on: bool,
+) -> Result<()> {
+    let key = spec.enabled_key.ok_or_else(|| {
+        ChatmailError::config(format!("{} does not support enable/disable", spec.display))
+    })?;
+    set_setting(pool, key, if on { "true" } else { "false" }).await?;
+    let verb = if on { "enabled" } else { "disabled" };
+    out.done_msg(
+        format!(
+            "✅ {} {verb} (restart required — run: madmail reload)",
+            spec.display
+        ),
+        serde_json::json!({
+            "name": spec.name,
+            "enabled": on,
+            "reload_required": true,
+        }),
+        format!("{} {verb}", spec.name),
+    )
+}
+
+fn service_enabled(settings: &HashMap<String, String>, spec: &PortSpec) -> Option<bool> {
+    spec.enabled_key.map(|key| {
+        settings
+            .get(key)
+            .map(|v| !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(true)
+    })
+}
+
 fn service_mode(settings: &HashMap<String, String>, spec: &PortSpec) -> &'static str {
     if spec.local_keys.is_empty() {
         return "n/a";
@@ -297,7 +361,7 @@ fn service_mode(settings: &HashMap<String, String>, spec: &PortSpec) -> &'static
     for key in spec.local_keys {
         if settings
             .get(*key)
-            .map(|v| v.eq_ignore_ascii_case("true"))
+            .map(|v| chatmail_config::parse_bool_str(v))
             .unwrap_or(false)
         {
             return "local";

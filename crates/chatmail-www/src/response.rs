@@ -1,21 +1,8 @@
 // Copyright (C) 2026 themadorg
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-//
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Shared JSON + CORS helpers for WebIMAP / WebSMTP.
+//! Shared JSON + CORS helpers for WebIMAP / WebSMTP / `POST /new`.
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -23,33 +10,34 @@ use axum::Json;
 use serde::Serialize;
 use serde_json::json;
 
-pub fn set_cors(headers: &mut axum::http::HeaderMap) {
-    headers.insert("Access-Control-Allow-Origin", "*".parse().unwrap());
-    headers.insert(
-        "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS".parse().unwrap(),
-    );
-    headers.insert(
-        "Access-Control-Allow-Headers",
-        "Content-Type, X-Email, X-Password".parse().unwrap(),
-    );
-}
+use crate::cors::{apply_cors, resolve_allow, CorsSnap};
 
-pub fn json_ok<T: Serialize>(status: StatusCode, value: &T) -> Response {
+pub fn json_ok<T: Serialize>(status: StatusCode, value: &T, cors: &CorsSnap) -> Response {
     let mut resp = (status, Json(value)).into_response();
-    set_cors(resp.headers_mut());
+    apply_cors(resp.headers_mut(), resolve_allow(cors));
     resp
 }
 
-pub fn json_err(status: StatusCode, message: &str) -> Response {
+pub fn json_err(status: StatusCode, message: &str, cors: &CorsSnap) -> Response {
     let mut resp = (status, Json(json!({ "error": message }))).into_response();
-    set_cors(resp.headers_mut());
+    apply_cors(resp.headers_mut(), resolve_allow(cors));
     resp
 }
 
-pub fn options_preflight() -> Response {
-    let mut resp = StatusCode::NO_CONTENT.into_response();
-    set_cors(resp.headers_mut());
+pub fn options_preflight(cors: &CorsSnap) -> Response {
+    let allow = resolve_allow(cors);
+    let status = if allow.is_some() {
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::FORBIDDEN
+    };
+    let mut resp = status.into_response();
+    apply_cors(resp.headers_mut(), allow);
+    resp
+}
+
+pub fn with_cors(mut resp: Response, cors: &CorsSnap) -> Response {
+    apply_cors(resp.headers_mut(), resolve_allow(cors));
     resp
 }
 
@@ -60,6 +48,15 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::cors::CorsSnap;
+
+    fn snap_with_star() -> CorsSnap {
+        CorsSnap {
+            allowed: vec!["*".into()],
+            request_origin: Some("http://localhost:5173".into()),
+            auto_reflect_origin: false,
+        }
+    }
 
     fn cors_origin(resp: &Response) -> &HeaderValue {
         resp.headers()
@@ -69,7 +66,8 @@ mod tests {
 
     #[tokio::test]
     async fn json_ok_includes_cors_and_body() {
-        let resp = json_ok(StatusCode::OK, &json!({"ok": true}));
+        let cors = snap_with_star();
+        let resp = json_ok(StatusCode::OK, &json!({"ok": true}), &cors);
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(cors_origin(&resp), "*");
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
@@ -78,7 +76,8 @@ mod tests {
 
     #[tokio::test]
     async fn json_err_includes_cors_and_error_field() {
-        let resp = json_err(StatusCode::BAD_REQUEST, "bad input");
+        let cors = snap_with_star();
+        let resp = json_err(StatusCode::BAD_REQUEST, "bad input", &cors);
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         assert_eq!(cors_origin(&resp), "*");
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
@@ -87,9 +86,36 @@ mod tests {
 
     #[tokio::test]
     async fn options_preflight_is_no_content_with_cors() {
-        let resp = options_preflight();
+        let cors = snap_with_star();
+        let resp = options_preflight(&cors);
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
         assert_eq!(cors_origin(&resp), "*");
         assert!(resp.headers().get("Access-Control-Allow-Methods").is_some());
+    }
+
+    #[tokio::test]
+    async fn options_preflight_forbidden_without_allowed_origin() {
+        let cors = CorsSnap {
+            allowed: vec!["http://127.0.0.1:5173".into()],
+            request_origin: Some("http://evil.test".into()),
+            auto_reflect_origin: false,
+        };
+        let resp = options_preflight(&cors);
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert!(resp.headers().get("Access-Control-Allow-Origin").is_none());
+    }
+
+    #[tokio::test]
+    async fn json_ok_reflects_allowed_origin() {
+        let cors = CorsSnap {
+            allowed: vec!["http://127.0.0.1:5173".into()],
+            request_origin: Some("http://127.0.0.1:5173".into()),
+            auto_reflect_origin: false,
+        };
+        let resp = json_ok(StatusCode::OK, &json!({}), &cors);
+        assert_eq!(
+            cors_origin(&resp),
+            HeaderValue::from_static("http://127.0.0.1:5173")
+        );
     }
 }

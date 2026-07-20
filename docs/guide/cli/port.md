@@ -25,7 +25,7 @@ madmail port <status|SERVICE>
 
 ## Per-service subcommands
 
-Each service supports: `status`, `set <PORT>`, `reset`, `local`, `public`.
+Each service supports: `status`, `set <PORT>`, `reset`, `local`, `public`. HTTP and HTTPS also support `enable` and `disable`.
 
 | Service | CLI name |
 |---------|----------|

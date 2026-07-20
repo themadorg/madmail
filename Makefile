@@ -7,7 +7,7 @@
 	test test-unit test-integration test-e2e test-maintenance test-imap test-turn test-docker-turn-e2e test-core-turn test-deltachat test-deltachat-cmlxc test-mini-cmlxc test-full-cmlxc test-cmlxc-fullrun test-cmlxc-fullrun-madmail _test-cmlxc-prereqs test-dclogin relay-ping-build relay-ping-clean t1-bench t1-report-demo \
 	check vet lint fmt fmt-check cov run run-bg run-debug restart stop logs reset-db dev-certs clean help \
 	sign push push1 push2 log1 log2 push-signed publish init-publish build-publish \
-	man man-lint man-check
+	man man-lint man-check incus-up incus-down docker-up docker-down
 
 # Optional overrides (copy .env.example → .env; publish merges context/madmail/.env into .env)
 -include .env
@@ -42,6 +42,11 @@ ADMIN_WEB_DIR    ?= external/madmail-admin-web
 CMLXC_DIR        ?= tests/cmlxc
 ADMIN_WEB_BUILD  := $(ADMIN_WEB_DIR)/build
 LANDING_DIR      ?= landing
+# Local Incus/Docker deploy scripts (tests/*-deploy-script.sh); state under ./data/.
+INCUS_DEPLOY_SCRIPT ?= tests/incus-deploy-script.sh
+DOCKER_DEPLOY_SCRIPT ?= tests/docker-deploy-script.sh
+INCUS_ARGS       ?=
+DOCKER_ARGS      ?=
 
 # scripts/publish.sh flags (e.g. --no-github-release). Not the `init` target — use `make init publish`.
 PUBLISH_ARGS ?=
@@ -190,6 +195,14 @@ lint: fmt-check check
 	cargo clippy --workspace --all-targets -- -D warnings
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
+# RustSec advisory scan of Cargo.lock (install: cargo install cargo-audit)
+audit:
+	@command -v cargo-audit >/dev/null || { \
+		echo "cargo-audit not found. Install with: cargo install cargo-audit --locked"; \
+		exit 1; \
+	}
+	cargo audit
+
 fmt:
 	cargo fmt --all
 
@@ -292,6 +305,30 @@ test-cmlxc-fullrun-madmail: _test-cmlxc-prereqs
 
 # Alias for test-deltachat-cmlxc (same Incus + cmlxc harness).
 test-deltachat: test-deltachat-cmlxc
+
+# Local Incus madmail relay (release binary, state in data/incus-vm).
+# Rebuild: make incus-up INCUS_ARGS='--rebuild'
+# Admin UI: make incus-up INCUS_ARGS='--with-webadmin'
+incus-up:
+	@command -v incus >/dev/null || (echo "incus-up needs incus on PATH"; exit 1)
+	@chmod +x $(INCUS_DEPLOY_SCRIPT)
+	$(INCUS_DEPLOY_SCRIPT) $(INCUS_ARGS)
+
+incus-down:
+	@chmod +x $(INCUS_DEPLOY_SCRIPT)
+	$(INCUS_DEPLOY_SCRIPT) --purge
+
+# Local Docker madmail relay (image from Dockerfile, state in data/docker-vm).
+# Rebuild: make docker-up DOCKER_ARGS='--rebuild'
+# Admin UI: make docker-up DOCKER_ARGS='--with-webadmin'
+docker-up:
+	@command -v docker >/dev/null || (echo "docker-up needs docker on PATH"; exit 1)
+	@chmod +x $(DOCKER_DEPLOY_SCRIPT)
+	$(DOCKER_DEPLOY_SCRIPT) $(DOCKER_ARGS)
+
+docker-down:
+	@chmod +x $(DOCKER_DEPLOY_SCRIPT)
+	$(DOCKER_DEPLOY_SCRIPT) --purge
 
 test: test-unit
 
@@ -448,6 +485,10 @@ relay-ping-build:
 relay-ping-clean:
 	$(MAKE) -C $(RELAY_PING_DIR) clean
 
+relay-ping-2x1k: relay-ping-build
+	@chmod +x tests/relay-ping-2x1k.sh
+	./tests/relay-ping-2x1k.sh
+
 # ── Clean ────────────────────────────────────────────────────────────────────
 clean: relay-ping-clean
 	cargo clean
@@ -481,6 +522,8 @@ help:
 	@echo "Run:       run, restart, dev-certs, dev-bind-cap (Linux <1024 ports), reset-db, install, preview-landing"
 	@echo "Admin UI:  edit $(ADMIN_WEB_DIR) → make build-with-admin-web → make restart"
 	@echo "Deploy:    push, push1 (unsigned), push2 (static+sign+upgrade), push-signed, sign (scripts/sign.sh), log1, log2 (scripts/deploy.sh)"
+	@echo "Incus:     incus-up (data/incus-vm), incus-down (purge container + volume + data); INCUS_ARGS='--rebuild|--with-webadmin'"
+	@echo "Docker:    docker-up (data/docker-vm), docker-down (purge container + image + data); DOCKER_ARGS='--rebuild|--with-webadmin'"
 	@echo "Test:      test, test-unit, test-e2e, test-maintenance, test-integration, test-imap, test-turn, test-docker-turn-e2e, test-full-cmlxc (madmail-v2), test-cmlxc-fullrun (cmdeploy+madmail-v2 fullrun), test-cmlxc-fullrun-madmail, test-deltachat-cmlxc, test-mini-cmlxc, test-dclogin"
 	@echo "Quality:   check, lint, fmt, fmt-check, cov (unit-test coverage + browser), man, man-lint, man-check"
 	@echo "relay-ping: relay-ping-build (in $(RELAY_PING_DIR))"

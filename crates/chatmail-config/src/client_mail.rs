@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use crate::AppConfig;
 
 /// Admin DB overrides for listener ports and dclogin security (`__SMTP_PORT__`, …).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DbMailPorts {
     pub smtp_port: Option<String>,
     pub submission_port: Option<String>,
@@ -33,6 +33,28 @@ pub struct DbMailPorts {
     pub dclogin_smtp_security: Option<String>,
     pub http_port: Option<String>,
     pub https_port: Option<String>,
+    /// Admin `__HTTP_ENABLED__` (default on when unset).
+    pub http_enabled: bool,
+    /// Admin `__HTTPS_ENABLED__` (default on when unset).
+    pub https_enabled: bool,
+}
+
+impl Default for DbMailPorts {
+    fn default() -> Self {
+        Self {
+            smtp_port: None,
+            submission_port: None,
+            submission_tls_port: None,
+            imap_port: None,
+            imap_tls_port: None,
+            dclogin_imap_security: None,
+            dclogin_smtp_security: None,
+            http_port: None,
+            https_port: None,
+            http_enabled: true,
+            https_enabled: true,
+        }
+    }
 }
 
 /// Addresses the running process actually bound (from supervisor).
@@ -335,6 +357,9 @@ pub fn effective_imap_listen(config: &AppConfig, db: &DbMailPorts) -> String {
 
 /// Plain HTTP (`chatmail tcp://…` / `__HTTP_PORT__`).
 pub fn effective_http_plain_listen(config: &AppConfig, db: &DbMailPorts) -> Option<String> {
+    if !db.http_enabled {
+        return None;
+    }
     if let Ok(addr) = std::env::var("CHATMAIL_HTTP_ADDR") {
         if !addr.is_empty() {
             return Some(addr);
@@ -369,6 +394,9 @@ pub fn effective_http_plain_listen(config: &AppConfig, db: &DbMailPorts) -> Opti
 
 /// HTTPS (`chatmail tls://…` / `__HTTPS_PORT__`).
 pub fn effective_http_tls_listen(config: &AppConfig, db: &DbMailPorts) -> Option<String> {
+    if !db.https_enabled {
+        return None;
+    }
     if std::env::var("CHATMAIL_HTTP_ADDR")
         .ok()
         .is_some_and(|s| !s.is_empty())
@@ -795,5 +823,31 @@ mod tests {
         };
         let s = DcloginMailSettings::from_config_with_db(&cfg, None, &db);
         assert_eq!(s.dclogin_smtp_security, "plain");
+    }
+
+    #[test]
+    fn admin_http_disable_skips_plain_listener() {
+        let cfg = AppConfig {
+            http_listen: Some("0.0.0.0:8080".into()),
+            ..Default::default()
+        };
+        let db = DbMailPorts {
+            http_enabled: false,
+            ..Default::default()
+        };
+        assert!(effective_http_plain_listen(&cfg, &db).is_none());
+    }
+
+    #[test]
+    fn admin_https_disable_skips_tls_listener() {
+        let cfg = AppConfig {
+            http_tls_listen: Some("0.0.0.0:443".into()),
+            ..Default::default()
+        };
+        let db = DbMailPorts {
+            https_enabled: false,
+            ..Default::default()
+        };
+        assert!(effective_http_tls_listen(&cfg, &db).is_none());
     }
 }

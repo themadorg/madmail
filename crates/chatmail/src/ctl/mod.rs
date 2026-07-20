@@ -48,8 +48,9 @@ mod sharing;
 mod status_cmd;
 mod tasks;
 mod uninstall;
-mod util;
+pub(crate) mod util;
 mod version;
+mod webmail_cors;
 
 #[cfg(test)]
 mod dispatch_tests;

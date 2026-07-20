@@ -167,4 +167,5 @@ chatmail tcp://0.0.0.0:8080 {
     auth_db local_authdb
     storage local_mailboxes
     admin_web_path /admin
+    enable_contact_sharing yes
 }

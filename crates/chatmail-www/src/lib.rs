@@ -16,9 +16,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 pub mod assets;
+mod contact_sharing;
 pub mod context_cache;
+pub mod cors;
 pub mod export;
 pub mod gate;
+mod go_template;
 pub mod handlers;
 pub mod response;
 pub mod router;
@@ -26,9 +29,15 @@ pub mod template;
 pub mod webimap;
 pub mod webimap_ws;
 mod www_facts;
+pub mod www_migrate;
 
 pub use export::export_www_files;
+pub use go_template::{looks_like_go_template, prepare_template};
 pub use router::{www_router, WwwState};
+pub use www_migrate::{
+    migrate_www_dir, migrate_www_html_file, scan_www_dir_for_go_templates, FileMigrateOutcome,
+    MigrateReport,
+};
 
 #[cfg(test)]
 mod tests;

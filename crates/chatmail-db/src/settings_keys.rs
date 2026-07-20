@@ -39,6 +39,8 @@ pub const HTTP_PROXY_ENABLED: &str = "__HTTP_PROXY_ENABLED__";
 pub const ADMIN_WEB_ENABLED: &str = "__ADMIN_WEB_ENABLED__";
 pub const WEBIMAP_ENABLED: &str = "__WEBIMAP_ENABLED__";
 pub const WEBSMTP_ENABLED: &str = "__WEBSMTP_ENABLED__";
+/// Comma/newline-separated browser origins allowed for WebIMAP/WebSMTP CORS (e.g. `http://127.0.0.1:5173`).
+pub const WEBMAIL_CORS_ORIGINS: &str = "__WEBMAIL_CORS_ORIGINS__";
 /// Delta Chat push (`XDELTAPUSH` + `notifications.delta.chat`) — `/admin/services/push`.
 pub const PUSH_ENABLED: &str = "__PUSH_ENABLED__";
 /// Push mode: `auto` (default), `on`, or `off` — `auto` disables after repeated proxy failures.
@@ -60,6 +62,10 @@ pub const SS_WS_PORT: &str = "__SS_WS_PORT__";
 pub const SS_GRPC_PORT: &str = "__SS_GRPC_PORT__";
 pub const HTTP_PORT: &str = "__HTTP_PORT__";
 pub const HTTPS_PORT: &str = "__HTTPS_PORT__";
+/// When `"false"`, plain HTTP listener is not started (default: enabled).
+pub const HTTP_ENABLED: &str = "__HTTP_ENABLED__";
+/// When `"false"`, HTTPS listener is not started (default: enabled).
+pub const HTTPS_ENABLED: &str = "__HTTPS_ENABLED__";
 pub const HTTP_PROXY_PORT: &str = "__HTTP_PROXY_PORT__";
 
 // ── Per-port access (local only when "true") ─────────────────────────────────

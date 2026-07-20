@@ -28,7 +28,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
-use tracing::debug;
+use tracing::{debug, info, warn};
 
 use crate::router::OutboundJob;
 
@@ -110,30 +110,56 @@ impl SmtpTransport {
     }
 }
 
-/// Deliver one message over SMTP, upgrading with STARTTLS when the peer advertises it.
-pub async fn deliver(host: &str, job: &OutboundJob) -> Result<(), String> {
+/// Deliver one message over SMTP.
+///
+/// Tries port 25 (optional STARTTLS) first, then port 443 implicit TLS — required for
+/// classic Chatmail relays (`nine.testrun.org`, etc.) that expose SMTP only on :443.
+///
+/// `helo_name` is this server's identity for EHLO (primary_domain / public IP), not the remote host.
+pub async fn deliver(host: &str, job: &OutboundJob, helo_name: &str) -> Result<(), String> {
     let connect_host = host.trim_matches(|c| c == '[' || c == ']');
+    let helo = if helo_name.trim().is_empty() {
+        connect_host
+    } else {
+        helo_name.trim().trim_matches(|c| c == '[' || c == ']')
+    };
     let rcpt_domain = job
         .rcpt_to
         .rsplit_once('@')
         .map(|(_, d)| d)
         .unwrap_or(connect_host);
-    deliver_to_endpoint(
-        &format!("{connect_host}:25"),
-        connect_host,
-        rcpt_domain,
-        job,
-    )
-    .await
+
+    let endpoint25 = format!("{connect_host}:25");
+    match deliver_plain_starttls(&endpoint25, connect_host, rcpt_domain, helo, job).await {
+        Ok(()) => {
+            info!(endpoint = %endpoint25, rcpt = %job.rcpt_to, "federation: SMTP delivery ok (port 25)");
+            return Ok(());
+        }
+        Err(e25) => {
+            warn!(
+                endpoint = %endpoint25,
+                rcpt = %job.rcpt_to,
+                error = %e25,
+                "federation: SMTP :25 failed, trying implicit TLS :443"
+            );
+        }
+    }
+
+    let endpoint443 = format!("{connect_host}:443");
+    deliver_implicit_tls(&endpoint443, connect_host, rcpt_domain, helo, job)
+        .await
+        .map_err(|e443| format!("smtp :25 failed; smtp :443 tls: {e443}"))
 }
 
-async fn deliver_to_endpoint(
+/// Plain SMTP on :25 with optional STARTTLS (RFC 3207).
+async fn deliver_plain_starttls(
     endpoint: &str,
     connect_host: &str,
     rcpt_domain: &str,
+    helo_name: &str,
     job: &OutboundJob,
 ) -> Result<(), String> {
-    debug!(endpoint, "federation: SMTP connect");
+    debug!(endpoint, "federation: SMTP plain connect");
 
     let stream = tokio::time::timeout(Duration::from_secs(30), TcpStream::connect(endpoint))
         .await
@@ -141,12 +167,9 @@ async fn deliver_to_endpoint(
         .map_err(|e| format!("smtp connect: {e}"))?;
 
     let mut transport = SmtpTransport::Plain(stream);
-
     read_smtp_reply(&mut transport, 220).await?;
 
-    transport
-        .write_all(format!("EHLO {connect_host}\r\n"))
-        .await?;
+    transport.write_all(format!("EHLO {helo_name}\r\n")).await?;
     let ehlo_plain = read_smtp_reply(&mut transport, 250).await?;
 
     if ehlo_advertises_starttls(&ehlo_plain) {
@@ -167,35 +190,85 @@ async fn deliver_to_endpoint(
         .map_err(|e| format!("smtp starttls: {e}"))?;
 
         transport = SmtpTransport::Tls(Box::new(tls_stream));
-        transport
-            .write_all(format!("EHLO {connect_host}\r\n"))
-            .await?;
+        transport.write_all(format!("EHLO {helo_name}\r\n")).await?;
         read_smtp_reply(&mut transport, 250).await?;
     }
 
+    run_smtp_transaction(&mut transport, job).await
+}
+
+/// Implicit TLS on :443 (Chatmail / Delta Chat relay SMTP submission style).
+async fn deliver_implicit_tls(
+    endpoint: &str,
+    connect_host: &str,
+    rcpt_domain: &str,
+    helo_name: &str,
+    job: &OutboundJob,
+) -> Result<(), String> {
+    info!(endpoint, rcpt = %job.rcpt_to, "federation: SMTP implicit TLS connect");
+
+    let stream = tokio::time::timeout(Duration::from_secs(30), TcpStream::connect(endpoint))
+        .await
+        .map_err(|_| "smtp tls connect timeout".to_string())?
+        .map_err(|e| format!("smtp tls connect: {e}"))?;
+
+    let server_name = smtp_tls_server_name(connect_host, rcpt_domain)?;
+    let tls_stream = tokio::time::timeout(
+        Duration::from_secs(30),
+        federation_smtp_tls_connector().connect(server_name, stream),
+    )
+    .await
+    .map_err(|_| "smtp tls handshake timeout".to_string())?
+    .map_err(|e| format!("smtp tls handshake: {e}"))?;
+
+    let mut transport = SmtpTransport::Tls(Box::new(tls_stream));
+    read_smtp_reply(&mut transport, 220).await?;
+    transport.write_all(format!("EHLO {helo_name}\r\n")).await?;
+    read_smtp_reply(&mut transport, 250).await?;
+
+    run_smtp_transaction(&mut transport, job).await?;
+    info!(endpoint, rcpt = %job.rcpt_to, "federation: SMTP delivery ok (port 443 TLS)");
+    Ok(())
+}
+
+async fn run_smtp_transaction(
+    transport: &mut SmtpTransport,
+    job: &OutboundJob,
+) -> Result<(), String> {
     transport
         .write_all(format!("MAIL FROM:<{}>\r\n", job.mail_from))
         .await?;
-    read_smtp_reply(&mut transport, 250).await?;
+    read_smtp_reply(transport, 250).await?;
 
     transport
         .write_all(format!("RCPT TO:<{}>\r\n", job.rcpt_to))
         .await?;
-    read_smtp_reply(&mut transport, 250).await?;
+    read_smtp_reply(transport, 250).await?;
 
     transport.write_all(b"DATA\r\n").await?;
-    read_smtp_reply(&mut transport, 354).await?;
+    read_smtp_reply(transport, 354).await?;
 
     transport.write_all(&job.data).await?;
     if !job.data.ends_with(b"\r\n") {
         transport.write_all(b"\r\n").await?;
     }
     transport.write_all(b".\r\n").await?;
-    read_smtp_reply(&mut transport, 250).await?;
+    read_smtp_reply(transport, 250).await?;
 
     transport.write_all(b"QUIT\r\n").await?;
-    let _ = read_smtp_reply(&mut transport, 221).await;
+    let _ = read_smtp_reply(transport, 221).await;
     Ok(())
+}
+
+/// Legacy name used by unit tests.
+#[cfg(test)]
+async fn deliver_to_endpoint(
+    endpoint: &str,
+    connect_host: &str,
+    rcpt_domain: &str,
+    job: &OutboundJob,
+) -> Result<(), String> {
+    deliver_plain_starttls(endpoint, connect_host, rcpt_domain, connect_host, job).await
 }
 
 fn smtp_tls_server_name(

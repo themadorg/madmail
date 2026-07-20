@@ -278,8 +278,8 @@
         <div class="mode-card">
             <h3>🏆 حالت autocert <span class="badge badge-recommended">پیشنهادی</span></h3>
             <div class="code-container">
-                <div class="code-header">نصب (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">نصب (Madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode autocert \
   --acme-email admin@example.org \
@@ -291,17 +291,17 @@
                 <li>Madmail یک سرور HTTP روی پورت ۸۰ برای چالش ACME راه‌اندازی می‌کند</li>
                 <li>Let's Encrypt با ارسال درخواست به پورت ۸۰، مالکیت دامنه را تأیید می‌کند</li>
                 <li>گواهینامه صادر می‌شود (اعتبار ۹۰ روز، تمدید خودکار)</li>
-                <li>گواهینامه‌ها در <code>/var/lib/maddy/autocert/</code> ذخیره می‌شوند</li>
+                <li>گواهینامه‌ها در <code>/var/lib/madmail/autocert/</code> ذخیره می‌شوند</li>
             </ol>
 
-            <p>در فایل تنظیمات (maddy.conf):</p>
+            <p>در فایل تنظیمات (madmail.conf):</p>
             <div class="code-container">
-                <div class="code-header">maddy.conf</div>
+                <div class="code-header">madmail.conf</div>
                 <pre class="code-box">tls {
     loader autocert {
         hostname chat.example.org
         email admin@example.org
-        cache_dir /var/lib/maddy/autocert
+        cache_dir /var/lib/madmail/autocert
         agreed
     }
 }</pre>
@@ -311,8 +311,8 @@
         <div class="mode-card">
             <h3>🔐 حالت acme (DNS-01) <span class="badge badge-advanced">پیشرفته</span></h3>
             <div class="code-container">
-                <div class="code-header">نصب (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">نصب (madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode acme \
   --acme-email admin@example.org \
@@ -328,8 +328,8 @@
         <div class="mode-card">
             <h3>📄 حالت file (گواهینامه موجود)</h3>
             <div class="code-container">
-                <div class="code-header">نصب (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">نصب (Madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode file \
   --cert-path /etc/letsencrypt/live/chat.example.org/fullchain.pem \
@@ -341,21 +341,21 @@
             <div class="code-box">tls file /path/to/fullchain.pem /path/to/privkey.pem</div>
 
             <div class="tip-box">
-                <strong>تمدید:</strong> یک hook در certbot تنظیم کنید تا بعد از تمدید، maddy ریستارت شود:
-                <div class="code-box" style="margin-top: 5px;">systemctl restart maddy</div>
+                <strong>تمدید:</strong> یک hook در certbot تنظیم کنید تا بعد از تمدید، madmail ریستارت شود:
+                <div class="code-box" style="margin-top: 5px;">systemctl restart madmail</div>
             </div>
         </div>
 
         <div class="mode-card">
             <h3>🧪 حالت self_signed (تست)</h3>
             <div class="code-container">
-                <div class="code-header">نصب (Maddy Install)</div>
-                <pre class="code-box">sudo maddy install \
+                <div class="code-header">نصب (Madmail Install)</div>
+                <pre class="code-box">sudo madmail install \
   --simple --ip YOUR_SERVER_IP \
   --tls-mode self_signed \
   --turn-off-tls</pre>
             </div>
-            <p>گواهینامه‌ها در <code>/var/lib/maddy/certs/</code> ذخیره و در ری‌استارت بعدی مجدد استفاده می‌شوند.</p>
+            <p>گواهینامه‌ها در <code>/var/lib/madmail/certs/</code> ذخیره و در ری‌استارت بعدی مجدد استفاده می‌شوند.</p>
         </div>
 
         <h2>مرحله ۳: بررسی گواهینامه</h2>
@@ -374,12 +374,12 @@
         <h3>از self_signed به autocert</h3>
         <div class="code-container">
             <div class="code-header">حذف گواهینامه‌های قدیمی</div>
-            <pre class="code-box">sudo rm /var/lib/maddy/certs/fullchain.pem /var/lib/maddy/certs/privkey.pem</pre>
+            <pre class="code-box">sudo rm /var/lib/madmail/certs/fullchain.pem /var/lib/madmail/certs/privkey.pem</pre>
         </div>
 
         <div class="code-container">
             <div class="code-header">نصب مجدد با autocert</div>
-            <pre class="code-box">sudo maddy install \
+            <pre class="code-box">sudo madmail install \
   --domain chat.example.org \
   --tls-mode autocert \
   --acme-email admin@example.org \
@@ -389,7 +389,7 @@
 
         <div class="code-container">
             <div class="code-header">اجرای نهایی</div>
-            <pre class="code-box">sudo systemctl restart maddy</pre>
+            <pre class="code-box">sudo systemctl restart madmail</pre>
         </div>
 
         <h2>عیب‌یابی</h2>
@@ -399,7 +399,7 @@
             <p>دستورات زیر را برای اصلاح مالکیت و دسترسی فایل‌ها اجرا کنید:</p>
             <div class="code-container">
                 <div class="code-header">Fix Permissions</div>
-                <pre class="code-box">sudo chown root:maddy /path/to/cert.pem /path/to/key.pem
+                <pre class="code-box">sudo chown root:madmail /path/to/cert.pem /path/to/key.pem
 sudo chmod 640 /path/to/cert.pem /path/to/key.pem</pre>
             </div>
         </div>

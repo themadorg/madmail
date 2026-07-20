@@ -24,7 +24,7 @@ mod systemd;
 
 use chatmail_acme::{
     generate_self_signed, is_valid_dns_domain, is_valid_ip_for_acme, obtain_certificate,
-    resolve_domain_to_public_ip, ObtainOptions,
+    parse_http_listen, resolve_domain_to_public_ip, ObtainOptions,
 };
 use chatmail_config::install_cli::InstallArgs;
 use chatmail_config::{effective_database_config, is_local_dev_state_dir, AppConfig, Args};
@@ -85,6 +85,24 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
     }
     create_directories(&cfg)?;
     setup_certificates(&cfg, args).await?;
+    if args.cert_only {
+        if global.json {
+            CtlOut::from_args(global, "install").emit(serde_json::json!({
+                "cert_only": true,
+                "primary_domain": cfg.primary_domain,
+                "tls_mode": cfg.tls_mode,
+                "cert_path": cfg.cert_path.display().to_string(),
+                "key_path": cfg.key_path.display().to_string(),
+            }))?;
+        } else {
+            println!("\nCertificate setup completed (--cert-only).");
+            println!("  Cert: {}", cfg.cert_path.display());
+            println!("  Key:  {}", cfg.key_path.display());
+            println!("\nNext: run full install with --tls-mode file --no-obtain-certificate,");
+            println!("  or re-run install without --cert-only to finish setup.");
+        }
+        return Ok(());
+    }
     ensure_secrets(&mut cfg)?;
     write_config(&cfg)?;
     seed_install_language(&cfg).await?;
@@ -190,6 +208,16 @@ fn resolve_tls_mode(cfg: &mut InstallConfig, args: &InstallArgs) -> Result<()> {
     Ok(())
 }
 
+fn effective_obtain_certificate(args: &InstallArgs) -> bool {
+    if args.no_obtain_certificate {
+        return false;
+    }
+    if args.obtain_certificate {
+        return true;
+    }
+    true
+}
+
 async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<()> {
     if cfg.generate_certs {
         println!("Generating self-signed certificate…");
@@ -203,28 +231,41 @@ async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<(
         return Ok(());
     }
 
-    if cfg.tls_mode == "autocert" && args.obtain_certificate {
+    let obtain = effective_obtain_certificate(args);
+    let missing_pems = !cfg.cert_path.is_file() || !cfg.key_path.is_file();
+    let should_obtain =
+        obtain && (cfg.tls_mode == "autocert" || (cfg.tls_mode == "file" && missing_pems));
+
+    if should_obtain {
+        if cfg.acme_email.is_empty() {
+            return Err(ChatmailError::config(
+                "--acme-email is required to obtain a Let's Encrypt certificate during install",
+            ));
+        }
         let label = if is_valid_ip_for_acme(&cfg.primary_domain) {
             "short-lived IP"
         } else {
             "DNS"
         };
-        println!("Obtaining Let's Encrypt {label} certificate (HTTP-01 on port 80)…");
+        let http_listen = parse_http_listen(&args.http_listen)?;
+        println!("Obtaining Let's Encrypt {label} certificate (HTTP-01 on {http_listen})…");
         let opts = ObtainOptions {
             domain: cfg.primary_domain.clone(),
             email: cfg.acme_email.clone(),
             state_dir: cfg.state_dir.clone(),
             cert_path: Some(cfg.cert_path.clone()),
             key_path: Some(cfg.key_path.clone()),
-            http_listen: "0.0.0.0:80".parse().expect("valid default listen"),
+            http_listen,
             staging: false,
             skip_if_valid: false,
         };
         obtain_certificate(&opts).await?;
     } else if cfg.tls_mode == "file" {
-        if !cfg.cert_path.is_file() || !cfg.key_path.is_file() {
+        if missing_pems {
             return Err(ChatmailError::config(format!(
-                "tls-mode file requires existing cert and key:\n  {}\n  {}",
+                "tls-mode file requires existing cert and key:\n  {}\n  {}\n\
+                 Obtain first: madmail install --cert-only … --acme-email …\n\
+                 or: madmail install --tls-mode file --acme-email … (omit --no-obtain-certificate)",
                 cfg.cert_path.display(),
                 cfg.key_path.display()
             )));
@@ -601,6 +642,9 @@ mod tests {
             skip_user: false,
             binary_path: None,
             obtain_certificate: true,
+            no_obtain_certificate: false,
+            cert_only: false,
+            http_listen: "0.0.0.0:80".into(),
             auto_ip_cert: false,
             lang: "en".into(),
         };
@@ -662,6 +706,9 @@ mod tests {
             skip_user: false,
             binary_path: None,
             obtain_certificate: true,
+            no_obtain_certificate: false,
+            cert_only: false,
+            http_listen: "0.0.0.0:80".into(),
             auto_ip_cert: false,
             lang: "en".into(),
         };
@@ -707,6 +754,9 @@ mod tests {
             skip_user: false,
             binary_path: None,
             obtain_certificate: true,
+            no_obtain_certificate: false,
+            cert_only: false,
+            http_listen: "0.0.0.0:80".into(),
             auto_ip_cert: false,
             lang: "en".into(),
         };
@@ -753,6 +803,9 @@ mod tests {
             skip_user: false,
             binary_path: None,
             obtain_certificate: true,
+            no_obtain_certificate: false,
+            cert_only: false,
+            http_listen: "0.0.0.0:80".into(),
             auto_ip_cert: false,
             lang: "en".into(),
         };
@@ -794,6 +847,9 @@ mod tests {
                 skip_user: false,
                 binary_path: None,
                 obtain_certificate: true,
+                no_obtain_certificate: false,
+                cert_only: false,
+                http_listen: "0.0.0.0:80".into(),
                 auto_ip_cert: false,
                 lang: "en".into(),
             }
@@ -833,6 +889,9 @@ mod tests {
             skip_user: false,
             binary_path: None,
             obtain_certificate: true,
+            no_obtain_certificate: false,
+            cert_only: false,
+            http_listen: "0.0.0.0:80".into(),
             auto_ip_cert: false,
             lang: "en".into(),
         };
@@ -880,11 +939,53 @@ mod tests {
                 skip_user: false,
                 binary_path: None,
                 obtain_certificate: true,
+                no_obtain_certificate: false,
+                cert_only: false,
+                http_listen: "0.0.0.0:80".into(),
                 auto_ip_cert: false,
                 lang: "en".into(),
             }
         };
         assert!(InstallConfig::from_args(&global, &args).is_err());
+    }
+
+    #[test]
+    fn effective_obtain_certificate_defaults_on() {
+        let args = InstallArgs {
+            obtain_certificate: false,
+            no_obtain_certificate: false,
+            ..InstallArgs {
+                non_interactive: false,
+                simple: true,
+                domain: None,
+                hostname: None,
+                ip: Some(EXAMPLE_PUBLIC_IP.into()),
+                config_dir: None,
+                state_dir: None,
+                tls_mode: None,
+                cert_path: None,
+                key_path: None,
+                acme_email: None,
+                enable_chatmail: false,
+                enable_ss: false,
+                enable_iroh: false,
+                turn_off_tls: false,
+                dry_run: false,
+                skip_systemd: false,
+                skip_user: false,
+                binary_path: None,
+                obtain_certificate: true,
+                no_obtain_certificate: false,
+                cert_only: false,
+                http_listen: "0.0.0.0:80".into(),
+                auto_ip_cert: false,
+                lang: "en".into(),
+            }
+        };
+        assert!(effective_obtain_certificate(&args));
+        let mut skip = args.clone();
+        skip.no_obtain_certificate = true;
+        assert!(!effective_obtain_certificate(&skip));
     }
 
     #[test]
@@ -918,6 +1019,9 @@ mod tests {
                 skip_user: false,
                 binary_path: None,
                 obtain_certificate: true,
+                no_obtain_certificate: false,
+                cert_only: false,
+                http_listen: "0.0.0.0:80".into(),
                 auto_ip_cert: false,
                 lang: "en".into(),
             }
@@ -954,6 +1058,9 @@ mod tests {
             skip_user: false,
             binary_path: None,
             obtain_certificate: true,
+            no_obtain_certificate: false,
+            cert_only: false,
+            http_listen: "0.0.0.0:80".into(),
             auto_ip_cert: false,
             lang: "en".into(),
         };

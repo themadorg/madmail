@@ -24,6 +24,7 @@ use super::{
     accounts, admin_token, admin_web, blocklist_cmd, certificate, delete_cmd, docs, endpoint_cache,
     federation, html, install, language, message_size, port, proxy, push, registration,
     registration_tokens, reload, service_toggle, sharing, status_cmd, tasks, uninstall, version,
+    webmail_cors,
 };
 
 pub async fn dispatch(cli: &Cli) -> Result<()> {
@@ -31,15 +32,31 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         None | Some(Command::Run) => Err(ChatmailError::config(
             "internal error: dispatch called for server run",
         )),
-        Some(Command::Upgrade { path_or_url }) | Some(Command::Update { path_or_url }) => {
-            crate::upgrade::upgrade_command(path_or_url, cli.args.json)
+        Some(Command::Upgrade {
+            path_or_url,
+            accept_unsafe_https,
+        })
+        | Some(Command::Update {
+            path_or_url,
+            accept_unsafe_https,
+        }) => {
+            // Blocking HTTP download + filesystem replace must not run on the async
+            // runtime (reqwest::blocking creates its own runtime).
+            let path = path_or_url.clone();
+            let accept_unsafe_https = *accept_unsafe_https;
+            let args = cli.args.clone();
+            tokio::task::spawn_blocking(move || {
+                crate::upgrade::upgrade_command(&path, &args, accept_unsafe_https)
+            })
+            .await
+            .map_err(|e| ChatmailError::config(format!("upgrade task failed: {e}")))?
         }
         Some(Command::AdminToken { raw, no_qr }) => {
             admin_token::admin_token(&cli.args, *raw, *no_qr).await
         }
         Some(Command::AdminWeb { cmd }) => admin_web::admin_web(&cli.args, cmd).await,
         Some(Command::Version) => version::print_version(&cli.args),
-        Some(Command::Install(args)) => install::install(&cli.args, args).await,
+        Some(Command::Install(args)) => install::install(&cli.args, args.as_ref()).await,
         Some(Command::Certificate { cmd }) => certificate::certificate(&cli.args, cmd).await,
         Some(Command::Accounts(cmd)) => accounts::accounts(&cli.args, cmd).await,
         Some(Command::BanList) => accounts::ban_list(&cli.args).await,
@@ -54,6 +71,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         }) => delete_cmd::delete(&cli.args, username, *yes, reason).await,
         Some(Command::HtmlExport { dest }) => html::html_export(&cli.args, dest).await,
         Some(Command::HtmlServe { www_dir }) => html::html_serve(&cli.args, www_dir).await,
+        Some(Command::HtmlMigrate { yes }) => html::html_migrate(&cli.args, *yes).await,
         Some(Command::Language { command }) => {
             language::language(&cli.args, command.as_ref()).await
         }
@@ -78,6 +96,9 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
                 cmd,
             )
             .await
+        }
+        Some(Command::WebmailCors { cmd }) => {
+            webmail_cors::webmail_cors(&cli.args, cmd.as_ref()).await
         }
         Some(Command::Push(cmd)) => push::push(&cli.args, cmd).await,
         Some(Command::Proxy { cmd }) => proxy::proxy(&cli.args, cmd.as_ref()).await,
@@ -108,7 +129,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
          See docs/TDD/14-cli-tools.md and context/madmail/docs/chatmail/commands.md.\n\
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, language, \
-         html-export, html-serve, webimap, websmtp, push, federation, registration-tokens, sharing, \
+         html-export, html-serve, html-migrate, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
          status, uninstall, endpoint-cache, port, proxy, reload, message-size, tasks, completion"
     )))
 }
@@ -132,6 +153,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Hash => "hash",
         Command::HtmlExport { .. } => "html-export",
         Command::HtmlServe { .. } => "html-serve",
+        Command::HtmlMigrate { .. } => "html-migrate",
         Command::ImapMboxes => "imap-mboxes",
         Command::ImapMsgs => "imap-msgs",
         Command::ImapAcct => "imap-acct",
@@ -151,6 +173,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Creds => "creds",
         Command::Webimap { .. } => "webimap",
         Command::Websmtp { .. } => "websmtp",
+        Command::WebmailCors { .. } => "webmail-cors",
         Command::Push { .. } => "push",
         Command::Proxy { .. } => "proxy",
         Command::MessageSize { .. } => "message-size",

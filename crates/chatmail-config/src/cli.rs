@@ -45,15 +45,29 @@ pub enum Command {
     Run,
     /// Replace this executable from a signed local file or URL.
     Upgrade {
-        /// Path to signed binary, or `http://` / `https://` URL to download one.
+        /// Path to signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive.
         #[arg(value_name = "PATH_OR_URL")]
         path_or_url: String,
+        /// Allow HTTPS downloads with self-signed or otherwise untrusted TLS certificates.
+        ///
+        /// Does **not** skip Ed25519 signature verification — unsigned or bad-signed binaries
+        /// are always rejected. Without this flag, certificate verification is enforced; on
+        /// failure an interactive TTY may prompt `[y/N]`.
+        #[arg(long = "accept-unsafe-https")]
+        accept_unsafe_https: bool,
     },
     /// Replace this executable from a signed local file or URL (alias for `upgrade`).
     Update {
-        /// Path to signed binary, or `http://` / `https://` URL to download one.
+        /// Path to signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive.
         #[arg(value_name = "PATH_OR_URL")]
         path_or_url: String,
+        /// Allow HTTPS downloads with self-signed or otherwise untrusted TLS certificates.
+        ///
+        /// Does **not** skip Ed25519 signature verification — unsigned or bad-signed binaries
+        /// are always rejected. Without this flag, certificate verification is enforced; on
+        /// failure an interactive TTY may prompt `[y/N]`.
+        #[arg(long = "accept-unsafe-https")]
+        accept_unsafe_https: bool,
     },
     /// Display the admin API credentials.
     #[command(name = "admin-token")]
@@ -122,6 +136,13 @@ pub enum Command {
         #[arg(value_name = "WWW_DIR")]
         www_dir: String,
     },
+    /// Convert custom `www_dir` Go templates to Minijinja (interactive).
+    #[command(name = "html-migrate")]
+    HtmlMigrate {
+        /// Apply migration without prompting (default: ask when Go-style HTML is found).
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
     /// IMAP mailboxes (folders) management.
     #[command(name = "imap-mboxes")]
     ImapMboxes,
@@ -132,7 +153,7 @@ pub enum Command {
     #[command(name = "imap-acct")]
     ImapAcct,
     /// Install and configure the mail server.
-    Install(InstallArgs),
+    Install(Box<InstallArgs>),
     /// TLS certificates (Let's Encrypt / file / self-signed).
     Certificate {
         #[command(subcommand)]
@@ -202,6 +223,16 @@ pub enum Command {
     /// Enable, disable, or inspect WebSMTP HTTP send API.
     #[command(subcommand)]
     Websmtp(ServiceToggleCommand),
+    /// Browser CORS origins for WebIMAP, WebSMTP, and `/new` (`__WEBMAIL_CORS_ORIGINS__`).
+    #[command(
+        name = "webmail-cors",
+        visible_aliases = ["webmail-dev"],
+        subcommand_required = false
+    )]
+    WebmailCors {
+        #[command(subcommand)]
+        cmd: Option<WebmailCorsCommand>,
+    },
     /// Delta Chat push notifications (`auto` / `on` / `off`).
     #[command(subcommand)]
     Push(PushCommand),
@@ -281,6 +312,37 @@ pub enum PushCommand {
     On,
     /// Force push off.
     Off,
+}
+
+/// `madmail webmail-cors` — `__WEBMAIL_CORS_ORIGINS__` (+ dev enable workflow).
+#[derive(Debug, Subcommand, Clone)]
+pub enum WebmailCorsCommand {
+    /// Show CORS origins and WebIMAP/WebSMTP status (default).
+    Status,
+    /// Replace the full origins list (comma or newline separated; `*` = any).
+    Set {
+        #[arg(value_name = "ORIGINS")]
+        value: String,
+    },
+    /// Append one allowed browser origin.
+    Add {
+        #[arg(value_name = "ORIGIN")]
+        origin: String,
+    },
+    /// Remove one origin from the list.
+    Remove {
+        #[arg(value_name = "ORIGIN")]
+        origin: String,
+    },
+    /// Clear all CORS origins.
+    Reset,
+    /// Enable browser access (WebIMAP + WebSMTP). ORIGIN is optional on v2.11+ (request Origin is reflected).
+    Enable {
+        #[arg(value_name = "ORIGIN")]
+        origin: Option<String>,
+    },
+    /// Disable browser access (turn off WebIMAP + WebSMTP).
+    Disable,
 }
 
 /// `chatmail webimap` / `websmtp` — `__WEBIMAP_ENABLED__` / `__WEBSMTP_ENABLED__`.
@@ -411,6 +473,10 @@ pub enum PortServiceCommand {
     Local,
     /// Listen on all interfaces.
     Public,
+    /// Start the listener (HTTP/HTTPS only).
+    Enable,
+    /// Stop the listener (HTTP/HTTPS only).
+    Disable,
 }
 
 /// `chatmail federation` — policy and domain rules.
@@ -733,13 +799,66 @@ mod tests {
             .unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Upgrade { path_or_url }) if path_or_url == "https://relay.example/bin/madmail"
+            Some(Command::Upgrade {
+                path_or_url,
+                accept_unsafe_https: false,
+            }) if path_or_url == "https://relay.example/bin/madmail"
         ));
 
         let cli = Cli::try_parse_from(["madmail", "update", "/tmp/madmail-signed"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Update { path_or_url }) if path_or_url == "/tmp/madmail-signed"
+            Some(Command::Update {
+                path_or_url,
+                accept_unsafe_https: false,
+            }) if path_or_url == "/tmp/madmail-signed"
+        ));
+    }
+
+    #[test]
+    fn upgrade_and_update_accept_unsafe_https_flag() {
+        let cli = Cli::try_parse_from([
+            "madmail",
+            "upgrade",
+            "--accept-unsafe-https",
+            "https://relay.example/bin/madmail",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Upgrade {
+                accept_unsafe_https: true,
+                ..
+            })
+        ));
+
+        let cli = Cli::try_parse_from([
+            "madmail",
+            "update",
+            "https://relay.example/a.tar.gz",
+            "--accept-unsafe-https",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Update {
+                accept_unsafe_https: true,
+                path_or_url,
+            }) if path_or_url == "https://relay.example/a.tar.gz"
+        ));
+    }
+
+    #[test]
+    fn html_migrate_accepts_yes_flag() {
+        let cli = Cli::try_parse_from(["madmail", "html-migrate"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::HtmlMigrate { yes: false })
+        ));
+        let cli = Cli::try_parse_from(["madmail", "html-migrate", "-y"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::HtmlMigrate { yes: true })
         ));
     }
 

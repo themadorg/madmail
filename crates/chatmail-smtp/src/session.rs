@@ -532,9 +532,32 @@ impl SmtpSession {
 
     async fn ingest_data(&self, data: &[u8]) -> Result<()> {
         self.ctx.check_message_size(data.len())?;
+
+        // Authenticated submission (587/465) — same path as WebSMTP.
         if self.cfg.require_auth {
             validate_submission_headers(data, &self.mail_from)?;
-        } else if chatmail_db::is_federation_sender_blocked(&self.mail_from) {
+            enforce_encryption(
+                data,
+                &EnforceOptions {
+                    mail_from: self.mail_from.clone(),
+                    recipients: self.rcpt_to.clone(),
+                },
+            )?;
+            let delivery = DeliveryContext {
+                pool: self.pool.clone(),
+                state: Arc::clone(&self.ctx),
+                primary_domain: self.cfg.primary_domain.clone(),
+                local_domains: self.cfg.local_domains.clone(),
+            };
+            delivery
+                .submit_authenticated(&self.mail_from, &self.rcpt_to, data)
+                .await?;
+            chatmail_db::record_smtp_accepted(true);
+            return Ok(());
+        }
+
+        // ── Inbound (port 25 / unauthenticated) ───────────────────────────
+        if chatmail_db::is_federation_sender_blocked(&self.mail_from) {
             tracing::debug!(from = %self.mail_from, "silently dropped inbound from blocked sender");
             return Ok(());
         }
@@ -563,7 +586,7 @@ impl SmtpSession {
             let rcpt = normalize_username(rcpt)?;
             self.ctx.quota.check_quota(&rcpt, data.len() as u64)?;
             if delivery.is_local(&rcpt) {
-                if !self.cfg.require_auth && !self.ctx.auth.local_recipient_allowed(&rcpt) {
+                if !self.ctx.auth.local_recipient_allowed(&rcpt) {
                     tracing::debug!(rcpt = %rcpt, "silently dropped inbound local delivery");
                     continue;
                 }
@@ -596,9 +619,6 @@ impl SmtpSession {
                 deliver_local_messages(&self.ctx.mailbox_store, &local_deliveries, data).await?;
             let deliver_ms = deliver_start.elapsed();
             let notify_start = std::time::Instant::now();
-            // Notify (and charge quota) only for recipients whose body is durably on disk. Each
-            // write/link above already fsync'd the maildir directory, so notification strictly
-            // follows durability.
             for (rcpt, msg_id) in &outcome.delivered {
                 self.ctx.quota.record_write(rcpt, data.len() as u64);
                 self.ctx.events.notify_new_message(rcpt, msg_id);
@@ -628,18 +648,16 @@ impl SmtpSession {
                 "SMTP local fan-out timing"
             );
         }
-        if !self.cfg.require_auth {
-            chatmail_db::record_inbound_delivery();
-            if let Some((_, sender_domain)) = self.mail_from.rsplit_once('@') {
-                let sender_domain = sender_domain.to_ascii_lowercase();
-                if !sender_domain.is_empty() {
-                    self.ctx
-                        .federation_tracker
-                        .record_success(&sender_domain, 0, "");
-                }
+        chatmail_db::record_inbound_delivery();
+        if let Some((_, sender_domain)) = self.mail_from.rsplit_once('@') {
+            let sender_domain = sender_domain.to_ascii_lowercase();
+            if !sender_domain.is_empty() {
+                self.ctx
+                    .federation_tracker
+                    .record_success(&sender_domain, 0, "");
             }
         }
-        chatmail_db::record_smtp_accepted(self.cfg.require_auth);
+        chatmail_db::record_smtp_accepted(false);
         Ok(())
     }
 }

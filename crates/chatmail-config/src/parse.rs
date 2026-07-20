@@ -24,6 +24,8 @@ use crate::maddy;
 use crate::AppConfig;
 
 /// TOML configuration file (`chatmail.toml`).
+///
+/// Bool fields accept TOML booleans and flexible strings/ints (`"yes"`, `"enable"`, `1`, …).
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 pub struct TomlConfig {
     pub hostname: Option<String>,
@@ -34,6 +36,10 @@ pub struct TomlConfig {
     pub runtime_dir: Option<String>,
     pub tls_mode: Option<String>,
     pub acme_email: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::bool_str::deserialize_option_bool_flexible"
+    )]
     pub debug: Option<bool>,
     pub log: Option<String>,
     pub smtp_listen: Option<String>,
@@ -44,6 +50,10 @@ pub struct TomlConfig {
     pub http_listen: Option<String>,
     pub http_tls_listen: Option<String>,
     pub openmetrics_listen: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::bool_str::deserialize_option_bool_flexible"
+    )]
     pub turn_enable: Option<bool>,
     pub turn_server: Option<String>,
     pub turn_port: Option<u16>,
@@ -54,6 +64,10 @@ pub struct TomlConfig {
     pub admin_web_path: Option<String>,
     pub language: Option<String>,
     pub www_dir: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::bool_str::deserialize_option_bool_flexible"
+    )]
     pub auth_auto_create: Option<bool>,
     pub jit_domain: Option<String>,
 }
@@ -121,6 +135,8 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
         admin_web_path: parsed.admin_web_path,
         language: parsed.language,
         www_dir: parsed.www_dir.map(PathBuf::from),
+        enable_contact_sharing: false,
+        sharing_dsn: None,
         admin_token: None,
         smtp_listen: parsed.smtp_listen,
         submission_listen: parsed.submission_listen,
@@ -216,5 +232,27 @@ tls_mode = "autocert"
         .unwrap();
         let cfg = load_config(&path).unwrap();
         assert_eq!(cfg.primary_domain.as_deref(), Some("example.org"));
+    }
+
+    #[test]
+    fn toml_debug_accepts_flexible_enable_disable() {
+        for (src, want) in [
+            (r#"debug = true"#, true),
+            (r#"debug = "yes""#, true),
+            (r#"debug = "True""#, true),
+            (r#"debug = "1""#, true),
+            (r#"debug = "enable""#, true),
+            (r#"debug = 1"#, true),
+            (r#"debug = false"#, false),
+            (r#"debug = "no""#, false),
+            (r#"debug = "disable""#, false),
+            (r#"debug = 0"#, false),
+        ] {
+            let cfg = toml_to_app_config(src).unwrap_or_else(|e| panic!("{src}: {e}"));
+            assert_eq!(cfg.debug, want, "src={src}");
+        }
+        // Omitted → disabled (No-Log friendly default)
+        let cfg = toml_to_app_config(r#"hostname = "mail.example.org""#).unwrap();
+        assert!(!cfg.debug);
     }
 }

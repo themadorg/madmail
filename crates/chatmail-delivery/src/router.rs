@@ -18,11 +18,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use chatmail_auth::normalize_username;
 use chatmail_config::QueueSettings;
 use chatmail_db::DbPool;
 use chatmail_state::AppState;
 use chatmail_types::{address_domain, address_is_local, ChatmailError, Result};
 use tokio::sync::OnceCell;
+use tracing::{debug, info, warn};
 
 use crate::queue::{OutboundQueue, QueueConfig};
 
@@ -95,6 +97,116 @@ impl DeliveryContext {
         queue.enqueue_batch(mail_from, rcpts, data).await
     }
 
+    /// Authenticated mail submission — **shared** by SMTP AUTH (587/465) and WebSMTP.
+    ///
+    /// Security (caller must still run `validate_submission_headers` + `enforce_encryption`):
+    /// - recipients normalized
+    /// - per-recipient quota
+    /// - local → maildir; remote → same outbound federation queue as SMTP
+    /// - federation policy + silent-dismiss on remote RCPT
+    ///
+    /// Does **not** treat the message as inbound federation (no inbound metrics / policy bypass).
+    pub async fn submit_authenticated(
+        &self,
+        mail_from: &str,
+        recipients: &[String],
+        data: &[u8],
+    ) -> Result<()> {
+        self.state.check_message_size(data.len())?;
+
+        let ingest_start = std::time::Instant::now();
+        let total_rcpts = recipients.len();
+        let mut local_deliveries: Vec<(String, String)> = Vec::new();
+        let mut remote_rcpts: Vec<String> = Vec::new();
+
+        for raw_rcpt in recipients {
+            let rcpt = normalize_username(raw_rcpt)?;
+            self.state.quota.check_quota(&rcpt, data.len() as u64)?;
+
+            if self.is_local(&rcpt) {
+                // Authenticated submission may deliver to any local address (SMTP AUTH parity).
+                local_deliveries.push((rcpt, uuid::Uuid::new_v4().to_string()));
+                continue;
+            }
+
+            let domain = address_domain(&rcpt).unwrap_or_default();
+            let mode = self.state.federation_policy.global_mode();
+            if !domain.is_empty() && !self.state.federation_policy.check_policy(&domain, mode) {
+                return Err(ChatmailError::FederationRejected(domain));
+            }
+            if self
+                .state
+                .federation_silent_dismiss
+                .is_dismissed(&rcpt, &self.local_domains)
+            {
+                debug!(rcpt = %rcpt, "silently dismissed outbound federation message");
+                continue;
+            }
+            remote_rcpts.push(rcpt);
+        }
+
+        // Federated group fan-out: one body write + hard-links (same principle as local
+        // delivery) rather than a full separate copy per remote recipient.
+        let remote_enqueued = remote_rcpts.len();
+        if !remote_rcpts.is_empty() {
+            self.enqueue_remote_batch(mail_from, &remote_rcpts, data)
+                .await?;
+        }
+
+        let rcpt_phase = ingest_start.elapsed();
+        if !local_deliveries.is_empty() {
+            let local_n = local_deliveries.len();
+            let deliver_start = std::time::Instant::now();
+            let outcome = chatmail_storage::deliver_local_messages(
+                &self.state.mailbox_store,
+                &local_deliveries,
+                data,
+            )
+            .await?;
+            let deliver_ms = deliver_start.elapsed();
+            let notify_start = std::time::Instant::now();
+            for (rcpt, msg_id) in &outcome.delivered {
+                self.state.quota.record_write(rcpt, data.len() as u64);
+                self.state.events.notify_new_message(rcpt, msg_id);
+                self.state
+                    .notify_inbound_push(&self.pool, mail_from, rcpt)
+                    .await;
+            }
+            if !outcome.failed.is_empty() {
+                for (rcpt, _msg_id, err) in &outcome.failed {
+                    warn!(rcpt = %rcpt, error = %err, "local delivery failed for recipient");
+                }
+                warn!(
+                    delivered = outcome.delivered.len(),
+                    failed = outcome.failed.len(),
+                    "partial local fan-out: some recipients did not receive the message"
+                );
+            }
+            info!(
+                total_rcpts,
+                local_n,
+                remote_enqueued,
+                delivered = outcome.delivered.len(),
+                failed = outcome.failed.len(),
+                rcpt_phase_ms = rcpt_phase.as_millis(),
+                deliver_ms = deliver_ms.as_millis(),
+                notify_ms = notify_start.elapsed().as_millis(),
+                ingest_ms = ingest_start.elapsed().as_millis(),
+                "authenticated submission fan-out timing"
+            );
+        } else if remote_enqueued > 0 {
+            info!(
+                total_rcpts,
+                remote_enqueued,
+                rcpt_phase_ms = rcpt_phase.as_millis(),
+                "authenticated submission enqueued for federation"
+            );
+        }
+        Ok(())
+    }
+
+    /// Inbound / mixed routing (unauthenticated paths, tests). Prefer
+    /// [`Self::submit_authenticated`] for SMTP AUTH and WebSMTP.
     pub async fn route_message(
         &self,
         mail_from: &str,
@@ -109,7 +221,7 @@ impl DeliveryContext {
             }
         }
         if chatmail_db::is_federation_sender_blocked(mail_from) {
-            tracing::debug!(from = %mail_from, "silently dropped inbound from blocked sender");
+            debug!(from = %mail_from, "silently dropped inbound from blocked sender");
             return Ok(());
         }
 
@@ -124,7 +236,7 @@ impl DeliveryContext {
             }) {
                 for rcpt in rcpts {
                     if !self.state.auth.local_recipient_allowed(&rcpt) {
-                        tracing::debug!(rcpt = %rcpt, "silently dropped inbound local delivery");
+                        debug!(rcpt = %rcpt, "silently dropped inbound local delivery");
                         continue;
                     }
                     self.state.quota.check_quota(&rcpt, data.len() as u64)?;
@@ -141,7 +253,7 @@ impl DeliveryContext {
                         .federation_silent_dismiss
                         .is_dismissed(&rcpt, &self.local_domains)
                     {
-                        tracing::debug!(rcpt = %rcpt, "silently dismissed outbound federation message");
+                        debug!(rcpt = %rcpt, "silently dismissed outbound federation message");
                         continue;
                     }
                     remote_rcpts.push(rcpt);
@@ -163,7 +275,6 @@ impl DeliveryContext {
                 data,
             )
             .await?;
-            // Only notify recipients whose body was durably written (post-durability notify).
             for (rcpt, msg_id) in &outcome.delivered {
                 self.state.quota.record_write(rcpt, data.len() as u64);
                 self.state.events.notify_new_message(rcpt, msg_id);
@@ -173,9 +284,9 @@ impl DeliveryContext {
             }
             if !outcome.failed.is_empty() {
                 for (rcpt, _msg_id, err) in &outcome.failed {
-                    tracing::warn!(rcpt = %rcpt, error = %err, "local delivery failed for recipient");
+                    warn!(rcpt = %rcpt, error = %err, "local delivery failed for recipient");
                 }
-                tracing::warn!(
+                warn!(
                     delivered = outcome.delivered.len(),
                     failed = outcome.failed.len(),
                     "partial local fan-out: some recipients did not receive the message"

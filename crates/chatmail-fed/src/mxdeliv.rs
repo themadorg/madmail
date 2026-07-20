@@ -24,7 +24,7 @@ use axum::response::IntoResponse;
 use chatmail_db::{is_federation_sender_blocked, DbPool};
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
 use chatmail_state::AppState;
-use chatmail_storage::write_blob;
+use chatmail_storage::deliver_local_messages;
 use chatmail_types::ChatmailError;
 
 use crate::security::recipient_matches_server;
@@ -77,11 +77,21 @@ async fn handle_mxdeliv(
     body: &[u8],
 ) -> chatmail_types::Result<()> {
     let mail_from = header_str(headers, "x-mail-from").unwrap_or_default();
-    let rcpt = header_str(headers, "x-mail-to")
-        .ok_or_else(|| ChatmailError::protocol("missing X-Mail-To"))?;
+    // One POST carries one X-Mail-To header per recipient on this server
+    // (TDD 07-federation.md); deliver to each of them.
+    let mut rcpts = header_strs(headers, "x-mail-to");
+    if rcpts.is_empty() {
+        return Err(ChatmailError::protocol("missing X-Mail-To"));
+    }
 
-    if !recipient_matches_server(&rcpt, &st.local_domains) {
-        tracing::debug!(rcpt = %rcpt, "mxdeliv: silently dropped (not local domain)");
+    rcpts.retain(|rcpt| {
+        let keep = recipient_matches_server(rcpt, &st.local_domains);
+        if !keep {
+            tracing::debug!(rcpt = %rcpt, "mxdeliv: silently dropped (not local domain)");
+        }
+        keep
+    });
+    if rcpts.is_empty() {
         return Ok(());
     }
 
@@ -90,8 +100,14 @@ async fn handle_mxdeliv(
         return Ok(());
     }
 
-    if !st.app.auth.local_recipient_allowed(&rcpt) {
-        tracing::debug!(rcpt = %rcpt, "mxdeliv: silently dropped (no account or reserved rcpt)");
+    rcpts.retain(|rcpt| {
+        let keep = st.app.auth.local_recipient_allowed(rcpt);
+        if !keep {
+            tracing::debug!(rcpt = %rcpt, "mxdeliv: silently dropped (no account or reserved rcpt)");
+        }
+        keep
+    });
+    if rcpts.is_empty() {
         return Ok(());
     }
 
@@ -111,13 +127,30 @@ async fn handle_mxdeliv(
 
     st.app.check_federation_size(body.len())?;
     st.app.check_message_size(body.len())?;
-    st.app.quota.check_quota(&rcpt, body.len() as u64)?;
+
+    // An over-quota recipient only fails the request when no other
+    // recipient remains; erroring for all would make the remote queue
+    // retry (and re-deliver) the message for recipients that are fine.
+    let mut deliveries: Vec<(String, String)> = Vec::new();
+    let mut quota_err = None;
+    for rcpt in rcpts {
+        match st.app.quota.check_quota(&rcpt, body.len() as u64) {
+            Ok(()) => deliveries.push((rcpt, uuid::Uuid::new_v4().to_string())),
+            Err(e) => {
+                tracing::warn!(rcpt = %rcpt, error = %e, "mxdeliv: recipient over quota");
+                quota_err = Some(e);
+            }
+        }
+    }
+    if deliveries.is_empty() {
+        return Err(quota_err.expect("empty deliveries only after quota errors"));
+    }
 
     enforce_encryption(
         body,
         &EnforceOptions {
             mail_from: mail_from.clone(),
-            recipients: vec![rcpt.clone()],
+            recipients: deliveries.iter().map(|(rcpt, _)| rcpt.clone()).collect(),
         },
     )?;
 
@@ -126,13 +159,17 @@ async fn handle_mxdeliv(
         .federation_tracker
         .record_success(&sender_domain, 0, "");
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    write_blob(&st.app.mailbox_store, &rcpt, &msg_id, body).await?;
-    st.app.quota.record_write(&rcpt, body.len() as u64);
-    st.app.events.notify_new_message(&rcpt, &msg_id);
-    st.app
-        .notify_inbound_push(&st.pool, &mail_from, &rcpt)
-        .await;
+    let outcome = deliver_local_messages(&st.app.mailbox_store, &deliveries, body).await?;
+    // Notify (and charge quota) only for recipients whose body is durably
+    // on disk, mirroring the SMTP session path.
+    for (rcpt, msg_id) in &outcome.delivered {
+        st.app.quota.record_write(rcpt, body.len() as u64);
+        st.app.events.notify_new_message(rcpt, msg_id);
+        st.app.notify_inbound_push(&st.pool, &mail_from, rcpt).await;
+    }
+    for (rcpt, _msg_id, err) in &outcome.failed {
+        tracing::warn!(rcpt = %rcpt, error = %err, "mxdeliv: local delivery failed for recipient");
+    }
 
     chatmail_db::record_inbound_delivery();
     Ok(())
@@ -143,6 +180,15 @@ fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
         .get(name)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
+}
+
+fn header_strs(headers: &HeaderMap, name: &str) -> Vec<String> {
+    headers
+        .get_all(name)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .collect()
 }
 
 #[cfg(test)]
@@ -294,6 +340,43 @@ mod tests {
 
         handle_mxdeliv(&st, &headers, pgp).await.unwrap();
         assert_eq!(app.quota.used_bytes("user@example.org"), pgp.len() as u64);
+    }
+
+    /// One POST with several X-Mail-To headers (TDD 07-federation.md) must
+    /// deliver to every listed recipient, not only the first one.
+    #[tokio::test]
+    async fn p7_delivers_to_all_x_mail_to_recipients() {
+        let pool = init_memory_db().await.unwrap();
+        chatmail_db::passwords::create_user(&pool, "alice@example.org", "hash")
+            .await
+            .unwrap();
+        chatmail_db::passwords::create_user(&pool, "bob@example.org", "hash")
+            .await
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        app.federation_policy.hydrate(&pool).await.unwrap();
+        app.auth.hydrate(&pool).await.unwrap();
+
+        let st = FedState {
+            pool,
+            app: Arc::clone(&app),
+            primary_domain: "example.org".into(),
+            local_domains: chatmail_types::build_local_domains("example.org", None),
+        };
+
+        let pgp = b"From: a@peer.test\r\nTo: alice@example.org, bob@example.org\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        let mut headers = HeaderMap::new();
+        headers.insert("x-mail-from", "sender@peer.test".parse().unwrap());
+        headers.append("x-mail-to", "alice@example.org".parse().unwrap());
+        headers.append("x-mail-to", "bob@example.org".parse().unwrap());
+        // A dropped recipient must not affect delivery to the others.
+        headers.append("x-mail-to", "ghost@example.org".parse().unwrap());
+
+        handle_mxdeliv(&st, &headers, pgp).await.unwrap();
+        assert_eq!(app.quota.used_bytes("alice@example.org"), pgp.len() as u64);
+        assert_eq!(app.quota.used_bytes("bob@example.org"), pgp.len() as u64);
+        assert_eq!(app.quota.used_bytes("ghost@example.org"), 0);
     }
 
     #[tokio::test]

@@ -6,7 +6,7 @@ Alias for [`upgrade`](upgrade.md). Accepts the same signed local path or URL.
 ## Synopsis
 
 ```bash
-madmail update <PATH_OR_URL>
+madmail update <PATH_OR_URL> [--accept-unsafe-https]
 ```
 
 ## Global flags
@@ -16,21 +16,28 @@ madmail update <PATH_OR_URL>
 | `--config` | — | `CHATMAIL_CONFIG` | `/etc/madmail/madmail.conf` (or `./data/chatmail.toml` when present) | Path to the server config file |
 | `--state-dir` | `--libexec` | `CHATMAIL_STATE_DIR` | `/var/lib/madmail` (or `./data` when it contains state) | Persistent state directory (`credentials.db`, maildirs, `admin_token`, …) |
 
+## Command flags
+
+| Flag | Description |
+|------|-------------|
+| `--accept-unsafe-https` | Same as [`upgrade`](upgrade.md) — allow HTTPS with untrusted TLS certificates (signature check still applies) |
 
 ## Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `PATH_OR_URL` | Same as `upgrade` — local signed binary or `http://` / `https://` URL |
+| `PATH_OR_URL` | Same as `upgrade` — local signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive |
 
 ## Examples
 
 ```bash
 madmail update /tmp/madmail-signed
 madmail update https://relay.example/releases/madmail
+madmail update --accept-unsafe-https https://self-signed.example/madmail
+madmail update https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz
 ```
 
-See [upgrade](upgrade.md) for full behavior (signature verify, systemd stop/replace/start).
+See [upgrade](upgrade.md) for full behavior (TLS policy, archive extract, signature verify, systemd stop/replace/start, custom www template migration).
 
 ## JSON output (`--json`)
 

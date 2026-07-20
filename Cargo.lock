@@ -525,13 +525,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "chacha20"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d524456ba66e72eb8b115ff89e01e497f8e6d11d78b70b1aa13c0fbd97540a81"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+ "rand_core 0.10.1",
+]
+
+[[package]]
 name = "chacha20poly1305"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
 dependencies = [
  "aead",
- "chacha20",
+ "chacha20 0.9.1",
  "cipher",
  "poly1305",
  "zeroize",
@@ -539,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "assert_cmd",
  "async-trait",
@@ -569,6 +580,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "ed25519-dalek",
+ "flate2",
  "getrandom 0.3.4",
  "hex",
  "libc",
@@ -580,6 +592,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "tar",
  "tempfile",
  "time",
  "tokio",
@@ -590,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-acme"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "chatmail-types",
  "hyper 0.14.32",
@@ -606,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-admin"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "axum",
  "chatmail-admin-web",
@@ -635,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-admin-web"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "axum",
  "chatmail-config",
@@ -650,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-auth"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "argon2",
  "base64",
@@ -670,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-config"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "chatmail-types",
  "clap",
@@ -681,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-db"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "chatmail-config",
  "chatmail-types",
@@ -693,8 +706,9 @@ dependencies = [
 
 [[package]]
 name = "chatmail-delivery"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
+ "chatmail-auth",
  "chatmail-config",
  "chatmail-db",
  "chatmail-pgp",
@@ -718,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-fed"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "axum",
  "chatmail-config",
@@ -742,7 +756,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-imap"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "chatmail-auth",
  "chatmail-config",
@@ -770,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-integration"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "assert_cmd",
  "axum",
@@ -800,7 +814,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-iroh"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "anyhow",
  "tokio",
@@ -809,7 +823,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-metrics"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "axum",
  "chatmail-types",
@@ -825,7 +839,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-pgp"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "chatmail-types",
  "mail-parser",
@@ -833,8 +847,9 @@ dependencies = [
 
 [[package]]
 name = "chatmail-push"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
+ "chatmail-config",
  "chatmail-db",
  "chatmail-types",
  "reqwest",
@@ -848,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-shadowsocks"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "base64",
  "chatmail-config",
@@ -866,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-smtp"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "base64",
  "chatmail-auth",
@@ -891,7 +906,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-state"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "chatmail-config",
  "chatmail-db",
@@ -907,7 +922,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-storage"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "async-trait",
  "chatmail-types",
@@ -921,7 +936,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-tasks"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "async-trait",
  "chatmail-config",
@@ -938,7 +953,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-tls"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "chatmail-types",
  "rustls",
@@ -947,7 +962,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-turn"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -963,7 +978,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-types"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "sqlx",
  "thiserror 2.0.18",
@@ -971,7 +986,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-www"
-version = "2.11.2"
+version = "2.17.0"
 dependencies = [
  "axum",
  "chatmail-auth",
@@ -1158,6 +1173,15 @@ name = "crc-catalog"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
+
+[[package]]
+name = "crc32fast"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
+dependencies = [
+ "cfg-if",
+]
 
 [[package]]
 name = "crossbeam-queue"
@@ -1474,7 +1498,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1537,6 +1561,16 @@ dependencies = [
  "lazy_static",
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "flate2"
+version = "1.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
+dependencies = [
+ "crc32fast",
+ "miniz_oxide",
 ]
 
 [[package]]
@@ -1724,11 +1758,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
- "js-sys",
  "libc",
  "r-efi 5.3.0",
  "wasip2",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -1738,10 +1770,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0de51e6874e94e7bf76d726fc5d13ba782deca734ff60d5bb2fb2607c7406555"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 6.0.0",
+ "rand_core 0.10.1",
  "wasip2",
  "wasip3",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2024,7 +2059,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2239,7 +2274,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2516,6 +2551,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
+ "simd-adler32",
 ]
 
 [[package]]
@@ -2628,7 +2664,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2999,13 +3035,13 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "plist"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "092791278e026273c1b65bbdcfbba3a300f2994c896bd01ab01da613c29c46f1"
+checksum = "7da1d65da6dd5d1e44199ac0f58712d241c0f439f80adea8924d832384087f85"
 dependencies = [
  "base64",
  "indexmap",
- "quick-xml 0.39.4",
+ "quick-xml 0.41.0",
  "serde",
  "time",
 ]
@@ -3195,18 +3231,18 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.39.4"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
 ]
 
 [[package]]
 name = "quinn"
-version = "0.11.9"
+version = "0.11.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20"
+checksum = "0c1a41e437b6bbd489372cd4971de128e85c855f56c57f283d20ff016cf7c0a8"
 dependencies = [
  "bytes",
  "cfg_aliases",
@@ -3215,7 +3251,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -3224,14 +3260,15 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "2f4bfc015262b9df63c8845072ce59068853ff5872180c2ce2f13038b970e560"
 dependencies = [
  "bytes",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "lru-slab",
- "rand 0.9.4",
+ "rand 0.10.2",
+ "rand_pcg",
  "ring",
  "rustc-hash",
  "rustls",
@@ -3252,9 +3289,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3300,6 +3337,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
+dependencies = [
+ "chacha20 0.10.1",
+ "getrandom 0.4.2",
+ "rand_core 0.10.1",
+]
+
+[[package]]
 name = "rand_chacha"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3335,6 +3383,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
 dependencies = [
  "getrandom 0.3.4",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
+
+[[package]]
+name = "rand_pcg"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
+dependencies = [
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -3581,7 +3644,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3647,7 +3710,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3966,6 +4029,12 @@ dependencies = [
  "digest 0.10.7",
  "rand_core 0.6.4",
 ]
+
+[[package]]
+name = "simd-adler32"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
 
 [[package]]
 name = "simd_cesu8"
@@ -4341,6 +4410,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4350,7 +4430,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5110,7 +5190,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -5504,6 +5584,16 @@ dependencies = [
  "rusticata-macros",
  "thiserror 2.0.18",
  "time",
+]
+
+[[package]]
+name = "xattr"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
+dependencies = [
+ "libc",
+ "rustix",
 ]
 
 [[package]]

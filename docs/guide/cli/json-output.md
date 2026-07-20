@@ -659,7 +659,8 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
   "data": {
     "services": [
       { "name": "smtp", "port": "25", "mode": "public" },
-      { "name": "https", "port": "443", "mode": "public" }
+      { "name": "http", "port": "80", "mode": "public", "enabled": true },
+      { "name": "https", "port": "443", "mode": "public", "enabled": true }
     ]
   }
 }
@@ -675,6 +676,38 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
   "data": {
     "name": "smtp",
     "port": "2525"
+  }
+}
+```
+
+### `port http` / `port https` status
+
+`enabled` is present for HTTP and HTTPS only.
+
+```json
+{
+  "ok": true,
+  "command": "port",
+  "data": {
+    "name": "https",
+    "port": "443",
+    "mode": "public",
+    "enabled": true
+  }
+}
+```
+
+### `port http enable` / `disable` / `port https enable` / `disable`
+
+```json
+{
+  "ok": true,
+  "command": "port",
+  "message": "https disabled",
+  "data": {
+    "name": "https",
+    "enabled": false,
+    "reload_required": true
   }
 }
 ```
@@ -765,6 +798,106 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
   }
 }
 ```
+
+### `proxy status`
+
+```json
+{
+  "ok": true,
+  "command": "proxy status",
+  "data": {
+    "configured": true,
+    "enabled": true,
+    "port": "8388",
+    "cipher": "aes-128-gcm",
+    "cipher_source": "config",
+    "password_db_override": false,
+    "shadowsocks_url": "ss://YWVzLTEyOC1nY206c2VjcmV0@mail.example:8388",
+    "ws_enabled": false,
+    "grpc_enabled": false
+  }
+}
+```
+
+When Shadowsocks is not configured (`ss_addr` / `ss_password` missing), `configured` and `enabled` are `false` and string fields are empty.
+
+### `proxy enable` / `disable`
+
+```json
+{
+  "ok": true,
+  "command": "proxy enable",
+  "message": "Shadowsocks proxy enabled",
+  "data": {
+    "enabled": true,
+    "reload_required": true
+  }
+}
+```
+
+### `proxy cipher status`
+
+```json
+{
+  "ok": true,
+  "command": "proxy cipher status",
+  "data": {
+    "cipher": "aes-128-gcm",
+    "db_override": null,
+    "source": "config"
+  }
+}
+```
+
+`source` is `"db"` when a DB override is active. `db_override` holds the stored value when set.
+
+### `proxy cipher set` / `reset`
+
+```json
+{
+  "ok": true,
+  "command": "proxy cipher set",
+  "message": "Proxy setting updated",
+  "data": {
+    "value": "aes-256-gcm",
+    "reload_required": true
+  }
+}
+```
+
+`reset` returns `effective`, `source`, and `reload_required` instead of `value`.
+
+### `proxy password status`
+
+```json
+{
+  "ok": true,
+  "command": "proxy password status",
+  "data": {
+    "configured": true,
+    "db_override": false,
+    "source": "config"
+  }
+}
+```
+
+Password values are never included in JSON output.
+
+### `proxy password set` / `reset`
+
+```json
+{
+  "ok": true,
+  "command": "proxy password set",
+  "message": "Proxy setting updated",
+  "data": {
+    "value": "new-secret",
+    "reload_required": true
+  }
+}
+```
+
+`reset` omits `value` and returns `effective`, `source`, and `reload_required`. The effective password is not echoed.
 
 ### `push status`
 
@@ -892,6 +1025,28 @@ Certificate renewal task:
 ```
 
 Setting `embedded` reverts to built-in HTML.
+
+### `html-migrate`
+
+```json
+{
+  "ok": true,
+  "command": "html-migrate",
+  "message": "Migrated 3 file(s)",
+  "data": {
+    "config": "/etc/maddy/maddy.conf",
+    "www_dir": "/var/lib/maddy/www",
+    "scanned": 12,
+    "go_style_files": ["index.html", "info.html"],
+    "migrated": ["index.html", "info.html"],
+    "backups": ["/var/lib/maddy/www/index.html.go-template.bak"],
+    "errors": [],
+    "action": "migrated"
+  }
+}
+```
+
+`action` may be `noop_embedded`, `noop_already_migrated`, `skipped_noninteractive`, `declined`, or `migrated`. Use `--yes` with `--json` to apply without a TTY.
 
 ---
 

@@ -28,7 +28,7 @@ use chatmail_types::Result;
 use tracing::info;
 
 use crate::admin::resolve_admin_token;
-use crate::logging::{init_logging, set_no_log, should_disable_logging};
+use crate::logging::init_logging;
 
 /// Result of a successful boot (for unit tests).
 #[derive(Debug)]
@@ -82,10 +82,8 @@ pub async fn run(args: Args) -> Result<()> {
     let state_dir = resolve_state_dir(&args, &file_config);
 
     let debug = file_config.debug;
-    let log_reload = init_logging(debug);
-    if should_disable_logging(file_config.log_target.as_deref(), debug) {
-        set_no_log(&log_reload);
-    }
+    // No-Log default; `log stderr` / file path / `debug true` enable output.
+    let _log_reload = init_logging(debug, file_config.log_target.as_deref());
 
     let (artifacts, pool) = initialize_state(&state_dir, &file_config).await?;
 
@@ -182,6 +180,7 @@ mod tests {
         assert!(!maddy_log_off(Some("stderr")));
         assert!(!logging_enabled(None));
         assert!(logging_enabled(Some("stderr")));
+        assert!(logging_enabled(Some("/var/lib/madmail/madmail.log")));
         assert!(should_disable_logging(None, false));
         assert!(should_disable_logging(Some("off"), false));
         assert!(!should_disable_logging(Some("stderr"), false));
