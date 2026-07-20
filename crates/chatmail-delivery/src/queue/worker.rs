@@ -75,6 +75,33 @@ impl OutboundQueue {
         Ok(())
     }
 
+    /// Enqueue one message for many remote recipients — the federated group
+    /// fan-out path.
+    ///
+    /// Applies the same madmail principle as local group delivery: the body is
+    /// written to disk **once** and hard-linked into every other recipient's queue
+    /// entry (same bytes, one inode, no second copy), instead of writing a full
+    /// separate copy per recipient. Each entry is dispatched to the worker only
+    /// after its body and meta are durable.
+    pub async fn enqueue_batch(
+        &self,
+        mail_from: &str,
+        rcpts: &[String],
+        data: &[u8],
+    ) -> Result<()> {
+        if rcpts.is_empty() {
+            return Ok(());
+        }
+        let ids = self
+            .store
+            .write_shared(mail_from, rcpts, data, now_unix())
+            .await?;
+        for id in ids {
+            let _ = self.work_tx.send(id);
+        }
+        Ok(())
+    }
+
     pub async fn depth(&self) -> Result<usize> {
         self.store.count_entries().await
     }

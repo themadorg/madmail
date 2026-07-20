@@ -83,6 +83,20 @@ impl DeliveryContext {
         queue.enqueue(job).await
     }
 
+    /// Enqueue a message for many remote recipients at once (federated group fan-out),
+    /// writing the body once and hard-linking it into each recipient's queue entry.
+    pub async fn enqueue_remote_batch(
+        &self,
+        mail_from: &str,
+        rcpts: &[String],
+        data: &[u8],
+    ) -> Result<()> {
+        let queue = OUTBOUND_QUEUE
+            .get()
+            .ok_or_else(|| ChatmailError::storage("outbound queue not started"))?;
+        queue.enqueue_batch(mail_from, rcpts, data).await
+    }
+
     /// Authenticated mail submission — **shared** by SMTP AUTH (587/465) and WebSMTP.
     ///
     /// Security (caller must still run `validate_submission_headers` + `enforce_encryption`):
@@ -103,7 +117,7 @@ impl DeliveryContext {
         let ingest_start = std::time::Instant::now();
         let total_rcpts = recipients.len();
         let mut local_deliveries: Vec<(String, String)> = Vec::new();
-        let mut remote_enqueued = 0usize;
+        let mut remote_rcpts: Vec<String> = Vec::new();
 
         for raw_rcpt in recipients {
             let rcpt = normalize_username(raw_rcpt)?;
@@ -128,9 +142,15 @@ impl DeliveryContext {
                 debug!(rcpt = %rcpt, "silently dismissed outbound federation message");
                 continue;
             }
-            self.enqueue_remote(mail_from.to_string(), rcpt, data.to_vec())
+            remote_rcpts.push(rcpt);
+        }
+
+        // Federated group fan-out: one body write + hard-links (same principle as local
+        // delivery) rather than a full separate copy per remote recipient.
+        let remote_enqueued = remote_rcpts.len();
+        if !remote_rcpts.is_empty() {
+            self.enqueue_remote_batch(mail_from, &remote_rcpts, data)
                 .await?;
-            remote_enqueued += 1;
         }
 
         let rcpt_phase = ingest_start.elapsed();
@@ -206,6 +226,7 @@ impl DeliveryContext {
         }
 
         let mut local_deliveries: Vec<(String, String)> = Vec::new();
+        let mut remote_rcpts: Vec<String> = Vec::new();
 
         for (domain, rcpts) in by_domain {
             if self.local_domains.iter().any(|d| {
@@ -235,10 +256,16 @@ impl DeliveryContext {
                         debug!(rcpt = %rcpt, "silently dismissed outbound federation message");
                         continue;
                     }
-                    self.enqueue_remote(mail_from.to_string(), rcpt, data.to_vec())
-                        .await?;
+                    remote_rcpts.push(rcpt);
                 }
             }
+        }
+
+        // Federated group fan-out: one body write + hard-links (same principle as local
+        // delivery) rather than a full separate copy per remote recipient.
+        if !remote_rcpts.is_empty() {
+            self.enqueue_remote_batch(mail_from, &remote_rcpts, data)
+                .await?;
         }
 
         if !local_deliveries.is_empty() {
@@ -338,6 +365,179 @@ mod tests {
         let queue_dir = dir.path().join("remote_queue");
         let store = crate::queue::QueueStore::new(queue_dir);
         assert_eq!(store.count_entries().await.unwrap(), 0);
+    }
+
+    /// Federated group fan-out writes a durable queue entry for every remote
+    /// recipient (shared-body + hard-link batch path). Uses the returned queue
+    /// handle directly to stay isolated from the process-wide `OUTBOUND_QUEUE`
+    /// other tests may set.
+    #[tokio::test]
+    async fn enqueue_remote_batch_writes_every_recipient() {
+        let pool = init_memory_db().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        app.auth.hydrate(&pool).await.unwrap();
+        let local_domains = chatmail_types::build_local_domains("local.test", None);
+        let queue = start_outbound_queue(
+            DeliveryContext {
+                pool: pool.clone(),
+                state: Arc::clone(&app),
+                primary_domain: "local.test".into(),
+                local_domains,
+            },
+            dir.path(),
+            &QueueSettings::default(),
+        )
+        .await
+        .unwrap();
+
+        let recipients: Vec<String> = (0..25).map(|i| format!("u{i}@remote.test")).collect();
+        let body = b"From: a@local.test\r\nTo: g@remote.test\r\n\r\nx";
+        queue
+            .enqueue_batch("a@local.test", &recipients, body)
+            .await
+            .unwrap();
+
+        // Every remote recipient got its own durable queue entry. Delivery to the
+        // bogus domain fails transiently and requeues (max_tries=3), so all entries
+        // remain on disk for this assertion.
+        let queue_dir = dir.path().join("remote_queue");
+        let store = crate::queue::QueueStore::new(queue_dir.clone());
+        assert_eq!(store.count_entries().await.unwrap(), recipients.len());
+
+        // madmail single-write + hard-link principle: the body bytes exist once on
+        // disk (one inode) and every recipient's `.body` is a hard link to it.
+        use std::os::unix::fs::MetadataExt;
+        let mut bodies = std::fs::read_dir(&queue_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "body"))
+            .collect::<Vec<_>>();
+        assert_eq!(bodies.len(), recipients.len());
+        let inodes: std::collections::HashSet<u64> = bodies
+            .iter_mut()
+            .map(|p| std::fs::metadata(&*p).unwrap().ino())
+            .collect();
+        assert_eq!(inodes.len(), 1, "all bodies must share a single inode");
+        let nlink = std::fs::metadata(&bodies[0]).unwrap().nlink();
+        assert_eq!(nlink as usize, recipients.len());
+    }
+
+    #[tokio::test]
+    async fn enqueue_batch_empty_is_ok() {
+        let pool = init_memory_db().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        app.auth.hydrate(&pool).await.unwrap();
+        let local_domains = chatmail_types::build_local_domains("local.test", None);
+        let queue = start_outbound_queue(
+            DeliveryContext {
+                pool: pool.clone(),
+                state: Arc::clone(&app),
+                primary_domain: "local.test".into(),
+                local_domains,
+            },
+            dir.path(),
+            &QueueSettings::default(),
+        )
+        .await
+        .unwrap();
+
+        queue
+            .enqueue_batch("a@local.test", &[], b"nobody")
+            .await
+            .unwrap();
+        assert_eq!(queue.depth().await.unwrap(), 0);
+        let store = crate::queue::QueueStore::new(dir.path().join("remote_queue"));
+        assert_eq!(store.count_entries().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn enqueue_batch_single_recipient_writes_meta_and_body() {
+        let pool = init_memory_db().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        app.auth.hydrate(&pool).await.unwrap();
+        let local_domains = chatmail_types::build_local_domains("local.test", None);
+        let queue = start_outbound_queue(
+            DeliveryContext {
+                pool: pool.clone(),
+                state: Arc::clone(&app),
+                primary_domain: "local.test".into(),
+                local_domains,
+            },
+            dir.path(),
+            &QueueSettings::default(),
+        )
+        .await
+        .unwrap();
+
+        let body = b"From: a@local.test\r\nTo: u@remote.test\r\n\r\none";
+        queue
+            .enqueue_batch("a@local.test", &["u@remote.test".into()], body)
+            .await
+            .unwrap();
+
+        // Transient delivery failure requeues; entry stays for inspection.
+        let store = crate::queue::QueueStore::new(dir.path().join("remote_queue"));
+        assert_eq!(store.count_entries().await.unwrap(), 1);
+        let id = store.list_ids().await.unwrap().pop().unwrap();
+        let (meta, loaded) = store.load(&id).await.unwrap();
+        assert_eq!(meta.mail_from, "a@local.test");
+        assert_eq!(meta.rcpt_to, "u@remote.test");
+        assert_eq!(loaded, body);
+    }
+
+    #[tokio::test]
+    async fn enqueue_batch_rolls_back_on_write_failure() {
+        use crate::queue::test_failpoints;
+
+        let pool = init_memory_db().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        app.auth.hydrate(&pool).await.unwrap();
+        let local_domains = chatmail_types::build_local_domains("local.test", None);
+        let queue = start_outbound_queue(
+            DeliveryContext {
+                pool: pool.clone(),
+                state: Arc::clone(&app),
+                primary_domain: "local.test".into(),
+                local_domains,
+            },
+            dir.path(),
+            &QueueSettings::default(),
+        )
+        .await
+        .unwrap();
+
+        let _fp = test_failpoints::arm(test_failpoints::AFTER_FIRST_META);
+        let err = queue
+            .enqueue_batch(
+                "a@local.test",
+                &[
+                    "u0@remote.test".into(),
+                    "u1@remote.test".into(),
+                    "u2@remote.test".into(),
+                ],
+                b"will-fail",
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("test failpoint"));
+
+        // Failed batch must not leave durable entries (worker must not see them).
+        let store = crate::queue::QueueStore::new(dir.path().join("remote_queue"));
+        assert_eq!(store.count_entries().await.unwrap(), 0);
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path().join("remote_queue"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "enqueue_batch rollback left files: {leftovers:?}"
+        );
     }
 
     /// Local group delivery uses in-memory auth cache (no per-recipient DB lookups).
