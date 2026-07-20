@@ -565,9 +565,7 @@ mod tests {
             "removed entry's body path must be gone"
         );
 
-        let nlink = std::fs::metadata(store.body_path(&ids[1]))
-            .unwrap()
-            .nlink() as usize;
+        let nlink = std::fs::metadata(store.body_path(&ids[1])).unwrap().nlink() as usize;
         assert_eq!(nlink, 2, "remaining hard links must survive remove");
 
         for id in &ids[1..] {
