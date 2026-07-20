@@ -1,3 +1,16 @@
+## [2.17.1](https://github.com/themadorg/madmail/compare/v2.17.0...v2.17.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* **delivery:** rollback partial federated group queue writes ([4fe7c58](https://github.com/themadorg/madmail/commit/4fe7c582a0710c8c6f8a8f87c937ad2a15647085))
+
+
+### Performance Improvements
+
+* **delivery:** parallelize federated group fan-out ([bed3207](https://github.com/themadorg/madmail/commit/bed3207ccd068f6f4ae149dad2fd0906bf255cda))
+* **delivery:** write federated group body once and hard-link per recipient ([1aad99b](https://github.com/themadorg/madmail/commit/1aad99b5065b676d90d9df547bddc3318ee182cb))
+
 # [2.17.0](https://github.com/themadorg/madmail/compare/v2.16.2...v2.17.0) (2026-07-19)
 
 
