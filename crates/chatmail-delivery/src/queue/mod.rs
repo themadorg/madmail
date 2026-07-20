@@ -25,3 +25,7 @@ mod tests;
 pub use config::QueueConfig;
 pub use store::QueueStore;
 pub use worker::OutboundQueue;
+
+/// Re-export store failpoints for integration tests in sibling modules.
+#[cfg(test)]
+pub use store::test_failpoints;

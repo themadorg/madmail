@@ -579,9 +579,9 @@ impl SmtpSession {
             }
         }
 
-        // Federated group fan-out: write all remote recipients' queue entries in
-        // parallel instead of one-at-a-time, so a large group's later members are
-        // not delayed behind the sequential disk writes of the earlier ones.
+        // Federated group fan-out: write the body once and hard-link it for every
+        // remote recipient (same principle as local delivery), instead of a full
+        // separate durable copy per recipient inside the SMTP DATA transaction.
         if !remote_rcpts.is_empty() {
             delivery
                 .enqueue_remote_batch(&self.mail_from, &remote_rcpts, data)
