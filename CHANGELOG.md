@@ -1,3 +1,10 @@
+## [2.17.2](https://github.com/themadorg/madmail/compare/v2.17.1...v2.17.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* **www:** post contact share form as urlencoded ([2ffc950](https://github.com/themadorg/madmail/commit/2ffc950832695523c94c8e5d9eda933a859a90e9)), closes [#94](https://github.com/themadorg/madmail/issues/94)
+
 ## [2.17.1](https://github.com/themadorg/madmail/compare/v2.17.0...v2.17.1) (2026-07-20)
 
 
