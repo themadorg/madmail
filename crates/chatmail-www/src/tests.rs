@@ -671,6 +671,104 @@ async fn contact_sharing_post_and_slug_view() {
     assert!(page.contains("openpgp4fpr:"));
 }
 
+/// Regression for #94: share page must POST urlencoded fields, not bare FormData/multipart.
+#[tokio::test]
+async fn contact_share_page_posts_urlencoded() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    use chatmail_state::AppState;
+
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = AppConfig::default();
+    cfg.enable_contact_sharing = true;
+    cfg.mail_domain = Some("share.test".into());
+
+    let app_state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg, dir.path()));
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/share")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let html = String::from_utf8_lossy(&body);
+    assert!(
+        html.contains("application/x-www-form-urlencoded"),
+        "share form JS must set Content-Type for axum::Form"
+    );
+    assert!(
+        html.contains("URLSearchParams"),
+        "share form must encode fields as urlencoded, not multipart FormData"
+    );
+    assert!(
+        !html.contains("body: formData"),
+        "must not POST raw FormData (multipart) — that triggers HTTP 415 from axum::Form"
+    );
+}
+
+/// Server contract: multipart bodies are rejected (axum::Form). Matches browser FormData without conversion.
+#[tokio::test]
+async fn contact_sharing_rejects_multipart_form() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    use chatmail_state::AppState;
+
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = AppConfig::default();
+    cfg.enable_contact_sharing = true;
+    cfg.mail_domain = Some("share.test".into());
+
+    let app_state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg, dir.path()));
+
+    let boundary = "----madmailShareBoundary";
+    let body = format!(
+        "--{boundary}\r\n\
+         Content-Disposition: form-data; name=\"name\"\r\n\r\n\
+         Alice\r\n\
+         --{boundary}\r\n\
+         Content-Disposition: form-data; name=\"slug\"\r\n\r\n\
+         multipage\r\n\
+         --{boundary}\r\n\
+         Content-Disposition: form-data; name=\"url\"\r\n\r\n\
+         https://i.delta.chat/#ABCDEF0123456789\r\n\
+         --{boundary}--\r\n"
+    );
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/share")
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(axum::body::Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(
+        text.contains("application/x-www-form-urlencoded"),
+        "unexpected rejection body: {text}"
+    );
+}
+
 /// Dev browser access (WebIMAP + WebSMTP) also applies CORS to `POST /new` / OPTIONS.
 #[tokio::test]
 async fn new_account_cors_reflects_origin_when_browser_access_enabled() {
