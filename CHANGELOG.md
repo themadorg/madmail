@@ -1,3 +1,10 @@
+## [2.17.3](https://github.com/themadorg/madmail/compare/v2.17.2...v2.17.3) (2026-07-21)
+
+
+### Bug Fixes
+
+* **db:** decode blocked_at safely on Postgres ([#98](https://github.com/themadorg/madmail/issues/98)) ([03274c2](https://github.com/themadorg/madmail/commit/03274c2e7740414afad0bc7234231f9b8b047887)), closes [#97](https://github.com/themadorg/madmail/issues/97)
+
 ## [2.17.2](https://github.com/themadorg/madmail/compare/v2.17.1...v2.17.2) (2026-07-21)
 
 

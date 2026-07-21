@@ -550,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "assert_cmd",
  "async-trait",
@@ -603,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-acme"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "chatmail-types",
  "hyper 0.14.32",
@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-admin"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "axum",
  "chatmail-admin-web",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-admin-web"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "axum",
  "chatmail-config",
@@ -663,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-auth"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "argon2",
  "base64",
@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-config"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "chatmail-types",
  "clap",
@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-db"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "chatmail-config",
  "chatmail-types",
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-delivery"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "chatmail-auth",
  "chatmail-config",
@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-fed"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "axum",
  "chatmail-config",
@@ -756,7 +756,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-imap"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "chatmail-auth",
  "chatmail-config",
@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-integration"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "assert_cmd",
  "axum",
@@ -814,7 +814,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-iroh"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "anyhow",
  "tokio",
@@ -823,7 +823,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-metrics"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "axum",
  "chatmail-types",
@@ -839,7 +839,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-pgp"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "chatmail-types",
  "mail-parser",
@@ -847,7 +847,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-push"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "chatmail-config",
  "chatmail-db",
@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-shadowsocks"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "base64",
  "chatmail-config",
@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-smtp"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "base64",
  "chatmail-auth",
@@ -906,7 +906,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-state"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "chatmail-config",
  "chatmail-db",
@@ -922,7 +922,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-storage"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "async-trait",
  "chatmail-types",
@@ -936,7 +936,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-tasks"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "async-trait",
  "chatmail-config",
@@ -953,7 +953,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-tls"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "chatmail-types",
  "rustls",
@@ -962,7 +962,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-turn"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "anyhow",
  "base64",
@@ -978,7 +978,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-types"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "sqlx",
  "thiserror 2.0.18",
@@ -986,7 +986,7 @@ dependencies = [
 
 [[package]]
 name = "chatmail-www"
-version = "2.17.2"
+version = "2.17.3"
 dependencies = [
  "axum",
  "chatmail-auth",
