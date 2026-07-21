@@ -28,9 +28,10 @@ pub const CLI_DELETE_REASON: &str = "account deleted via CLI";
 pub const CLI_BAN_REASON: &str = "banned via CLI";
 
 pub async fn block_user(pool: &DbPool, username: &str, reason: &str) -> Result<()> {
+    // Set blocked_at explicitly so legacy Postgres tables without a DEFAULT still get a value.
     db_execute!(
         pool,
-        "INSERT INTO blocked_users (username, reason) VALUES (?, ?)
+        "INSERT INTO blocked_users (username, reason, blocked_at) VALUES (?, ?, CURRENT_TIMESTAMP)
          ON CONFLICT(username) DO UPDATE SET reason = excluded.reason",
         username,
         reason
@@ -48,10 +49,13 @@ pub async fn unblock_user(pool: &DbPool, username: &str) -> Result<()> {
 }
 
 pub async fn list_blocked_users(pool: &DbPool) -> Result<Vec<(String, String, String)>> {
+    // CAST to TEXT: Postgres stores blocked_at as TIMESTAMP; SQLx cannot decode that as String.
+    // COALESCE: legacy/null rows must not abort AuthCache hydrate (boot-fatal on Postgres).
     let rows: Vec<(String, String, String)> = db_fetch_all!(
         pool,
         (String, String, String),
-        "SELECT username, reason, blocked_at FROM blocked_users ORDER BY blocked_at DESC"
+        "SELECT username, reason, COALESCE(CAST(blocked_at AS TEXT), '')
+         FROM blocked_users ORDER BY blocked_at DESC"
     )?;
     Ok(rows)
 }
@@ -71,6 +75,7 @@ mod tests {
     use super::*;
     use crate::init_memory_db;
     use crate::passwords;
+    use crate::DbPool;
 
     #[tokio::test]
     async fn block_prevents_reregistration_check() {
@@ -103,5 +108,115 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    /// list_blocked_users must return a string timestamp (admin API / ban-list CLI).
+    #[tokio::test]
+    async fn list_blocked_users_returns_blocked_at() {
+        let pool = init_memory_db().await.unwrap();
+        block_user(&pool, "u@x.org", "test").await.unwrap();
+        let rows = list_blocked_users(&pool).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "u@x.org");
+        assert_eq!(rows[0].1, "test");
+        assert!(
+            !rows[0].2.is_empty(),
+            "blocked_at should be non-empty, got {:?}",
+            rows[0].2
+        );
+    }
+
+    /// NULL blocked_at must not fail decode (legacy Postgres / issue #97).
+    #[tokio::test]
+    async fn list_blocked_users_tolerates_null_blocked_at() {
+        let pool = init_memory_db().await.unwrap();
+        let DbPool::Sqlite(p) = &pool else {
+            panic!("memory db is sqlite");
+        };
+        sqlx::query("INSERT INTO blocked_users (username, reason, blocked_at) VALUES (?, ?, NULL)")
+            .bind("null@x.org")
+            .bind("legacy")
+            .execute(p)
+            .await
+            .unwrap();
+
+        let rows = list_blocked_users(&pool).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "null@x.org");
+        assert_eq!(rows[0].1, "legacy");
+        assert_eq!(rows[0].2, "");
+    }
+
+    /// Postgres e2e for issue #97. Opt-in via MADMAIL_TEST_PG_DSN.
+    #[tokio::test]
+    async fn postgres_list_blocked_users_after_block() {
+        let Some(dsn) = std::env::var("MADMAIL_TEST_PG_DSN")
+            .ok()
+            .filter(|s| !s.is_empty())
+        else {
+            eprintln!("skip: set MADMAIL_TEST_PG_DSN for Postgres e2e");
+            return;
+        };
+        let config = chatmail_config::DatabaseConfig {
+            driver: chatmail_config::DbDriver::Postgres,
+            dsn,
+        };
+        let pool = crate::connect_database(&config)
+            .await
+            .expect("connect postgres");
+        crate::pool::run_migrations(&pool)
+            .await
+            .expect("migrate postgres");
+
+        let user = format!(
+            "issue97-{}@test",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        block_user(&pool, &user, ADMIN_DELETE_REASON)
+            .await
+            .expect("block_user");
+        let rows = list_blocked_users(&pool)
+            .await
+            .expect("list_blocked_users must decode TIMESTAMP as String on Postgres");
+        let hit = rows.iter().find(|(u, _, _)| u == &user);
+        let Some((_, reason, blocked_at)) = hit else {
+            panic!("blocked user not listed");
+        };
+        assert_eq!(reason, ADMIN_DELETE_REASON);
+        assert!(
+            !blocked_at.is_empty(),
+            "blocked_at empty on postgres: {blocked_at:?}"
+        );
+
+        // Legacy NULL blocked_at must not break list (boot hydrate path).
+        match &pool {
+            DbPool::Postgres(p) => {
+                let null_user = format!("{user}-null");
+                sqlx::query(
+                    "INSERT INTO blocked_users (username, reason, blocked_at)
+                     VALUES ($1, $2, NULL)
+                     ON CONFLICT (username) DO UPDATE SET blocked_at = NULL",
+                )
+                .bind(&null_user)
+                .bind("null-legacy")
+                .execute(p)
+                .await
+                .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let rows = list_blocked_users(&pool)
+            .await
+            .expect("NULL blocked_at must not fail list on Postgres");
+        assert!(rows
+            .iter()
+            .any(|(u, r, at)| { u.ends_with("-null") && r == "null-legacy" && at.is_empty() }));
+
+        // Cleanup test rows.
+        let _ = unblock_user(&pool, &user).await;
+        let _ = unblock_user(&pool, &format!("{user}-null")).await;
     }
 }
