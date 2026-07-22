@@ -59,6 +59,12 @@ ArchitecturesInstallIn64BitMode=x64compatible
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Dirs]
+Name: "{commonappdata}\Madmail"
+Name: "{commonappdata}\Madmail\config"
+Name: "{commonappdata}\Madmail\data"
+Name: "{commonappdata}\Madmail\config\certs"
+
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut for Madmail tray"; GroupDescription: "Additional icons:"; Flags: unchecked
 Name: "autostart"; Description: "Start &tray when I log in"; GroupDescription: "Startup:"; Flags: checkedonce
@@ -78,9 +84,9 @@ Name: "{group}\Uninstall Madmail"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Madmail Tray"; Filename: "{app}\{#MyTrayExeName}"; Tasks: desktopicon; Check: TrayPresent
 
 [Run]
-; Configure server (self-signed / LE based on wizard), register service, optional firewall
-Filename: "{app}\{#MyAppExeName}"; \
-  Parameters: "{code:InstallCliArgs}"; \
+; Log configure step to ProgramData\Madmail\install.log (failures were invisible with bare runhidden).
+Filename: "{cmd}"; \
+  Parameters: "/C """"{app}\{#MyAppExeName}"" {code:InstallCliArgs} > ""{commonappdata}\Madmail\install.log"" 2>&1"""; \
   StatusMsg: "Configuring Madmail (TLS, service)…"; \
   Flags: runhidden waituntilterminated
 ; Tray autostart
@@ -345,20 +351,44 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  LogPath: String;
+  ResultCode: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
+    LogPath := ExpandConstant('{commonappdata}\Madmail\install.log');
     FinishedMsg :=
       'Madmail is installed under:'#13#10 +
       '  App:   ' + ExpandConstant('{app}') + #13#10 +
       '  Config: ' + ConfigDir + #13#10 +
       '  State:  ' + StateDir + #13#10#13#10 +
       'Service name: {#MyServiceName}'#13#10 +
-      'Admin token file: ' + StateDir + '\admin_token'#13#10#13#10 +
+      'Admin token file: ' + StateDir + '\admin_token'#13#10 +
+      'Install log: ' + LogPath + #13#10#13#10 +
+      'If the service is missing, open an elevated cmd and run:'#13#10 +
+      '  "' + ExpandConstant('{app}\{#MyAppExeName}') + '" --config "' + ConfigDir + '\madmail.conf" --state-dir "' + StateDir + '" service install --start'#13#10#13#10 +
       'Useful commands:'#13#10 +
       '  madmail service status'#13#10 +
       '  madmail admin-token'#13#10 +
       '  madmail-tray --smoke-exit';
+
+    { Verify SCM registration; offer repair if configure step failed silently. }
+    if Exec(ExpandConstant('{cmd}'),
+      '/C sc query {#MyServiceName} >nul 2>&1',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    begin
+      if ResultCode <> 0 then
+      begin
+        MsgBox(
+          'Madmail files were installed, but the Windows service "{#MyServiceName}" is not registered.'#13#10#13#10 +
+          'This often happens if antivirus blocked the configure step, or the installer was not elevated.'#13#10#13#10 +
+          'See log: ' + LogPath + #13#10#13#10 +
+          'Repair (elevated Command Prompt):'#13#10 +
+          '"' + ExpandConstant('{app}\{#MyAppExeName}') + '" --config "' + ConfigDir + '\madmail.conf" --state-dir "' + StateDir + '" service install --start',
+          mbError, MB_OK);
+      end;
+    end;
   end;
 end;
 

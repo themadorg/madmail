@@ -45,8 +45,10 @@ impl TrayApp {
         let label = format!("Status: {}", st.as_str());
         self.item_status.set_text(label);
         let running = matches!(st, ServiceState::Running);
+        // Allow Start when stopped or not yet registered (install --start).
         self.item_start.set_enabled(!running);
-        self.item_stop.set_enabled(running);
+        self.item_stop
+            .set_enabled(running || matches!(st, ServiceState::Stopped));
     }
 
     fn handle_menu(&mut self, id: &tray_icon::menu::MenuId) {

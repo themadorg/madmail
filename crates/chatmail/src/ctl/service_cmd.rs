@@ -54,13 +54,10 @@ fn require_windows() -> Result<()> {
 fn install(args: &Args, name: &str, start_after: bool) -> Result<()> {
     require_windows()?;
     let out = CtlOut::from_args(args, "service");
-    let exe = std::env::current_exe().map_err(|e| {
-        ChatmailError::config(format!(
-            "resolve current executable for service binPath: {e}"
-        ))
-    })?;
+    // Prefer sibling/Program Files madmail.exe — never register madmail-tray as the service.
+    let exe = resolve_service_executable()?;
     let bin_path = service_bin_path(&exe, &args.config, &args.state_dir);
-    create_service(name, &bin_path)?;
+    create_or_update_service(name, &bin_path)?;
     set_service_description(name, "Madmail chatmail / mail server")?;
     set_service_recovery(name)?;
     if !out.is_json() {
@@ -83,6 +80,31 @@ fn install(args: &Args, name: &str, start_after: bool) -> Result<()> {
         }))?;
     }
     Ok(())
+}
+
+/// Binary that the SCM must launch (always `madmail.exe`, never the tray).
+fn resolve_service_executable() -> Result<std::path::PathBuf> {
+    let current = std::env::current_exe().map_err(|e| {
+        ChatmailError::config(format!(
+            "resolve current executable for service binPath: {e}"
+        ))
+    })?;
+    let name = current
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if name == "madmail.exe" || name == "madmail" {
+        return Ok(current);
+    }
+    if let Some(dir) = current.parent() {
+        let sibling = dir.join("madmail.exe");
+        if sibling.is_file() {
+            return Ok(sibling);
+        }
+    }
+    // Last resort: still use current (may be wrong if tray-only install).
+    Ok(current)
 }
 
 fn uninstall(args: &Args, name: &str) -> Result<()> {
@@ -172,9 +194,9 @@ pub fn argv_without_service_flag() -> Vec<std::ffi::OsString> {
 }
 
 #[cfg(windows)]
-fn create_service(name: &str, bin_path: &str) -> Result<()> {
+fn create_or_update_service(name: &str, bin_path: &str) -> Result<()> {
     // sc requires a space after `=` tokens.
-    run_sc(
+    match run_sc(
         &[
             "create",
             name,
@@ -183,11 +205,30 @@ fn create_service(name: &str, bin_path: &str) -> Result<()> {
             "DisplayName= Madmail",
         ],
         &format!("create service {name}"),
-    )
+    ) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string();
+            // 1073 = The specified service already exists.
+            if msg.contains("1073") || msg.to_ascii_lowercase().contains("already exists") {
+                run_sc(
+                    &[
+                        "config",
+                        name,
+                        &format!("binPath= {bin_path}"),
+                        "start= auto",
+                    ],
+                    &format!("update service {name} binPath"),
+                )?;
+                return Ok(());
+            }
+            Err(e)
+        }
+    }
 }
 
 #[cfg(not(windows))]
-fn create_service(_name: &str, _bin_path: &str) -> Result<()> {
+fn create_or_update_service(_name: &str, _bin_path: &str) -> Result<()> {
     require_windows()
 }
 

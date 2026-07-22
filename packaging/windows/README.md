@@ -141,6 +141,28 @@ GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflow
 
 Does **not** create git tags or GitHub Releases. Download the setup from the Actions run artifacts (`madmail-windows-amd64-setup`). Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
 
+### Windows Defender / SmartScreen
+
+Unsigned CI-built `setup.exe` / `madmail.exe` are often flagged as **Trojan:Win32/Bearfoos** (or similar ML heuristics). That is a **false positive** for this project until Authenticode signing is added.
+
+Workarounds for lab VMs:
+
+1. **Defender exclusion** for `C:\Program Files\Madmail` and `%ProgramData%\Madmail` (and your Downloads folder while installing).
+2. Restore the file from Protection history if quarantined mid-install.
+3. Prefer copying **`madmail.exe`** from CI and running elevated `madmail install …` if setup.exe is blocked.
+4. Long-term: sign release binaries (Authenticode).
+
+If the tray says the service does not exist (error 1060), register it manually (elevated):
+
+```powershell
+& "C:\Program Files\Madmail\madmail.exe" `
+  --config "$env:ProgramData\Madmail\config\madmail.conf" `
+  --state-dir "$env:ProgramData\Madmail\data" `
+  service install --start
+```
+
+Configure log (when installed via setup): `%ProgramData%\Madmail\install.log`.
+
 ## Local full E2E (Vagrant + libvirt)
 
 Optional **release testing** on a Windows VM (not a GHA replacement): install, service, firewall, and **full mail path** (create users, SMTP submit, IMAP receive both directions).
