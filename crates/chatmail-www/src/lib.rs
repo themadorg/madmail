@@ -35,8 +35,9 @@ pub use export::export_www_files;
 pub use go_template::{looks_like_go_template, prepare_template};
 pub use router::{www_router, WwwState};
 pub use www_migrate::{
-    migrate_www_dir, migrate_www_html_file, scan_www_dir_for_go_templates, FileMigrateOutcome,
-    MigrateReport,
+    format_www_template_error, migrate_www_dir, migrate_www_html_file, rewrite_legacy_qr_js,
+    scan_literal_brace_warnings, scan_www_dir_for_go_templates, transform_html_source,
+    FileMigrateOutcome, MigrateReport,
 };
 
 #[cfg(test)]

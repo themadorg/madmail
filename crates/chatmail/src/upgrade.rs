@@ -667,15 +667,15 @@ fn run_post_upgrade_www_migrate(new_bin: &Path, args: &Args) {
     // and break scripted `madmail update --json` parsers. Operators can migrate later.
     if args.json {
         eprintln!(
-            "ℹ️ --json upgrade: not prompting for www template migration. \
-             If you use a custom www_dir with Go templates, run: \
-             madmail --config {} html-migrate",
+            "ℹ️ --json upgrade: not prompting for www migration. \
+             If you use a custom www_dir (Go templates and/or legacy /qr), run: \
+             madmail --config {} html-migrate --yes",
             args.config.display()
         );
         return;
     }
 
-    eprintln!("🌐 Checking custom www templates (Go → Minijinja)...");
+    eprintln!("🌐 Checking custom www (Go → Minijinja, legacy /qr → client QR)...");
     let mut cmd = Command::new(new_bin);
     cmd.arg("--config").arg(&args.config).arg("html-migrate");
     // Inherit stdin so interactive [y/N] works when the operator is at a TTY.

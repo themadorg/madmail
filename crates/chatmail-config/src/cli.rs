@@ -136,10 +136,10 @@ pub enum Command {
         #[arg(value_name = "WWW_DIR")]
         www_dir: String,
     },
-    /// Convert custom `www_dir` Go templates to Minijinja (interactive).
+    /// Migrate custom `www_dir`: Go templates → Minijinja and legacy `/qr` → client-side QR.
     #[command(name = "html-migrate")]
     HtmlMigrate {
-        /// Apply migration without prompting (default: ask when Go-style HTML is found).
+        /// Apply migration without prompting (default: ask when work is found).
         #[arg(long, short = 'y')]
         yes: bool,
     },

@@ -152,11 +152,18 @@ impl TemplateEngine {
         let env = self.embedded.as_ref().ok_or_else(|| {
             chatmail_types::ChatmailError::config("www template engine not initialized")
         })?;
-        let tmpl = env
-            .get_template(name)
-            .map_err(|e| chatmail_types::ChatmailError::config(e.to_string()))?;
-        tmpl.render(ctx)
-            .map_err(|e| chatmail_types::ChatmailError::config(e.to_string()))
+        let tmpl = env.get_template(name).map_err(|e| {
+            chatmail_types::ChatmailError::config(crate::www_migrate::format_www_template_error(
+                name,
+                &e.to_string(),
+            ))
+        })?;
+        tmpl.render(ctx).map_err(|e| {
+            chatmail_types::ChatmailError::config(crate::www_migrate::format_www_template_error(
+                name,
+                &e.to_string(),
+            ))
+        })
     }
 
     /// Read and render one HTML file from `www_dir` (picks up edits without restart).
@@ -167,12 +174,25 @@ impl TemplateEngine {
         })?;
         let mut env = Environment::new();
         add_filters(&mut env);
-        env.add_template_owned(name.to_string(), prepare_template(&src))
-            .map_err(|e| chatmail_types::ChatmailError::config(e.to_string()))?;
+        let prepared = prepare_template(&src);
+        env.add_template_owned(name.to_string(), prepared)
+            .map_err(|e| {
+                chatmail_types::ChatmailError::config(
+                    crate::www_migrate::format_www_template_error(name, &e.to_string()),
+                )
+            })?;
         env.get_template(name)
-            .map_err(|e| chatmail_types::ChatmailError::config(e.to_string()))?
+            .map_err(|e| {
+                chatmail_types::ChatmailError::config(
+                    crate::www_migrate::format_www_template_error(name, &e.to_string()),
+                )
+            })?
             .render(ctx)
-            .map_err(|e| chatmail_types::ChatmailError::config(e.to_string()))
+            .map_err(|e| {
+                chatmail_types::ChatmailError::config(
+                    crate::www_migrate::format_www_template_error(name, &e.to_string()),
+                )
+            })
     }
 }
 

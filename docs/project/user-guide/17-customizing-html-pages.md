@@ -113,8 +113,27 @@ If you keep a customized `www_dir` from Go Madmail:
 1. After binary upgrade, `madmail update` / `upgrade` offers to convert those files (or run `madmail html-migrate` yourself).
 2. Accepting creates `*.go-template.bak` backups and rewrites HTML in place.
 3. The server can still convert many Go forms at render time, but migrating on disk keeps your sources consistent with the v2 engine.
+4. The same command also fixes **legacy QR** usage (`/qr?data=…` → client-side `setQrCodeImage` + `qrcode.min.js`). The old `/qr` HTTP endpoint is gone.
 
 See the CLI reference: [html-migrate](../../guide/cli/html-migrate.md).
+
+## Literal `{%` and `{{` in custom HTML (Obtainium URLs, etc.)
+
+Minijinja treats **`{%`** and **`{{`** as template syntax everywhere in the file — including inside `href`, scripts, and plain text.
+
+That breaks custom pages that embed deep links or app-store URLs containing those sequences. A common case is **Obtainium**-style links where URL-encoding produces `{%22` (a `{` followed by `%22…`).
+
+**Symptoms:** HTTP 500 on the page; logs like `www template render` / `syntax error` mentioning the file.
+
+**Fix:** wrap the literal content so the engine does not parse it:
+
+```html
+{% raw %}
+<a href="https://example.com/install?config={%22id%22:%22app%22}">Download</a>
+{% endraw %}
+```
+
+`html-migrate` **warns** about suspicious `{%` / `{{` sequences but does **not** auto-wrap them (that could break real templates). After editing, reload or restart the service.
 
 ## Common Examples
 

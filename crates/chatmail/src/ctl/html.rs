@@ -113,7 +113,7 @@ pub async fn html_serve(args: &Args, www_dir: &str) -> Result<()> {
     Ok(())
 }
 
-/// Convert custom `www_dir` Go `html/template` files to Minijinja on disk.
+/// Convert custom `www_dir` Go templates to Minijinja and fix legacy QR/static assets.
 ///
 /// Used interactively by operators and non-interactively from `madmail update`
 /// (re-exec of the new binary after replace).
@@ -150,11 +150,21 @@ pub async fn html_migrate(args: &Args, yes: bool) -> Result<()> {
     }
 
     let dry = migrate_www_dir(www_dir, false)?;
-    if dry.go_style_files.is_empty() {
+    print_literal_brace_warnings(&out, &dry.literal_brace_warnings);
+
+    if !dry.dry_needs_apply() {
         let msg = format!(
-            "Custom www_dir {} has no Go-style HTML templates (already Minijinja or no templates).",
+            "Custom www_dir {} has no Go-style HTML templates and no legacy /qr?data= QR usage \
+             (already Minijinja / client-side QR, or no templates).",
             www_dir.display()
         );
+        if !out.is_json() && !dry.literal_brace_warnings.is_empty() {
+            out.blank();
+            out.line(
+                "Literal `{%` / `{{` warnings above are not auto-fixed — wrap with \
+                 `{% raw %}…{% endraw %}` if they are plain text or URLs.",
+            );
+        }
         return out.done_msg(
             &msg,
             serde_json::json!({
@@ -162,32 +172,54 @@ pub async fn html_migrate(args: &Args, yes: bool) -> Result<()> {
                 "www_dir": www_dir.display().to_string(),
                 "scanned": dry.scanned,
                 "go_style_files": dry.go_style_files,
+                "qr_legacy_files": dry.qr_legacy_files,
+                "literal_brace_warnings": dry.literal_brace_warnings,
                 "action": "noop_already_migrated",
             }),
-            "No Go-style templates found",
+            "No Go-style templates or legacy QR found",
         );
     }
 
     if !out.is_json() {
-        out.line(format!(
-            "Found {} Go-style HTML template(s) under {}:",
-            dry.go_style_files.len(),
-            www_dir.display()
-        ));
-        for (i, f) in dry.go_style_files.iter().enumerate() {
-            if i >= 12 {
-                out.line(format!(
-                    "  … and {} more",
-                    dry.go_style_files.len().saturating_sub(12)
-                ));
-                break;
+        if !dry.go_style_files.is_empty() {
+            out.line(format!(
+                "Found {} Go-style HTML template(s) under {}:",
+                dry.go_style_files.len(),
+                www_dir.display()
+            ));
+            for (i, f) in dry.go_style_files.iter().enumerate() {
+                if i >= 12 {
+                    out.line(format!(
+                        "  … and {} more",
+                        dry.go_style_files.len().saturating_sub(12)
+                    ));
+                    break;
+                }
+                out.line(format!("  - {f}"));
             }
-            out.line(format!("  - {f}"));
+            out.blank();
         }
-        out.blank();
+        if !dry.qr_legacy_files.is_empty() {
+            out.line(format!(
+                "Found {} legacy QR / client-QR asset issue(s) under {}:",
+                dry.qr_legacy_files.len(),
+                www_dir.display()
+            ));
+            for (i, f) in dry.qr_legacy_files.iter().enumerate() {
+                if i >= 12 {
+                    out.line(format!(
+                        "  … and {} more",
+                        dry.qr_legacy_files.len().saturating_sub(12)
+                    ));
+                    break;
+                }
+                out.line(format!("  - {f}"));
+            }
+            out.blank();
+        }
         out.line(
-            "madmail-v2 uses Minijinja. Converting rewrites these files in place \
-             (creates .go-template.bak backups).",
+            "This rewrites Go html/template → Minijinja and/or `/qr?data=` → client-side QR \
+             (setQrCodeImage + qrcode.min.js). Backups: *.go-template.bak / main.js.qr-compat.bak.",
         );
     }
 
@@ -196,7 +228,7 @@ pub async fn html_migrate(args: &Args, yes: bool) -> Result<()> {
         true
     } else if interactive {
         confirm(
-            "Convert custom www templates from Go html/template style to Minijinja?",
+            "Migrate custom www (Go templates → Minijinja and/or legacy QR → client-side)?",
             false,
         )?
     } else {
@@ -213,6 +245,8 @@ pub async fn html_migrate(args: &Args, yes: bool) -> Result<()> {
                 "www_dir": www_dir.display().to_string(),
                 "scanned": dry.scanned,
                 "go_style_files": dry.go_style_files,
+                "qr_legacy_files": dry.qr_legacy_files,
+                "literal_brace_warnings": dry.literal_brace_warnings,
                 "action": "skipped_noninteractive",
             }),
             "Skipped non-interactive",
@@ -221,12 +255,14 @@ pub async fn html_migrate(args: &Args, yes: bool) -> Result<()> {
 
     if !should_apply {
         return out.done_msg(
-            "Left custom www templates unchanged.",
+            "Left custom www templates and QR assets unchanged.",
             serde_json::json!({
                 "config": args.config.display().to_string(),
                 "www_dir": www_dir.display().to_string(),
                 "scanned": dry.scanned,
                 "go_style_files": dry.go_style_files,
+                "qr_legacy_files": dry.qr_legacy_files,
+                "literal_brace_warnings": dry.literal_brace_warnings,
                 "action": "declined",
             }),
             "Declined",
@@ -235,25 +271,58 @@ pub async fn html_migrate(args: &Args, yes: bool) -> Result<()> {
 
     let report = migrate_www_dir(www_dir, true)?;
     if !out.is_json() {
-        out.line(format!(
-            "Migrated {} file(s); backups: {}",
-            report.migrated.len(),
-            report.backups.len()
-        ));
-        for f in &report.migrated {
-            out.line(format!("  ✓ {f}"));
+        if !report.migrated.is_empty() || !report.qr_migrated.is_empty() {
+            out.line(format!(
+                "Migrated {} HTML file(s); QR/static updates: {}; backups: {}",
+                report.migrated.len(),
+                report.qr_migrated.len(),
+                report.backups.len()
+            ));
+            for f in &report.migrated {
+                out.line(format!("  ✓ {f}"));
+            }
+            for f in &report.qr_migrated {
+                if !report.migrated.contains(f) {
+                    out.line(format!("  ✓ QR/static: {f}"));
+                }
+            }
+            if report.qrcode_js_copied {
+                out.line("  ✓ copied qrcode.min.js from embedded assets");
+            }
+            if report.main_js_qr_helper_added {
+                out.line("  ✓ appended setQrCodeImage to main.js");
+            }
         }
         if !report.errors.is_empty() {
             for e in &report.errors {
                 out.line(format!("  ⚠ {e}"));
             }
         }
+        print_literal_brace_warnings(&out, &report.literal_brace_warnings);
+        if !report.literal_brace_warnings.is_empty() {
+            out.blank();
+            out.line(
+                "Literal `{%` / `{{` warnings are not auto-fixed — wrap with \
+                 `{% raw %}…{% endraw %}` if they are plain text or URLs.",
+            );
+        }
     }
+
+    let action = if report.migrated.is_empty()
+        && report.qr_migrated.is_empty()
+        && !report.qrcode_js_copied
+        && !report.main_js_qr_helper_added
+    {
+        "noop_already_migrated"
+    } else {
+        "migrated"
+    };
 
     out.done_msg(
         format!(
-            "Migrated {} template(s) under {}",
+            "Migrated {} template(s), {} QR/static update(s) under {}",
             report.migrated.len(),
+            report.qr_migrated.len(),
             www_dir.display()
         ),
         serde_json::json!({
@@ -262,10 +331,37 @@ pub async fn html_migrate(args: &Args, yes: bool) -> Result<()> {
             "scanned": report.scanned,
             "go_style_files": report.go_style_files,
             "migrated": report.migrated,
+            "qr_legacy_files": report.qr_legacy_files,
+            "qr_migrated": report.qr_migrated,
+            "qrcode_js_copied": report.qrcode_js_copied,
+            "main_js_qr_helper_added": report.main_js_qr_helper_added,
+            "literal_brace_warnings": report.literal_brace_warnings,
             "backups": report.backups,
             "errors": report.errors,
-            "action": "migrated",
+            "action": action,
         }),
-        format!("Migrated {} file(s)", report.migrated.len()),
+        format!(
+            "Migrated {} file(s), {} QR/static",
+            report.migrated.len(),
+            report.qr_migrated.len()
+        ),
     )
+}
+
+fn print_literal_brace_warnings(out: &CtlOut, warnings: &[String]) {
+    if out.is_json() || warnings.is_empty() {
+        return;
+    }
+    out.blank();
+    out.line(format!(
+        "⚠ {} possible literal `{{%` / `{{{{` sequence(s) (Minijinja may 500):",
+        warnings.len()
+    ));
+    for (i, w) in warnings.iter().enumerate() {
+        if i >= 8 {
+            out.line(format!("  … and {} more", warnings.len().saturating_sub(8)));
+            break;
+        }
+        out.line(format!("  - {w}"));
+    }
 }
