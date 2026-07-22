@@ -162,14 +162,14 @@ Does **not** create git tags or GitHub Releases. Download the setup from the Act
 
 ### Windows Defender / SmartScreen
 
-Unsigned CI-built `setup.exe` / `madmail.exe` are often flagged as **Trojan:Win32/Bearfoos** (or similar ML heuristics). That is a **false positive** for this project until Authenticode signing is added.
+CI-built `setup.exe` / `madmail.exe` are **unsigned** (this project does not ship Authenticode-signed Windows binaries). Defender / SmartScreen may flag them as **Trojan:Win32/Bearfoos** or similar ML heuristics. That is a **false positive** for official Madmail CI artifacts from this repository.
 
-Workarounds for lab VMs:
+Workarounds for lab VMs and self-hosted installs:
 
 1. **Defender exclusion** for `C:\Program Files\Madmail` and `%ProgramData%\Madmail` (and your Downloads folder while installing).
 2. Restore the file from Protection history if quarantined mid-install.
 3. Prefer copying **`madmail.exe`** from CI and running elevated `madmail install …` if setup.exe is blocked.
-4. Long-term: sign release binaries (Authenticode).
+4. Prefer builds from this repo’s **GitHub Actions** artifacts (or a known mirror), not random re-uploads.
 
 If the tray says the service does not exist (error 1060), register it manually (elevated):
 
