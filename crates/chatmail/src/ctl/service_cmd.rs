@@ -353,13 +353,12 @@ fn run_sc(args: &[&str], action: &str) -> Result<()> {
     )))
 }
 
-/// Build an `sc.exe` command.
+/// Build an `sc.exe` command (used for start/stop/delete/query).
 ///
-/// Windows `sc` option syntax is `key= value` (space after `=`). Rust's default
-/// `Command` quoting wraps those tokens as `"start= auto"`, which `sc` rejects
-/// with exit 1639 (`ERROR: Invalid start= field`). On Windows every argument is
-/// therefore appended with [`CommandExt::raw_arg`] so the process command line
-/// keeps unquoted `start= auto`, `binPath= "…"`, `reset= 86400`, etc.
+/// Service **create/config** uses the Win32 API ([`create_or_update_service`]) so
+/// we never depend on `sc` option quoting. Remaining `sc` calls still use
+/// [`CommandExt::raw_arg`] on Windows: if a future caller passes `key= value`
+/// tokens, Rust's default quoting must not wrap them as `"start= auto"` (exit 1639).
 fn sc_command(args: &[&str]) -> Command {
     let mut cmd = Command::new("sc");
     #[cfg(windows)]
@@ -394,26 +393,21 @@ mod tests {
         assert!(p.contains("madmail.exe"), "{p}");
     }
 
-    /// Document the sc option tokens that must not be Command-quoted on Windows.
     #[test]
-    fn sc_create_option_tokens_use_space_after_equals() {
+    fn service_bin_path_is_suitable_for_scm_image_path() {
         let bin = service_bin_path(
             Path::new(r"C:\Program Files\Madmail\madmail.exe"),
             Path::new(r"C:\ProgramData\Madmail\config\madmail.conf"),
             Path::new(r"C:\ProgramData\Madmail\data"),
         );
-        let create_args = [
-            "create",
-            "Madmail",
-            &format!("binPath= {bin}"),
-            "start= auto",
-            "DisplayName= Madmail",
-        ];
-        assert!(create_args[2].starts_with("binPath= "));
-        assert_eq!(create_args[3], "start= auto");
-        assert_eq!(create_args[4], "DisplayName= Madmail");
-        // These must go through sc_command → raw_arg on Windows (see run_sc docs).
-        let _ = sc_command(&create_args);
+        // CreateService uses exe + argv; ImagePath-style string still used for display/logging.
+        assert!(bin.starts_with('"'), "{bin}");
+        assert!(bin.contains("--service"), "{bin}");
+        assert!(bin.contains("--config"), "{bin}");
+        assert!(bin.contains("run"), "{bin}");
+        assert!(bin.contains("--libexec"), "{bin}");
+        // sc start/stop/delete still go through sc_command (raw_arg on Windows).
+        let _ = sc_command(&["query", "Madmail"]);
     }
 
     #[test]

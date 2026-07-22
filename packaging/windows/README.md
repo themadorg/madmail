@@ -124,9 +124,28 @@ Until arm64 CI runners or cargo-xwin are available, **compile-only** checks and 
 madmail install --simple --ip … --install-service --start-service --firewall
 madmail service install|start|stop|status
 madmail firewall apply|remove
+madmail admin-token
 madmail-tray --smoke-exit
+madmail-tray status | token
 madmail-tray install-autostart
 ```
+
+### Admin API vs admin web UI
+
+| Surface | Windows packaging status |
+|---------|--------------------------|
+| `POST /api/admin` + bearer token | Supported (service running) |
+| Embedded SPA at `/admin` | **Not** shipped in current Windows CI builds (stub / disabled) |
+| Tray “Open admin UI” | **Removed** — no SPA; use token + CLI/API |
+
+Token file: `%ProgramData%\Madmail\data\admin_token`.  
+Do not open `/api/admin` in a browser (GET → **405**).
+
+### Installer options (wizard)
+
+- **Shadowsocks** — optional (default on).
+- **Iroh** — **not** offered (no `iroh-relay.exe` on Windows yet; enabling it breaks service boot).
+- Prefer **self-signed** in the lab if port **80** / ACME is not ready; **Let's Encrypt** (public IP or domain) needs inbound TCP 80 during install.
 
 ## CI
 
