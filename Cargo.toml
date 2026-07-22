@@ -24,6 +24,7 @@ members = [
     "crates/chatmail-metrics",
     "crates/chatmail-push",
     "crates/chatmail-tasks",
+    "crates/madmail-tray",
     "tests",
 ]
 
