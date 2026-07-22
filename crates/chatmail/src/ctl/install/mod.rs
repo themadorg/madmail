@@ -119,6 +119,8 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         systemd::daemon_reload()?;
     }
 
+    let post = run_post_install_windows_steps(global, args, &cfg).await?;
+
     if global.json {
         let doc_paths = docs::CliDocPaths::for_binary(&cfg.binary_name);
         CtlOut::from_args(global, "install").emit(serde_json::json!({
@@ -127,6 +129,9 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
             "paths_explicit": cfg.paths_explicit,
             "config": cfg.config_path.display().to_string(),
             "state_dir": cfg.state_dir.display().to_string(),
+            "service_installed": post.service_installed,
+            "service_started": post.service_started,
+            "firewall_applied": post.firewall_applied,
             "man_page": if cfg.system_install { Some(doc_paths.man_page.display().to_string()) } else { None },
             "completions": if cfg.system_install {
                 Some({
@@ -146,6 +151,78 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         println!("\nInstallation completed successfully.");
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct PostInstallWindows {
+    service_installed: bool,
+    service_started: bool,
+    firewall_applied: bool,
+}
+
+/// `--install-service` / `--start-service` / `--firewall` (Windows only; notice on Unix).
+async fn run_post_install_windows_steps(
+    global: &Args,
+    args: &InstallArgs,
+    cfg: &InstallConfig,
+) -> Result<PostInstallWindows> {
+    let want_service = args.install_service || args.start_service;
+    let want_firewall = args.firewall;
+    if !want_service && !want_firewall {
+        return Ok(PostInstallWindows::default());
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = (global, cfg);
+        if want_service {
+            eprintln!(
+                "note: --install-service / --start-service apply on Windows only (use systemd unit on Linux)"
+            );
+        }
+        if want_firewall {
+            eprintln!(
+                "note: --firewall applies on Windows only (configure firewalld/ufw on Linux)"
+            );
+        }
+        Ok(PostInstallWindows::default())
+    }
+
+    #[cfg(windows)]
+    {
+        use chatmail_config::{ServiceCommand, DEFAULT_WINDOWS_SERVICE_NAME};
+
+        use super::firewall_cmd;
+        use super::service_cmd;
+
+        let mut post = PostInstallWindows::default();
+        // Service registration must use the written config/state paths.
+        let mut service_args = global.clone();
+        service_args.config = cfg.config_path.clone();
+        service_args.state_dir = cfg.state_dir.clone();
+
+        if want_service {
+            let start = args.start_service;
+            service_cmd::service(
+                &service_args,
+                &ServiceCommand::Install {
+                    name: DEFAULT_WINDOWS_SERVICE_NAME.into(),
+                    start,
+                },
+            )
+            .await?;
+            post.service_installed = true;
+            post.service_started = start;
+        }
+        if want_firewall {
+            firewall_cmd::apply_rules(cfg.enable_turn, cfg.enable_ss, cfg.enable_iroh)?;
+            post.firewall_applied = true;
+            if !global.json {
+                println!("✓ Windows Firewall rules applied");
+            }
+        }
+        Ok(post)
+    }
 }
 
 fn resolve_tls_mode(cfg: &mut InstallConfig, args: &InstallArgs) -> Result<()> {
@@ -702,6 +779,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -801,6 +881,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -849,6 +932,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -898,6 +984,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -942,6 +1031,9 @@ mod tests {
                 dry_run: false,
                 skip_systemd: false,
                 skip_user: false,
+                install_service: false,
+                start_service: false,
+                firewall: false,
                 binary_path: None,
                 obtain_certificate: true,
                 no_obtain_certificate: false,
@@ -984,6 +1076,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -1034,6 +1129,9 @@ mod tests {
                 dry_run: false,
                 skip_systemd: false,
                 skip_user: false,
+                install_service: false,
+                start_service: false,
+                firewall: false,
                 binary_path: None,
                 obtain_certificate: true,
                 no_obtain_certificate: false,
@@ -1070,6 +1168,9 @@ mod tests {
                 dry_run: false,
                 skip_systemd: false,
                 skip_user: false,
+                install_service: false,
+                start_service: false,
+                firewall: false,
                 binary_path: None,
                 obtain_certificate: true,
                 no_obtain_certificate: false,
@@ -1114,6 +1215,9 @@ mod tests {
                 dry_run: false,
                 skip_systemd: false,
                 skip_user: false,
+                install_service: false,
+                start_service: false,
+                firewall: false,
                 binary_path: None,
                 obtain_certificate: true,
                 no_obtain_certificate: false,
@@ -1153,6 +1257,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
