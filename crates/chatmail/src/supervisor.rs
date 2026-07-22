@@ -22,8 +22,7 @@ use axum::Router;
 use chatmail_config::{
     effective_http_plain_listen, effective_http_tls_listen, effective_imap_plain_listen,
     effective_imap_tls_listen, effective_smtp_listen, effective_submission_plain_listen,
-    effective_submission_tls_listen, effective_tls_pem_paths, listeners_need_tls_cert, AppConfig,
-    RuntimeListeners,
+    effective_submission_tls_listen, listeners_need_tls_cert, AppConfig, RuntimeListeners,
 };
 use chatmail_db::{load_mail_port_overrides, DbPool};
 use chatmail_delivery::{start_outbound_queue, DeliveryContext};
@@ -312,7 +311,8 @@ impl SupervisorInner {
         if !listeners_need_tls_cert(&runtime) {
             return Ok(None);
         }
-        let (cert, key) = effective_tls_pem_paths(&self.file_config, &self.state_dir);
+        let (cert, key) =
+            crate::tls_boot::ensure_tls_pem_files(&self.file_config, &self.state_dir)?;
         Ok(Some(load_server_config(&cert, &key)?))
     }
 

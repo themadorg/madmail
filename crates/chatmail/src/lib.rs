@@ -26,5 +26,6 @@ pub mod push_boot;
 pub mod servers;
 pub mod ss_boot;
 pub mod supervisor;
+pub mod tls_boot;
 pub mod turn_boot;
 pub mod upgrade;

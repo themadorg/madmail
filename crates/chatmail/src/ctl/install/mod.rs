@@ -113,6 +113,7 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         system::install_binary(&cfg, false)?;
         docs::install_cli_docs(&cfg.binary_name, false)?;
     }
+    #[cfg(unix)]
     if cfg.system_install && !args.skip_systemd {
         systemd::install_unit(&cfg)?;
         systemd::daemon_reload()?;
@@ -360,6 +361,13 @@ fn print_next_steps(cfg: &InstallConfig) {
             cfg.config_path.display(),
             cfg.state_dir.display()
         );
+        #[cfg(windows)]
+        {
+            println!(
+                "  • Windows service (later): madmail service install|start  (when available)"
+            );
+            println!("  • Prefer the Madmail setup wizard for non-technical installs.");
+        }
     }
     println!("  • Admin:  madmail admin-token");
     if cfg.system_install {
@@ -426,14 +434,25 @@ impl InstallConfig {
             .clone()
             .unwrap_or_else(|| cert_dir.join("privkey.pem"));
 
+        // System install (service user + systemd unit) is Unix-only. On Windows,
+        // install always writes local ProgramData-style paths without systemd.
+        #[cfg(windows)]
+        let system_install = false;
+        #[cfg(not(windows))]
         let system_install = config_dir.starts_with("/etc/")
             || state_dir.starts_with("/var/lib/")
             || (args.simple && !paths_explicit);
 
-        let binary_path = args
-            .binary_path
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(format!("/usr/local/bin/{binary_name}")));
+        let binary_path = args.binary_path.clone().unwrap_or_else(|| {
+            #[cfg(windows)]
+            {
+                PathBuf::from(format!("{binary_name}.exe"))
+            }
+            #[cfg(not(windows))]
+            {
+                PathBuf::from(format!("/usr/local/bin/{binary_name}"))
+            }
+        });
 
         let (primary_domain, hostname, public_ip, local_domains, turn_off_tls) = if args.simple {
             if let Some(domain) = args.domain.clone() {
@@ -523,8 +542,17 @@ impl InstallConfig {
             hostname,
             primary_domain,
             local_domains,
+            runtime_dir: {
+                #[cfg(windows)]
+                {
+                    state_dir.join("run").to_string_lossy().into_owned()
+                }
+                #[cfg(not(windows))]
+                {
+                    format!("/run/{binary_name}")
+                }
+            },
             state_dir,
-            runtime_dir: format!("/run/{binary_name}"),
             public_ip,
             tls_mode: args.tls_mode.clone().unwrap_or_default(),
             cert_path,
@@ -566,13 +594,37 @@ fn ensure_ss_password(cfg: &mut InstallConfig) -> Result<()> {
     Ok(())
 }
 
-/// Madmail `install.go` always uses `/var/lib/<binary>` for production installs, never cwd `./data`.
+/// Production install config dir: FHS on Unix, `%ProgramData%\Madmail\config` on Windows.
 fn default_install_config_dir() -> PathBuf {
-    PathBuf::from("/etc/madmail")
+    #[cfg(windows)]
+    {
+        windows_madmail_root().join("config")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("/etc/madmail")
+    }
 }
 
+/// Production install state dir: `/var/lib/<binary>` on Unix, `%ProgramData%\Madmail\data` on Windows.
 fn default_install_state_dir(binary_name: &str) -> PathBuf {
-    PathBuf::from(format!("/var/lib/{binary_name}"))
+    #[cfg(windows)]
+    {
+        let _ = binary_name;
+        windows_madmail_root().join("data")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from(format!("/var/lib/{binary_name}"))
+    }
+}
+
+#[cfg(windows)]
+fn windows_madmail_root() -> PathBuf {
+    std::env::var_os("PROGRAMDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
+        .join("Madmail")
 }
 
 fn resolve_install_state_dir(
@@ -584,13 +636,21 @@ fn resolve_install_state_dir(
     if let Some(dir) = &args.state_dir {
         return dir.clone();
     }
-    if args.simple || config_dir.starts_with("/etc/") {
-        return PathBuf::from(format!("/var/lib/{binary_name}"));
+    #[cfg(windows)]
+    {
+        let _ = (global, config_dir);
+        return default_install_state_dir(binary_name);
     }
-    if global.state_dir.is_relative() || is_local_dev_state_dir(&global.state_dir) {
-        return PathBuf::from(format!("/var/lib/{binary_name}"));
+    #[cfg(not(windows))]
+    {
+        if args.simple || config_dir.starts_with("/etc/") {
+            return PathBuf::from(format!("/var/lib/{binary_name}"));
+        }
+        if global.state_dir.is_relative() || is_local_dev_state_dir(&global.state_dir) {
+            return PathBuf::from(format!("/var/lib/{binary_name}"));
+        }
+        global.state_dir.clone()
     }
-    global.state_dir.clone()
 }
 
 fn chrono_like_now() -> String {
@@ -665,16 +725,51 @@ mod tests {
         assert!(!cfg_ip.turn_off_tls);
         assert!(cfg.enable_ss);
         assert!(cfg.enable_turn);
-        assert!(cfg.cert_path.starts_with("/etc/madmail/certs"));
-        assert!(
-            cfg.state_dir.starts_with("/var/lib/"),
-            "state_dir {:?}",
-            cfg.state_dir
-        );
-        assert!(!cfg.state_dir.to_string_lossy().contains("./data"));
-        assert!(cfg.system_install);
-        assert!(cfg.use_default_systemd_paths);
+        #[cfg(not(windows))]
+        {
+            assert!(cfg.cert_path.starts_with("/etc/madmail/certs"));
+            assert!(
+                cfg.state_dir.starts_with("/var/lib/"),
+                "state_dir {:?}",
+                cfg.state_dir
+            );
+            assert!(!cfg.state_dir.to_string_lossy().contains("./data"));
+            assert!(cfg.system_install);
+            assert!(cfg.use_default_systemd_paths);
+        }
+        #[cfg(windows)]
+        {
+            assert!(!cfg.system_install);
+            assert!(
+                cfg.config_dir.ends_with("Madmail\\config")
+                    || cfg.config_dir.ends_with("Madmail/config"),
+                "config_dir {:?}",
+                cfg.config_dir
+            );
+            assert!(
+                cfg.state_dir.ends_with("Madmail\\data") || cfg.state_dir.ends_with("Madmail/data"),
+                "state_dir {:?}",
+                cfg.state_dir
+            );
+            assert!(cfg.runtime_dir.contains("run"));
+        }
         assert_eq!(cfg.language, "en");
+    }
+
+    #[test]
+    fn default_install_paths_are_platform_specific() {
+        let config = default_install_config_dir();
+        let state = default_install_state_dir("madmail");
+        #[cfg(not(windows))]
+        {
+            assert_eq!(config, PathBuf::from("/etc/madmail"));
+            assert_eq!(state, PathBuf::from("/var/lib/madmail"));
+        }
+        #[cfg(windows)]
+        {
+            assert!(config.ends_with("Madmail\\config") || config.ends_with("Madmail/config"));
+            assert!(state.ends_with("Madmail\\data") || state.ends_with("Madmail/data"));
+        }
     }
 
     #[test]
