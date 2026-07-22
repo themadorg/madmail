@@ -216,8 +216,8 @@ begin
 
   if FeaturePage.Values[0] then
     Args := Args + ' --enable-ss';
-  if FeaturePage.Values[1] then
-    Args := Args + ' --enable-iroh';
+  { Iroh omitted: Windows builds do not ship iroh-relay.exe yet; enabling it makes
+    the service fail at boot with "iroh-relay: program not found". Re-add when packaged. }
 
   Args := Args + ' --install-service';
   if WizardIsTaskSelected('startservice') then
@@ -322,9 +322,7 @@ begin
     'You can change these later via config / CLI.',
     False, False);
   FeaturePage.Add('Shadowsocks proxy');
-  FeaturePage.Add('Iroh relay discovery');
   FeaturePage.Values[0] := True;
-  FeaturePage.Values[1] := False;
 
   DnsPage := CreateOutputMsgPage(wpSelectTasks,
     'DNS checklist', 'Domain deployment reminders',

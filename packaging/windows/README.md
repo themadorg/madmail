@@ -44,7 +44,7 @@ iscc /DArch=arm64 packaging\windows\Madmail.iss
 3. **Identity** — IP or hostname  
 4. **TLS** — self-signed or Let's Encrypt  
 5. ACME email (if LE)  
-6. Language + optional Shadowsocks / Iroh  
+6. Language + optional Shadowsocks (Iroh omitted until `iroh-relay.exe` is packaged)  
 7. Install directory + tasks (firewall, start service, tray autostart)  
 8. DNS checklist (domain mode)  
 9. Post-install: `madmail install … --install-service [--start-service] [--firewall]`  
