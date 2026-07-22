@@ -1,0 +1,73 @@
+# frozen_string_literal: true
+# Madmail Windows local release / E2E box (libvirt).
+#
+# Does NOT replace GitHub Actions. Use for full mail-path testing before release.
+#
+# Prerequisites (Linux host):
+#   - vagrant, libvirt, vagrant-libvirt plugin
+#   - Nested virt recommended for Windows guests
+#   - Pre-built binaries in ../../build/ (madmail-windows-amd64.exe, optional tray)
+#
+#   make -C ../.. build-windows-amd64   # or copy CI artifacts into build/
+#   cd packaging/windows/vagrant && vagrant up --provider=libvirt
+#   vagrant winrm -c 'powershell -File C:\vagrant\provision\run-e2e.ps1'
+#
+# Box: override with MADMAIL_WIN_BOX / MADMAIL_WIN_BOX_VERSION.
+# Prefer boxes built from Microsoft Evaluation ISOs (see README.md).
+
+Vagrant.require_version ">= 2.2.0"
+
+BOX = ENV.fetch("MADMAIL_WIN_BOX", "gusztavvargadr/windows-server-2022-standard")
+BOX_VERSION = ENV["MADMAIL_WIN_BOX_VERSION"] # optional pin
+MEMORY = ENV.fetch("MADMAIL_WIN_MEMORY", "4096").to_i
+CPUS = ENV.fetch("MADMAIL_WIN_CPUS", "2").to_i
+
+Vagrant.configure("2") do |config|
+  config.vm.box = BOX
+  config.vm.box_version = BOX_VERSION if BOX_VERSION && !BOX_VERSION.empty?
+  config.vm.hostname = "madmail-win"
+
+  # WinRM is required for Windows guests.
+  config.vm.communicator = "winrm"
+  config.winrm.username = ENV.fetch("MADMAIL_WIN_USER", "vagrant")
+  config.winrm.password = ENV.fetch("MADMAIL_WIN_PASSWORD", "vagrant")
+  config.winrm.timeout = 1800
+  config.vm.boot_timeout = 1800
+
+  # Shared folder: this directory → C:\vagrant
+  # Host build/ is mounted read-only for binaries.
+  config.vm.synced_folder ".", "/vagrant", type: "rsync", rsync__auto: false
+  config.vm.synced_folder "../../../build", "/madmail-build", type: "rsync",
+                          rsync__auto: false, rsync__args: ["--verbose", "--archive", "--delete", "-z"]
+
+  config.vm.provider "libvirt" do |lv|
+    lv.memory = MEMORY
+    lv.cpus = CPUS
+    lv.disk_bus = "sata"
+    lv.nic_model_type = "virtio"
+    lv.video_type = "qxl"
+    # Windows guests often need longer graphics / input setup
+    lv.graphics_type = "spice"
+    lv.keymap = "en-us"
+  end
+
+  # Fallback VirtualBox if someone lacks libvirt (not primary).
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = MEMORY
+    vb.cpus = CPUS
+    vb.gui = ENV["MADMAIL_WIN_GUI"] == "1"
+  end
+
+  # Stage 1: tools (Python for E2E)
+  config.vm.provision "shell", privileged: true, path: "provision/01-bootstrap.ps1",
+                      powershell_elevated_interactive: false
+
+  # Stage 2: install Madmail service from host build/
+  config.vm.provision "shell", privileged: true, path: "provision/02-install-madmail.ps1",
+                      powershell_elevated_interactive: false
+
+  # Stage 3: full mail E2E (accounts + SMTP + IMAP)
+  config.vm.provision "shell", privileged: true, path: "provision/03-e2e-mail.ps1",
+                      powershell_elevated_interactive: false,
+                      run: "always"
+end

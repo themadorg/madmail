@@ -16,6 +16,7 @@ Run before claiming a public Windows setup.exe or closing epic [#103](https://gi
 - [ ] Firewall rules present (`Madmail (*)` in Windows Firewall)
 - [ ] `madmail-tray --smoke-exit` exits 0; tray menu opens admin / start-stop works
 - [ ] Admin token file under `%ProgramData%\Madmail\data\admin_token`
+- [ ] **Full mail path** (or `vagrant` E2E): create two users, SMTP 587 → IMAP 143 both directions — see [vagrant/README.md](./vagrant/README.md)
 - [ ] **Public IP self-signed** (optional lab)
 - [ ] **Domain LE** or **auto-IP cert** when port 80 and DNS/IP allow (optional)
 
