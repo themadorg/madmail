@@ -25,7 +25,7 @@ use clap::{Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(
     name = "madmail-tray",
-    about = "Madmail tray helper — status, admin, service control"
+    about = "Madmail tray helper — status, token, service control"
 )]
 struct Cli {
     /// Configuration file (default: %ProgramData%\\Madmail\\config\\madmail.conf on Windows).
@@ -52,8 +52,6 @@ struct Cli {
 enum Commands {
     /// Print service / path status and exit.
     Status,
-    /// Open the admin UI in the default browser.
-    OpenAdmin,
     /// Print the admin token if present.
     Token,
     /// Start the Madmail service (`madmail service start`).
@@ -84,14 +82,6 @@ fn main() {
         Some(Commands::Status) => {
             let r = ops::smoke_report(&config, &state_dir, &service_name);
             ops::print_smoke_report(&r);
-        }
-        Some(Commands::OpenAdmin) => {
-            let url = paths::admin_url(&config);
-            if let Err(e) = ops::open_url(&url) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-            println!("Opened {url}");
         }
         Some(Commands::Token) => match paths::read_admin_token(&state_dir) {
             Some(t) => println!("{t}"),
@@ -143,7 +133,7 @@ fn main() {
             {
                 eprintln!(
                     "Interactive tray UI is Windows-only.\n\
-                     Use: madmail-tray --smoke-exit | status | open-admin | token\n\
+                     Use: madmail-tray --smoke-exit | status | token\n\
                      Or run on Windows for the system tray."
                 );
                 std::process::exit(2);

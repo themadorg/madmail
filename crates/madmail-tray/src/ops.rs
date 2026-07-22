@@ -172,21 +172,6 @@ pub fn open_path(path: &Path) -> Result<(), String> {
     }
 }
 
-pub fn open_url(url: &str) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        open::that(url).map_err(|e| format!("open url: {e}"))
-    }
-    #[cfg(not(windows))]
-    {
-        Command::new("xdg-open")
-            .arg(url)
-            .spawn()
-            .map_err(|e| format!("xdg-open: {e}"))?;
-        Ok(())
-    }
-}
-
 /// Snapshot used by `--smoke-exit` and tray status label.
 #[derive(Debug)]
 pub struct SmokeReport {
@@ -208,7 +193,7 @@ pub fn smoke_report(config: &Path, state_dir: &Path, service_name: &str) -> Smok
         state_exists: state_dir.is_dir(),
         token_present: paths::read_admin_token(state_dir).is_some(),
         service: query_service_state(service_name),
-        admin_url: paths::admin_url(config),
+        admin_url: paths::admin_api_url(config),
         madmail: paths::madmail_binary().display().to_string(),
     }
 }
