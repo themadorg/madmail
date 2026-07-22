@@ -62,15 +62,19 @@ function Build-One([string]$A) {
 }
 
 New-Item -ItemType Directory -Force -Path $Build | Out-Null
-Set-Location $Here
-
-switch ($Arch) {
-    "amd64" { Build-One "amd64" }
-    "arm64" { Build-One "arm64" }
-    "all" {
-        Build-One "amd64"
-        Build-One "arm64"
+# Do not leave the caller's cwd changed (GHA steps share the process with &).
+Push-Location $Here
+try {
+    switch ($Arch) {
+        "amd64" { Build-One "amd64" }
+        "arm64" { Build-One "arm64" }
+        "all" {
+            Build-One "amd64"
+            Build-One "arm64"
+        }
     }
+} finally {
+    Pop-Location
 }
 
 Write-Host "==> done"

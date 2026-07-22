@@ -207,7 +207,8 @@ jobs:
         run: |
           & .\packaging\windows\build-setup.ps1 -Arch amd64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $setup = "build\madmail-windows-amd64-setup.exe"
+          # Resolve against workspace root (build-setup used to leave cwd under packaging/windows).
+          $setup = Join-Path $env:GITHUB_WORKSPACE "build\madmail-windows-amd64-setup.exe"
           if (-not (Test-Path $setup)) { throw "missing $setup" }
           Get-Item $setup | Format-List FullName, Length, LastWriteTime
 
@@ -215,5 +216,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: madmail-windows-amd64-setup
-          path: build/madmail-windows-amd64-setup.exe
+          path: ${{ github.workspace }}/build/madmail-windows-amd64-setup.exe
           retention-days: 14
