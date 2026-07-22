@@ -58,6 +58,17 @@ struct UninstallPlan {
 }
 
 pub async fn uninstall(args: &Args, flags: &UninstallArgs) -> Result<()> {
+    #[cfg(windows)]
+    {
+        return uninstall_windows(args, flags).await;
+    }
+
+    #[cfg(not(windows))]
+    uninstall_unix(args, flags).await
+}
+
+#[cfg(not(windows))]
+async fn uninstall_unix(args: &Args, flags: &UninstallArgs) -> Result<()> {
     let ctx = CtlContext::from_args(args)?;
 
     if !flags.dry_run && !is_root() {
@@ -139,6 +150,167 @@ pub async fn uninstall(args: &Args, flags: &UninstallArgs) -> Result<()> {
                 "binary": plan.primary_binary_name,
                 "dry_run": flags.dry_run,
                 "keep_data": flags.keep_data,
+            }),
+            "Uninstallation completed successfully",
+        )?;
+    } else {
+        println!("\n🎉 Uninstallation completed successfully!");
+        if !flags.keep_data {
+            println!("⚠️  All mail data has been permanently deleted.");
+        }
+    }
+    Ok(())
+}
+
+/// Windows uninstall: SCM service, firewall rules, ProgramData layout, optional binary.
+#[cfg(windows)]
+async fn uninstall_windows(args: &Args, flags: &UninstallArgs) -> Result<()> {
+    use chatmail_config::{ServiceCommand, DEFAULT_WINDOWS_SERVICE_NAME};
+
+    use super::firewall_cmd;
+    use super::service_cmd;
+
+    let ctx = CtlContext::from_args(args)?;
+    let primary = current_binary_name();
+    let _ = append_log(&flags.log_file, "Starting Windows uninstall");
+
+    println!("🗑️  {primary} — uninstall (Windows)");
+    println!("====================================");
+
+    let program_data = std::env::var_os("PROGRAMDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"));
+    let madmail_root = program_data.join("Madmail");
+    let config_dir = madmail_root.join("config");
+    let state_dir = if ctx.state_dir.is_dir() {
+        ctx.state_dir.clone()
+    } else {
+        madmail_root.join("data")
+    };
+
+    // Always attempt service + firewall cleanup; only skip disk deletes when nothing exists.
+    let disk_present = madmail_root.is_dir() || config_dir.is_dir() || state_dir.is_dir();
+    if !disk_present && !args.json {
+        println!(
+            "No ProgramData tree at {} — will still try service + firewall cleanup.",
+            madmail_root.display()
+        );
+    }
+
+    if !args.json {
+        println!("Config dir: {}", config_dir.display());
+        println!("State dir:  {}", state_dir.display());
+        println!("Service:    {DEFAULT_WINDOWS_SERVICE_NAME}");
+        println!("Firewall:   remove Madmail rules");
+        if flags.dry_run {
+            println!("\n(dry-run — no changes will be made)");
+        }
+    }
+
+    if !flags.force
+        && !flags.dry_run
+        && !util::confirm(
+            "Are you sure you want to proceed with uninstallation",
+            false,
+        )?
+    {
+        if args.json {
+            CtlOut::from_args(args, "uninstall").aborted()?;
+        } else {
+            println!("Uninstallation cancelled.");
+        }
+        return Ok(());
+    }
+
+    if flags.dry_run {
+        println!("Would: stop/delete service {DEFAULT_WINDOWS_SERVICE_NAME}");
+        println!("Would: remove Madmail firewall rules");
+        if !flags.keep_config {
+            println!("Would: remove {}", config_dir.display());
+        }
+        if !flags.keep_data {
+            println!("Would: remove {}", state_dir.display());
+        }
+        if !flags.keep_binary {
+            if let Ok(exe) = std::env::current_exe() {
+                println!(
+                    "Would: leave binary in place unless under Program Files: {}",
+                    exe.display()
+                );
+            }
+        }
+        if args.json {
+            CtlOut::from_args(args, "uninstall").emit(serde_json::json!({
+                "uninstalled": true,
+                "dry_run": true,
+                "keep_data": flags.keep_data,
+            }))?;
+        } else {
+            println!("\n🎉 Dry-run completed.");
+        }
+        return Ok(());
+    }
+
+    println!("\n[1/4] Stopping and removing Windows service...");
+    // service uninstall does not need matching config for delete
+    let _ = service_cmd::service(
+        args,
+        &ServiceCommand::Uninstall {
+            name: DEFAULT_WINDOWS_SERVICE_NAME.into(),
+        },
+    )
+    .await;
+    println!("✅ Service cleanup attempted");
+
+    println!("\n[2/4] Removing firewall rules...");
+    match firewall_cmd::remove_rules() {
+        Ok(n) => println!("✅ Removed {n} firewall rule(s)"),
+        Err(e) => println!("⚠️  Firewall cleanup: {e}"),
+    }
+
+    if !flags.keep_config {
+        println!("\n[3/4] Removing configuration...");
+        if config_dir.exists() {
+            remove_path(&config_dir, false)?;
+        }
+        println!("✅ Configuration removed");
+    } else {
+        println!("\n[3/4] Keeping configuration (--keep-config)");
+    }
+
+    if !flags.keep_data {
+        println!("\n[4/4] Removing state / mail data...");
+        if state_dir.exists() {
+            remove_path(&state_dir, false)?;
+        }
+        // Parent ProgramData\Madmail if empty-ish
+        if madmail_root.is_dir() {
+            let _ = fs::remove_dir(&madmail_root);
+        }
+        println!("✅ State removed");
+    } else {
+        println!("\n[4/4] Keeping state / mail data (--keep-data)");
+    }
+
+    if !flags.keep_binary {
+        if let Ok(exe) = std::env::current_exe() {
+            let s = exe.to_string_lossy().to_lowercase();
+            if s.contains("program files") && s.contains("madmail") {
+                println!("Note: remove the install directory via the setup uninstaller when using setup.exe.");
+                println!("  binary: {}", exe.display());
+            }
+        }
+    }
+
+    if args.json {
+        CtlOut::from_args(args, "uninstall").done_msg(
+            "",
+            serde_json::json!({
+                "uninstalled": true,
+                "binary": primary,
+                "dry_run": false,
+                "keep_data": flags.keep_data,
+                "platform": "windows",
             }),
             "Uninstallation completed successfully",
         )?;

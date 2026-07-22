@@ -31,6 +31,7 @@ mod dispatch;
 mod docs;
 mod endpoint_cache;
 mod federation;
+mod firewall_cmd;
 mod html;
 mod install;
 mod language;

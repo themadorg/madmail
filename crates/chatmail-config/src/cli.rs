@@ -220,6 +220,11 @@ pub enum Command {
     /// On non-Windows platforms these subcommands return a clear error.
     #[command(subcommand)]
     Service(ServiceCommand),
+    /// Windows Firewall rules for Madmail listeners (`apply`, `remove`).
+    ///
+    /// On non-Windows platforms these subcommands return a clear error.
+    #[command(subcommand)]
+    Firewall(FirewallCommand),
     /// Local credentials management.
     Creds,
     /// Enable, disable, or inspect WebIMAP HTTP API.
@@ -660,6 +665,28 @@ pub enum ServiceCommand {
     },
 }
 
+/// Prefix for Madmail Windows Firewall rule display names (`Madmail (SMTP)`, …).
+pub const FIREWALL_RULE_PREFIX: &str = "Madmail";
+
+/// `madmail firewall` — Windows Firewall inbound rules (error on Unix).
+#[derive(Debug, Subcommand, Clone)]
+pub enum FirewallCommand {
+    /// Create named inbound allow rules for mail/HTTP ports.
+    Apply {
+        /// Also open TURN (UDP/TCP 3478).
+        #[arg(long)]
+        turn: bool,
+        /// Also open Shadowsocks (TCP 8388).
+        #[arg(long)]
+        ss: bool,
+        /// Also open Iroh relay (TCP 3340).
+        #[arg(long)]
+        iroh: bool,
+    },
+    /// Delete all firewall rules whose names start with `Madmail`.
+    Remove,
+}
+
 /// `chatmail registration` — `__REGISTRATION_OPEN__`.
 #[derive(Debug, Subcommand, Clone)]
 pub enum RegistrationCommand {
@@ -1020,6 +1047,29 @@ mod tests {
                 name,
                 start: true,
             })) if name == "MadmailTest"
+        ));
+    }
+
+    #[test]
+    fn firewall_subcommands_parse() {
+        use super::FirewallCommand;
+
+        let cli = Cli::try_parse_from(["chatmail", "firewall", "remove"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Firewall(FirewallCommand::Remove))
+        ));
+
+        let cli =
+            Cli::try_parse_from(["chatmail", "firewall", "apply", "--turn", "--ss", "--iroh"])
+                .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Firewall(FirewallCommand::Apply {
+                turn: true,
+                ss: true,
+                iroh: true,
+            }))
         ));
     }
 
