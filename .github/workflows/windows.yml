@@ -78,10 +78,12 @@ jobs:
           shared-key: windows-amd64-smoke
 
       - name: Build madmail + madmail-tray (MSVC)
-        # debuginfo=0 avoids a flood of LNK4099 (missing ossl_static.pdb) from vendored OpenSSL.
+        # -D warnings: fail on rustc warnings.
+        # link-arg=/IGNORE:4099: silence MSVC LNK4099 (missing ossl_static.pdb from vendored OpenSSL).
+        # Also set in .cargo/config.toml for local MSVC builds; RUSTFLAGS is appended by cargo.
         env:
           CARGO_PROFILE_RELEASE_DEBUG: "0"
-          RUSTFLAGS: "-D warnings"
+          RUSTFLAGS: "-D warnings -C link-arg=/IGNORE:4099"
         run: cargo build -p chatmail -p madmail-tray --release
 
       - name: Tray smoke-exit
@@ -150,6 +152,8 @@ jobs:
 
       - name: cargo check arm64 (server + tray)
         shell: pwsh
+        env:
+          RUSTFLAGS: "-D warnings -C link-arg=/IGNORE:4099"
         run: |
           cargo check -p chatmail -p madmail-tray --target aarch64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
