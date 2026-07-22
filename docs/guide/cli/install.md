@@ -38,7 +38,13 @@ sudo madmail install --simple --domain example.org --tls-mode file --no-obtain-c
 
 # Local dev (no root)
 madmail install --simple --ip 127.0.0.1   --config-dir /tmp/mm --state-dir /tmp/sd
+
+# Windows (elevated): ProgramData defaults, service + firewall
+madmail install --simple --ip 203.0.113.50 --tls-mode self_signed --lang en `
+  --install-service --start-service --firewall
 ```
+
+On **Windows**, default install paths are `%ProgramData%\Madmail\config` and `%ProgramData%\Madmail\data` (not `/etc` / `/var/lib`). Use the [Windows packaging guide](../../../packaging/windows/README.md) for the Inno Setup wizard and tray helper.
 
 ## Key flags
 
@@ -47,7 +53,10 @@ madmail install --simple --ip 127.0.0.1   --config-dir /tmp/mm --state-dir /tmp/
 | `-s`, `--simple` | Quick setup (`--ip` or `--domain` required) |
 | `-n`, `--non-interactive` | Script install (requires `--domain` without `--simple`) |
 | `--ip`, `--domain`, `--hostname` | Server identity |
-| `--config-dir`, `--state-dir` | Override FHS paths |
+| `--config-dir`, `--state-dir` | Override FHS / ProgramData paths |
+| `--install-service` | Register Windows service after install (no-op notice on Unix) |
+| `--start-service` | Start Windows service after install |
+| `--firewall` | Open Windows Firewall rules for mail/HTTP ports |
 | `--tls-mode` | `autocert`, `file`, or `self_signed` |
 | `--acme-email`, `--auto-ip-cert`, `--obtain-certificate`, `--no-obtain-certificate`, `--cert-only`, `--http-listen` | TLS issuance |
 | `--lang` | UI language: `en`, `fa`, `ru`, `es` |
