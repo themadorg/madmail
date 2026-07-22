@@ -89,9 +89,7 @@ fn identity_name(config: &AppConfig) -> String {
 }
 
 fn strip_brackets(s: &str) -> String {
-    s.trim()
-        .trim_matches(|c| c == '[' || c == ']')
-        .to_string()
+    s.trim().trim_matches(|c| c == '[' || c == ']').to_string()
 }
 
 fn missing_tls_error(cert: &Path, key: &Path) -> ChatmailError {
