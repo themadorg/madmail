@@ -8,6 +8,7 @@
 	check vet lint fmt fmt-check cov run run-bg run-debug restart stop logs reset-db dev-certs clean help \
 	sign push push1 push2 log1 log2 push-signed publish init-publish build-publish \
 	build-windows build-windows-amd64 build-windows-arm64 build-windows-setup \
+	windows-vagrant-up windows-vagrant-e2e \
 	man man-lint man-check incus-up incus-down docker-up docker-down
 
 # Optional overrides (copy .env.example → .env; publish merges context/madmail/.env into .env)
@@ -488,6 +489,14 @@ build-windows-setup:
 	@echo "                 powershell -File packaging/windows/build-setup.ps1 -Arch arm64"
 	@echo "See packaging/windows/README.md"
 
+# Local Windows full mail E2E via Vagrant/libvirt (optional; not CI)
+windows-vagrant-up:
+	@echo "Ensure build/madmail-windows-amd64.exe exists (make build-windows-amd64)"
+	@cd packaging/windows/vagrant && vagrant up --provider=libvirt
+
+windows-vagrant-e2e:
+	@cd packaging/windows/vagrant && vagrant rsync && vagrant winrm -e -- powershell -File C:\\vagrant\\provision\\03-e2e-mail.ps1
+
 # First-time assets (iroh-relay, admin-web submodule) then full release publish.
 init-publish: init publish
 
@@ -549,7 +558,7 @@ help:
 	@echo "relay-ping: relay-ping-build (in $(RELAY_PING_DIR))"
 	@echo "Init:      init (download iroh-relay $(IROH_RELAY_VERSION) into $(IROH_ASSETS)/)"
 	@echo "Release:   build-publish, publish (PUBLISH_ARGS=…), init-publish (init + publish)"
-	@echo "Windows:   build-windows, build-windows-amd64, build-windows-arm64, build-windows-setup (packaging/windows/README.md)"
+	@echo "Windows:   build-windows*, build-windows-setup, windows-vagrant-up, windows-vagrant-e2e (packaging/windows/)"
 	@echo "           publish.sh: --no-github-release, --no-release-notes, --sync-keys, …"
 	@echo "Other:     clean, help"
 	@echo ""

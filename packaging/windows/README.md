@@ -135,7 +135,19 @@ GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflow
 | Job | Purpose |
 |-----|---------|
 | `linux-windows-crates` | Unit tests for tray / service / firewall / packaging file presence |
-| `windows-amd64-smoke` | MSVC build, tray smoke, local self-signed install under temp dirs, upload CI artifacts |
-| `windows-arm64-compile` | Best-effort `cargo check` for `aarch64-pc-windows-msvc` (`continue-on-error`) |
+| `windows-amd64-smoke` | MSVC build, tray smoke, service status, local self-signed install, upload CI artifacts |
+| `windows-arm64-compile` | `cargo check` for `aarch64-pc-windows-msvc` (server + tray) |
 
 Does **not** create git tags or GitHub Releases. Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
+
+## Local full E2E (Vagrant + libvirt)
+
+Optional **release testing** on a Windows VM (not a GHA replacement): install, service, firewall, and **full mail path** (create users, SMTP submit, IMAP receive both directions).
+
+→ **[vagrant/README.md](./vagrant/README.md)**
+
+```bash
+make build-windows-amd64
+make windows-vagrant-up          # vagrant up --provider=libvirt
+make windows-vagrant-e2e         # re-run mail E2E after binary updates
+```
