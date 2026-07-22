@@ -20,6 +20,7 @@
 mod config;
 #[cfg(unix)]
 mod system;
+#[cfg(unix)]
 mod systemd;
 
 use chatmail_acme::{
@@ -27,7 +28,9 @@ use chatmail_acme::{
     parse_http_listen, resolve_domain_to_public_ip, ObtainOptions,
 };
 use chatmail_config::install_cli::InstallArgs;
-use chatmail_config::{effective_database_config, is_local_dev_state_dir, AppConfig, Args};
+#[cfg(not(windows))]
+use chatmail_config::is_local_dev_state_dir;
+use chatmail_config::{effective_database_config, AppConfig, Args};
 use chatmail_db::{init_db_from_config, set_setting, settings_keys};
 use chatmail_types::{wrap_ip_domain, ChatmailError, Result};
 
@@ -480,6 +483,11 @@ impl InstallConfig {
                     .map(|s| s.to_string_lossy().into_owned())
             })
             .unwrap_or_else(|| "madmail".into());
+        // Windows argv0 is often `madmail.exe` — strip for service name / conf basename.
+        let binary_name = binary_name
+            .strip_suffix(".exe")
+            .unwrap_or(&binary_name)
+            .to_string();
 
         let config_dir = args
             .config_dir
@@ -947,17 +955,21 @@ mod tests {
         assert!(cfg.paths_explicit);
         assert!(!cfg.use_default_systemd_paths);
         assert!(cfg.system_install);
-        let unit = systemd::render_systemd_unit(&cfg);
-        assert!(!unit.contains("StateDirectory="));
-        assert!(unit.contains(&format!(
-            "--config {} run --libexec {}",
-            cfg.config_path.display(),
-            cfg.state_dir.display()
-        )));
-        assert!(unit.contains("ReadWritePaths=/var/lib/madmail-custom /etc/madmail-custom"));
+        #[cfg(unix)]
+        {
+            let unit = systemd::render_systemd_unit(&cfg);
+            assert!(!unit.contains("StateDirectory="));
+            assert!(unit.contains(&format!(
+                "--config {} run --libexec {}",
+                cfg.config_path.display(),
+                cfg.state_dir.display()
+            )));
+            assert!(unit.contains("ReadWritePaths=/var/lib/madmail-custom /etc/madmail-custom"));
+        }
     }
 
     #[test]
+    #[cfg(unix)]
     fn default_install_uses_fhs_systemd_layout_despite_global_state_dir_default() {
         let global = Args {
             config: PathBuf::from("/etc/madmail/madmail.conf"),

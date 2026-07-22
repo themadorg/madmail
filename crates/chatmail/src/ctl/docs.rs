@@ -229,6 +229,10 @@ fn write_file(path: &Path, contents: &[u8], mode: u32) -> Result<()> {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
             .map_err(|e| ChatmailError::config(format!("chmod {}: {e}", path.display())))?;
     }
+    #[cfg(not(unix))]
+    {
+        let _ = mode;
+    }
     Ok(())
 }
 

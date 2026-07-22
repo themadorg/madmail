@@ -127,3 +127,15 @@ madmail firewall apply|remove
 madmail-tray --smoke-exit
 madmail-tray install-autostart
 ```
+
+## CI
+
+GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflows/windows.yml) (branch `feat/windows-installer`):
+
+| Job | Purpose |
+|-----|---------|
+| `linux-windows-crates` | Unit tests for tray / service / firewall / packaging file presence |
+| `windows-amd64-smoke` | MSVC build, tray smoke, local self-signed install under temp dirs, upload CI artifacts |
+| `windows-arm64-compile` | Best-effort `cargo check` for `aarch64-pc-windows-msvc` (`continue-on-error`) |
+
+Does **not** create git tags or GitHub Releases. Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).

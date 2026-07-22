@@ -16,6 +16,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! `chatmail uninstall` — Madmail `ctl/uninstall.go` (systemd + FHS paths).
+//!
+//! On Windows builds, the Unix/systemd uninstall path is compiled out of use;
+//! dead-code lint is silenced for those helpers.
+
+#![cfg_attr(windows, allow(dead_code))]
 
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
@@ -33,6 +38,8 @@ use super::util;
 
 const DEFAULT_BINARY_NAME: &str = "madmail";
 
+// Unix FHS/systemd uninstall paths are unused when building for Windows.
+#[cfg_attr(windows, allow(dead_code))]
 const SYSTEMD_UNIT_DIRS: &[&str] = &[
     "/etc/systemd/system",
     "/usr/lib/systemd/system",
@@ -40,6 +47,7 @@ const SYSTEMD_UNIT_DIRS: &[&str] = &[
 ];
 
 #[derive(Debug, Default)]
+#[cfg_attr(windows, allow(dead_code))]
 struct UninstallPlan {
     installation_found: bool,
     primary_binary_name: String,
