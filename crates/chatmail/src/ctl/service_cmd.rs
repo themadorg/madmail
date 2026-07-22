@@ -276,8 +276,7 @@ fn delete_service(_name: &str) -> Result<()> {
 
 #[cfg(windows)]
 fn query_service_state(name: &str) -> Result<String> {
-    let output = Command::new("sc")
-        .args(["query", name])
+    let output = sc_command(&["query", name])
         .output()
         .map_err(|e| ChatmailError::config(format!("sc query {name}: {e}")))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -314,8 +313,7 @@ fn query_service_state(_name: &str) -> Result<String> {
 }
 
 fn run_sc(args: &[&str], action: &str) -> Result<()> {
-    let output = Command::new("sc")
-        .args(args)
+    let output = sc_command(args)
         .output()
         .map_err(|e| ChatmailError::config(format!("sc {action}: {e}")))?;
     if output.status.success() {
@@ -329,6 +327,29 @@ fn run_sc(args: &[&str], action: &str) -> Result<()> {
         stdout.trim(),
         stderr.trim()
     )))
+}
+
+/// Build an `sc.exe` command.
+///
+/// Windows `sc` option syntax is `key= value` (space after `=`). Rust's default
+/// `Command` quoting wraps those tokens as `"start= auto"`, which `sc` rejects
+/// with exit 1639 (`ERROR: Invalid start= field`). On Windows every argument is
+/// therefore appended with [`CommandExt::raw_arg`] so the process command line
+/// keeps unquoted `start= auto`, `binPath= "…"`, `reset= 86400`, etc.
+fn sc_command(args: &[&str]) -> Command {
+    let mut cmd = Command::new("sc");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        for a in args {
+            cmd.raw_arg(a);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        cmd.args(args);
+    }
+    cmd
 }
 
 #[cfg(test)]
@@ -347,6 +368,28 @@ mod tests {
         assert!(p.contains("run"), "{p}");
         assert!(p.contains("--libexec"), "{p}");
         assert!(p.contains("madmail.exe"), "{p}");
+    }
+
+    /// Document the sc option tokens that must not be Command-quoted on Windows.
+    #[test]
+    fn sc_create_option_tokens_use_space_after_equals() {
+        let bin = service_bin_path(
+            Path::new(r"C:\Program Files\Madmail\madmail.exe"),
+            Path::new(r"C:\ProgramData\Madmail\config\madmail.conf"),
+            Path::new(r"C:\ProgramData\Madmail\data"),
+        );
+        let create_args = [
+            "create",
+            "Madmail",
+            &format!("binPath= {bin}"),
+            "start= auto",
+            "DisplayName= Madmail",
+        ];
+        assert!(create_args[2].starts_with("binPath= "));
+        assert_eq!(create_args[3], "start= auto");
+        assert_eq!(create_args[4], "DisplayName= Madmail");
+        // These must go through sc_command → raw_arg on Windows (see run_sc docs).
+        let _ = sc_command(&create_args);
     }
 
     #[test]
