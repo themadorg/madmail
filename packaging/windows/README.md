@@ -13,10 +13,59 @@ Operator-facing Windows installers and release binaries for Madmail.
 | `madmail-tray-windows-amd64.exe` | x64 | System tray helper |
 | `madmail-windows-arm64.exe` | arm64 | Server + CLI |
 | `madmail-tray-windows-arm64.exe` | arm64 | System tray helper |
-| `madmail-windows-amd64-setup.exe` | x64 | Inno Setup (PR6) |
-| `madmail-windows-arm64-setup.exe` | arm64 | Inno Setup (PR6) |
+| `madmail-windows-amd64-setup.exe` | x64 | Inno Setup wizard |
+| `madmail-windows-arm64-setup.exe` | arm64 | Inno Setup wizard |
 
-## Build (no publish)
+## Installer (Inno Setup)
+
+**Requires:** [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`ISCC.exe`) on a Windows host, plus pre-built exes under `build/`.
+
+```powershell
+# From repo root on Windows, after building binaries:
+make build-windows-amd64   # or build natively / CI artifacts
+.\packaging\windows\build-setup.ps1 -Arch amd64
+# → build\madmail-windows-amd64-setup.exe
+
+.\packaging\windows\build-setup.ps1 -Arch arm64
+# → build\madmail-windows-arm64-setup.exe
+```
+
+Or:
+
+```text
+iscc /DArch=amd64 packaging\windows\Madmail.iss
+iscc /DArch=arm64 packaging\windows\Madmail.iss
+```
+
+### Wizard flow
+
+1. License (AGPL summary)  
+2. **Deployment mode** — local / public IP / domain  
+3. **Identity** — IP or hostname  
+4. **TLS** — self-signed or Let's Encrypt  
+5. ACME email (if LE)  
+6. Language + optional Shadowsocks / Iroh  
+7. Install directory + tasks (firewall, start service, tray autostart)  
+8. DNS checklist (domain mode)  
+9. Post-install: `madmail install … --install-service [--start-service] [--firewall]`  
+10. Optional: tray autostart + launch tray  
+
+### Silent / unattended
+
+Inno supports `/VERYSILENT /SUPPRESSMSGBOXES`. Wizard defaults are used unless you extend `[Setup]` with custom `/MODE=` parsing later. Recommended unattended path for automation:
+
+```text
+madmail.exe install --simple --ip 127.0.0.1 --tls-mode self_signed ^
+  --config-dir "%ProgramData%\Madmail\config" ^
+  --state-dir "%ProgramData%\Madmail\data" ^
+  --install-service --start-service --firewall
+```
+
+### Uninstall
+
+Add/Remove Programs runs `madmail uninstall --force --keep-data --keep-binary` (mail data retained by default), removes tray autostart, then deletes Program Files files.
+
+## Build binaries (no publish)
 
 From the repo root:
 
