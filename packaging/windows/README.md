@@ -136,9 +136,10 @@ GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflow
 |-----|---------|
 | `linux-windows-crates` | Unit tests for tray / service / firewall / packaging file presence |
 | `windows-amd64-smoke` | MSVC build, tray smoke, service status, local self-signed install, upload CI artifacts |
+| `windows-amd64-setup` | Inno Setup (`choco install innosetup`) → `madmail-windows-amd64-setup.exe` artifact |
 | `windows-arm64-compile` | `cargo check` for `aarch64-pc-windows-msvc` (server + tray) |
 
-Does **not** create git tags or GitHub Releases. Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
+Does **not** create git tags or GitHub Releases. Download the setup from the Actions run artifacts (`madmail-windows-amd64-setup`). Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
 
 ## Local full E2E (Vagrant + libvirt)
 
