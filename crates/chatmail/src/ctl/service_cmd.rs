@@ -241,11 +241,15 @@ fn query_service_state(name: &str) -> Result<String> {
         .map_err(|e| ChatmailError::config(format!("sc query {name}: {e}")))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}{stderr}");
     if !output.status.success() {
+        // 1060 = service does not exist — a normal status, not a hard failure.
+        if combined.contains("1060") || combined.to_ascii_lowercase().contains("does not exist") {
+            return Ok("NotInstalled".into());
+        }
         return Err(ChatmailError::config(format!(
-            "sc query {name} failed: {}{}",
-            stdout.trim(),
-            stderr.trim()
+            "sc query {name} failed: {}",
+            combined.trim()
         )));
     }
     for line in stdout.lines() {

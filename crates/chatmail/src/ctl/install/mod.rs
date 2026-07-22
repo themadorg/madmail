@@ -20,6 +20,7 @@
 mod config;
 #[cfg(unix)]
 mod system;
+#[cfg(unix)]
 mod systemd;
 
 use chatmail_acme::{
@@ -482,6 +483,11 @@ impl InstallConfig {
                     .map(|s| s.to_string_lossy().into_owned())
             })
             .unwrap_or_else(|| "madmail".into());
+        // Windows argv0 is often `madmail.exe` — strip for service name / conf basename.
+        let binary_name = binary_name
+            .strip_suffix(".exe")
+            .unwrap_or(&binary_name)
+            .to_string();
 
         let config_dir = args
             .config_dir
@@ -949,17 +955,21 @@ mod tests {
         assert!(cfg.paths_explicit);
         assert!(!cfg.use_default_systemd_paths);
         assert!(cfg.system_install);
-        let unit = systemd::render_systemd_unit(&cfg);
-        assert!(!unit.contains("StateDirectory="));
-        assert!(unit.contains(&format!(
-            "--config {} run --libexec {}",
-            cfg.config_path.display(),
-            cfg.state_dir.display()
-        )));
-        assert!(unit.contains("ReadWritePaths=/var/lib/madmail-custom /etc/madmail-custom"));
+        #[cfg(unix)]
+        {
+            let unit = systemd::render_systemd_unit(&cfg);
+            assert!(!unit.contains("StateDirectory="));
+            assert!(unit.contains(&format!(
+                "--config {} run --libexec {}",
+                cfg.config_path.display(),
+                cfg.state_dir.display()
+            )));
+            assert!(unit.contains("ReadWritePaths=/var/lib/madmail-custom /etc/madmail-custom"));
+        }
     }
 
     #[test]
+    #[cfg(unix)]
     fn default_install_uses_fhs_systemd_layout_despite_global_state_dir_default() {
         let global = Args {
             config: PathBuf::from("/etc/madmail/madmail.conf"),

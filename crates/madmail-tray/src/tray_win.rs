@@ -26,6 +26,8 @@ struct TrayApp {
     config: PathBuf,
     state_dir: PathBuf,
     madmail: PathBuf,
+    /// Held so the tray icon is not dropped for the process lifetime.
+    #[allow(dead_code)]
     tray: Option<tray_icon::TrayIcon>,
     item_status: MenuItem,
     item_open_admin: MenuItem,

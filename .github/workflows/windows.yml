@@ -78,19 +78,26 @@ jobs:
           shared-key: windows-amd64-smoke
 
       - name: Build madmail + madmail-tray (MSVC)
+        # debuginfo=0 avoids a flood of LNK4099 (missing ossl_static.pdb) from vendored OpenSSL.
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "0"
+          RUSTFLAGS: "-D warnings"
         run: cargo build -p chatmail -p madmail-tray --release
 
       - name: Tray smoke-exit
+        shell: pwsh
         run: |
-          .\target\release\madmail-tray.exe --smoke-exit
+          & .\target\release\madmail-tray.exe --smoke-exit
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Service status (SCM query path)
+      - name: Service status when not installed
+        shell: pwsh
         run: |
-          # Service may not be installed; command must not panic.
-          .\target\release\madmail.exe service status
-          # Accept non-zero if service missing — still proves CLI wiring on Windows.
-          exit 0
+          # Must exit 0 with State NotInstalled (not sc error 1060).
+          $out = & .\target\release\madmail.exe service status 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "service status failed: $LASTEXITCODE" }
+          if ($out -notmatch "NotInstalled") { throw "expected NotInstalled, got: $out" }
 
       - name: Local install (self-signed) under temp dirs
         shell: pwsh
@@ -107,6 +114,8 @@ jobs:
           $key = Join-Path $cfg "certs\privkey.pem"
           if (-not (Test-Path $cert)) { throw "missing $cert" }
           if (-not (Test-Path $key)) { throw "missing $key" }
+          $conf = Join-Path $cfg "madmail.conf"
+          if (-not (Test-Path $conf)) { throw "missing $conf (binary_name .exe strip?)" }
           Write-Host "install ok: certs present under $cfg"
 
       - name: Firewall CLI parse (apply needs admin; only dry presence)
