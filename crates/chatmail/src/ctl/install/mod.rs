@@ -27,7 +27,9 @@ use chatmail_acme::{
     parse_http_listen, resolve_domain_to_public_ip, ObtainOptions,
 };
 use chatmail_config::install_cli::InstallArgs;
-use chatmail_config::{effective_database_config, is_local_dev_state_dir, AppConfig, Args};
+#[cfg(not(windows))]
+use chatmail_config::is_local_dev_state_dir;
+use chatmail_config::{effective_database_config, AppConfig, Args};
 use chatmail_db::{init_db_from_config, set_setting, settings_keys};
 use chatmail_types::{wrap_ip_domain, ChatmailError, Result};
 

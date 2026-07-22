@@ -124,11 +124,10 @@ jobs:
             target/release/madmail-tray.exe
           retention-days: 7
 
-  # Compile-only arm64 target on windows-latest when VS arm64 tools exist
+  # Cross-check arm64 MSVC target from x64 Windows runner (toolset present on GHA images).
   windows-arm64-compile:
     name: Windows arm64 compile-only
     runs-on: windows-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -140,11 +139,8 @@ jobs:
         with:
           shared-key: windows-arm64-compile
 
-      - name: cargo check arm64 (server)
+      - name: cargo check arm64 (server + tray)
         shell: pwsh
         run: |
-          cargo check -p chatmail --target aarch64-pc-windows-msvc
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "arm64 check failed (toolset may be incomplete) — non-blocking"
-            exit 0
-          }
+          cargo check -p chatmail -p madmail-tray --target aarch64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

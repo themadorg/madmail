@@ -32,7 +32,7 @@ use windows_service::service_control_handler::{self, ServiceControlHandlerResult
 use windows_service::service_dispatcher;
 
 use crate::boot;
-use crate::ctl::service_cmd;
+use crate::ctl::argv_without_service_flag;
 
 const SERVICE_TYPE: ServiceType = ServiceType::OWN_PROCESS;
 
@@ -132,7 +132,7 @@ fn run_service() -> Result<(), String> {
 }
 
 fn parse_service_cli_args() -> Result<chatmail_config::Args, String> {
-    let argv = service_cmd::argv_without_service_flag();
+    let argv = argv_without_service_flag();
     let cli = Cli::try_parse_from(argv).map_err(|e| format!("parse service CLI: {e}"))?;
     match cli.command {
         None | Some(Command::Run) => Ok(cli.args),

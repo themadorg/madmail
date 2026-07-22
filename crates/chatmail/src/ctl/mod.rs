@@ -65,5 +65,5 @@ pub use admin_token::admin_token;
 pub use dispatch::dispatch;
 pub use docs::{argv_binary_name, install_cli_docs};
 pub use output::{print_error_json, CtlOut};
-pub use service_cmd::argv_has_service_flag;
+pub use service_cmd::{argv_has_service_flag, argv_without_service_flag};
 pub use version::print_version;
