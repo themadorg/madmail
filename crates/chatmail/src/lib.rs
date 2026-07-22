@@ -24,6 +24,8 @@ pub mod logging;
 pub mod profiling;
 pub mod push_boot;
 pub mod servers;
+#[cfg(windows)]
+pub mod service_host;
 pub mod ss_boot;
 pub mod supervisor;
 pub mod tls_boot;

@@ -77,7 +77,17 @@ pub async fn initialize_state(
 }
 
 /// Full application boot (Phase 2: hydrate caches + background flusher).
+///
+/// Waits for Ctrl+C (and SIGTERM on Unix) before flushing and exit.
 pub async fn run(args: Args) -> Result<()> {
+    run_until(args, shutdown_signal()).await
+}
+
+/// Like [`run`], but ends when `shutdown` completes (used by Windows service host).
+pub async fn run_until(
+    args: Args,
+    shutdown: impl std::future::Future<Output = ()> + Send,
+) -> Result<()> {
     let file_config = load_file_config(&args.config)?;
     let state_dir = resolve_state_dir(&args, &file_config);
 
@@ -130,13 +140,43 @@ pub async fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
-    tokio::signal::ctrl_c().await?;
+    shutdown.await;
     if debug {
         info!("shutdown signal received, flushing federation stats");
     }
     flusher.shutdown().await;
 
     Ok(())
+}
+
+/// Console / Unix process shutdown: Ctrl+C, and SIGTERM on Unix.
+pub async fn shutdown_signal() {
+    let ctrl_c = async {
+        if tokio::signal::ctrl_c().await.is_err() {
+            // Ignore install failures; process may still be stopped via other means.
+        }
+    };
+
+    #[cfg(unix)]
+    {
+        let mut sigterm =
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(s) => s,
+                Err(_) => {
+                    ctrl_c.await;
+                    return;
+                }
+            };
+        tokio::select! {
+            _ = ctrl_c => {}
+            _ = sigterm.recv() => {}
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        ctrl_c.await;
+    }
 }
 
 #[cfg(test)]

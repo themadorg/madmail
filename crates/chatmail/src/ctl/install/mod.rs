@@ -364,7 +364,9 @@ fn print_next_steps(cfg: &InstallConfig) {
         #[cfg(windows)]
         {
             println!(
-                "  • Windows service (later): madmail service install|start  (when available)"
+                "  • Windows service:  madmail --config {} --state-dir {} service install --start",
+                cfg.config_path.display(),
+                cfg.state_dir.display()
             );
             println!("  • Prefer the Madmail setup wizard for non-technical installs.");
         }

@@ -19,8 +19,26 @@ use chatmail::boot;
 use chatmail::ctl::{self, print_error_json};
 use chatmail_config::{Cli, Command};
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    #[cfg(windows)]
+    {
+        if chatmail::ctl::argv_has_service_flag() {
+            if let Err(e) = chatmail::service_host::run_service_dispatcher() {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+            return;
+        }
+    }
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    rt.block_on(async_main());
+}
+
+async fn async_main() {
     let cli = Cli::parse_normalized();
     let json = cli.args.json;
     let result = match cli.command {
