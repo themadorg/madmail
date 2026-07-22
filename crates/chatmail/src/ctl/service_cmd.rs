@@ -1,0 +1,347 @@
+// Copyright (C) 2026 themadorg
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! `madmail service` — Windows SCM lifecycle (install / start / stop / status).
+
+use std::path::Path;
+use std::process::Command;
+
+use chatmail_config::{Args, ServiceCommand};
+use chatmail_types::{ChatmailError, Result};
+
+use super::output::CtlOut;
+
+const SERVICE_FLAG: &str = "--service";
+
+pub async fn service(args: &Args, cmd: &ServiceCommand) -> Result<()> {
+    match cmd {
+        ServiceCommand::Install { name, start } => install(args, name, *start),
+        ServiceCommand::Uninstall { name } => uninstall(args, name),
+        ServiceCommand::Start { name } => start_service(args, name),
+        ServiceCommand::Stop { name } => stop_service(args, name),
+        ServiceCommand::Status { name } => status(args, name),
+    }
+}
+
+fn require_windows() -> Result<()> {
+    #[cfg(windows)]
+    {
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        Err(ChatmailError::config(
+            "madmail service is only supported on Windows\n\
+             On Linux/Unix use systemd (madmail install creates a unit when run as root).",
+        ))
+    }
+}
+
+fn install(args: &Args, name: &str, start_after: bool) -> Result<()> {
+    require_windows()?;
+    let out = CtlOut::from_args(args, "service");
+    let exe = std::env::current_exe().map_err(|e| {
+        ChatmailError::config(format!(
+            "resolve current executable for service binPath: {e}"
+        ))
+    })?;
+    let bin_path = service_bin_path(&exe, &args.config, &args.state_dir);
+    create_service(name, &bin_path)?;
+    set_service_description(name, "Madmail chatmail / mail server")?;
+    set_service_recovery(name)?;
+    if !out.is_json() {
+        println!("✓ Registered Windows service {name}");
+        println!("  binPath: {bin_path}");
+        println!("  config:  {}", args.config.display());
+        println!("  state:   {}", args.state_dir.display());
+    }
+    if start_after {
+        start_service(args, name)?;
+    }
+    if out.is_json() {
+        out.emit(serde_json::json!({
+            "installed": true,
+            "name": name,
+            "bin_path": bin_path,
+            "config": args.config.display().to_string(),
+            "state_dir": args.state_dir.display().to_string(),
+            "started": start_after,
+        }))?;
+    }
+    Ok(())
+}
+
+fn uninstall(args: &Args, name: &str) -> Result<()> {
+    require_windows()?;
+    let out = CtlOut::from_args(args, "service");
+    let _ = stop_service_quiet(name);
+    delete_service(name)?;
+    if out.is_json() {
+        out.emit(serde_json::json!({ "uninstalled": true, "name": name }))?;
+    } else {
+        println!("✓ Removed Windows service {name}");
+    }
+    Ok(())
+}
+
+fn start_service(args: &Args, name: &str) -> Result<()> {
+    require_windows()?;
+    let out = CtlOut::from_args(args, "service");
+    run_sc(&["start", name], &format!("start service {name}"))?;
+    if out.is_json() {
+        out.emit(serde_json::json!({ "started": true, "name": name }))?;
+    } else {
+        println!("✓ Started service {name}");
+    }
+    Ok(())
+}
+
+fn stop_service(args: &Args, name: &str) -> Result<()> {
+    require_windows()?;
+    let out = CtlOut::from_args(args, "service");
+    stop_service_quiet(name)?;
+    if out.is_json() {
+        out.emit(serde_json::json!({ "stopped": true, "name": name }))?;
+    } else {
+        println!("✓ Stopped service {name}");
+    }
+    Ok(())
+}
+
+fn stop_service_quiet(name: &str) -> Result<()> {
+    // Already stopped is not fatal for uninstall.
+    match run_sc(&["stop", name], &format!("stop service {name}")) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("1062") || msg.to_lowercase().contains("not started") {
+                Ok(())
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+fn status(args: &Args, name: &str) -> Result<()> {
+    require_windows()?;
+    let out = CtlOut::from_args(args, "service");
+    let state = query_service_state(name)?;
+    if out.is_json() {
+        out.emit(serde_json::json!({ "name": name, "state": state }))?;
+    } else {
+        println!("Service: {name}");
+        println!("State:   {state}");
+    }
+    Ok(())
+}
+
+/// Build SCM `binPath=` value: `"exe" --service --config "…" run --libexec "…"`.
+pub fn service_bin_path(exe: &Path, config: &Path, state_dir: &Path) -> String {
+    format!(
+        "\"{}\" {SERVICE_FLAG} --config \"{}\" run --libexec \"{}\"",
+        exe.display(),
+        config.display(),
+        state_dir.display()
+    )
+}
+
+/// True when this process was launched as a Windows service (`--service` in argv).
+pub fn argv_has_service_flag() -> bool {
+    std::env::args().any(|a| a == SERVICE_FLAG)
+}
+
+/// argv for clap with `--service` removed (service host re-parses after SCM connect).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn argv_without_service_flag() -> Vec<std::ffi::OsString> {
+    std::env::args_os().filter(|a| a != SERVICE_FLAG).collect()
+}
+
+#[cfg(windows)]
+fn create_service(name: &str, bin_path: &str) -> Result<()> {
+    // sc requires a space after `=` tokens.
+    run_sc(
+        &[
+            "create",
+            name,
+            &format!("binPath= {bin_path}"),
+            "start= auto",
+            "DisplayName= Madmail",
+        ],
+        &format!("create service {name}"),
+    )
+}
+
+#[cfg(not(windows))]
+fn create_service(_name: &str, _bin_path: &str) -> Result<()> {
+    require_windows()
+}
+
+#[cfg(windows)]
+fn set_service_description(name: &str, description: &str) -> Result<()> {
+    run_sc(
+        &["description", name, description],
+        &format!("set description for {name}"),
+    )
+}
+
+#[cfg(not(windows))]
+fn set_service_description(_name: &str, _description: &str) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn set_service_recovery(name: &str) -> Result<()> {
+    // Restart on failure: 5s, 5s, 5s; reset fail count after 1 day.
+    run_sc(
+        &[
+            "failure",
+            name,
+            "reset= 86400",
+            "actions= restart/5000/restart/5000/restart/5000",
+        ],
+        &format!("set recovery for {name}"),
+    )
+}
+
+#[cfg(not(windows))]
+fn set_service_recovery(_name: &str) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn delete_service(name: &str) -> Result<()> {
+    run_sc(&["delete", name], &format!("delete service {name}"))
+}
+
+#[cfg(not(windows))]
+fn delete_service(_name: &str) -> Result<()> {
+    require_windows()
+}
+
+#[cfg(windows)]
+fn query_service_state(name: &str) -> Result<String> {
+    let output = Command::new("sc")
+        .args(["query", name])
+        .output()
+        .map_err(|e| ChatmailError::config(format!("sc query {name}: {e}")))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        return Err(ChatmailError::config(format!(
+            "sc query {name} failed: {}{}",
+            stdout.trim(),
+            stderr.trim()
+        )));
+    }
+    for line in stdout.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("STATE") {
+            // e.g. STATE              : 4  RUNNING
+            let state = rest
+                .split_whitespace()
+                .last()
+                .unwrap_or("UNKNOWN")
+                .to_string();
+            return Ok(state);
+        }
+    }
+    Ok("UNKNOWN".into())
+}
+
+#[cfg(not(windows))]
+fn query_service_state(_name: &str) -> Result<String> {
+    require_windows().map(|_| unreachable!())
+}
+
+fn run_sc(args: &[&str], action: &str) -> Result<()> {
+    let output = Command::new("sc")
+        .args(args)
+        .output()
+        .map_err(|e| ChatmailError::config(format!("sc {action}: {e}")))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(ChatmailError::config(format!(
+        "sc {action} failed (exit {:?}): {}{}",
+        output.status.code(),
+        stdout.trim(),
+        stderr.trim()
+    )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn service_bin_path_includes_service_flag_and_paths() {
+        let p = service_bin_path(
+            Path::new(r"C:\Program Files\Madmail\madmail.exe"),
+            Path::new(r"C:\ProgramData\Madmail\config\madmail.conf"),
+            Path::new(r"C:\ProgramData\Madmail\data"),
+        );
+        assert!(p.contains(SERVICE_FLAG), "{p}");
+        assert!(p.contains("run"), "{p}");
+        assert!(p.contains("--libexec"), "{p}");
+        assert!(p.contains("madmail.exe"), "{p}");
+    }
+
+    #[test]
+    fn argv_without_service_flag_filters() {
+        use std::ffi::OsString;
+        // Pure unit: construct filter logic equivalent
+        let raw = [
+            OsString::from("madmail"),
+            OsString::from("--service"),
+            OsString::from("--config"),
+            OsString::from("c.conf"),
+            OsString::from("run"),
+        ];
+        let filtered: Vec<_> = raw.into_iter().filter(|a| a != SERVICE_FLAG).collect();
+        assert_eq!(filtered.len(), 4);
+        assert!(!filtered.iter().any(|a| a == SERVICE_FLAG));
+    }
+
+    #[tokio::test]
+    async fn service_commands_error_on_non_windows() {
+        #[cfg(not(windows))]
+        {
+            let args = Args {
+                config: PathBuf::from("/tmp/x.conf"),
+                state_dir: PathBuf::from("/tmp/x"),
+                boot_once: false,
+                json: false,
+            };
+            let err = service(
+                &args,
+                &ServiceCommand::Status {
+                    name: "Madmail".into(),
+                },
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("only supported on Windows"),
+                "{err}"
+            );
+        }
+    }
+}

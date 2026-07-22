@@ -215,6 +215,11 @@ pub enum Command {
     SubmissionAccess,
     /// Uninstall the mail server.
     Uninstall(UninstallArgs),
+    /// Windows service management (`install`, `start`, `stop`, `status`, `uninstall`).
+    ///
+    /// On non-Windows platforms these subcommands return a clear error.
+    #[command(subcommand)]
+    Service(ServiceCommand),
     /// Local credentials management.
     Creds,
     /// Enable, disable, or inspect WebIMAP HTTP API.
@@ -618,6 +623,43 @@ pub struct UninstallArgs {
     pub log_file: PathBuf,
 }
 
+/// Default Windows service name registered by `madmail service install`.
+pub const DEFAULT_WINDOWS_SERVICE_NAME: &str = "Madmail";
+
+/// `madmail service` — Windows SCM install / lifecycle (no-op error on Unix).
+#[derive(Debug, Subcommand, Clone)]
+pub enum ServiceCommand {
+    /// Register the Windows service (binPath uses this process + `--config` / `--state-dir`).
+    Install {
+        /// SCM service name.
+        #[arg(long, default_value = DEFAULT_WINDOWS_SERVICE_NAME)]
+        name: String,
+        /// Start the service immediately after install.
+        #[arg(long)]
+        start: bool,
+    },
+    /// Remove the Windows service registration (stops it first when running).
+    Uninstall {
+        #[arg(long, default_value = DEFAULT_WINDOWS_SERVICE_NAME)]
+        name: String,
+    },
+    /// Start the Windows service.
+    Start {
+        #[arg(long, default_value = DEFAULT_WINDOWS_SERVICE_NAME)]
+        name: String,
+    },
+    /// Stop the Windows service.
+    Stop {
+        #[arg(long, default_value = DEFAULT_WINDOWS_SERVICE_NAME)]
+        name: String,
+    },
+    /// Print service state (Running / Stopped / …).
+    Status {
+        #[arg(long, default_value = DEFAULT_WINDOWS_SERVICE_NAME)]
+        name: String,
+    },
+}
+
 /// `chatmail registration` — `__REGISTRATION_OPEN__`.
 #[derive(Debug, Subcommand, Clone)]
 pub enum RegistrationCommand {
@@ -950,6 +992,34 @@ mod tests {
                 yes: true,
                 reason,
             }) if username == "gone@example.org" && reason == "cli"
+        ));
+    }
+
+    #[test]
+    fn service_subcommands_parse() {
+        use super::ServiceCommand;
+
+        let cli = Cli::try_parse_from(["chatmail", "service", "status"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Service(ServiceCommand::Status { name })) if name == DEFAULT_WINDOWS_SERVICE_NAME
+        ));
+
+        let cli = Cli::try_parse_from([
+            "chatmail",
+            "service",
+            "install",
+            "--name",
+            "MadmailTest",
+            "--start",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Service(ServiceCommand::Install {
+                name,
+                start: true,
+            })) if name == "MadmailTest"
         ));
     }
 

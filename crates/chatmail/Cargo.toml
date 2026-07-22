@@ -67,6 +67,9 @@ tar = "0.4.46"
 libc = "0.2"
 sd-notify = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.7"
+
 [dev-dependencies]
 assert_cmd = "2"
 chatmail-config = { workspace = true }
