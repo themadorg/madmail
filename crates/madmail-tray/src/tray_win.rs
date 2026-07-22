@@ -30,7 +30,6 @@ struct TrayApp {
     #[allow(dead_code)]
     tray: Option<tray_icon::TrayIcon>,
     item_status: MenuItem,
-    item_open_admin: MenuItem,
     item_copy_token: MenuItem,
     item_start: MenuItem,
     item_stop: MenuItem,
@@ -45,18 +44,15 @@ impl TrayApp {
         let label = format!("Status: {}", st.as_str());
         self.item_status.set_text(label);
         let running = matches!(st, ServiceState::Running);
+        // Allow Start when stopped or not yet registered (install --start).
         self.item_start.set_enabled(!running);
-        self.item_stop.set_enabled(running);
+        self.item_stop
+            .set_enabled(running || matches!(st, ServiceState::Stopped));
     }
 
     fn handle_menu(&mut self, id: &tray_icon::menu::MenuId) {
         if id == self.item_status.id() {
             self.refresh_status();
-        } else if id == self.item_open_admin.id() {
-            let url = paths::admin_url(&self.config);
-            if let Err(e) = ops::open_url(&url) {
-                eprintln!("open admin: {e}");
-            }
         } else if id == self.item_copy_token.id() {
             if let Some(tok) = paths::read_admin_token(&self.state_dir) {
                 // Best-effort: print and try clip.exe
@@ -132,7 +128,6 @@ fn default_icon() -> Icon {
 pub fn run(config: PathBuf, state_dir: PathBuf) -> Result<(), String> {
     let madmail = paths::madmail_binary();
     let item_status = MenuItem::new("Status: …", true, None);
-    let item_open_admin = MenuItem::new("Open admin UI", true, None);
     let item_copy_token = MenuItem::new("Show / copy admin token", true, None);
     let item_start = MenuItem::new("Start service", true, None);
     let item_stop = MenuItem::new("Stop service", true, None);
@@ -143,8 +138,6 @@ pub fn run(config: PathBuf, state_dir: PathBuf) -> Result<(), String> {
     menu.append(&item_status)
         .map_err(|e| format!("menu: {e}"))?;
     menu.append(&PredefinedMenuItem::separator())
-        .map_err(|e| format!("menu: {e}"))?;
-    menu.append(&item_open_admin)
         .map_err(|e| format!("menu: {e}"))?;
     menu.append(&item_copy_token)
         .map_err(|e| format!("menu: {e}"))?;
@@ -171,7 +164,6 @@ pub fn run(config: PathBuf, state_dir: PathBuf) -> Result<(), String> {
         madmail,
         tray: Some(tray),
         item_status,
-        item_open_admin,
         item_copy_token,
         item_start,
         item_stop,

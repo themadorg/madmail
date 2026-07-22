@@ -74,7 +74,9 @@ Defaults:
 | State / token | `%ProgramData%\Madmail\data\` |
 | Service name | `Madmail` |
 
-Useful commands: `madmail service status`, `madmail firewall apply`, `madmail-tray --smoke-exit`.
+Useful commands: `madmail service status`, `madmail admin-token`, `madmail firewall apply`, `madmail-tray --smoke-exit`.
+
+Admin: use the **CLI** and **`POST /api/admin`** with the bearer token. Current Windows packages do **not** embed the admin-web SPA at `/admin` (browser GET on `/api/admin` returns **405**).
 
 Packaging and build notes: [packaging/windows/README.md](../../../packaging/windows/README.md).  
 Manual release checklist: [packaging/windows/MANUAL-CHECKLIST.md](../../../packaging/windows/MANUAL-CHECKLIST.md).

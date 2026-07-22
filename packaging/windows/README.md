@@ -44,7 +44,7 @@ iscc /DArch=arm64 packaging\windows\Madmail.iss
 3. **Identity** — IP or hostname  
 4. **TLS** — self-signed or Let's Encrypt  
 5. ACME email (if LE)  
-6. Language + optional Shadowsocks / Iroh  
+6. Language + optional Shadowsocks (Iroh omitted until `iroh-relay.exe` is packaged)  
 7. Install directory + tasks (firewall, start service, tray autostart)  
 8. DNS checklist (domain mode)  
 9. Post-install: `madmail install … --install-service [--start-service] [--firewall]`  
@@ -124,9 +124,28 @@ Until arm64 CI runners or cargo-xwin are available, **compile-only** checks and 
 madmail install --simple --ip … --install-service --start-service --firewall
 madmail service install|start|stop|status
 madmail firewall apply|remove
+madmail admin-token
 madmail-tray --smoke-exit
+madmail-tray status | token
 madmail-tray install-autostart
 ```
+
+### Admin API vs admin web UI
+
+| Surface | Windows packaging status |
+|---------|--------------------------|
+| `POST /api/admin` + bearer token | Supported (service running) |
+| Embedded SPA at `/admin` | **Not** shipped in current Windows CI builds (stub / disabled) |
+| Tray “Open admin UI” | **Removed** — no SPA; use token + CLI/API |
+
+Token file: `%ProgramData%\Madmail\data\admin_token`.  
+Do not open `/api/admin` in a browser (GET → **405**).
+
+### Installer options (wizard)
+
+- **Shadowsocks** — optional (default on).
+- **Iroh** — **not** offered (no `iroh-relay.exe` on Windows yet; enabling it breaks service boot).
+- Prefer **self-signed** in the lab if port **80** / ACME is not ready; **Let's Encrypt** (public IP or domain) needs inbound TCP 80 during install.
 
 ## CI
 
@@ -136,9 +155,32 @@ GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflow
 |-----|---------|
 | `linux-windows-crates` | Unit tests for tray / service / firewall / packaging file presence |
 | `windows-amd64-smoke` | MSVC build, tray smoke, service status, local self-signed install, upload CI artifacts |
+| `windows-amd64-setup` | Inno Setup (`choco install innosetup`) → `madmail-windows-amd64-setup.exe` artifact |
 | `windows-arm64-compile` | `cargo check` for `aarch64-pc-windows-msvc` (server + tray) |
 
-Does **not** create git tags or GitHub Releases. Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
+Does **not** create git tags or GitHub Releases. Download the setup from the Actions run artifacts (`madmail-windows-amd64-setup`). Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
+
+### Windows Defender / SmartScreen
+
+Unsigned CI-built `setup.exe` / `madmail.exe` are often flagged as **Trojan:Win32/Bearfoos** (or similar ML heuristics). That is a **false positive** for this project until Authenticode signing is added.
+
+Workarounds for lab VMs:
+
+1. **Defender exclusion** for `C:\Program Files\Madmail` and `%ProgramData%\Madmail` (and your Downloads folder while installing).
+2. Restore the file from Protection history if quarantined mid-install.
+3. Prefer copying **`madmail.exe`** from CI and running elevated `madmail install …` if setup.exe is blocked.
+4. Long-term: sign release binaries (Authenticode).
+
+If the tray says the service does not exist (error 1060), register it manually (elevated):
+
+```powershell
+& "C:\Program Files\Madmail\madmail.exe" `
+  --config "$env:ProgramData\Madmail\config\madmail.conf" `
+  --state-dir "$env:ProgramData\Madmail\data" `
+  service install --start
+```
+
+Configure log (when installed via setup): `%ProgramData%\Madmail\install.log`.
 
 ## Local full E2E (Vagrant + libvirt)
 

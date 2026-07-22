@@ -157,3 +157,64 @@ jobs:
         run: |
           cargo check -p chatmail -p madmail-tray --target aarch64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  # Inno Setup installer (amd64) — reuses smoke-built exes; CI artifact only (not a GitHub Release).
+  windows-amd64-setup:
+    name: Windows amd64 Inno setup
+    runs-on: windows-latest
+    needs: windows-amd64-smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download madmail + tray binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: madmail-windows-amd64-ci
+          path: ci-bin
+
+      - name: Stage build/ names expected by Madmail.iss
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          $madmail = Get-ChildItem -Path ci-bin -Recurse -Filter madmail.exe | Select-Object -First 1
+          if (-not $madmail) { throw "madmail.exe not found under ci-bin" }
+          Copy-Item -Force $madmail.FullName build\madmail-windows-amd64.exe
+          Write-Host "staged $($madmail.FullName) -> build\madmail-windows-amd64.exe"
+          $tray = Get-ChildItem -Path ci-bin -Recurse -Filter madmail-tray.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($tray) {
+            Copy-Item -Force $tray.FullName build\madmail-tray-windows-amd64.exe
+            Write-Host "staged $($tray.FullName) -> build\madmail-tray-windows-amd64.exe"
+          } else {
+            Write-Host "madmail-tray.exe not in artifact; setup will omit tray (skipifsourcedoesntexist)"
+          }
+          Get-ChildItem build | Format-Table Name, Length
+
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe not found after choco install innosetup" }
+          Write-Host "ISCC: $iscc"
+          & $iscc /? 2>&1 | Select-Object -First 5
+
+      - name: Compile setup.exe
+        shell: pwsh
+        run: |
+          & .\packaging\windows\build-setup.ps1 -Arch amd64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Resolve against workspace root (build-setup used to leave cwd under packaging/windows).
+          $setup = Join-Path $env:GITHUB_WORKSPACE "build\madmail-windows-amd64-setup.exe"
+          if (-not (Test-Path $setup)) { throw "missing $setup" }
+          Get-Item $setup | Format-List FullName, Length, LastWriteTime
+
+      - name: Upload setup installer (ephemeral CI artifact, not a Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: madmail-windows-amd64-setup
+          path: ${{ github.workspace }}/build/madmail-windows-amd64-setup.exe
+          retention-days: 14

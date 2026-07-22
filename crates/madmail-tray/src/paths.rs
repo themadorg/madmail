@@ -60,8 +60,11 @@ pub fn read_admin_token(state_dir: &Path) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Best-effort admin URL from config hostname, else localhost HTTP.
-pub fn admin_url(config_path: &Path) -> String {
+/// Admin **API** base URL (`POST` only — not a browser page). From config hostname, else localhost.
+///
+/// Kept for status/smoke reporting. There is no tray “open admin UI” while the SPA is not
+/// embedded in Windows builds; operators use the CLI + `POST /api/admin` with the token.
+pub fn admin_api_url(config_path: &Path) -> String {
     if config_path.is_file() {
         if let Ok(cfg) = chatmail_config::load_config(config_path) {
             let host = cfg
@@ -98,8 +101,9 @@ mod tests {
     }
 
     #[test]
-    fn admin_url_defaults() {
-        let u = admin_url(Path::new("/nonexistent/madmail.conf"));
+    fn admin_api_url_defaults() {
+        let u = admin_api_url(Path::new("/nonexistent/madmail.conf"));
         assert!(u.contains("127.0.0.1"), "{u}");
+        assert!(u.ends_with("/api/admin"), "{u}");
     }
 }

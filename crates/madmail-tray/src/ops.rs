@@ -13,6 +13,9 @@ use crate::paths;
 pub enum ServiceState {
     Running,
     Stopped,
+    /// Windows SCM: service name not registered (sc error 1060).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    NotInstalled,
     Unknown(String),
     Unavailable,
 }
@@ -22,6 +25,7 @@ impl ServiceState {
         match self {
             ServiceState::Running => "Running",
             ServiceState::Stopped => "Stopped",
+            ServiceState::NotInstalled => "NotInstalled",
             ServiceState::Unknown(s) => s.as_str(),
             ServiceState::Unavailable => "Unavailable",
         }
@@ -53,7 +57,20 @@ pub fn query_service_state(service_name: &str) -> ServiceState {
                 }
                 ServiceState::Unknown("UNKNOWN".into())
             }
-            Ok(_) => ServiceState::Stopped,
+            Ok(o) => {
+                let combined = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                );
+                if combined.contains("1060")
+                    || combined.to_ascii_lowercase().contains("does not exist")
+                {
+                    ServiceState::NotInstalled
+                } else {
+                    ServiceState::Stopped
+                }
+            }
             Err(_) => ServiceState::Unavailable,
         }
     }
@@ -77,27 +94,61 @@ pub fn query_service_state(service_name: &str) -> ServiceState {
     }
 }
 
+/// Run `madmail service <action>`. On Windows, if the service is not installed and
+/// `action` is `start`, register it first (`service install --start`).
 pub fn run_madmail_service(
     madmail: &Path,
     config: &Path,
     state_dir: &Path,
     action: &str,
 ) -> Result<(), String> {
-    let status = Command::new(madmail)
-        .args([
-            "--config",
-            &config.display().to_string(),
-            "--state-dir",
-            &state_dir.display().to_string(),
-            "service",
-            action,
-        ])
-        .status()
-        .map_err(|e| format!("spawn madmail: {e}"))?;
+    #[cfg(windows)]
+    {
+        if action == "start" {
+            match query_service_state("Madmail") {
+                ServiceState::NotInstalled => {
+                    return run_madmail_args(
+                        madmail,
+                        config,
+                        state_dir,
+                        &["service", "install", "--start"],
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+    run_madmail_args(madmail, config, state_dir, &["service", action])
+}
+
+fn run_madmail_args(
+    madmail: &Path,
+    config: &Path,
+    state_dir: &Path,
+    extra: &[&str],
+) -> Result<(), String> {
+    let mut cmd = Command::new(madmail);
+    cmd.arg("--config")
+        .arg(config)
+        .arg("--state-dir")
+        .arg(state_dir)
+        .args(extra);
+    // Avoid flashing a console window when launched from the tray.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let status = cmd.status().map_err(|e| format!("spawn madmail: {e}"))?;
     if status.success() {
         Ok(())
     } else {
-        Err(format!("madmail service {action} exit {:?}", status.code()))
+        Err(format!(
+            "madmail {} exit {:?}",
+            extra.join(" "),
+            status.code()
+        ))
     }
 }
 
@@ -115,21 +166,6 @@ pub fn open_path(path: &Path) -> Result<(), String> {
     {
         Command::new("xdg-open")
             .arg(path)
-            .spawn()
-            .map_err(|e| format!("xdg-open: {e}"))?;
-        Ok(())
-    }
-}
-
-pub fn open_url(url: &str) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        open::that(url).map_err(|e| format!("open url: {e}"))
-    }
-    #[cfg(not(windows))]
-    {
-        Command::new("xdg-open")
-            .arg(url)
             .spawn()
             .map_err(|e| format!("xdg-open: {e}"))?;
         Ok(())
@@ -157,7 +193,7 @@ pub fn smoke_report(config: &Path, state_dir: &Path, service_name: &str) -> Smok
         state_exists: state_dir.is_dir(),
         token_present: paths::read_admin_token(state_dir).is_some(),
         service: query_service_state(service_name),
-        admin_url: paths::admin_url(config),
+        admin_url: paths::admin_api_url(config),
         madmail: paths::madmail_binary().display().to_string(),
     }
 }

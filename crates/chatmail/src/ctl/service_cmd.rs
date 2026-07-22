@@ -54,15 +54,10 @@ fn require_windows() -> Result<()> {
 fn install(args: &Args, name: &str, start_after: bool) -> Result<()> {
     require_windows()?;
     let out = CtlOut::from_args(args, "service");
-    let exe = std::env::current_exe().map_err(|e| {
-        ChatmailError::config(format!(
-            "resolve current executable for service binPath: {e}"
-        ))
-    })?;
+    // Prefer sibling/Program Files madmail.exe — never register madmail-tray as the service.
+    let exe = resolve_service_executable()?;
     let bin_path = service_bin_path(&exe, &args.config, &args.state_dir);
-    create_service(name, &bin_path)?;
-    set_service_description(name, "Madmail chatmail / mail server")?;
-    set_service_recovery(name)?;
+    create_or_update_service(name, &exe, &args.config, &args.state_dir)?;
     if !out.is_json() {
         println!("✓ Registered Windows service {name}");
         println!("  binPath: {bin_path}");
@@ -83,6 +78,31 @@ fn install(args: &Args, name: &str, start_after: bool) -> Result<()> {
         }))?;
     }
     Ok(())
+}
+
+/// Binary that the SCM must launch (always `madmail.exe`, never the tray).
+fn resolve_service_executable() -> Result<std::path::PathBuf> {
+    let current = std::env::current_exe().map_err(|e| {
+        ChatmailError::config(format!(
+            "resolve current executable for service binPath: {e}"
+        ))
+    })?;
+    let name = current
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if name == "madmail.exe" || name == "madmail" {
+        return Ok(current);
+    }
+    if let Some(dir) = current.parent() {
+        let sibling = dir.join("madmail.exe");
+        if sibling.is_file() {
+            return Ok(sibling);
+        }
+    }
+    // Last resort: still use current (may be wrong if tray-only install).
+    Ok(current)
 }
 
 fn uninstall(args: &Args, name: &str) -> Result<()> {
@@ -171,56 +191,101 @@ pub fn argv_without_service_flag() -> Vec<std::ffi::OsString> {
     std::env::args_os().filter(|a| a != SERVICE_FLAG).collect()
 }
 
+/// Register or update the Madmail SCM service via the Win32 service APIs.
+///
+/// Prefer this over shelling out to `sc.exe`: Rust's default `Command` quoting
+/// turns `start= auto` into `"start= auto"`, which `sc` rejects with exit 1639.
 #[cfg(windows)]
-fn create_service(name: &str, bin_path: &str) -> Result<()> {
-    // sc requires a space after `=` tokens.
-    run_sc(
-        &[
-            "create",
-            name,
-            &format!("binPath= {bin_path}"),
-            "start= auto",
-            "DisplayName= Madmail",
+fn create_or_update_service(name: &str, exe: &Path, config: &Path, state_dir: &Path) -> Result<()> {
+    use std::ffi::OsString;
+    use std::time::Duration;
+
+    use windows_service::service::{
+        ServiceAccess, ServiceAction, ServiceActionType, ServiceErrorControl,
+        ServiceFailureActions, ServiceFailureResetPeriod, ServiceInfo, ServiceStartType,
+        ServiceType,
+    };
+    use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+
+    let manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
+    let manager = ServiceManager::local_computer(None::<&str>, manager_access)
+        .map_err(|e| ChatmailError::config(format!("OpenSCManager (need elevated admin): {e}")))?;
+
+    let service_info = ServiceInfo {
+        name: OsString::from(name),
+        display_name: OsString::from("Madmail"),
+        service_type: ServiceType::OWN_PROCESS,
+        start_type: ServiceStartType::AutoStart,
+        error_control: ServiceErrorControl::Normal,
+        executable_path: exe.to_path_buf(),
+        launch_arguments: vec![
+            OsString::from(SERVICE_FLAG),
+            OsString::from("--config"),
+            config.as_os_str().to_os_string(),
+            OsString::from("run"),
+            OsString::from("--libexec"),
+            state_dir.as_os_str().to_os_string(),
         ],
-        &format!("create service {name}"),
-    )
+        dependencies: vec![],
+        account_name: None, // LocalSystem
+        account_password: None,
+    };
+
+    let service_access = ServiceAccess::QUERY_CONFIG
+        | ServiceAccess::CHANGE_CONFIG
+        | ServiceAccess::START
+        | ServiceAccess::DELETE;
+
+    // 1073 = ERROR_SERVICE_EXISTS
+    let service = match manager.create_service(&service_info, service_access) {
+        Ok(svc) => svc,
+        Err(windows_service::Error::Winapi(io)) if io.raw_os_error() == Some(1073) => {
+            let svc = manager
+                .open_service(name, service_access)
+                .map_err(|e| ChatmailError::config(format!("open existing service {name}: {e}")))?;
+            svc.change_config(&service_info)
+                .map_err(|e| ChatmailError::config(format!("update service {name} config: {e}")))?;
+            svc
+        }
+        Err(e) => {
+            return Err(ChatmailError::config(format!("create service {name}: {e}")));
+        }
+    };
+
+    // Best-effort metadata; registration already succeeded.
+    let _ = service.set_description("Madmail chatmail / mail server");
+    let failure_actions = ServiceFailureActions {
+        reset_period: ServiceFailureResetPeriod::After(Duration::from_secs(86_400)),
+        reboot_msg: None,
+        command: None,
+        actions: Some(vec![
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_millis(5_000),
+            },
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_millis(5_000),
+            },
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_millis(5_000),
+            },
+        ]),
+    };
+    let _ = service.update_failure_actions(failure_actions);
+
+    Ok(())
 }
 
 #[cfg(not(windows))]
-fn create_service(_name: &str, _bin_path: &str) -> Result<()> {
+fn create_or_update_service(
+    _name: &str,
+    _exe: &Path,
+    _config: &Path,
+    _state_dir: &Path,
+) -> Result<()> {
     require_windows()
-}
-
-#[cfg(windows)]
-fn set_service_description(name: &str, description: &str) -> Result<()> {
-    run_sc(
-        &["description", name, description],
-        &format!("set description for {name}"),
-    )
-}
-
-#[cfg(not(windows))]
-fn set_service_description(_name: &str, _description: &str) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(windows)]
-fn set_service_recovery(name: &str) -> Result<()> {
-    // Restart on failure: 5s, 5s, 5s; reset fail count after 1 day.
-    run_sc(
-        &[
-            "failure",
-            name,
-            "reset= 86400",
-            "actions= restart/5000/restart/5000/restart/5000",
-        ],
-        &format!("set recovery for {name}"),
-    )
-}
-
-#[cfg(not(windows))]
-fn set_service_recovery(_name: &str) -> Result<()> {
-    Ok(())
 }
 
 #[cfg(windows)]
@@ -235,8 +300,7 @@ fn delete_service(_name: &str) -> Result<()> {
 
 #[cfg(windows)]
 fn query_service_state(name: &str) -> Result<String> {
-    let output = Command::new("sc")
-        .args(["query", name])
+    let output = sc_command(&["query", name])
         .output()
         .map_err(|e| ChatmailError::config(format!("sc query {name}: {e}")))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -273,8 +337,7 @@ fn query_service_state(_name: &str) -> Result<String> {
 }
 
 fn run_sc(args: &[&str], action: &str) -> Result<()> {
-    let output = Command::new("sc")
-        .args(args)
+    let output = sc_command(args)
         .output()
         .map_err(|e| ChatmailError::config(format!("sc {action}: {e}")))?;
     if output.status.success() {
@@ -288,6 +351,28 @@ fn run_sc(args: &[&str], action: &str) -> Result<()> {
         stdout.trim(),
         stderr.trim()
     )))
+}
+
+/// Build an `sc.exe` command (used for start/stop/delete/query).
+///
+/// Service **create/config** uses the Win32 API ([`create_or_update_service`]) so
+/// we never depend on `sc` option quoting. Remaining `sc` calls still use
+/// [`CommandExt::raw_arg`] on Windows: if a future caller passes `key= value`
+/// tokens, Rust's default quoting must not wrap them as `"start= auto"` (exit 1639).
+fn sc_command(args: &[&str]) -> Command {
+    let mut cmd = Command::new("sc");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        for a in args {
+            cmd.raw_arg(a);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        cmd.args(args);
+    }
+    cmd
 }
 
 #[cfg(test)]
@@ -306,6 +391,23 @@ mod tests {
         assert!(p.contains("run"), "{p}");
         assert!(p.contains("--libexec"), "{p}");
         assert!(p.contains("madmail.exe"), "{p}");
+    }
+
+    #[test]
+    fn service_bin_path_is_suitable_for_scm_image_path() {
+        let bin = service_bin_path(
+            Path::new(r"C:\Program Files\Madmail\madmail.exe"),
+            Path::new(r"C:\ProgramData\Madmail\config\madmail.conf"),
+            Path::new(r"C:\ProgramData\Madmail\data"),
+        );
+        // CreateService uses exe + argv; ImagePath-style string still used for display/logging.
+        assert!(bin.starts_with('"'), "{bin}");
+        assert!(bin.contains("--service"), "{bin}");
+        assert!(bin.contains("--config"), "{bin}");
+        assert!(bin.contains("run"), "{bin}");
+        assert!(bin.contains("--libexec"), "{bin}");
+        // sc start/stop/delete still go through sc_command (raw_arg on Windows).
+        let _ = sc_command(&["query", "Madmail"]);
     }
 
     #[test]

@@ -14,8 +14,9 @@ Run before claiming a public Windows setup.exe or closing epic [#103](https://gi
   `madmail install --simple --ip 127.0.0.1 --tls-mode self_signed --install-service --start-service --firewall`
 - [ ] Service shows **Running** (`madmail service status` / Services MMC)
 - [ ] Firewall rules present (`Madmail (*)` in Windows Firewall)
-- [ ] `madmail-tray --smoke-exit` exits 0; tray menu opens admin / start-stop works
-- [ ] Admin token file under `%ProgramData%\Madmail\data\admin_token`
+- [ ] `madmail-tray --smoke-exit` exits 0; tray start/stop service and “copy admin token” work
+- [ ] Admin token file under `%ProgramData%\Madmail\data\admin_token` (use CLI / `POST /api/admin` — Windows builds do not embed the admin-web SPA)
+- [ ] Service install does **not** fail with sc exit **1639** (uses Win32 CreateService, not quoted `sc start=`)
 - [ ] **Full mail path** (or `vagrant` E2E): create two users, SMTP 587 → IMAP 143 both directions — see [vagrant/README.md](./vagrant/README.md)
 - [ ] **Public IP self-signed** (optional lab)
 - [ ] **Domain LE** or **auto-IP cert** when port 80 and DNS/IP allow (optional)
