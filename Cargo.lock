@@ -2992,7 +2992,7 @@ checksum = "d3d25b0e0b648a86960ac23b7ad4abb9717601dec6f66c165f5b037f3f03065f"
 
 [[package]]
 name = "madmail-tray"
-version = "2.17.3"
+version = "2.18.1"
 dependencies = [
  "chatmail-config",
  "clap",
