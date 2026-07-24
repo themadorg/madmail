@@ -1,6 +1,8 @@
 # Windows release checklist (L8)
 
-Run before claiming a public Windows setup.exe or closing epic [#103](https://github.com/themadorg/madmail/issues/103) via a `main` merge.
+Run before claiming a public Windows setup.exe or closing epic [#103](https://github.com/themadorg/madmail/issues/103) after merge to `main`.
+
+CI: Windows pipeline runs on **`v*` tags** and published **GitHub Releases** (see `.github/workflows/windows.yml`).
 
 ## Environment
 

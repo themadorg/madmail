@@ -1,21 +1,16 @@
-# Windows smoke for the installer stack (feat/windows-installer).
-# Artifacts only — does not create tags or GitHub Releases.
+# Windows smoke + Inno setup artifacts.
+# Runs on version tags / GitHub Releases (and PRs that touch Windows paths).
+# Uploads Actions artifacts only — does not create tags or attach Release assets itself.
 name: Windows
 
 on:
   push:
-    branches: [feat/windows-installer]
-    paths:
-      - "crates/chatmail/**"
-      - "crates/chatmail-config/**"
-      - "crates/madmail-tray/**"
-      - "packaging/windows/**"
-      - "scripts/build-windows.sh"
-      - ".github/workflows/windows.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
+    tags:
+      - "v*"
+  release:
+    types: [published]
   pull_request:
-    branches: [feat/windows-installer]
+    branches: [main]
     paths:
       - "crates/chatmail/**"
       - "crates/chatmail-config/**"

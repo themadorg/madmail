@@ -54,7 +54,9 @@ Before install, create an **`A`/`AAAA`** record for the hostname pointing at you
 
 ### Windows
 
-Prefer the **setup wizard** when available (`madmail-windows-amd64-setup.exe` / `arm64`), or use the CLI:
+Prefer the **setup wizard** when available (`madmail-windows-amd64-setup.exe` / `arm64` from GitHub Actions on `v*` tags / Releases), or use the CLI.
+
+**UAC / SmartScreen / Defender:** binaries are **unsigned**. Approve UAC (**Yes** / run setup **as administrator**). If SmartScreen says “Windows protected your PC”, use **More info → Run anyway** only for artifacts you trust from this repo. Defender may false-positive (e.g. Bearfoos) — exclusions and restore steps: [packaging/windows/README.md](../../../packaging/windows/README.md#windows-defender-smartscreen-and-uac).
 
 ```powershell
 # After placing madmail.exe on the machine (elevated PowerShell recommended)
@@ -79,9 +81,8 @@ Useful commands: `madmail service status`, `madmail admin-token`, `madmail firew
 Admin: use the **CLI** and **`POST /api/admin`** with the bearer token. Current Windows packages do **not** embed the admin-web SPA at `/admin` (browser GET on `/api/admin` returns **405**).
 
 Packaging and build notes: [packaging/windows/README.md](../../../packaging/windows/README.md).  
-Manual release checklist: [packaging/windows/MANUAL-CHECKLIST.md](../../../packaging/windows/MANUAL-CHECKLIST.md).
-
-> Full Windows support is integrated on branch `feat/windows-installer` (epic [#103](https://github.com/themadorg/madmail/issues/103)) until merged to the default release branch.
+Manual release checklist: [packaging/windows/MANUAL-CHECKLIST.md](../../../packaging/windows/MANUAL-CHECKLIST.md).  
+Epic: [#103](https://github.com/themadorg/madmail/issues/103).
 
 More detail:
 

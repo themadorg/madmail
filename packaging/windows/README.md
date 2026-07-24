@@ -2,8 +2,8 @@
 
 Operator-facing Windows installers and release binaries for Madmail.
 
-> Integration work lives on branch `feat/windows-installer` (epic [#103](https://github.com/themadorg/madmail/issues/103)).  
-> This tree does **not** publish GitHub Releases by itself.
+> Epic: [#103](https://github.com/themadorg/madmail/issues/103).  
+> CI builds Windows artifacts on **version tags** (`v*`) and published GitHub Releases (see [CI](#ci)). This workflow does **not** create tags or attach Release assets by itself.
 
 ## Artifacts
 
@@ -169,7 +169,14 @@ Do not open `/api/admin` in a browser (GET → **405**).
 
 ## CI
 
-GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflows/windows.yml) (branch `feat/windows-installer`):
+GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflows/windows.yml):
+
+| Trigger | When |
+|---------|------|
+| **Push tags** `v*` | After semantic-release (or manual) cuts a version tag |
+| **GitHub Release** published | When a release is published |
+| **PR to `main`** | Only if Windows-related paths change |
+| **`workflow_dispatch`** | Manual run from Actions UI |
 
 | Job | Purpose |
 |-----|---------|
@@ -178,18 +185,27 @@ GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflow
 | `windows-amd64-setup` | Inno Setup (`choco install innosetup`) → `madmail-windows-amd64-setup.exe` artifact |
 | `windows-arm64-compile` | `cargo check` for `aarch64-pc-windows-msvc` (server + tray) |
 
-Does **not** create git tags or GitHub Releases. Download the setup from the Actions run artifacts (`madmail-windows-amd64-setup`). Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
+Download setup/binaries from the **Actions** run artifacts (`madmail-windows-amd64-setup`, `madmail-windows-amd64-ci`). The workflow does not attach files to GitHub Releases. Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
 
-### Windows Defender / SmartScreen
+### Windows Defender, SmartScreen, and UAC
 
-CI-built `setup.exe` / `madmail.exe` are **unsigned** (this project does not ship Authenticode-signed Windows binaries). Defender / SmartScreen may flag them as **Trojan:Win32/Bearfoos** or similar ML heuristics. That is a **false positive** for official Madmail CI artifacts from this repository.
+CI- and tag-built `setup.exe` / `madmail.exe` are **unsigned** (no Authenticode). That is expected for this open-source project.
 
-Workarounds for lab VMs and self-hosted installs:
+| Prompt / alert | What it is | What to do |
+|----------------|------------|------------|
+| **UAC** — “Do you want to allow this app to make changes…?” | Installer and service registration need **Administrator** | Choose **Yes**. Prefer right-click setup → **Run as administrator**. |
+| **SmartScreen** — “Windows protected your PC” / unknown publisher | Unsigned binary; SmartScreen has no publisher reputation | **More info** → **Run anyway** (only for builds you trust from this repo’s Actions/releases). |
+| **Defender** — **Trojan:Win32/Bearfoos** (or similar ML) | Heuristic false positive on unsigned CI PE files | See workarounds below. Not a known real infection for official Madmail artifacts. |
+| Installer **elevated** but configure fails | Often LE/TLS or missing elevation earlier | See `%ProgramData%\Madmail\install.log` |
 
-1. **Defender exclusion** for `C:\Program Files\Madmail` and `%ProgramData%\Madmail` (and your Downloads folder while installing).
-2. Restore the file from Protection history if quarantined mid-install.
-3. Prefer copying **`madmail.exe`** from CI and running elevated `madmail install …` if setup.exe is blocked.
-4. Prefer builds from this repo’s **GitHub Actions** artifacts (or a known mirror), not random re-uploads.
+**Defender / quarantine workarounds (lab and self-hosted):**
+
+1. **Exclusions** for `C:\Program Files\Madmail`, `%ProgramData%\Madmail`, and the folder where you download `setup.exe` (while installing).  
+2. **Protection history** → restore the file if Defender quarantined it mid-install.  
+3. If setup is blocked, copy **`madmail.exe`** from the CI artifact and run elevated `madmail install …`.  
+4. Prefer builds from this repository’s **GitHub Actions** (or a known mirror), not random re-uploads.  
+
+There is no free public Authenticode path for this project; stay on the notice above rather than expecting signed SmartScreen trust.
 
 If the tray says the service does not exist (error 1060), register it manually (elevated):
 
