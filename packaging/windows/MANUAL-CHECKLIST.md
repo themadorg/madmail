@@ -23,8 +23,10 @@ Run before claiming a public Windows setup.exe or closing epic [#103](https://gi
 
 ## Upgrade / uninstall
 
-- [ ] Re-run setup or replace binaries without wiping mail (`--keep-data` path)
-- [ ] Uninstall keeps data when expected; full wipe when requested
+- [ ] Re-run setup without uninstall, or uninstall with **No** (keep data)
+- [ ] Uninstall **Yes** (wipe) removes `%ProgramData%\Madmail` completely
+- [ ] Uninstall **No** (keep) leaves ProgramData; service and Program Files gone
+- [ ] CLI `uninstall --keep-data --keep-config` preserves mail/config
 
 ## Docs smoke
 

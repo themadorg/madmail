@@ -101,7 +101,8 @@ Filename: "{app}\{#MyTrayExeName}"; \
   Flags: nowait postinstall skipifsilent; Check: TrayPresent
 
 [UninstallRun]
-; Best-effort: stop service + firewall; keep data by default (see UninstallKeepData)
+; Stop service + firewall; ProgramData wipe depends on UninstallWipeData (prompt).
+; --keep-binary: Inno removes Program Files after this step.
 Filename: "{app}\{#MyAppExeName}"; \
   Parameters: "{code:UninstallCliArgs}"; \
   RunOnceId: "MadmailUninstall"; \
@@ -121,6 +122,8 @@ var
   LangPage: TInputOptionWizardPage;
   FeaturePage: TInputOptionWizardPage;
   FinishedMsg: String;
+  { True = remove %ProgramData%\Madmail (config + mail); False = keep. }
+  UninstallWipeData: Boolean;
 
 function TrayPresent: Boolean;
 begin
@@ -229,12 +232,74 @@ begin
   Log('Install CLI: madmail ' + Args);
 end;
 
+function InitializeUninstall(): Boolean;
+var
+  Answer: Integer;
+begin
+  { Interactive: ask whether to remove ProgramData\Madmail.
+    Silent (/VERYSILENT): keep data (safer for scripted upgrades). }
+  Result := True;
+  UninstallWipeData := False;
+  if UninstallSilent then
+  begin
+    Log('Silent uninstall: keeping ProgramData\Madmail (use interactive uninstall to wipe)');
+    Exit;
+  end;
+  Answer := MsgBox(
+    'Remove all Madmail data under:'#13#10 +
+    '  ' + ExpandConstant('{commonappdata}\Madmail') + #13#10#13#10 +
+    'This includes configuration, certificates, mailboxes, and install.log.'#13#10#13#10 +
+    'Yes = delete all data (clean reinstall)'#13#10 +
+    'No = keep data (you can reinstall and reuse mail/config)'#13#10 +
+    'Cancel = abort uninstall',
+    mbConfirmation, MB_YESNOCANCEL);
+  case Answer of
+    IDYES:
+      begin
+        UninstallWipeData := True;
+        Log('Uninstall: wipe ProgramData\Madmail');
+      end;
+    IDNO:
+      begin
+        UninstallWipeData := False;
+        Log('Uninstall: keep ProgramData\Madmail');
+      end;
+  else
+    begin
+      Result := False;
+      Log('Uninstall cancelled by user');
+    end;
+  end;
+end;
+
 function UninstallCliArgs(Param: String): String;
 begin
-  { Keep mail data by default; operators can wipe ProgramData manually }
-  Result := 'uninstall --force --keep-data --keep-binary';
+  Result := 'uninstall --force --keep-binary';
+  if not UninstallWipeData then
+  begin
+    Result := Result + ' --keep-data --keep-config';
+  end;
   Result := Result + ' --config ' + Quoted(ConfigDir + '\madmail.conf');
   Result := Result + ' --state-dir ' + Quoted(StateDir);
+  Log('Uninstall CLI: madmail ' + Result);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataRoot: String;
+begin
+  { After madmail uninstall: if user chose wipe, force-remove any leftovers (locked files). }
+  if (CurUninstallStep = usPostUninstall) and UninstallWipeData then
+  begin
+    DataRoot := ExpandConstant('{commonappdata}\Madmail');
+    if DirExists(DataRoot) then
+    begin
+      if not DelTree(DataRoot, True, True, True) then
+        Log('Warning: could not fully remove ' + DataRoot)
+      else
+        Log('Removed ' + DataRoot);
+    end;
+  end;
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;

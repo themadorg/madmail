@@ -63,7 +63,27 @@ madmail.exe install --simple --ip 127.0.0.1 --tls-mode self_signed ^
 
 ### Uninstall
 
-Add/Remove Programs runs `madmail uninstall --force --keep-data --keep-binary` (mail data retained by default), removes tray autostart, then deletes Program Files files.
+Add/Remove Programs prompts:
+
+| Choice | Effect |
+|--------|--------|
+| **Yes** | Remove **`%ProgramData%\Madmail`** (config, certs, mail, `install.log`) |
+| **No** | Keep ProgramData (mail/config survive; service + Program Files removed) |
+| **Cancel** | Abort uninstall |
+
+Then runs `madmail uninstall --force --keep-binary` (plus `--keep-data --keep-config` if you chose No), removes tray autostart, and deletes Program Files. After a wipe choice, Inno also `DelTree`s any leftover ProgramData files.
+
+Silent uninstall (`/VERYSILENT`) **keeps** ProgramData (no prompt).
+
+CLI examples:
+
+```text
+# Full wipe ProgramData
+madmail uninstall --force --keep-binary --config … --state-dir …
+
+# Keep mail + config
+madmail uninstall --force --keep-data --keep-config --keep-binary --config … --state-dir …
+```
 
 ## Build binaries (no publish)
 

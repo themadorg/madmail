@@ -233,11 +233,15 @@ async fn uninstall_windows(args: &Args, flags: &UninstallArgs) -> Result<()> {
     if flags.dry_run {
         println!("Would: stop/delete service {DEFAULT_WINDOWS_SERVICE_NAME}");
         println!("Would: remove Madmail firewall rules");
-        if !flags.keep_config {
-            println!("Would: remove {}", config_dir.display());
-        }
-        if !flags.keep_data {
-            println!("Would: remove {}", state_dir.display());
+        if !flags.keep_config && !flags.keep_data {
+            println!("Would: remove entire {}", madmail_root.display());
+        } else {
+            if !flags.keep_config {
+                println!("Would: remove {}", config_dir.display());
+            }
+            if !flags.keep_data {
+                println!("Would: remove {}", state_dir.display());
+            }
         }
         if !flags.keep_binary {
             if let Ok(exe) = std::env::current_exe() {
@@ -276,28 +280,69 @@ async fn uninstall_windows(args: &Args, flags: &UninstallArgs) -> Result<()> {
         Err(e) => println!("⚠️  Firewall cleanup: {e}"),
     }
 
-    if !flags.keep_config {
-        println!("\n[3/4] Removing configuration...");
-        if config_dir.exists() {
-            remove_path(&config_dir, false)?;
+    // Prefer removing the whole ProgramData\Madmail tree so install.log, certs,
+    // and empty parents are not left behind (remove_dir only works when empty).
+    if !flags.keep_config && !flags.keep_data {
+        println!("\n[3/4] Removing configuration…");
+        println!("\n[4/4] Removing state / mail data and ProgramData\\Madmail…");
+        if madmail_root.exists() {
+            match remove_path(&madmail_root, false) {
+                Ok(()) => println!("✅ Removed {}", madmail_root.display()),
+                Err(e) => {
+                    // Best-effort partial cleanup if something is locked.
+                    println!("⚠️  Full tree remove failed ({e}); trying config + data…");
+                    if config_dir.exists() {
+                        let _ = remove_path(&config_dir, false);
+                    }
+                    if state_dir.exists() {
+                        let _ = remove_path(&state_dir, false);
+                    }
+                    let log = madmail_root.join("install.log");
+                    if log.exists() {
+                        let _ = remove_path(&log, false);
+                    }
+                    if madmail_root.is_dir() {
+                        let _ = fs::remove_dir_all(&madmail_root);
+                    }
+                }
+            }
+        } else {
+            println!("✅ No ProgramData\\Madmail tree present");
         }
-        println!("✅ Configuration removed");
     } else {
-        println!("\n[3/4] Keeping configuration (--keep-config)");
-    }
+        if !flags.keep_config {
+            println!("\n[3/4] Removing configuration…");
+            if config_dir.exists() {
+                remove_path(&config_dir, false)?;
+            }
+            println!("✅ Configuration removed");
+        } else {
+            println!("\n[3/4] Keeping configuration (--keep-config)");
+        }
 
-    if !flags.keep_data {
-        println!("\n[4/4] Removing state / mail data...");
-        if state_dir.exists() {
-            remove_path(&state_dir, false)?;
+        if !flags.keep_data {
+            println!("\n[4/4] Removing state / mail data…");
+            if state_dir.exists() {
+                remove_path(&state_dir, false)?;
+            }
+            println!("✅ State removed");
+        } else {
+            println!("\n[4/4] Keeping state / mail data (--keep-data)");
         }
-        // Parent ProgramData\Madmail if empty-ish
+
+        // Drop install.log and other loose files; remove root if empty.
+        let install_log = madmail_root.join("install.log");
+        if install_log.exists() && !flags.keep_config {
+            let _ = remove_path(&install_log, false);
+        }
         if madmail_root.is_dir() {
-            let _ = fs::remove_dir(&madmail_root);
+            match fs::remove_dir(&madmail_root) {
+                Ok(()) => println!("✅ Removed empty {}", madmail_root.display()),
+                Err(_) => {
+                    // Non-empty (e.g. --keep-data left data/) — expected.
+                }
+            }
         }
-        println!("✅ State removed");
-    } else {
-        println!("\n[4/4] Keeping state / mail data (--keep-data)");
     }
 
     if !flags.keep_binary {
