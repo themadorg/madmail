@@ -1,3 +1,10 @@
+# [2.18.0](https://github.com/themadorg/madmail/compare/v2.17.3...v2.18.0) (2026-07-24)
+
+
+### Features
+
+* **windows:** installer stack (paths, service, firewall, tray, Inno, CI) ([#112](https://github.com/themadorg/madmail/issues/112)) ([79ed100](https://github.com/themadorg/madmail/commit/79ed100e90a07b601519e99fc9f50901b915c0b5)), closes [#99](https://github.com/themadorg/madmail/issues/99)
+
 ## [2.17.3](https://github.com/themadorg/madmail/compare/v2.17.2...v2.17.3) (2026-07-21)
 
 
