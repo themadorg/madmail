@@ -88,6 +88,18 @@ pub struct InstallArgs {
     #[arg(long)]
     pub skip_user: bool,
 
+    /// Register a Windows service after install (no-op notice on Unix).
+    #[arg(long)]
+    pub install_service: bool,
+
+    /// Start the Windows service after install (implies service registration on Windows).
+    #[arg(long)]
+    pub start_service: bool,
+
+    /// Open Windows Firewall rules for standard mail/HTTP ports (no-op notice on Unix).
+    #[arg(long)]
+    pub firewall: bool,
+
     /// Install path for the binary (default: `/usr/local/bin/<argv0>`).
     #[arg(long)]
     pub binary_path: Option<PathBuf>,

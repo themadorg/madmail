@@ -1,0 +1,241 @@
+# Windows pipeline
+#
+# - Merges / pushes to main (+ Windows-related PRs): lint, amd64 smoke, arm64 compile
+# - GitHub Releases (published): amd64 smoke → Inno setup → attach assets to the Release
+# - workflow_dispatch: same as main (validate only); use a Release for setup.exe assets
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/chatmail/**"
+      - "crates/chatmail-config/**"
+      - "crates/madmail-tray/**"
+      - "packaging/windows/**"
+      - "scripts/build-windows.sh"
+      - ".github/workflows/windows.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Validation (main merges, PRs, manual) — not on Release ─────────────────
+  linux-windows-crates:
+    name: Linux (windows-related crates)
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-related-linux
+
+      - name: Test tray + config CLI pieces
+        run: |
+          cargo test -p madmail-tray
+          cargo test -p chatmail-config --lib service_subcommands
+          cargo test -p chatmail-config --lib firewall_subcommands
+          cargo test -p chatmail --lib tls_boot
+          cargo test -p chatmail --lib service_cmd
+          cargo test -p chatmail --lib firewall_cmd
+
+      - name: Packaging files present
+        run: |
+          test -f packaging/windows/Madmail.iss
+          test -f packaging/windows/build-setup.ps1
+          test -f packaging/windows/README.md
+          test -f scripts/build-windows.sh
+
+  # ── amd64 smoke (main, PRs, release, manual) ───────────────────────────────
+  windows-amd64-smoke:
+    name: Windows amd64 smoke
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-amd64-smoke
+
+      - name: Build madmail + madmail-tray (MSVC)
+        # -D warnings: fail on rustc warnings.
+        # link-arg=/IGNORE:4099: silence MSVC LNK4099 (missing ossl_static.pdb from vendored OpenSSL).
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "0"
+          RUSTFLAGS: "-D warnings -C link-arg=/IGNORE:4099"
+        run: cargo build -p chatmail -p madmail-tray --release
+
+      - name: Tray smoke-exit
+        shell: pwsh
+        run: |
+          & .\target\release\madmail-tray.exe --smoke-exit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Service status when not installed
+        shell: pwsh
+        run: |
+          # Must exit 0 with State NotInstalled (not sc error 1060).
+          $out = & .\target\release\madmail.exe service status 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "service status failed: $LASTEXITCODE" }
+          if ($out -notmatch "NotInstalled") { throw "expected NotInstalled, got: $out" }
+
+      - name: Local install (self-signed) under temp dirs
+        shell: pwsh
+        run: |
+          $cfg = Join-Path $env:RUNNER_TEMP "madmail-cfg"
+          $st = Join-Path $env:RUNNER_TEMP "madmail-state"
+          New-Item -ItemType Directory -Force -Path $cfg, $st | Out-Null
+          & .\target\release\madmail.exe install `
+            --simple --ip 127.0.0.1 --tls-mode self_signed --lang en `
+            --config-dir $cfg --state-dir $st `
+            --no-obtain-certificate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $cert = Join-Path $cfg "certs\fullchain.pem"
+          $key = Join-Path $cfg "certs\privkey.pem"
+          if (-not (Test-Path $cert)) { throw "missing $cert" }
+          if (-not (Test-Path $key)) { throw "missing $key" }
+          $conf = Join-Path $cfg "madmail.conf"
+          if (-not (Test-Path $conf)) { throw "missing $conf (binary_name .exe strip?)" }
+          Write-Host "install ok: certs present under $cfg"
+
+      - name: Firewall CLI parse (apply needs admin; only dry presence)
+        shell: pwsh
+        run: |
+          & .\target\release\madmail.exe firewall --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload Windows binaries (Actions artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: madmail-windows-amd64-ci
+          path: |
+            target/release/madmail.exe
+            target/release/madmail-tray.exe
+          retention-days: 7
+
+  # ── arm64 compile-only (main merges / PRs / manual — not Release) ──────────
+  windows-arm64-compile:
+    name: Windows arm64 compile-only
+    if: github.event_name != 'release'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-arm64-compile
+
+      - name: cargo check arm64 (server + tray)
+        shell: pwsh
+        env:
+          RUSTFLAGS: "-D warnings -C link-arg=/IGNORE:4099"
+        run: |
+          cargo check -p chatmail -p madmail-tray --target aarch64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  # ── Inno setup + attach to GitHub Release (Release events only) ────────────
+  windows-amd64-setup:
+    name: Windows amd64 Inno setup
+    if: github.event_name == 'release'
+    runs-on: windows-latest
+    needs: windows-amd64-smoke
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download madmail + tray binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: madmail-windows-amd64-ci
+          path: ci-bin
+
+      - name: Stage build/ names expected by Madmail.iss
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          $madmail = Get-ChildItem -Path ci-bin -Recurse -Filter madmail.exe | Select-Object -First 1
+          if (-not $madmail) { throw "madmail.exe not found under ci-bin" }
+          Copy-Item -Force $madmail.FullName build\madmail-windows-amd64.exe
+          Write-Host "staged $($madmail.FullName) -> build\madmail-windows-amd64.exe"
+          $tray = Get-ChildItem -Path ci-bin -Recurse -Filter madmail-tray.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($tray) {
+            Copy-Item -Force $tray.FullName build\madmail-tray-windows-amd64.exe
+            Write-Host "staged $($tray.FullName) -> build\madmail-tray-windows-amd64.exe"
+          } else {
+            Write-Host "madmail-tray.exe not in artifact; setup will omit tray (skipifsourcedoesntexist)"
+          }
+          Get-ChildItem build | Format-Table Name, Length
+
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe not found after choco install innosetup" }
+          Write-Host "ISCC: $iscc"
+          & $iscc /? 2>&1 | Select-Object -First 5
+
+      - name: Compile setup.exe
+        shell: pwsh
+        run: |
+          & .\packaging\windows\build-setup.ps1 -Arch amd64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $setup = Join-Path $env:GITHUB_WORKSPACE "build\madmail-windows-amd64-setup.exe"
+          if (-not (Test-Path $setup)) { throw "missing $setup" }
+          Get-Item $setup | Format-List FullName, Length, LastWriteTime
+
+      - name: Upload setup installer (Actions artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: madmail-windows-amd64-setup
+          path: ${{ github.workspace }}/build/madmail-windows-amd64-setup.exe
+          retention-days: 14
+
+      - name: Attach Windows assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw "missing release tag_name" }
+          $root = $env:GITHUB_WORKSPACE
+          $files = @(
+            (Join-Path $root "build\madmail-windows-amd64.exe"),
+            (Join-Path $root "build\madmail-windows-amd64-setup.exe")
+          )
+          $tray = Join-Path $root "build\madmail-tray-windows-amd64.exe"
+          if (Test-Path $tray) { $files += $tray }
+          foreach ($f in $files) {
+            if (-not (Test-Path $f)) { throw "missing release asset: $f" }
+          }
+          Write-Host "Uploading to release $tag :"
+          $files | ForEach-Object { Get-Item $_ | Format-List FullName, Length }
+          # --clobber replaces assets if the workflow is re-run on the same release
+          gh release upload $tag @files --clobber

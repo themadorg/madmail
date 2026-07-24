@@ -19,6 +19,9 @@
 
 use std::path::PathBuf;
 
+/// Install plan used by Unix systemd/user steps and Windows post-install.
+/// Some fields are only read on Unix (`system` / `systemd` modules).
+#[allow(dead_code)]
 pub struct InstallConfig {
     pub binary_name: String,
     pub binary_path: PathBuf,

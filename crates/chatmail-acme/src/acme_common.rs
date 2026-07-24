@@ -34,12 +34,25 @@ pub fn map_instant_acme(e: instant_acme::Error) -> ChatmailError {
 pub fn ensure_http01_listen_available(addr: &SocketAddr) -> Result<()> {
     std::net::TcpListener::bind(addr).map_err(|e| {
         ChatmailError::config(format!(
-            "cannot bind {addr} for HTTP-01 ({e}). Stop any service using port {} first \
-             (e.g. systemctl stop madmail, or another web server), then retry.",
-            addr.port()
+            "cannot bind {addr} for HTTP-01 ({e}). Stop any service using port {} first, then retry.\n\
+             {}",
+            addr.port(),
+            http01_stop_hint()
         ))
     })?;
     Ok(())
+}
+
+/// Platform-specific hint for freeing port 80 / madmail before HTTP-01.
+fn http01_stop_hint() -> &'static str {
+    #[cfg(windows)]
+    {
+        "Windows: `netstat -ano | findstr :80`, stop the listed PID (or `sc.exe stop Madmail` if Madmail is already installed); also check IIS/other web servers."
+    }
+    #[cfg(not(windows))]
+    {
+        "Linux/Unix: `systemctl stop madmail` (if installed), and stop nginx/apache or anything else on port 80."
+    }
 }
 
 pub async fn load_or_create_le_account(
@@ -120,12 +133,12 @@ pub fn dns_order_not_ready_error(status: OrderStatus, domain: &str) -> ChatmailE
     ChatmailError::config(format!(
         "Let's Encrypt rejected the HTTP-01 challenge for {domain} (order status: {status:?}).\n\
          Common causes:\n\
-         • Port 80 is already in use — validators reach another process, not this installer. \
-           Run `systemctl stop madmail` (and nginx/apache if any) before certificate issuance.\n\
+         • Port 80 is already in use — validators reach another process, not this installer. {}\n\
          • Inbound TCP 80 is blocked by a firewall or cloud security group.\n\
          • DNS for {domain} does not point to this machine (A/AAAA must match this host's public IP).\n\
          • A CAA DNS record blocks issuance for this hostname — remove or allow `letsencrypt.org`.\n\
-         • Rate limits — wait an hour or use `madmail certificate get --staging` for testing."
+         • Rate limits — wait an hour or use `madmail certificate get --staging` for testing.",
+        http01_stop_hint()
     ))
 }
 
@@ -133,11 +146,13 @@ pub fn ip_order_not_ready_error(status: OrderStatus, ip: IpAddr) -> ChatmailErro
     ChatmailError::config(format!(
         "Let's Encrypt rejected the HTTP-01 challenge for {ip} (order status: {status:?}).\n\
          Common causes:\n\
-         • Port 80 is already in use — validators reach another process, not this installer. \
-           Run `systemctl stop madmail` (and nginx/apache if any) before `install --auto-ip-cert`.\n\
-         • Inbound TCP 80 is blocked by a firewall or cloud security group.\n\
+         • Port 80 is already in use — validators reach another process, not this installer. {}\n\
+         • Inbound TCP 80 is blocked by a host or cloud firewall (e.g. Windows Defender Firewall and/or your provider's panel). \
+           Local `netstat` free only means nothing is listening — LE still cannot connect if the firewall drops packets. \
+           Open inbound TCP 80, then from another network: `curl -v --max-time 10 http://{ip}/` while a test listener is up.\n\
          • This machine is not reachable on the public IP {ip} (install must run on the host that owns the IP).\n\
-         • Rate limits — wait an hour or use `madmail certificate get --staging` for testing."
+         • Rate limits — wait an hour or use `madmail certificate get --staging` for testing.",
+        http01_stop_hint()
     ))
 }
 

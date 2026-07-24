@@ -7,6 +7,8 @@
 	test test-unit test-integration test-e2e test-maintenance test-imap test-turn test-docker-turn-e2e test-core-turn test-deltachat test-deltachat-cmlxc test-mini-cmlxc test-full-cmlxc test-cmlxc-fullrun test-cmlxc-fullrun-madmail _test-cmlxc-prereqs test-dclogin relay-ping-build relay-ping-clean t1-bench t1-report-demo \
 	check vet lint fmt fmt-check cov run run-bg run-debug restart stop logs reset-db dev-certs clean help \
 	sign push push1 push2 log1 log2 push-signed publish init-publish build-publish \
+	build-windows build-windows-amd64 build-windows-arm64 build-windows-setup \
+	windows-vagrant-up windows-vagrant-e2e \
 	man man-lint man-check incus-up incus-down docker-up docker-down
 
 # Optional overrides (copy .env.example → .env; publish merges context/madmail/.env into .env)
@@ -452,10 +454,9 @@ build-publish: build-release
 		rm -f build/madmail-linux-arm; \
 		echo "Skipping madmail-linux-arm (32-bit): install arm-linux-gnueabihf-gcc" >&2; \
 	fi
-	@command -v x86_64-w64-mingw32-gcc >/dev/null || { echo "Install mingw-w64-gcc (x86_64-w64-mingw32-gcc) for Windows release" >&2; exit 1; }
-	@CHATMAIL_ADMIN_WEB_BUILD="$(abspath $(ADMIN_WEB_BUILD))" \
-		cargo build -p chatmail --release --target x86_64-pc-windows-gnu
-	@cp target/x86_64-pc-windows-gnu/release/madmail.exe build/madmail-windows-amd64.exe
+	@$(MAKE) build-windows-amd64
+	# Optional arm64 (skips cleanly without MSVC/xwin — see packaging/windows/README.md)
+	@$(MAKE) build-windows-arm64 || true
 	@$(MAKE) build-release-static
 	@cp $(BINARY_RELEASE) build/madmail-linux-amd64-legacy
 	@rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl >/dev/null 2>&1 || true
@@ -467,6 +468,34 @@ build-publish: build-release
 	@CHATMAIL_ADMIN_WEB_BUILD="$(abspath $(ADMIN_WEB_BUILD))" \
 		cargo zigbuild -p chatmail --release --target aarch64-unknown-linux-musl
 	@cp target/aarch64-unknown-linux-musl/release/madmail build/madmail-linux-arm64-musl
+
+# ── Windows cross / native builds (artifacts only; no GitHub Release upload) ─
+# Docs: packaging/windows/README.md  Script: scripts/build-windows.sh
+build-windows:
+	@chmod +x scripts/build-windows.sh
+	@CHATMAIL_ADMIN_WEB_BUILD="$(abspath $(ADMIN_WEB_BUILD))" ./scripts/build-windows.sh all
+
+build-windows-amd64:
+	@chmod +x scripts/build-windows.sh
+	@CHATMAIL_ADMIN_WEB_BUILD="$(abspath $(ADMIN_WEB_BUILD))" ./scripts/build-windows.sh amd64
+
+build-windows-arm64:
+	@chmod +x scripts/build-windows.sh
+	@CHATMAIL_ADMIN_WEB_BUILD="$(abspath $(ADMIN_WEB_BUILD))" ./scripts/build-windows.sh arm64
+
+# Inno Setup (must run on Windows with ISCC + build/*.exe present)
+build-windows-setup:
+	@echo "Run on Windows:  powershell -File packaging/windows/build-setup.ps1 -Arch amd64"
+	@echo "                 powershell -File packaging/windows/build-setup.ps1 -Arch arm64"
+	@echo "See packaging/windows/README.md"
+
+# Local Windows full mail E2E via Vagrant/libvirt (optional; not CI)
+windows-vagrant-up:
+	@echo "Ensure build/madmail-windows-amd64.exe exists (make build-windows-amd64)"
+	@cd packaging/windows/vagrant && vagrant up --provider=libvirt
+
+windows-vagrant-e2e:
+	@cd packaging/windows/vagrant && vagrant rsync && vagrant winrm -e -- powershell -File C:\\vagrant\\provision\\03-e2e-mail.ps1
 
 # First-time assets (iroh-relay, admin-web submodule) then full release publish.
 init-publish: init publish
@@ -529,6 +558,7 @@ help:
 	@echo "relay-ping: relay-ping-build (in $(RELAY_PING_DIR))"
 	@echo "Init:      init (download iroh-relay $(IROH_RELAY_VERSION) into $(IROH_ASSETS)/)"
 	@echo "Release:   build-publish, publish (PUBLISH_ARGS=…), init-publish (init + publish)"
+	@echo "Windows:   build-windows*, build-windows-setup, windows-vagrant-up, windows-vagrant-e2e (packaging/windows/)"
 	@echo "           publish.sh: --no-github-release, --no-release-notes, --sync-keys, …"
 	@echo "Other:     clean, help"
 	@echo ""

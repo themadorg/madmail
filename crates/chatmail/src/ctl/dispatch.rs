@@ -22,9 +22,9 @@ use chatmail_db::settings_keys;
 
 use super::{
     accounts, admin_token, admin_web, blocklist_cmd, certificate, delete_cmd, docs, endpoint_cache,
-    federation, html, install, language, message_size, port, proxy, push, registration,
-    registration_tokens, reload, service_toggle, sharing, status_cmd, tasks, uninstall, version,
-    webmail_cors,
+    federation, firewall_cmd, html, install, language, message_size, port, proxy, push,
+    registration, registration_tokens, reload, service_cmd, service_toggle, sharing, status_cmd,
+    tasks, uninstall, version, webmail_cors,
 };
 
 pub async fn dispatch(cli: &Cli) -> Result<()> {
@@ -109,6 +109,8 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::Sharing(cmd)) => sharing::sharing(&cli.args, cmd).await,
         Some(Command::Status { details }) => status_cmd::status(&cli.args, *details).await,
         Some(Command::Uninstall(flags)) => uninstall::uninstall(&cli.args, flags).await,
+        Some(Command::Service(cmd)) => service_cmd::service(&cli.args, cmd).await,
+        Some(Command::Firewall(cmd)) => firewall_cmd::firewall(&cli.args, cmd).await,
         Some(Command::EndpointCache(cmd)) => endpoint_cache::endpoint_cache(&cli.args, cmd).await,
         Some(Command::Port(cmd)) => port::port(&cli.args, cmd).await,
         Some(Command::Reload { url, insecure }) => {
@@ -130,7 +132,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, language, \
          html-export, html-serve, html-migrate, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
-         status, uninstall, endpoint-cache, port, proxy, reload, message-size, tasks, completion"
+         status, uninstall, service, firewall, endpoint-cache, port, proxy, reload, message-size, tasks, completion"
     )))
 }
 
@@ -170,6 +172,8 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Sharing { .. } => "sharing",
         Command::SubmissionAccess => "submission-access",
         Command::Uninstall { .. } => "uninstall",
+        Command::Service { .. } => "service",
+        Command::Firewall { .. } => "firewall",
         Command::Creds => "creds",
         Command::Webimap { .. } => "webimap",
         Command::Websmtp { .. } => "websmtp",

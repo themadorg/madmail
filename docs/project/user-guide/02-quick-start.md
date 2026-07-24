@@ -52,12 +52,45 @@ sudo systemctl start madmail
 
 Before install, create an **`A`/`AAAA`** record for the hostname pointing at your server. After install, add **`MX`** and (optionally) SPF/DKIM/DMARC — see [DNS and Mail Authentication](./12-dns-mail-auth.md).
 
+### Windows
+
+Prefer the **setup wizard** when available (`madmail-windows-amd64-setup.exe` from the GitHub **Release** assets), or use the CLI.
+
+**UAC / SmartScreen / Defender:** binaries are **unsigned**. Approve UAC (**Yes** / run setup **as administrator**). If SmartScreen says “Windows protected your PC”, use **More info → Run anyway** only for artifacts you trust from this repo. Defender may false-positive (e.g. Bearfoos) — exclusions and restore steps: [packaging/windows/README.md](../../../packaging/windows/README.md#windows-defender-smartscreen-and-uac).
+
+```powershell
+# After placing madmail.exe on the machine (elevated PowerShell recommended)
+.\madmail.exe install --simple --ip YOUR_IP --tls-mode self_signed --lang en `
+  --install-service --start-service --firewall
+
+# Optional tray
+.\madmail-tray.exe install-autostart
+.\madmail-tray.exe
+```
+
+Defaults:
+
+| Item | Path |
+|------|------|
+| Config / certs | `%ProgramData%\Madmail\config\` |
+| State / token | `%ProgramData%\Madmail\data\` |
+| Service name | `Madmail` |
+
+Useful commands: `madmail service status`, `madmail admin-token`, `madmail firewall apply`, `madmail-tray --smoke-exit`.
+
+Admin: use the **CLI** and **`POST /api/admin`** with the bearer token. Current Windows packages do **not** embed the admin-web SPA at `/admin` (browser GET on `/api/admin` returns **405**).
+
+Packaging and build notes: [packaging/windows/README.md](../../../packaging/windows/README.md).  
+Manual release checklist: [packaging/windows/MANUAL-CHECKLIST.md](../../../packaging/windows/MANUAL-CHECKLIST.md).  
+Epic: [#103](https://github.com/themadorg/madmail/issues/103).
+
 More detail:
 
 - [Simple IP + ACME install](../../install-simple-ip-acme.md)
 - [IP vs domain deployment](./11-deployment-ip-domain-certs.md)
 - [DNS, SPF, DKIM, federation](./12-dns-mail-auth.md)
 - [Local development](../../local-dev.md)
+- [Windows packaging](../../../packaging/windows/README.md)
 
 ## Local Testing (for Operators)
 

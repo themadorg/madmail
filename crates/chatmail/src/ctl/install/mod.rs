@@ -20,6 +20,7 @@
 mod config;
 #[cfg(unix)]
 mod system;
+#[cfg(unix)]
 mod systemd;
 
 use chatmail_acme::{
@@ -27,7 +28,9 @@ use chatmail_acme::{
     parse_http_listen, resolve_domain_to_public_ip, ObtainOptions,
 };
 use chatmail_config::install_cli::InstallArgs;
-use chatmail_config::{effective_database_config, is_local_dev_state_dir, AppConfig, Args};
+#[cfg(not(windows))]
+use chatmail_config::is_local_dev_state_dir;
+use chatmail_config::{effective_database_config, AppConfig, Args};
 use chatmail_db::{init_db_from_config, set_setting, settings_keys};
 use chatmail_types::{wrap_ip_domain, ChatmailError, Result};
 
@@ -84,7 +87,9 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         system::create_service_user(&cfg, false)?;
     }
     create_directories(&cfg)?;
-    setup_certificates(&cfg, args).await?;
+    if let Err(e) = setup_certificates(&cfg, args).await {
+        return Err(cert_step_failed(e));
+    }
     if args.cert_only {
         if global.json {
             CtlOut::from_args(global, "install").emit(serde_json::json!({
@@ -113,10 +118,13 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         system::install_binary(&cfg, false)?;
         docs::install_cli_docs(&cfg.binary_name, false)?;
     }
+    #[cfg(unix)]
     if cfg.system_install && !args.skip_systemd {
         systemd::install_unit(&cfg)?;
         systemd::daemon_reload()?;
     }
+
+    let post = run_post_install_windows_steps(global, args, &cfg).await?;
 
     if global.json {
         let doc_paths = docs::CliDocPaths::for_binary(&cfg.binary_name);
@@ -126,6 +134,9 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
             "paths_explicit": cfg.paths_explicit,
             "config": cfg.config_path.display().to_string(),
             "state_dir": cfg.state_dir.display().to_string(),
+            "service_installed": post.service_installed,
+            "service_started": post.service_started,
+            "firewall_applied": post.firewall_applied,
             "man_page": if cfg.system_install { Some(doc_paths.man_page.display().to_string()) } else { None },
             "completions": if cfg.system_install {
                 Some({
@@ -145,6 +156,78 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         println!("\nInstallation completed successfully.");
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct PostInstallWindows {
+    service_installed: bool,
+    service_started: bool,
+    firewall_applied: bool,
+}
+
+/// `--install-service` / `--start-service` / `--firewall` (Windows only; notice on Unix).
+async fn run_post_install_windows_steps(
+    global: &Args,
+    args: &InstallArgs,
+    cfg: &InstallConfig,
+) -> Result<PostInstallWindows> {
+    let want_service = args.install_service || args.start_service;
+    let want_firewall = args.firewall;
+    if !want_service && !want_firewall {
+        return Ok(PostInstallWindows::default());
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = (global, cfg);
+        if want_service {
+            eprintln!(
+                "note: --install-service / --start-service apply on Windows only (use systemd unit on Linux)"
+            );
+        }
+        if want_firewall {
+            eprintln!(
+                "note: --firewall applies on Windows only (configure firewalld/ufw on Linux)"
+            );
+        }
+        Ok(PostInstallWindows::default())
+    }
+
+    #[cfg(windows)]
+    {
+        use chatmail_config::{ServiceCommand, DEFAULT_WINDOWS_SERVICE_NAME};
+
+        use super::firewall_cmd;
+        use super::service_cmd;
+
+        let mut post = PostInstallWindows::default();
+        // Service registration must use the written config/state paths.
+        let mut service_args = global.clone();
+        service_args.config = cfg.config_path.clone();
+        service_args.state_dir = cfg.state_dir.clone();
+
+        if want_service {
+            let start = args.start_service;
+            service_cmd::service(
+                &service_args,
+                &ServiceCommand::Install {
+                    name: DEFAULT_WINDOWS_SERVICE_NAME.into(),
+                    start,
+                },
+            )
+            .await?;
+            post.service_installed = true;
+            post.service_started = start;
+        }
+        if want_firewall {
+            firewall_cmd::apply_rules(cfg.enable_turn, cfg.enable_ss, cfg.enable_iroh)?;
+            post.firewall_applied = true;
+            if !global.json {
+                println!("✓ Windows Firewall rules applied");
+            }
+        }
+        Ok(post)
+    }
 }
 
 fn resolve_tls_mode(cfg: &mut InstallConfig, args: &InstallArgs) -> Result<()> {
@@ -218,6 +301,34 @@ fn effective_obtain_certificate(args: &InstallArgs) -> bool {
     true
 }
 
+/// Annotate certificate-step failures so operators know install aborted early
+/// (config / Windows service / systemd were not applied).
+fn cert_step_failed(err: ChatmailError) -> ChatmailError {
+    let mut msg = err.to_string();
+    // Avoid "configuration error: configuration error: …" when re-wrapping.
+    const PREFIX: &str = "configuration error: ";
+    while let Some(rest) = msg.strip_prefix(PREFIX) {
+        msg = rest.to_string();
+    }
+    if msg.contains("Install incomplete") || msg.contains("Install stopped") {
+        return ChatmailError::config(msg);
+    }
+    #[cfg(windows)]
+    let note = "\n\n*** Install incomplete ***\n\
+         TLS / Let's Encrypt failed above, so install stopped before writing final config \
+         and before registering the Windows service (Madmail) or applying full firewall rules.\n\
+         That is why the service may be missing after the setup wizard.\n\
+         Tip: install opens TCP 80 for HTTP-01 when possible; also open any cloud/provider \
+         firewall for inbound 80. Or use self-signed in the wizard / `--tls-mode self_signed --no-obtain-certificate`.";
+    #[cfg(not(windows))]
+    let note = "\n\n*** Install incomplete ***\n\
+         TLS / Let's Encrypt failed above, so install stopped before writing final config \
+         and before installing the systemd unit (later steps were not run).\n\
+         Fix HTTP-01 / DNS reachability and re-run install, or use \
+         `--tls-mode self_signed --no-obtain-certificate` for a lab finish.";
+    ChatmailError::config(format!("{msg}{note}"))
+}
+
 async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<()> {
     if cfg.generate_certs {
         println!("Generating self-signed certificate…");
@@ -241,6 +352,24 @@ async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<(
             return Err(ChatmailError::config(
                 "--acme-email is required to obtain a Let's Encrypt certificate during install",
             ));
+        }
+        // Windows: open TCP 80 before HTTP-01. Full --firewall runs only after install;
+        // without this, Defender Firewall blocks Let's Encrypt while netstat shows :80 free.
+        #[cfg(windows)]
+        {
+            match super::firewall_cmd::ensure_http01_inbound() {
+                Ok(()) => {
+                    println!(
+                        "✓ Windows Firewall: inbound TCP 80 allowed for Let's Encrypt HTTP-01"
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "warning: could not open Windows Firewall for TCP 80 ({e}). \
+                         If Let's Encrypt fails, allow inbound TCP 80 manually and retry."
+                    );
+                }
+            }
         }
         let label = if is_valid_ip_for_acme(&cfg.primary_domain) {
             "short-lived IP"
@@ -360,6 +489,15 @@ fn print_next_steps(cfg: &InstallConfig) {
             cfg.config_path.display(),
             cfg.state_dir.display()
         );
+        #[cfg(windows)]
+        {
+            println!(
+                "  • Windows service:  madmail --config {} --state-dir {} service install --start",
+                cfg.config_path.display(),
+                cfg.state_dir.display()
+            );
+            println!("  • Prefer the Madmail setup wizard for non-technical installs.");
+        }
     }
     println!("  • Admin:  madmail admin-token");
     if cfg.system_install {
@@ -393,6 +531,11 @@ impl InstallConfig {
                     .map(|s| s.to_string_lossy().into_owned())
             })
             .unwrap_or_else(|| "madmail".into());
+        // Windows argv0 is often `madmail.exe` — strip for service name / conf basename.
+        let binary_name = binary_name
+            .strip_suffix(".exe")
+            .unwrap_or(&binary_name)
+            .to_string();
 
         let config_dir = args
             .config_dir
@@ -426,14 +569,25 @@ impl InstallConfig {
             .clone()
             .unwrap_or_else(|| cert_dir.join("privkey.pem"));
 
+        // System install (service user + systemd unit) is Unix-only. On Windows,
+        // install always writes local ProgramData-style paths without systemd.
+        #[cfg(windows)]
+        let system_install = false;
+        #[cfg(not(windows))]
         let system_install = config_dir.starts_with("/etc/")
             || state_dir.starts_with("/var/lib/")
             || (args.simple && !paths_explicit);
 
-        let binary_path = args
-            .binary_path
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(format!("/usr/local/bin/{binary_name}")));
+        let binary_path = args.binary_path.clone().unwrap_or_else(|| {
+            #[cfg(windows)]
+            {
+                PathBuf::from(format!("{binary_name}.exe"))
+            }
+            #[cfg(not(windows))]
+            {
+                PathBuf::from(format!("/usr/local/bin/{binary_name}"))
+            }
+        });
 
         let (primary_domain, hostname, public_ip, local_domains, turn_off_tls) = if args.simple {
             if let Some(domain) = args.domain.clone() {
@@ -523,8 +677,17 @@ impl InstallConfig {
             hostname,
             primary_domain,
             local_domains,
+            runtime_dir: {
+                #[cfg(windows)]
+                {
+                    state_dir.join("run").to_string_lossy().into_owned()
+                }
+                #[cfg(not(windows))]
+                {
+                    format!("/run/{binary_name}")
+                }
+            },
             state_dir,
-            runtime_dir: format!("/run/{binary_name}"),
             public_ip,
             tls_mode: args.tls_mode.clone().unwrap_or_default(),
             cert_path,
@@ -566,13 +729,37 @@ fn ensure_ss_password(cfg: &mut InstallConfig) -> Result<()> {
     Ok(())
 }
 
-/// Madmail `install.go` always uses `/var/lib/<binary>` for production installs, never cwd `./data`.
+/// Production install config dir: FHS on Unix, `%ProgramData%\Madmail\config` on Windows.
 fn default_install_config_dir() -> PathBuf {
-    PathBuf::from("/etc/madmail")
+    #[cfg(windows)]
+    {
+        windows_madmail_root().join("config")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("/etc/madmail")
+    }
 }
 
+/// Production install state dir: `/var/lib/<binary>` on Unix, `%ProgramData%\Madmail\data` on Windows.
 fn default_install_state_dir(binary_name: &str) -> PathBuf {
-    PathBuf::from(format!("/var/lib/{binary_name}"))
+    #[cfg(windows)]
+    {
+        let _ = binary_name;
+        windows_madmail_root().join("data")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from(format!("/var/lib/{binary_name}"))
+    }
+}
+
+#[cfg(windows)]
+fn windows_madmail_root() -> PathBuf {
+    std::env::var_os("PROGRAMDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
+        .join("Madmail")
 }
 
 fn resolve_install_state_dir(
@@ -584,13 +771,21 @@ fn resolve_install_state_dir(
     if let Some(dir) = &args.state_dir {
         return dir.clone();
     }
-    if args.simple || config_dir.starts_with("/etc/") {
-        return PathBuf::from(format!("/var/lib/{binary_name}"));
+    #[cfg(windows)]
+    {
+        let _ = (global, config_dir);
+        return default_install_state_dir(binary_name);
     }
-    if global.state_dir.is_relative() || is_local_dev_state_dir(&global.state_dir) {
-        return PathBuf::from(format!("/var/lib/{binary_name}"));
+    #[cfg(not(windows))]
+    {
+        if args.simple || config_dir.starts_with("/etc/") {
+            return PathBuf::from(format!("/var/lib/{binary_name}"));
+        }
+        if global.state_dir.is_relative() || is_local_dev_state_dir(&global.state_dir) {
+            return PathBuf::from(format!("/var/lib/{binary_name}"));
+        }
+        global.state_dir.clone()
     }
-    global.state_dir.clone()
 }
 
 fn chrono_like_now() -> String {
@@ -640,6 +835,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -665,16 +863,51 @@ mod tests {
         assert!(!cfg_ip.turn_off_tls);
         assert!(cfg.enable_ss);
         assert!(cfg.enable_turn);
-        assert!(cfg.cert_path.starts_with("/etc/madmail/certs"));
-        assert!(
-            cfg.state_dir.starts_with("/var/lib/"),
-            "state_dir {:?}",
-            cfg.state_dir
-        );
-        assert!(!cfg.state_dir.to_string_lossy().contains("./data"));
-        assert!(cfg.system_install);
-        assert!(cfg.use_default_systemd_paths);
+        #[cfg(not(windows))]
+        {
+            assert!(cfg.cert_path.starts_with("/etc/madmail/certs"));
+            assert!(
+                cfg.state_dir.starts_with("/var/lib/"),
+                "state_dir {:?}",
+                cfg.state_dir
+            );
+            assert!(!cfg.state_dir.to_string_lossy().contains("./data"));
+            assert!(cfg.system_install);
+            assert!(cfg.use_default_systemd_paths);
+        }
+        #[cfg(windows)]
+        {
+            assert!(!cfg.system_install);
+            assert!(
+                cfg.config_dir.ends_with("Madmail\\config")
+                    || cfg.config_dir.ends_with("Madmail/config"),
+                "config_dir {:?}",
+                cfg.config_dir
+            );
+            assert!(
+                cfg.state_dir.ends_with("Madmail\\data") || cfg.state_dir.ends_with("Madmail/data"),
+                "state_dir {:?}",
+                cfg.state_dir
+            );
+            assert!(cfg.runtime_dir.contains("run"));
+        }
         assert_eq!(cfg.language, "en");
+    }
+
+    #[test]
+    fn default_install_paths_are_platform_specific() {
+        let config = default_install_config_dir();
+        let state = default_install_state_dir("madmail");
+        #[cfg(not(windows))]
+        {
+            assert_eq!(config, PathBuf::from("/etc/madmail"));
+            assert_eq!(state, PathBuf::from("/var/lib/madmail"));
+        }
+        #[cfg(windows)]
+        {
+            assert!(config.ends_with("Madmail\\config") || config.ends_with("Madmail/config"));
+            assert!(state.ends_with("Madmail\\data") || state.ends_with("Madmail/data"));
+        }
     }
 
     #[test]
@@ -704,6 +937,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -752,6 +988,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -764,17 +1003,21 @@ mod tests {
         assert!(cfg.paths_explicit);
         assert!(!cfg.use_default_systemd_paths);
         assert!(cfg.system_install);
-        let unit = systemd::render_systemd_unit(&cfg);
-        assert!(!unit.contains("StateDirectory="));
-        assert!(unit.contains(&format!(
-            "--config {} run --libexec {}",
-            cfg.config_path.display(),
-            cfg.state_dir.display()
-        )));
-        assert!(unit.contains("ReadWritePaths=/var/lib/madmail-custom /etc/madmail-custom"));
+        #[cfg(unix)]
+        {
+            let unit = systemd::render_systemd_unit(&cfg);
+            assert!(!unit.contains("StateDirectory="));
+            assert!(unit.contains(&format!(
+                "--config {} run --libexec {}",
+                cfg.config_path.display(),
+                cfg.state_dir.display()
+            )));
+            assert!(unit.contains("ReadWritePaths=/var/lib/madmail-custom /etc/madmail-custom"));
+        }
     }
 
     #[test]
+    #[cfg(unix)]
     fn default_install_uses_fhs_systemd_layout_despite_global_state_dir_default() {
         let global = Args {
             config: PathBuf::from("/etc/madmail/madmail.conf"),
@@ -801,6 +1044,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -845,6 +1091,9 @@ mod tests {
                 dry_run: false,
                 skip_systemd: false,
                 skip_user: false,
+                install_service: false,
+                start_service: false,
+                firewall: false,
                 binary_path: None,
                 obtain_certificate: true,
                 no_obtain_certificate: false,
@@ -887,6 +1136,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
@@ -937,6 +1189,9 @@ mod tests {
                 dry_run: false,
                 skip_systemd: false,
                 skip_user: false,
+                install_service: false,
+                start_service: false,
+                firewall: false,
                 binary_path: None,
                 obtain_certificate: true,
                 no_obtain_certificate: false,
@@ -973,6 +1228,9 @@ mod tests {
                 dry_run: false,
                 skip_systemd: false,
                 skip_user: false,
+                install_service: false,
+                start_service: false,
+                firewall: false,
                 binary_path: None,
                 obtain_certificate: true,
                 no_obtain_certificate: false,
@@ -1017,6 +1275,9 @@ mod tests {
                 dry_run: false,
                 skip_systemd: false,
                 skip_user: false,
+                install_service: false,
+                start_service: false,
+                firewall: false,
                 binary_path: None,
                 obtain_certificate: true,
                 no_obtain_certificate: false,
@@ -1056,6 +1317,9 @@ mod tests {
             dry_run: false,
             skip_systemd: false,
             skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
             binary_path: None,
             obtain_certificate: true,
             no_obtain_certificate: false,
