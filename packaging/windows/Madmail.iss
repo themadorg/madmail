@@ -348,10 +348,40 @@ begin
   end;
 end;
 
+{ Summarize install.log when the configure step failed (service never registered). }
+function InstallLogFailureHint(const LogPath: String): String;
+var
+  Content: AnsiString;
+  S: String;
+begin
+  Result := '';
+  if not LoadStringFromFile(LogPath, Content) then
+    Exit;
+  S := String(Content);
+  if (Pos('Let''s Encrypt', S) > 0) or (Pos('HTTP-01', S) > 0) or (Pos('auto-ip-cert', S) > 0) then
+  begin
+    Result :=
+      'Configure failed during Let''s Encrypt (HTTP-01 / TLS certificate).'#13#10 +
+      'Install stopped before registering the Windows service — that is expected when TLS fails.'#13#10#13#10 +
+      'Typical fixes: open inbound TCP 80 (Windows Firewall + cloud panel), ensure this host owns the public IP, '#13#10 +
+      're-test reachability, or re-run the wizard with Self-signed TLS for a lab install.';
+    Exit;
+  end;
+  if (Pos('Install incomplete', S) > 0) or (Pos('configuration error', S) > 0) or (Pos('Error:', S) > 0) then
+  begin
+    Result :=
+      'Configure (madmail install) failed — see install.log for the exact Error.'#13#10 +
+      'The Windows service is not registered because install did not finish.';
+    Exit;
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   LogPath: String;
   ResultCode: Integer;
+  Hint: String;
+  Msg: String;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -371,20 +401,26 @@ begin
       '  madmail admin-token'#13#10 +
       '  madmail-tray --smoke-exit';
 
-    { Verify SCM registration; offer repair if configure step failed silently. }
+    { Verify SCM registration; explain configure failures (e.g. LE) vs silent AV blocks. }
     if Exec(ExpandConstant('{cmd}'),
       '/C sc query {#MyServiceName} >nul 2>&1',
       '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     begin
       if ResultCode <> 0 then
       begin
-        MsgBox(
-          'Madmail files were installed, but the Windows service "{#MyServiceName}" is not registered.'#13#10#13#10 +
-          'This often happens if antivirus blocked the configure step, or the installer was not elevated.'#13#10#13#10 +
-          'See log: ' + LogPath + #13#10#13#10 +
-          'Repair (elevated Command Prompt):'#13#10 +
-          '"' + ExpandConstant('{app}\{#MyAppExeName}') + '" --config "' + ConfigDir + '\madmail.conf" --state-dir "' + StateDir + '" service install --start',
-          mbError, MB_OK);
+        Hint := InstallLogFailureHint(LogPath);
+        if Hint <> '' then
+          Msg := Hint + #13#10#13#10 + 'Full log: ' + LogPath
+        else
+          Msg :=
+            'Madmail files were installed, but the Windows service "{#MyServiceName}" is not registered.'#13#10#13#10 +
+            'This often happens if configure failed (see install.log), antivirus blocked the configure step, '#13#10 +
+            'or the installer was not elevated.'#13#10#13#10 +
+            'See log: ' + LogPath;
+        Msg := Msg + #13#10#13#10 +
+          'After fixing TLS/config, register the service (elevated Command Prompt):'#13#10 +
+          '"' + ExpandConstant('{app}\{#MyAppExeName}') + '" --config "' + ConfigDir + '\madmail.conf" --state-dir "' + StateDir + '" service install --start';
+        MsgBox(Msg, mbError, MB_OK);
       end;
     end;
   end;

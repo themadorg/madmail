@@ -87,7 +87,9 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         system::create_service_user(&cfg, false)?;
     }
     create_directories(&cfg)?;
-    setup_certificates(&cfg, args).await?;
+    if let Err(e) = setup_certificates(&cfg, args).await {
+        return Err(cert_step_failed(e));
+    }
     if args.cert_only {
         if global.json {
             CtlOut::from_args(global, "install").emit(serde_json::json!({
@@ -297,6 +299,29 @@ fn effective_obtain_certificate(args: &InstallArgs) -> bool {
         return true;
     }
     true
+}
+
+/// Annotate certificate-step failures so operators know install aborted early
+/// (config / Windows service / systemd were not applied).
+fn cert_step_failed(err: ChatmailError) -> ChatmailError {
+    let msg = err.to_string();
+    if msg.contains("Install incomplete") || msg.contains("Install stopped") {
+        return err;
+    }
+    #[cfg(windows)]
+    let note = "\n\n*** Install incomplete ***\n\
+         TLS / Let's Encrypt failed above, so install stopped before writing final config \
+         and before registering the Windows service (Madmail) or applying firewall rules.\n\
+         That is why the service may be missing after the setup wizard.\n\
+         Fix HTTP-01 reachability (inbound TCP 80) and re-run install, or use self-signed TLS \
+         in the wizard / `--tls-mode self_signed --no-obtain-certificate` for a lab finish.";
+    #[cfg(not(windows))]
+    let note = "\n\n*** Install incomplete ***\n\
+         TLS / Let's Encrypt failed above, so install stopped before writing final config \
+         and before installing the systemd unit (later steps were not run).\n\
+         Fix HTTP-01 / DNS reachability and re-run install, or use \
+         `--tls-mode self_signed --no-obtain-certificate` for a lab finish.";
+    ChatmailError::config(format!("{msg}{note}"))
 }
 
 async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<()> {
