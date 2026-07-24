@@ -318,8 +318,8 @@ fn cert_step_failed(err: ChatmailError) -> ChatmailError {
          TLS / Let's Encrypt failed above, so install stopped before writing final config \
          and before registering the Windows service (Madmail) or applying full firewall rules.\n\
          That is why the service may be missing after the setup wizard.\n\
-         Tip: install opens TCP 80 for HTTP-01 when possible; also open Contabo/cloud firewall \
-         for inbound 80. Or use self-signed in the wizard / `--tls-mode self_signed --no-obtain-certificate`.";
+         Tip: install opens TCP 80 for HTTP-01 when possible; also open any cloud/provider \
+         firewall for inbound 80. Or use self-signed in the wizard / `--tls-mode self_signed --no-obtain-certificate`.";
     #[cfg(not(windows))]
     let note = "\n\n*** Install incomplete ***\n\
          TLS / Let's Encrypt failed above, so install stopped before writing final config \
