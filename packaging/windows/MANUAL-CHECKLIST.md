@@ -2,7 +2,7 @@
 
 Run before claiming a public Windows setup.exe or closing epic [#103](https://github.com/themadorg/madmail/issues/103) after merge to `main`.
 
-CI: Windows pipeline runs on **`v*` tags** and published **GitHub Releases** (see `.github/workflows/windows.yml`).
+CI: merges to **`main`** run lint/smoke/arm64; published **GitHub Releases** run smoke + Inno and attach Windows assets (see `.github/workflows/windows.yml`).
 
 ## Environment
 

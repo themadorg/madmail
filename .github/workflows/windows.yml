@@ -1,12 +1,13 @@
-# Windows smoke + Inno setup artifacts.
-# Runs on version tags / GitHub Releases (and PRs that touch Windows paths).
-# Uploads Actions artifacts only — does not create tags or attach Release assets itself.
+# Windows pipeline
+#
+# - Merges / pushes to main (+ Windows-related PRs): lint, amd64 smoke, arm64 compile
+# - GitHub Releases (published): amd64 smoke → Inno setup → attach assets to the Release
+# - workflow_dispatch: same as main (validate only); use a Release for setup.exe assets
 name: Windows
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
   release:
     types: [published]
   pull_request:
@@ -30,9 +31,10 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # L0-ish: unit tests that must stay green on Linux for Windows crates
+  # ── Validation (main merges, PRs, manual) — not on Release ─────────────────
   linux-windows-crates:
     name: Linux (windows-related crates)
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +61,7 @@ jobs:
           test -f packaging/windows/README.md
           test -f scripts/build-windows.sh
 
-  # L2 / L5: build + CLI smoke on Windows x64
+  # ── amd64 smoke (main, PRs, release, manual) ───────────────────────────────
   windows-amd64-smoke:
     name: Windows amd64 smoke
     runs-on: windows-latest
@@ -75,7 +77,6 @@ jobs:
       - name: Build madmail + madmail-tray (MSVC)
         # -D warnings: fail on rustc warnings.
         # link-arg=/IGNORE:4099: silence MSVC LNK4099 (missing ossl_static.pdb from vendored OpenSSL).
-        # Also set in .cargo/config.toml for local MSVC builds; RUSTFLAGS is appended by cargo.
         env:
           CARGO_PROFILE_RELEASE_DEBUG: "0"
           RUSTFLAGS: "-D warnings -C link-arg=/IGNORE:4099"
@@ -121,7 +122,7 @@ jobs:
           & .\target\release\madmail.exe firewall --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload Windows binaries (ephemeral CI artifact, not a Release)
+      - name: Upload Windows binaries (Actions artifact)
         uses: actions/upload-artifact@v4
         with:
           name: madmail-windows-amd64-ci
@@ -130,9 +131,10 @@ jobs:
             target/release/madmail-tray.exe
           retention-days: 7
 
-  # Cross-check arm64 MSVC target from x64 Windows runner (toolset present on GHA images).
+  # ── arm64 compile-only (main merges / PRs / manual — not Release) ──────────
   windows-arm64-compile:
     name: Windows arm64 compile-only
+    if: github.event_name != 'release'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -153,11 +155,14 @@ jobs:
           cargo check -p chatmail -p madmail-tray --target aarch64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  # Inno Setup installer (amd64) — reuses smoke-built exes; CI artifact only (not a GitHub Release).
+  # ── Inno setup + attach to GitHub Release (Release events only) ────────────
   windows-amd64-setup:
     name: Windows amd64 Inno setup
+    if: github.event_name == 'release'
     runs-on: windows-latest
     needs: windows-amd64-smoke
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -202,14 +207,35 @@ jobs:
         run: |
           & .\packaging\windows\build-setup.ps1 -Arch amd64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # Resolve against workspace root (build-setup used to leave cwd under packaging/windows).
           $setup = Join-Path $env:GITHUB_WORKSPACE "build\madmail-windows-amd64-setup.exe"
           if (-not (Test-Path $setup)) { throw "missing $setup" }
           Get-Item $setup | Format-List FullName, Length, LastWriteTime
 
-      - name: Upload setup installer (ephemeral CI artifact, not a Release)
+      - name: Upload setup installer (Actions artifact)
         uses: actions/upload-artifact@v4
         with:
           name: madmail-windows-amd64-setup
           path: ${{ github.workspace }}/build/madmail-windows-amd64-setup.exe
           retention-days: 14
+
+      - name: Attach Windows assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw "missing release tag_name" }
+          $root = $env:GITHUB_WORKSPACE
+          $files = @(
+            (Join-Path $root "build\madmail-windows-amd64.exe"),
+            (Join-Path $root "build\madmail-windows-amd64-setup.exe")
+          )
+          $tray = Join-Path $root "build\madmail-tray-windows-amd64.exe"
+          if (Test-Path $tray) { $files += $tray }
+          foreach ($f in $files) {
+            if (-not (Test-Path $f)) { throw "missing release asset: $f" }
+          }
+          Write-Host "Uploading to release $tag :"
+          $files | ForEach-Object { Get-Item $_ | Format-List FullName, Length }
+          # --clobber replaces assets if the workflow is re-run on the same release
+          gh release upload $tag @files --clobber

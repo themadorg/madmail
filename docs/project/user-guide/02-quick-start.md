@@ -54,7 +54,7 @@ Before install, create an **`A`/`AAAA`** record for the hostname pointing at you
 
 ### Windows
 
-Prefer the **setup wizard** when available (`madmail-windows-amd64-setup.exe` / `arm64` from GitHub Actions on `v*` tags / Releases), or use the CLI.
+Prefer the **setup wizard** when available (`madmail-windows-amd64-setup.exe` from the GitHub **Release** assets), or use the CLI.
 
 **UAC / SmartScreen / Defender:** binaries are **unsigned**. Approve UAC (**Yes** / run setup **as administrator**). If SmartScreen says “Windows protected your PC”, use **More info → Run anyway** only for artifacts you trust from this repo. Defender may false-positive (e.g. Bearfoos) — exclusions and restore steps: [packaging/windows/README.md](../../../packaging/windows/README.md#windows-defender-smartscreen-and-uac).
 

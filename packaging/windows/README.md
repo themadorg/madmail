@@ -3,7 +3,7 @@
 Operator-facing Windows installers and release binaries for Madmail.
 
 > Epic: [#103](https://github.com/themadorg/madmail/issues/103).  
-> CI builds Windows artifacts on **version tags** (`v*`) and published GitHub Releases (see [CI](#ci)). This workflow does **not** create tags or attach Release assets by itself.
+> CI: merges to **`main`** validate Windows (lint / smoke / arm64); **GitHub Releases** build Inno setup and attach `madmail.exe` + `setup.exe` (see [CI](#ci)).
 
 ## Artifacts
 
@@ -171,21 +171,29 @@ Do not open `/api/admin` in a browser (GET → **405**).
 
 GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflows/windows.yml):
 
-| Trigger | When |
+| Trigger | Jobs |
 |---------|------|
-| **Push tags** `v*` | After semantic-release (or manual) cuts a version tag |
-| **GitHub Release** published | When a release is published |
-| **PR to `main`** | Only if Windows-related paths change |
-| **`workflow_dispatch`** | Manual run from Actions UI |
+| **Push to `main`** (merge) | Linux Windows-crate tests, amd64 smoke, arm64 compile |
+| **PR to `main`** (Windows-related paths) | Same as main push |
+| **GitHub Release** published | amd64 smoke → Inno setup → **upload assets to that Release** |
+| **`workflow_dispatch`** | Same as main push (validate only; no Release upload) |
 
 | Job | Purpose |
 |-----|---------|
 | `linux-windows-crates` | Unit tests for tray / service / firewall / packaging file presence |
-| `windows-amd64-smoke` | MSVC build, tray smoke, service status, local self-signed install, upload CI artifacts |
-| `windows-amd64-setup` | Inno Setup (`choco install innosetup`) → `madmail-windows-amd64-setup.exe` artifact |
-| `windows-arm64-compile` | `cargo check` for `aarch64-pc-windows-msvc` (server + tray) |
+| `windows-amd64-smoke` | MSVC build, tray smoke, service status, local self-signed install |
+| `windows-arm64-compile` | `cargo check` for `aarch64-pc-windows-msvc` (server + tray); **not** on Release |
+| `windows-amd64-setup` | Inno Setup → setup.exe; **Release only** — attaches assets to the GitHub Release |
 
-Download setup/binaries from the **Actions** run artifacts (`madmail-windows-amd64-setup`, `madmail-windows-amd64-ci`). The workflow does not attach files to GitHub Releases. Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
+**Release assets** (attached when a Release is published):
+
+| File | Notes |
+|------|--------|
+| `madmail-windows-amd64.exe` | Server + CLI |
+| `madmail-tray-windows-amd64.exe` | Tray (if built) |
+| `madmail-windows-amd64-setup.exe` | Inno wizard |
+
+Semantic-release on `main` creates the tag/Release; the Windows workflow then listens for `release: published` and fills in the Windows binaries. Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
 
 ### Windows Defender, SmartScreen, and UAC
 
