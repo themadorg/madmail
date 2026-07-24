@@ -1,3 +1,10 @@
+## [2.18.1](https://github.com/themadorg/madmail/compare/v2.18.0...v2.18.1) (2026-07-24)
+
+
+### Bug Fixes
+
+* **www:** migrate legacy /qr and warn on literal template braces ([#100](https://github.com/themadorg/madmail/issues/100)) ([676bc4d](https://github.com/themadorg/madmail/commit/676bc4da6cf73e429623b361178daa1c71981645)), closes [#96](https://github.com/themadorg/madmail/issues/96)
+
 # [2.18.0](https://github.com/themadorg/madmail/compare/v2.17.3...v2.18.0) (2026-07-24)
 
 
