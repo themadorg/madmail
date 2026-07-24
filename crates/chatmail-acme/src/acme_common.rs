@@ -147,8 +147,9 @@ pub fn ip_order_not_ready_error(status: OrderStatus, ip: IpAddr) -> ChatmailErro
         "Let's Encrypt rejected the HTTP-01 challenge for {ip} (order status: {status:?}).\n\
          Common causes:\n\
          • Port 80 is already in use — validators reach another process, not this installer. {}\n\
-         • Inbound TCP 80 is blocked by a firewall or cloud security group \
-           (open inbound TCP 80 to this host, then re-test from the internet with a temporary listener).\n\
+         • Inbound TCP 80 is blocked by a host or cloud firewall (Windows Defender Firewall and/or Contabo panel). \
+           Local `netstat` free only means nothing is listening — LE still cannot connect if the firewall drops packets. \
+           Open inbound TCP 80, then from another network: `curl -v --max-time 10 http://{ip}/` while a test listener is up.\n\
          • This machine is not reachable on the public IP {ip} (install must run on the host that owns the IP).\n\
          • Rate limits — wait an hour or use `madmail certificate get --staging` for testing.",
         http01_stop_hint()

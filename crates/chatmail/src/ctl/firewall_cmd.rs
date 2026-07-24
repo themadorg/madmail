@@ -40,6 +40,17 @@ pub async fn firewall(args: &Args, cmd: &FirewallCommand) -> Result<()> {
     }
 }
 
+/// Open inbound TCP 80 for Let's Encrypt HTTP-01 **before** cert issuance.
+///
+/// Full `firewall apply` runs only after install succeeds; without this, Windows
+/// Defender Firewall often blocks LE validators while the local port is free.
+#[cfg(windows)]
+pub fn ensure_http01_inbound() -> Result<()> {
+    // Same display name as full apply — idempotent via delete+add in add_rule.
+    add_rule(&rule_name("HTTP"), "TCP", 80)?;
+    Ok(())
+}
+
 /// Open standard Madmail ports (and optional TURN / SS / Iroh).
 pub fn apply_rules(turn: bool, ss: bool, iroh: bool) -> Result<Vec<String>> {
     require_windows()?;
