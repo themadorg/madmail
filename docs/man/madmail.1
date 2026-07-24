@@ -82,8 +82,8 @@ preserve selected artifacts.\&
 .RS 4
 Replace this executable from a signed local file or URL
 (raw binary or .tar.gz / .tgz archive).\&
-After replace, may prompt to convert custom \fBwww_dir\fR Go templates
-to Minijinja (see \fBhtml-migrate\fR).\&
+After replace, may prompt to migrate custom \fBwww_dir\fR (Go templates
+to Minijinja and legacy \fB/qr\fR to client-side QR; see \fBhtml-migrate\fR).\&
 .PP
 .RE
 \fBreload\fR
@@ -238,8 +238,9 @@ built-in files).\&
 .RE
 \fBhtml-migrate\fR
 .RS 4
-Convert custom \fBwww_dir\fR HTML from Go \fBhtml/template\fR syntax to
-Minijinja (interactive; \fB--yes\fR for scripts).\&
+Migrate custom \fBwww_dir\fR: Go \fBhtml/template\fR to Minijinja and
+legacy \fB/qr?data=\fR QR to client-side \fBsetQrCodeImage\fR
+(interactive; \fB--yes\fR for scripts).\&
 .PP
 .RE
 \fBhash\fR

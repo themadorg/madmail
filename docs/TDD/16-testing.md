@@ -34,6 +34,7 @@ Chatmail's correctness is defined by **real Delta Chat client behavior**, not ju
 | Area | Crate / path | Key tests |
 |------|--------------|-----------|
 | dclogin / `/new` | `chatmail-config`, `chatmail-www` | `build_dclogin_link_matches_www_shape`, `new_account_returns_dclogin_url_with_ssl_hints` |
+| Custom www migrate (Go→Minijinja + legacy `/qr`) | `chatmail-www`, `chatmail` ctl | `www_migrate::*`, `e2e_html_migrate_go_templates_and_legacy_qr`, `e2e_html_migrate_warns_on_literal_brace_url` |
 | cmping IP setup | `context/cmping/test_cmping_dclogin.py` | `test_ip_dclogin_includes_ssl_host_hints` |
 | Auth cache + JIT | `chatmail-state`, `chatmail-auth` | `hydrate_loads_blocklist_and_jit_flag`, `jit_coalesces_concurrent_creates_for_same_user` |
 | TLS for STARTTLS | `chatmail-config` | `listeners_need_tls_cert_for_starttls_only_ports` |

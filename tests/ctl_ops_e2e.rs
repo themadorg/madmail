@@ -172,3 +172,153 @@ fn e2e_html_export_writes_files() {
 
     assert!(out.join("index.html").is_file());
 }
+
+/// Go-style custom www + legacy `/qr?data=` → `html-migrate --yes` rewrites templates and QR.
+#[test]
+fn e2e_html_migrate_go_templates_and_legacy_qr() {
+    use std::fs;
+
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().join("state");
+    fs::create_dir_all(&state).unwrap();
+    let www = dir.path().join("www");
+    fs::create_dir_all(&www).unwrap();
+
+    let conf = dir.path().join("chatmail.toml");
+    fs::write(
+        &conf,
+        format!("hostname = \"e2e.test\"\nwww_dir = \"{}\"\n", www.display()),
+    )
+    .unwrap();
+
+    fs::write(
+        www.join("index.html"),
+        r#"<!DOCTYPE html>
+<html>
+<head>
+<script src="./main.js"></script>
+</head>
+<body>
+{{if .RegistrationOpen}}open{{else}}closed{{end}}
+<script>
+document.getElementById("result-qr").src = `/qr?data=${encodeURIComponent(currentLink)}`;
+</script>
+</body>
+</html>"#,
+    )
+    .unwrap();
+    fs::write(www.join("main.js"), "function noop() {}\n").unwrap();
+
+    let assert = chatmail()
+        .args([
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            conf.to_str().unwrap(),
+            "--json",
+            "html-migrate",
+            "--yes",
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(
+        stdout.contains("\"action\":\"migrated\"") || stdout.contains("\"action\": \"migrated\""),
+        "stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("index.html"),
+        "expected index.html in migrate JSON: {stdout}"
+    );
+
+    let body = fs::read_to_string(www.join("index.html")).unwrap();
+    assert!(
+        body.contains("{% if RegistrationOpen %}"),
+        "Go→Minijinja: {body}"
+    );
+    assert!(
+        body.contains("setQrCodeImage"),
+        "legacy QR rewritten: {body}"
+    );
+    assert!(
+        !body.contains("/qr?data="),
+        "legacy /qr?data= should be gone: {body}"
+    );
+    assert!(body.contains("qrcode.min.js"), "qrcode script tag: {body}");
+    assert!(
+        www.join("qrcode.min.js").is_file(),
+        "qrcode.min.js copied into www_dir"
+    );
+    let main = fs::read_to_string(www.join("main.js")).unwrap();
+    assert!(
+        main.contains("function setQrCodeImage"),
+        "helper appended: {main}"
+    );
+    assert!(
+        www.join("index.html.go-template.bak").is_file(),
+        "HTML backup"
+    );
+    assert!(
+        www.join("main.js.qr-compat.bak").is_file(),
+        "main.js backup"
+    );
+
+    // Second run is a no-op (already migrated).
+    chatmail()
+        .args([
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            conf.to_str().unwrap(),
+            "--json",
+            "html-migrate",
+            "--yes",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("noop_already_migrated"));
+}
+
+/// Custom page with Obtainium-style `{%22` is warned about (not silently ignored).
+#[test]
+fn e2e_html_migrate_warns_on_literal_brace_url() {
+    use std::fs;
+
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().join("state");
+    fs::create_dir_all(&state).unwrap();
+    let www = dir.path().join("www");
+    fs::create_dir_all(&www).unwrap();
+    let conf = dir.path().join("chatmail.toml");
+    fs::write(
+        &conf,
+        format!("hostname = \"e2e.test\"\nwww_dir = \"{}\"\n", www.display()),
+    )
+    .unwrap();
+
+    // Minijinja-valid structure + Obtainium-style URL (will 500 if rendered without raw).
+    fs::write(
+        www.join("download.html"),
+        r#"<!DOCTYPE html><a href="https://example.com/x?j={%22a%22:1}">x</a>"#,
+    )
+    .unwrap();
+
+    let assert = chatmail()
+        .args([
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            conf.to_str().unwrap(),
+            "--json",
+            "html-migrate",
+            "--yes",
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("literal_brace_warnings"), "stdout={stdout}");
+    assert!(
+        stdout.contains("download.html") || stdout.contains("raw"),
+        "expected warning payload: {stdout}"
+    );
+}

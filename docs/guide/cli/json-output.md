@@ -1032,13 +1032,18 @@ Setting `embedded` reverts to built-in HTML.
 {
   "ok": true,
   "command": "html-migrate",
-  "message": "Migrated 3 file(s)",
+  "message": "Migrated 3 file(s), 2 QR/static",
   "data": {
     "config": "/etc/maddy/maddy.conf",
     "www_dir": "/var/lib/maddy/www",
     "scanned": 12,
     "go_style_files": ["index.html", "info.html"],
     "migrated": ["index.html", "info.html"],
+    "qr_legacy_files": ["index.html", "main.js"],
+    "qr_migrated": ["index.html", "main.js", "qrcode.min.js"],
+    "qrcode_js_copied": true,
+    "main_js_qr_helper_added": true,
+    "literal_brace_warnings": [],
     "backups": ["/var/lib/maddy/www/index.html.go-template.bak"],
     "errors": [],
     "action": "migrated"
@@ -1047,6 +1052,8 @@ Setting `embedded` reverts to built-in HTML.
 ```
 
 `action` may be `noop_embedded`, `noop_already_migrated`, `skipped_noninteractive`, `declined`, or `migrated`. Use `--yes` with `--json` to apply without a TTY.
+
+Also rewrites legacy `/qr?data=` to client-side QR and may copy `qrcode.min.js`. `literal_brace_warnings` lists suspicious `{%` / `{{` in content (not auto-fixed).
 
 ---
 

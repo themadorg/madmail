@@ -35,7 +35,7 @@ madmail upgrade <PATH_OR_URL> [--accept-unsafe-https]
 3. Verifies an **Ed25519 signature** in the last 64 bytes of the binary.
 4. Stops the systemd service (and iroh-relay when present).
 5. Replaces the current executable.
-6. **Custom www templates:** runs the new binary’s [`html-migrate`](html-migrate.md) against `--config`. If `www_dir` points at a custom site that still uses Go `html/template` syntax, you are prompted to convert files to Minijinja (backups as `*.go-template.bak`). Decline or non-interactive sessions leave files unchanged; re-run `madmail html-migrate` later if needed.
+6. **Custom www templates:** runs the new binary’s [`html-migrate`](html-migrate.md) against `--config`. If `www_dir` points at a custom site that still uses Go `html/template` syntax and/or legacy `/qr?data=` QR image URLs, you are prompted to convert (Minijinja + client-side QR; backups as `*.go-template.bak` / `main.js.qr-compat.bak`). Decline or non-interactive sessions leave files unchanged; re-run `madmail html-migrate --yes` later if needed.
 7. Restarts the systemd service when applicable and refreshes man/completions.
 
 ## Examples
