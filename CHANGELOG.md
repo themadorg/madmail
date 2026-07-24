@@ -1,3 +1,10 @@
+## [2.18.2](https://github.com/themadorg/madmail/compare/v2.18.1...v2.18.2) (2026-07-24)
+
+
+### Bug Fixes
+
+* **ci:** sync madmail-tray version in Cargo.lock on release ([8c8ec40](https://github.com/themadorg/madmail/commit/8c8ec405c8e2ff1509bd2f423298ea212668ebdf))
+
 ## [2.18.1](https://github.com/themadorg/madmail/compare/v2.18.0...v2.18.1) (2026-07-24)
 
 
