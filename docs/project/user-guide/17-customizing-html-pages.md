@@ -22,42 +22,88 @@ This means you only need to provide the files you want to change — everything 
 
 ### Setting a Custom WWW Directory
 
-Add the following to your configuration file:
+**Linux** — add to the config (path example):
 
 ```toml
-www_dir = "/var/lib/maddy/www"
+www_dir = "/var/lib/madmail/www"
 ```
 
 Or use the CLI:
 
 ```bash
-madmail html-serve /var/lib/maddy/www
+# Linux
+sudo madmail html-serve /var/lib/madmail/www
+
+# Windows (elevated PowerShell; ProgramData layout)
+& "C:\Program Files\Madmail\madmail.exe" `
+  --config "$env:ProgramData\Madmail\config\madmail.conf" `
+  --state-dir "$env:ProgramData\Madmail\data" `
+  html-serve "$env:ProgramData\Madmail\www"
 ```
 
 To go back to the built-in (embedded) files:
 
 ```bash
 madmail html-serve embedded
+# Windows: same command with --config / --state-dir as above
 ```
 
-Then reload the server:
+Then apply the config:
 
 ```bash
-madmail reload
+# Linux
+sudo madmail reload
+# or: sudo systemctl reload madmail / restart madmail
+
+# Windows
+Restart-Service Madmail
+# or: madmail … reload  (then restart service if routes did not remount)
 ```
 
-Make sure the directory is readable by the user the `madmail` service runs as (usually the `madmail` system user).
+Make sure the directory is readable by the account the service runs as:
+
+| Platform | Typical service account | Notes |
+|----------|-------------------------|--------|
+| Linux | `madmail` system user | `chown` / permissions on `www_dir` |
+| Windows | **LocalSystem** (default SCM service) | Paths under `%ProgramData%\Madmail\` are fine; if you put `www` elsewhere, grant **Read** + traverse |
 
 ## Getting Started with Customization
 
-A typical starting workflow is:
+### Linux
 
-1. Create your `www_dir` (for example `/var/lib/maddy/www`).
-2. Copy the default files you want to customize from the server's built-in assets.
-3. Edit the copied files.
-4. Reload the server and test.
+1. Create a directory (e.g. `/var/lib/madmail/www`).
+2. Export defaults: `sudo madmail html-export /var/lib/madmail/www`
+3. Edit the files you care about.
+4. `sudo madmail html-serve /var/lib/madmail/www` then `sudo madmail reload` (or restart the unit).
 
-Many operators start by copying the entire default web tree and then gradually replacing individual files as needed.
+### Windows
+
+1. Create `%ProgramData%\Madmail\www` (or another path LocalSystem can read).
+2. Export defaults (elevated):
+
+```powershell
+$cfg = "$env:ProgramData\Madmail\config\madmail.conf"
+$st  = "$env:ProgramData\Madmail\data"
+$www = "$env:ProgramData\Madmail\www"
+New-Item -ItemType Directory -Force -Path $www | Out-Null
+& "C:\Program Files\Madmail\madmail.exe" --config $cfg --state-dir $st html-export $www
+& "C:\Program Files\Madmail\madmail.exe" --config $cfg --state-dir $st html-serve $www
+Restart-Service Madmail
+```
+
+3. Edit files under `$www`, hard-refresh the browser (Ctrl+Shift+R).
+4. Revert: `html-serve embedded` + restart the service.
+
+Many operators export the **entire** default tree once, then replace individual files over time. Missing files still fall back to the embedded defaults.
+
+### Suggested Windows layout
+
+```text
+%ProgramData%\Madmail\
+  config\madmail.conf     ← www_dir set by html-serve
+  www\                    ← editable HTML/CSS/JS
+  data\                   ← mail DB, admin_token (do not put secrets in www\)
+```
 
 ## What You Can Customize
 
@@ -92,15 +138,9 @@ This built-in guide matches the running server version and lists which files you
 
 ## Updating After Changes
 
-In most cases you only need to run:
+After **content** edits under an existing `www_dir`, the server re-reads HTML from disk; a full restart is rarely required. After **`html-serve`** (changing the path or switching to `embedded`), run **`madmail reload`** and/or restart the service (`systemctl restart madmail` / `Restart-Service Madmail`).
 
-```bash
-madmail reload
-```
-
-after changing files in your `www_dir`. A full restart is rarely required for HTML changes.
-
-Users may need to do a hard refresh (Ctrl+Shift+R or Cmd+Shift+R) in their browser to see updated static assets.
+Users may need a hard refresh (Ctrl+Shift+R or Cmd+Shift+R) in the browser to see updated static assets.
 
 ## Go Madmail → madmail-v2 (template syntax)
 

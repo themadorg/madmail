@@ -80,6 +80,8 @@ Useful commands: `madmail service status`, `madmail admin-token`, `madmail firew
 
 Admin: use the **CLI** and **`POST /api/admin`** with the bearer token. Current Windows packages do **not** embed the admin-web SPA at `/admin` (browser GET on `/api/admin` returns **405**).
 
+**Custom public HTML** (`/`, `/new`, `/docs/`, …): export defaults to `%ProgramData%\Madmail\www`, run `html-serve`, restart the service — see [Customizing HTML pages](./17-customizing-html-pages.md#windows).
+
 Packaging and build notes: [packaging/windows/README.md](../../../packaging/windows/README.md).  
 Manual release checklist: [packaging/windows/MANUAL-CHECKLIST.md](../../../packaging/windows/MANUAL-CHECKLIST.md).  
 Epic: [#103](https://github.com/themadorg/madmail/issues/103).
@@ -89,6 +91,7 @@ More detail:
 - [Simple IP + ACME install](../../install-simple-ip-acme.md)
 - [IP vs domain deployment](./11-deployment-ip-domain-certs.md)
 - [DNS, SPF, DKIM, federation](./12-dns-mail-auth.md)
+- [Customizing HTML pages](./17-customizing-html-pages.md)
 - [Local development](../../local-dev.md)
 - [Windows packaging](../../../packaging/windows/README.md)
 

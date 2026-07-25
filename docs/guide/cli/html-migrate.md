@@ -65,10 +65,19 @@ madmail html-migrate --yes
 
 ```bash
 # Interactive (recommended once after Go → v2)
-sudo madmail --config /etc/maddy/maddy.conf html-migrate
+sudo madmail --config /etc/madmail/madmail.conf html-migrate
 
 # Scripted
-sudo madmail --config /etc/maddy/maddy.conf html-migrate --yes
+sudo madmail --config /etc/madmail/madmail.conf html-migrate --yes
+```
+
+Windows (custom `www_dir` under ProgramData):
+
+```powershell
+& "C:\Program Files\Madmail\madmail.exe" `
+  --config "$env:ProgramData\Madmail\config\madmail.conf" `
+  --state-dir "$env:ProgramData\Madmail\data" `
+  html-migrate --yes
 ```
 
 ## Notes

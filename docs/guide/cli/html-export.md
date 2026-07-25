@@ -25,11 +25,23 @@ madmail html-export <DEST_DIR>
 
 ## Example
 
+### Linux
+
 ```bash
-madmail html-export /opt/madmail-www-backup
+sudo madmail html-export /var/lib/madmail/www
 ```
 
-Edit exported files, then point the server at them with [`html-serve`](html-serve.md).
+### Windows
+
+```powershell
+$cfg = "$env:ProgramData\Madmail\config\madmail.conf"
+$st  = "$env:ProgramData\Madmail\data"
+$www = "$env:ProgramData\Madmail\www"
+New-Item -ItemType Directory -Force -Path $www | Out-Null
+& "C:\Program Files\Madmail\madmail.exe" --config $cfg --state-dir $st html-export $www
+```
+
+Edit exported files, then point the server at them with [`html-serve`](html-serve.md). Full walkthrough: [Customizing HTML pages](../../project/user-guide/17-customizing-html-pages.md).
 
 ## JSON output (`--json`)
 

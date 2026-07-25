@@ -136,6 +136,7 @@ Until arm64 CI runners or cargo-xwin are available, **compile-only** checks and 
 | Tray | `C:\Program Files\Madmail\madmail-tray.exe` |
 | Config | `%ProgramData%\Madmail\config\` |
 | State | `%ProgramData%\Madmail\data\` |
+| Custom public HTML (optional) | `%ProgramData%\Madmail\www\` (`www_dir` via `html-serve`) |
 | Service | `Madmail` |
 
 ## Related CLI
@@ -145,10 +146,18 @@ madmail install --simple --ip … --install-service --start-service --firewall
 madmail service install|start|stop|status
 madmail firewall apply|remove
 madmail admin-token
+madmail html-export %ProgramData%\Madmail\www
+madmail html-serve %ProgramData%\Madmail\www
 madmail-tray --smoke-exit
 madmail-tray status | token
 madmail-tray install-autostart
 ```
+
+### Custom public HTML pages
+
+Same as Linux: `www_dir` + `html-export` / `html-serve`. On Windows, put the tree under ProgramData (LocalSystem can read it), then restart the service.
+
+Full steps: [Customizing HTML pages](../../docs/project/user-guide/17-customizing-html-pages.md#windows).
 
 ### Admin API vs admin web UI
 

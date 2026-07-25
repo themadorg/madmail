@@ -25,19 +25,31 @@ madmail html-serve <WWW_DIR>
 
 ## Example
 
-```bash
-madmail html-serve /opt/custom-www
-madmail html-serve embedded
-madmail reload
-```
-
-After changing settings stored in the database, run:
+### Linux
 
 ```bash
-madmail reload
+sudo madmail html-serve /var/lib/madmail/www
+sudo madmail html-serve embedded
+sudo madmail reload
+# or: sudo systemctl restart madmail
 ```
 
-to apply listener and HTTP route changes without a full process restart.
+### Windows
+
+```powershell
+$cfg = "$env:ProgramData\Madmail\config\madmail.conf"
+$st  = "$env:ProgramData\Madmail\data"
+$www = "$env:ProgramData\Madmail\www"
+
+& "C:\Program Files\Madmail\madmail.exe" --config $cfg --state-dir $st html-serve $www
+# Revert to built-in pages:
+# & "C:\Program Files\Madmail\madmail.exe" --config $cfg --state-dir $st html-serve embedded
+Restart-Service Madmail
+```
+
+After changing settings stored in the database, run `madmail reload` and/or restart the service to remount HTTP routes.
+
+Operator walkthrough (export → edit → serve): [Customizing HTML pages](../../project/user-guide/17-customizing-html-pages.md).
 
 ## JSON output (`--json`)
 
