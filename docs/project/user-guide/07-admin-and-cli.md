@@ -13,21 +13,21 @@ One particularly useful CLI command for production servers is `madmail upgrade` 
 
 ## The Web Admin Dashboard
 
-This is the graphical way to manage the server.
+This is the graphical way to manage the server **when the admin SPA is embedded and enabled**.
 
 ### Accessing It
 
-In the official releases and normal installations, the Admin Web Interface is **included directly in the `madmail` binary**.
-
-It is served at:
+On **Linux** release builds that include the admin-web SPA (e.g. `make build-with-admin-web` / many official packages), the dashboard is served from the same binary at:
 
 ```
 https://your-server/admin/
 ```
 
-(or a custom path you configure).
+(or a custom path you configure). Enable with `madmail admin-web enable` if the path returns 404.
 
-You log in with the **admin token** — a long random string stored in the `admin_token` file on the server (or the one shown during `madmail install`).
+**Windows** CI/Release packages currently **do not** embed the admin SPA. Opening `/admin` will not give you a dashboard, and browser **GET** on `/api/admin` returns **405** (that endpoint is **POST-only** JSON). Use the **CLI** and the admin token instead (see [Quick Start — Windows](./02-quick-start.md)).
+
+You log in (or call the API) with the **admin token** — a long random string in the `admin_token` file on the server (Linux: often under `/var/lib/madmail/`; Windows: `%ProgramData%\Madmail\data\admin_token`).
 
 ### What You Can Do in the Web Interface
 
@@ -207,19 +207,37 @@ madmail html-serve /path/to/custom/www   # serve custom HTML instead of built-in
 madmail html-export /backup/www    # export the default web files
 ```
 
+**Windows** (paths and service differ; use elevated PowerShell):
+
+```powershell
+$m = "C:\Program Files\Madmail\madmail.exe"
+$cfg = "--config"; $c = "$env:ProgramData\Madmail\config\madmail.conf"
+$st = "--state-dir"; $s = "$env:ProgramData\Madmail\data"
+
+& $m $cfg $c $st $s admin-token
+& $m $cfg $c $st $s service status
+& $m $cfg $c $st $s html-export "$env:ProgramData\Madmail\www"
+& $m $cfg $c $st $s html-serve "$env:ProgramData\Madmail\www"
+Restart-Service Madmail
+```
+
+Custom public pages: [Customizing HTML pages](./17-customizing-html-pages.md).  
+Installer / Defender / UAC: [Windows packaging](../../../packaging/windows/README.md).
+
 ### Tips
 
 - Almost every command supports `--help` (e.g. `madmail accounts --help` or `madmail registration-tokens create --help`).
-- Many operations are easier in the web admin dashboard. Use the CLI when you need scripting or only have terminal access.
-- After changing ports, paths, or certain settings, a `madmail reload` (or full restart) is often required.
+- On **Linux**, many operators use the **admin web dashboard** when it is enabled and embedded. On **Windows** release builds the admin SPA is typically **not** embedded — use the **CLI** and `POST /api/admin` with the admin token (see [Quick Start — Windows](./02-quick-start.md)).
+- After changing ports, paths, or certain settings, a `madmail reload` (or full restart / `Restart-Service Madmail`) is often required.
 
 For the complete list of subcommands and flags, run `madmail --help`.
 
 ### CLI vs Web Interface
 
-- Use the **web interface** for exploration and occasional tasks.
-- Use the **CLI** for scripting, automation, or when you only have SSH access.
-- Both expose the same admin API. The web UI is a browser frontend; the CLI calls the same resources directly or via equivalent DB operations.
+- Use the **public website** (`/`, `/new`, `/docs/`) for end users; customize it with `www_dir` / `html-serve`.
+- Use the **admin SPA** (`/admin`) when your build includes it and it is enabled — not always available on Windows packages.
+- Use the **CLI** for scripting, automation, SSH/RDP-only access, and when the admin SPA is unavailable.
+- The admin SPA (when present) and CLI both talk to the same admin API / DB settings.
 
 ## The Admin API (How Everything Works)
 

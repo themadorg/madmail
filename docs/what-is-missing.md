@@ -81,7 +81,7 @@ Madmail parity for operator-owned www trees (`ctl/html.go`):
 
 **Default site (no `www_dir`):** HTML templates and all static files are served from **embedded RAM** in the binary (`rust_embed`) — preloaded at startup, no disk I/O.
 
-**Operator override:** `html-export` → edit files → `html-serve /path/to/www` → `systemctl restart madmail` (once, to set `www_dir`). After that, files are read from disk on each request (live reload; `Cache-Control: no-cache`). `html-serve embedded` clears `www_dir` and restores the RAM default.
+**Operator override:** `html-export` → edit files → `html-serve /path/to/www` → restart/reload once (Linux: `systemctl restart madmail`; Windows: `Restart-Service Madmail`) to set `www_dir`. After that, files are read from disk on each request (live reload; `Cache-Control: no-cache`). `html-serve embedded` clears `www_dir` and restores the RAM default. Windows paths: see [17-customizing-html-pages.md](project/user-guide/17-customizing-html-pages.md#windows).
 
 **Manually verified:** export count, config `www_dir`, journal line `www: serving HTML from external directory`, custom homepage + static file over HTTP/HTTPS, revert to embedded.
 

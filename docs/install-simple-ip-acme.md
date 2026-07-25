@@ -4,12 +4,29 @@ Use this flow when the mail server is reached by **public IP** (typical Delta Ch
 
 ## Command
 
+### Linux
+
 Run as **root** on the server (or via `sudo`):
 
 ```bash
 sudo madmail install --simple --ip 203.0.113.50 --auto-ip-cert \
   --acme-email you@example.com
 ```
+
+### Windows
+
+Elevated PowerShell (or the Inno wizard with **Public IP** + **Let's Encrypt**):
+
+```powershell
+& "C:\Program Files\Madmail\madmail.exe" install `
+  --simple --ip 203.0.113.50 --auto-ip-cert `
+  --acme-email you@example.com --lang en `
+  --config-dir "$env:ProgramData\Madmail\config" `
+  --state-dir "$env:ProgramData\Madmail\data" `
+  --install-service --start-service --firewall
+```
+
+Ensure **inbound TCP 80** is allowed (Windows Firewall + cloud/provider firewall). Install opens the Madmail HTTP rule when it can; LE still needs reachability from the public internet.
 
 Replace:
 
@@ -26,15 +43,16 @@ Replace:
 |------|---------|
 | `--enable-chatmail` | Turn on Chatmail blocks in the generated config |
 | `--enable-ss` | Include Shadowsocks proxy blocks |
-| `--skip-systemd` | Config + certs only, no `madmail.service` |
-| `--skip-user` | Do not create the `madmail` system user |
+| `--install-service` / `--start-service` / `--firewall` | **Windows:** register/start SCM service and open firewall ports |
+| `--skip-systemd` | Config + certs only, no `madmail.service` (**Linux**) |
+| `--skip-user` | Do not create the `madmail` system user (**Linux**) |
 | `--dry-run` | Print planned paths without writing files |
 | `--no-obtain-certificate` | Skip issuance during install (unusual with `--auto-ip-cert`) |
 | `--lang` | Website / UI language for the public pages and docs (`en`, `fa`, `ru`, `es`). Seeds the `LANGUAGE` setting. |
 
 ## What this does
 
-1. **System layout** — Installs `madmail` to `/usr/local/bin/madmail`, writes `/etc/madmail/madmail.conf`, state under `/var/lib/madmail`, enables a `madmail.service` systemd unit (unless `--skip-systemd`).
+1. **System layout** — **Linux:** installs `madmail` to `/usr/local/bin/madmail`, writes `/etc/madmail/madmail.conf`, state under `/var/lib/madmail`, enables a `madmail.service` systemd unit (unless `--skip-systemd`). **Windows:** uses `%ProgramData%\Madmail\{config,data}` and the `Madmail` Windows service when `--install-service` is set (see [Windows packaging](../packaging/windows/README.md)).
 2. **TLS mode** — Sets `autocert` (not self-signed). With `--auto-ip-cert`, `turn_off_tls` stays **off** so IMAP/SMTP submission use TLS with the issued cert.
 3. **Certificate** — Obtains a Let's Encrypt **short-lived IP certificate** (profile `shortlived`, ~6-day lifetime) with **HTTP-01** on `0.0.0.0:80`.
 4. **Storage** — Writes PEMs to:

@@ -44,7 +44,9 @@ madmail install --simple --ip 203.0.113.50 --tls-mode self_signed --lang en `
   --install-service --start-service --firewall
 ```
 
-On **Windows**, default install paths are `%ProgramData%\Madmail\config` and `%ProgramData%\Madmail\data` (not `/etc` / `/var/lib`). Use the [Windows packaging guide](../../../packaging/windows/README.md) for the Inno Setup wizard and tray helper.
+On **Windows**, default install paths are `%ProgramData%\Madmail\config` and `%ProgramData%\Madmail\data` (not `/etc` / `/var/lib`). Prefer the [Windows packaging guide](../../../packaging/windows/README.md) for the Inno Setup wizard, tray helper, UAC/SmartScreen notes, and service layout.
+
+**Let's Encrypt on Windows:** open **inbound TCP 80** (Windows Firewall + provider panel) before HTTP-01. Install opens a Madmail HTTP firewall rule when possible, but cloud firewalls still matter. For a lab finish without LE, use `--tls-mode self_signed --no-obtain-certificate`.
 
 ## Key flags
 

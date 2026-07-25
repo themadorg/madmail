@@ -42,6 +42,18 @@ Port **80** must be free during install when autocert issuance runs (default for
 
 **Before install (domain):** create an **`A` or `AAAA`** record for the hostname pointing at this machine. See [DNS and Mail Authentication](../project/user-guide/12-dns-mail-auth.md) for the full checklist (MX, SPF, DKIM, DMARC, federation).
 
+### Windows (Inno or CLI)
+
+Prefer **`madmail-windows-amd64-setup.exe`** from [GitHub Releases](https://github.com/themadorg/madmail/releases) (unsigned — UAC / SmartScreen notes in the packaging guide). Or elevated CLI:
+
+```powershell
+& "C:\Program Files\Madmail\madmail.exe" install `
+  --simple --ip 203.0.113.50 --tls-mode self_signed --lang en `
+  --install-service --start-service --firewall
+```
+
+Defaults: `%ProgramData%\Madmail\config` and `%ProgramData%\Madmail\data`, service name **`Madmail`**. Details: [Windows packaging](../packaging/windows/README.md), [Quick Start — Windows](../project/user-guide/02-quick-start.md).
+
 ### Local / dev — custom paths (no root)
 
 ```bash

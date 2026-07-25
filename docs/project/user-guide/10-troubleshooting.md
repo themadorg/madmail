@@ -114,9 +114,20 @@ The safest way is almost always:
 
 ```bash
 madmail reload
+# Windows: Restart-Service Madmail  (or madmail … reload then restart if needed)
 ```
 
 If that doesn’t pick up the change, a full restart is the next step.
+
+## Windows-Specific Issues
+
+| Symptom | Likely cause | What to try |
+|---------|----------------|-------------|
+| SmartScreen / Defender flags setup | Unsigned CI/Release PE (false positive) | [Defender / UAC guide](../../../packaging/windows/README.md#windows-defender-smartscreen-and-uac) |
+| Service missing after setup | Install stopped early (e.g. Let's Encrypt) | Read `%ProgramData%\Madmail\install.log`; finish with self-signed or fix TCP 80 |
+| LE HTTP-01 Invalid | Firewall / reachability (port free ≠ LE can connect) | Open inbound **TCP 80** host + cloud; re-test from the internet |
+| `/admin` blank or 404 | SPA not embedded / not enabled | Use CLI + token; see [Admin & CLI](./07-admin-and-cli.md) |
+| Custom HTML not showing | `www_dir` not set or service not restarted | [Customizing HTML](./17-customizing-html-pages.md#windows) |
 
 ## Getting More Information
 
@@ -125,10 +136,20 @@ When something is really not working, these commands are your friends:
 ```bash
 madmail status                 # basic health
 madmail logs                   # if your system uses journalctl or similar
-sqlite3 /var/lib/maddy/chatmail.db "SELECT * FROM settings;"
+sqlite3 /var/lib/madmail/chatmail.db "SELECT * FROM settings;"   # Linux default path
 ```
 
-Also check the admin web interface **Status** page — it often shows exactly which ports are actually listening.
+Windows:
+
+```powershell
+& "C:\Program Files\Madmail\madmail.exe" `
+  --config "$env:ProgramData\Madmail\config\madmail.conf" `
+  --state-dir "$env:ProgramData\Madmail\data" status
+Get-Content "$env:ProgramData\Madmail\install.log" -ErrorAction SilentlyContinue
+Get-Service Madmail
+```
+
+Also check the admin web interface **Status** page when the SPA is available — it often shows which ports are listening.
 
 ## When in Doubt
 
