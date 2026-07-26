@@ -58,7 +58,8 @@ On **Windows**, default install paths are `%ProgramData%\Madmail\config` and `%P
 | `--config-dir`, `--state-dir` | Override FHS / ProgramData paths |
 | `--install-service` | Register Windows service after install (no-op notice on Unix) |
 | `--start-service` | Start Windows service after install |
-| `--firewall` | Open Windows Firewall rules for mail/HTTP ports |
+| `--firewall` | Open Windows Firewall rules for mail/HTTP (+ TURN when enabled) |
+| `--no-turn` | Disable embedded TURN (Delta Chat audio/video); default is TURN **on** |
 | `--tls-mode` | `autocert`, `file`, or `self_signed` |
 | `--acme-email`, `--auto-ip-cert`, `--obtain-certificate`, `--no-obtain-certificate`, `--cert-only`, `--http-listen` | TLS issuance |
 | `--lang` | UI language: `en`, `fa`, `ru`, `es` |

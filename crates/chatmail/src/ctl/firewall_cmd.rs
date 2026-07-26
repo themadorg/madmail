@@ -15,8 +15,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `madmail firewall` — Windows Firewall inbound rules for mail/HTTP listeners.
+//! `madmail firewall` — Windows Firewall inbound rules for mail/HTTP/TURN listeners.
 
+use chatmail_config::turn_relay_ports::{DEFAULT_TURN_RELAY_PORT_MAX, DEFAULT_TURN_RELAY_PORT_MIN};
 use chatmail_config::{Args, FirewallCommand, FIREWALL_RULE_PREFIX};
 use chatmail_types::{ChatmailError, Result};
 
@@ -33,6 +34,9 @@ const CORE_RULES: &[(&str, &str, u16)] = &[
     ("HTTPS", "TCP", 443),
 ];
 
+/// Default TURN control plane (matches install `turn_port` / IMAP METADATA).
+const DEFAULT_TURN_CONTROL_PORT: u16 = 3478;
+
 pub async fn firewall(args: &Args, cmd: &FirewallCommand) -> Result<()> {
     match cmd {
         FirewallCommand::Apply { turn, ss, iroh } => apply(args, *turn, *ss, *iroh),
@@ -47,36 +51,45 @@ pub async fn firewall(args: &Args, cmd: &FirewallCommand) -> Result<()> {
 #[cfg(windows)]
 pub fn ensure_http01_inbound() -> Result<()> {
     // Same display name as full apply — idempotent via delete+add in add_rule.
-    add_rule(&rule_name("HTTP"), "TCP", 80)?;
+    add_rule(&rule_name("HTTP"), "TCP", "80")?;
     Ok(())
 }
 
 /// Open standard Madmail ports (and optional TURN / SS / Iroh).
+///
+/// When `turn` is set, opens TURN **control** (UDP/TCP 3478) and the default
+/// **media relay** UDP range (49152–65535). Control alone is not enough for
+/// Delta Chat audio/video once ICE uses relayed candidates.
 pub fn apply_rules(turn: bool, ss: bool, iroh: bool) -> Result<Vec<String>> {
     require_windows()?;
     let mut names = Vec::new();
     for (label, proto, port) in CORE_RULES {
         let name = rule_name(label);
-        add_rule(&name, proto, *port)?;
+        add_rule(&name, proto, &port.to_string())?;
         names.push(name);
     }
     if turn {
         let name = rule_name("TURN");
-        add_rule(&name, "UDP", 3478)?;
-        names.push(name.clone());
+        add_rule(&name, "UDP", &DEFAULT_TURN_CONTROL_PORT.to_string())?;
+        names.push(name);
         // TCP TURN as well (config often binds both).
         let name_tcp = rule_name("TURN-TCP");
-        add_rule(&name_tcp, "TCP", 3478)?;
+        add_rule(&name_tcp, "TCP", &DEFAULT_TURN_CONTROL_PORT.to_string())?;
         names.push(name_tcp);
+        // Media relay allocations (RFC 8656 dynamic range / madmail defaults).
+        let name_relay = rule_name("TURN-relay");
+        let range = format!("{DEFAULT_TURN_RELAY_PORT_MIN}-{DEFAULT_TURN_RELAY_PORT_MAX}");
+        add_rule(&name_relay, "UDP", &range)?;
+        names.push(name_relay);
     }
     if ss {
         let name = rule_name("Shadowsocks");
-        add_rule(&name, "TCP", 8388)?;
+        add_rule(&name, "TCP", "8388")?;
         names.push(name);
     }
     if iroh {
         let name = rule_name("Iroh");
-        add_rule(&name, "TCP", 3340)?;
+        add_rule(&name, "TCP", "3340")?;
         names.push(name);
     }
     Ok(names)
@@ -144,8 +157,9 @@ fn require_windows() -> Result<()> {
     }
 }
 
+/// `port_spec` is a single port (`"3478"`) or inclusive range (`"49152-65535"`).
 #[cfg(windows)]
-fn add_rule(name: &str, protocol: &str, port: u16) -> Result<()> {
+fn add_rule(name: &str, protocol: &str, port_spec: &str) -> Result<()> {
     use std::process::Command;
     // Idempotent: delete existing same-name rule first.
     let _ = delete_rule(name);
@@ -159,7 +173,7 @@ fn add_rule(name: &str, protocol: &str, port: u16) -> Result<()> {
             "dir=in",
             "action=allow",
             &format!("protocol={protocol}"),
-            &format!("localport={port}"),
+            &format!("localport={port_spec}"),
             "profile=any",
             "enable=yes",
         ])
@@ -175,7 +189,7 @@ fn add_rule(name: &str, protocol: &str, port: u16) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-fn add_rule(_name: &str, _protocol: &str, _port: u16) -> Result<()> {
+fn add_rule(_name: &str, _protocol: &str, _port_spec: &str) -> Result<()> {
     require_windows()
 }
 
@@ -254,6 +268,13 @@ mod tests {
         for p in [25u16, 143, 587, 465, 993, 80, 443] {
             assert!(ports.contains(&p), "missing port {p}");
         }
+    }
+
+    #[test]
+    fn turn_defaults_match_docs() {
+        assert_eq!(DEFAULT_TURN_CONTROL_PORT, 3478);
+        assert_eq!(DEFAULT_TURN_RELAY_PORT_MIN, 49152);
+        assert_eq!(DEFAULT_TURN_RELAY_PORT_MAX, 65535);
     }
 
     #[tokio::test]

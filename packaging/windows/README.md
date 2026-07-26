@@ -44,7 +44,7 @@ iscc /DArch=arm64 packaging\windows\Madmail.iss
 3. **Identity** — IP or hostname  
 4. **TLS** — self-signed or Let's Encrypt  
 5. ACME email (if LE)  
-6. Language + optional Shadowsocks (Iroh omitted until `iroh-relay.exe` is packaged)  
+6. Language + optional Shadowsocks / TURN for calls (Iroh omitted until `iroh-relay.exe` is packaged)  
 7. Install directory + tasks (firewall, start service, tray autostart)  
 8. DNS checklist (domain mode)  
 9. Post-install: `madmail install … --install-service [--start-service] [--firewall]`  
@@ -173,8 +173,17 @@ Do not open `/api/admin` in a browser (GET → **405**).
 ### Installer options (wizard)
 
 - **Shadowsocks** — optional (default on).
+- **TURN** (Delta Chat audio/video) — optional (default **on**). Opens UDP/TCP **3478** and UDP **49152–65535** when the firewall task is selected. Uncheck and pass CLI `--no-turn` to disable call relay.
 - **Iroh** — **not** offered (no `iroh-relay.exe` on Windows yet; enabling it breaks service boot).
 - Prefer **self-signed** in the lab if port **80** / ACME is not ready; **Let's Encrypt** (public IP or domain) needs inbound TCP 80 during install.
+
+After install, verify TURN firewall rules if calls fail:
+
+```powershell
+Get-NetFirewallRule -DisplayName "Madmail*TURN*" | Format-Table DisplayName, Enabled
+# Manual repair (elevated), if needed:
+# madmail firewall apply --turn
+```
 
 ## CI
 
