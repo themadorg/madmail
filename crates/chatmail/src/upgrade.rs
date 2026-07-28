@@ -467,6 +467,7 @@ fn download_url_response(
 /// `perform_upgrade` directly).
 fn handle_update_url(url: &str, args: &Args, accept_unsafe_https: bool) -> Result<()> {
     check_supported_url_archive(url)?;
+    warn_if_default_linux_asset(url);
 
     let (download_path, mut tmp_file) = create_private_temp_file("madmail-update")?;
 
@@ -563,7 +564,196 @@ fn run_systemctl(args: &[&str]) {
     let _ = Command::new("systemctl").args(args).status();
 }
 
-/// Upgrade in place: verify signature, stop service, replace executable, start service.
+fn systemctl_succeeded(args: &[&str]) -> bool {
+    Command::new("systemctl")
+        .args(args)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Sibling backup path for the live binary (`/usr/local/bin/madmail` → `…/madmail.prev`).
+fn backup_path_for(current: &Path) -> PathBuf {
+    let mut name = current.as_os_str().to_owned();
+    name.push(".prev");
+    PathBuf::from(name)
+}
+
+/// Hint shown when a binary fails to run (wrong release variant / older glibc).
+const VARIANT_HINT: &str = "\
+If you see GLIBC_*. not found (or the loader refuses to start the binary), this host needs a \
+different release asset than the default glibc build:\n\
+  • madmail-linux-amd64-legacy.tar.gz  — older distros (e.g. Ubuntu 22.04)\n\
+  • madmail-linux-amd64-musl.tar.gz    — static-ish musl alternative\n\
+  • …-arm64-legacy / …-arm64-musl     — same for arm64\n\
+Download from https://github.com/themadorg/madmail/releases and re-run update with that URL.";
+
+/// Soft warning when the download URL looks like a default (non-legacy, non-musl) Linux asset.
+fn warn_if_default_linux_asset(url: &str) {
+    let path = url_path(url).to_ascii_lowercase();
+    if !path.contains("madmail-linux-") {
+        return;
+    }
+    if path.contains("-legacy") || path.contains("-musl") {
+        return;
+    }
+    if !(path.contains("amd64") || path.contains("arm64") || path.contains("aarch64")) {
+        return;
+    }
+    eprintln!(
+        "ℹ️ Default Linux build selected. Hosts with older system glibc need a *-legacy \
+         (or *-musl) asset from GitHub Releases. A host preflight runs before the live \
+         binary is replaced; an incompatible build aborts the upgrade safely."
+    );
+}
+
+/// Ensure the candidate binary can actually execute on this host (`madmail version`).
+///
+/// Catches wrong-variant installs (default glibc build on older distros) **before**
+/// services are stopped or the live binary is replaced. Signature verification must
+/// already have passed — we only exec trusted, signed bytes.
+fn preflight_new_binary(new_bin: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Owner rwx so we can exec a temp extract (mode may still be 0600).
+        fs::set_permissions(new_bin, fs::Permissions::from_mode(0o700)).map_err(|e| {
+            ChatmailError::config(format!(
+                "failed to set executable bit on {}: {e}",
+                new_bin.display()
+            ))
+        })?;
+    }
+
+    eprintln!("🧪 Preflight: running new binary (`version`) on this host...");
+
+    let output = match Command::new(new_bin).arg("version").output() {
+        Ok(o) => o,
+        Err(e) => {
+            return Err(ChatmailError::config(format!(
+                "new binary failed to execute (loader/ABI incompatibility?): {e}\n\
+                 The live binary was NOT replaced.\n{VARIANT_HINT}"
+            )));
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if !stderr.trim().is_empty() {
+            stderr.trim().to_string()
+        } else if !stdout.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            format!("exit status {}", output.status)
+        };
+        return Err(ChatmailError::config(format!(
+            "new binary failed host preflight (`madmail version`):\n{detail}\n\n\
+             The live binary was NOT replaced.\n{VARIANT_HINT}"
+        )));
+    }
+
+    let ver = String::from_utf8_lossy(&output.stdout);
+    let first = ver
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("ok");
+    eprintln!("✅ Preflight OK ({first})");
+    Ok(())
+}
+
+/// Copy the live binary to `*.prev` so a failed upgrade can be rolled back.
+fn backup_current_binary(current: &Path) -> Result<PathBuf> {
+    let backup = backup_path_for(current);
+    eprintln!("💾 Backing up current binary to {}...", backup.display());
+    fs::copy(current, &backup).map_err(|e| {
+        ChatmailError::config(format!(
+            "failed to back up current binary to {}: {e}",
+            backup.display()
+        ))
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Prefer the live mode; fall back to 0755 so the backup stays runnable.
+        let mode = fs::metadata(current)
+            .ok()
+            .map(|m| m.permissions().mode())
+            .unwrap_or(0o755);
+        let _ = fs::set_permissions(&backup, fs::Permissions::from_mode(mode));
+    }
+    Ok(backup)
+}
+
+/// Restore `backup` over `current` (used when the new binary fails smoke/start).
+fn restore_backup(backup: &Path, current: &Path) -> Result<()> {
+    eprintln!(
+        "↩️ Restoring previous binary from {} → {}...",
+        backup.display(),
+        current.display()
+    );
+    // Write via a temp sibling then rename so a partial copy cannot leave a
+    // half-written executable at the install path.
+    let parent = current
+        .parent()
+        .ok_or_else(|| ChatmailError::config("executable has no parent directory"))?;
+    let tmp = parent.join(format!(".chatmail-rollback-{}", std::process::id()));
+    fs::copy(backup, &tmp).map_err(|e| {
+        ChatmailError::config(format!(
+            "failed to stage rollback binary from {}: {e}",
+            backup.display()
+        ))
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
+    }
+    fs::rename(&tmp, current).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        ChatmailError::config(format!(
+            "failed to restore previous binary to {}: {e}",
+            current.display()
+        ))
+    })?;
+    Ok(())
+}
+
+/// After install: if the new binary cannot run, restore `backup` and restart services.
+fn rollback_on_broken_install(
+    real_bin_path: &Path,
+    backup: &Path,
+    service: &str,
+    reason: &str,
+) -> Result<()> {
+    eprintln!("⚠️ {reason}");
+    restore_backup(backup, real_bin_path)?;
+    eprintln!("▶️ Restarting services with the restored binary...");
+    if !systemctl_succeeded(&["start", service]) {
+        eprintln!(
+            "⚠️ Warning: failed to start {service} after rollback; try: systemctl start {service}"
+        );
+    }
+    let iroh_unit = PathBuf::from("/etc/systemd/system/iroh-relay.service");
+    if iroh_unit.is_file() && !systemctl_succeeded(&["start", "iroh-relay.service"]) {
+        eprintln!(
+            "⚠️ Warning: failed to start iroh-relay.service after rollback; try: systemctl start iroh-relay.service"
+        );
+    }
+    Err(ChatmailError::config(format!(
+        "upgrade rolled back: {reason}\n\
+         Previous binary restored from {}.\n{VARIANT_HINT}",
+        backup.display()
+    )))
+}
+
+/// Upgrade in place: verify signature, preflight, backup, stop service, replace, start.
+///
+/// Safety (issue #114):
+/// - Host preflight (`new_bin version`) runs **before** services stop / binary replace.
+/// - Live binary is copied to `*.prev` before replace.
+/// - If the installed binary fails a post-replace smoke check, restore `*.prev` and restart.
 pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     eprintln!("🔍 Verifying digital signature...");
     match verify_signature(new_bin_path)? {
@@ -574,6 +764,9 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
             ));
         }
     }
+
+    // Abort early (services still up, live binary untouched) if this host cannot run it.
+    preflight_new_binary(new_bin_path)?;
 
     let current_bin = std::env::current_exe()
         .map_err(|e| ChatmailError::config(format!("failed to get current executable: {e}")))?;
@@ -587,6 +780,9 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
             "upgrade must be run as root (sudo) to manage services and replace the binary",
         ));
     }
+
+    // Keep a runnable previous binary so a post-replace failure can recover in-band.
+    let backup = backup_current_binary(&real_bin_path)?;
 
     let service = systemd_service_name();
     eprintln!("⏹️ Stopping services...");
@@ -614,41 +810,77 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
         fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o755))?;
     }
 
-    fs::rename(&tmp_path, &real_bin_path).map_err(|e| {
+    if let Err(e) = fs::rename(&tmp_path, &real_bin_path) {
         let _ = fs::remove_file(&tmp_path);
-        ChatmailError::config(format!("failed to replace binary: {e}"))
-    })?;
+        // Live binary should still be the old one if rename failed; try to keep services up.
+        eprintln!("▶️ Starting services after failed replace...");
+        let _ = systemctl_succeeded(&["start", &service]);
+        return Err(ChatmailError::config(format!("failed to replace binary: {e}")));
+    }
+
+    // Belt-and-suspenders: re-smoke the installed path (catches corrupt write).
+    if let Err(e) = preflight_new_binary(&real_bin_path) {
+        return rollback_on_broken_install(
+            &real_bin_path,
+            &backup,
+            &service,
+            &format!("installed binary failed smoke check: {e}"),
+        );
+    }
 
     // Run post-upgrade hooks from the *new* binary so first upgrades that ship
     // html-migrate still work (this process is still the old code).
     run_post_upgrade_www_migrate(&real_bin_path, args);
 
     eprintln!("▶️ Starting services...");
-    if !Command::new("systemctl")
-        .args(["start", &service])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-    {
-        eprintln!("⚠️ Warning: failed to start {service}; try: systemctl start {service}");
+    let started = systemctl_succeeded(&["start", &service]);
+    if !started {
+        // Service unit failed — only roll back if the binary itself is broken.
+        // Config/port issues must not undo a good ABI-compatible upgrade.
+        if preflight_new_binary(&real_bin_path).is_err() {
+            return rollback_on_broken_install(
+                &real_bin_path,
+                &backup,
+                &service,
+                &format!(
+                    "failed to start {service} and installed binary no longer passes smoke check"
+                ),
+            );
+        }
+        eprintln!(
+            "⚠️ Warning: failed to start {service}; the new binary passed smoke checks. \
+             Try: systemctl start {service}  (and inspect journalctl -u {service}). \
+             Previous binary kept at {}.",
+            backup.display()
+        );
+    } else {
+        // Catch crash-loops where systemctl start returns success then the unit dies.
+        thread::sleep(Duration::from_secs(1));
+        if !systemctl_succeeded(&["is-active", "--quiet", &service])
+            && preflight_new_binary(&real_bin_path).is_err()
+        {
+            return rollback_on_broken_install(
+                &real_bin_path,
+                &backup,
+                &service,
+                &format!("{service} is not active and installed binary fails smoke check"),
+            );
+        }
     }
 
     let iroh_unit = PathBuf::from("/etc/systemd/system/iroh-relay.service");
-    if iroh_unit.is_file()
-        && !Command::new("systemctl")
-            .args(["start", "iroh-relay.service"])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    {
+    if iroh_unit.is_file() && !systemctl_succeeded(&["start", "iroh-relay.service"]) {
         eprintln!(
-                "⚠️ Warning: failed to start iroh-relay.service; try: systemctl start iroh-relay.service"
-            );
+            "⚠️ Warning: failed to start iroh-relay.service; try: systemctl start iroh-relay.service"
+        );
     }
 
     refresh_cli_docs_after_upgrade();
 
-    eprintln!("🎉 Upgrade complete.");
+    eprintln!(
+        "🎉 Upgrade complete. (previous binary kept at {} for manual rollback if needed)",
+        backup.display()
+    );
     Ok(())
 }
 
@@ -777,6 +1009,71 @@ mod tests {
         assert!(is_download_url("http://127.0.0.1:8080/bin"));
         assert!(!is_download_url("/tmp/madmail-signed"));
         assert!(!is_download_url("./madmail"));
+    }
+
+    #[test]
+    fn backup_path_for_appends_prev() {
+        assert_eq!(
+            backup_path_for(Path::new("/usr/local/bin/madmail")),
+            PathBuf::from("/usr/local/bin/madmail.prev")
+        );
+        assert_eq!(
+            backup_path_for(Path::new("C:\\Program Files\\Madmail\\madmail.exe")),
+            PathBuf::from("C:\\Program Files\\Madmail\\madmail.exe.prev")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preflight_accepts_script_that_prints_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("fake-madmail");
+        fs::write(&bin, b"#!/bin/sh\necho 'madmail 9.9.9-test'\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        preflight_new_binary(&bin).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preflight_rejects_binary_that_exits_nonzero() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("broken-madmail");
+        fs::write(
+            &bin,
+            b"#!/bin/sh\necho \"version 'GLIBC_2.39' not found\" >&2\nexit 127\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        let err = preflight_new_binary(&bin).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("preflight") || msg.contains("GLIBC"),
+            "got: {msg}"
+        );
+        assert!(
+            msg.contains("legacy") || msg.contains("NOT replaced"),
+            "expected recovery/variant hint, got: {msg}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_and_restore_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let current = dir.path().join("madmail");
+        fs::write(&current, b"old-binary-bytes").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&current, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let backup = backup_current_binary(&current).unwrap();
+        assert!(backup.ends_with("madmail.prev"));
+        assert_eq!(fs::read(&backup).unwrap(), b"old-binary-bytes");
+
+        fs::write(&current, b"new-broken-bytes").unwrap();
+        restore_backup(&backup, &current).unwrap();
+        assert_eq!(fs::read(&current).unwrap(), b"old-binary-bytes");
     }
 
     #[test]
@@ -1005,6 +1302,10 @@ mod tests {
 
     /// When the official signing key is available, prove signed `madmail` inside
     /// `.tar.gz` passes verification (the full traditional check) after extract.
+    ///
+    /// Payload is a tiny shell script that implements `version` so host preflight
+    /// (issue #114) also succeeds; trailing signature bytes are fine because the
+    /// script `exit 0`s before the interpreter would see them.
     #[test]
     fn signed_madmail_inside_tar_gz_passes_verify_after_extract() {
         let Some(key_path) = official_private_key_path() else {
@@ -1013,18 +1314,24 @@ mod tests {
         };
         let dir = tempfile::tempdir().unwrap();
         let payload = dir.path().join("madmail");
-        // Small fake binary body (not a real ELF); signature is what matters.
         fs::write(
             &payload,
-            b"MADMAIL_TEST_PAYLOAD_FOR_SIGNATURE_CHECK_0123456789",
+            b"#!/bin/sh\nif [ \"$1\" = version ]; then echo madmail-test-signed 0.0.0; fi\nexit 0\n",
         )
         .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&payload, fs::Permissions::from_mode(0o755)).unwrap();
+        }
         sign_with_official_key(&payload, &key_path);
 
         assert!(
             verify_signature(&payload).unwrap(),
             "signed payload must verify before packaging"
         );
+        // Preflight must accept this signed runnable payload (not just signature).
+        preflight_new_binary(&payload).unwrap();
 
         let archive = dir.path().join("madmail-linux-amd64.tar.gz");
         let bytes = fs::read(&payload).unwrap();
@@ -1040,17 +1347,50 @@ mod tests {
             "extracted madmail must pass the traditional signature check"
         );
 
-        // Full URL pipeline: download .tar.gz → extract → perform_upgrade verify.
+        // Full URL pipeline: download .tar.gz → extract → perform_upgrade verify + preflight.
         let body = fs::read(&archive).unwrap();
         let (url, server) = serve_once(body);
         let err = upgrade_command(&url, &test_args(), false).unwrap_err();
         let msg = err.to_string();
-        // Signature OK; non-root should fail before replace (or root-only env).
+        // Signature + preflight OK; non-root should fail before replace (or root-only env).
         assert!(
             msg.contains("must be run as root") || msg.contains("Upgrade complete"),
-            "expected post-signature traditional path, got: {msg}"
+            "expected post-signature/preflight traditional path, got: {msg}"
         );
         server.join().unwrap();
+    }
+
+    /// Signed but non-executable payload must fail preflight *before* root/replace
+    /// (the whole point of issue #114 — never brick on a bad variant).
+    #[test]
+    fn signed_non_executable_fails_preflight_not_root_check() {
+        let Some(key_path) = official_private_key_path() else {
+            eprintln!("skip: official private key not found");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let payload = dir.path().join("madmail");
+        fs::write(
+            &payload,
+            b"MADMAIL_NOT_AN_ELF_JUST_BYTES_FOR_SIGNATURE_ONLY_0123456789",
+        )
+        .unwrap();
+        sign_with_official_key(&payload, &key_path);
+        assert!(verify_signature(&payload).unwrap());
+
+        let err = perform_upgrade(&payload, &test_args()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("preflight")
+                || msg.contains("failed to execute")
+                || msg.contains("NOT replaced")
+                || msg.contains("legacy"),
+            "expected preflight abort, got: {msg}"
+        );
+        assert!(
+            !msg.contains("must be run as root"),
+            "must not reach root check after failed preflight: {msg}"
+        );
     }
 
     fn official_private_key_path() -> Option<PathBuf> {

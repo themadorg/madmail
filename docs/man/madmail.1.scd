@@ -68,6 +68,10 @@ Extended documentation:
 *upgrade*, *update*
 	Replace this executable from a signed local file or URL
 	(raw binary or .tar.gz / .tgz archive).
+	Runs a host preflight (*version*) before stopping services; keeps a
+	*.prev* backup and rolls back if the new binary cannot run.
+	Use the same Linux release variant you installed (*\-legacy* / *\-musl*
+	when required — the default *amd64* build is not universal).
 	After replace, may prompt to convert custom *www_dir* Go templates
 	to Minijinja (see *html\-migrate*).
 
