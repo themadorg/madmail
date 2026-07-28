@@ -815,7 +815,9 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
         // Live binary should still be the old one if rename failed; try to keep services up.
         eprintln!("▶️ Starting services after failed replace...");
         let _ = systemctl_succeeded(&["start", &service]);
-        return Err(ChatmailError::config(format!("failed to replace binary: {e}")));
+        return Err(ChatmailError::config(format!(
+            "failed to replace binary: {e}"
+        )));
     }
 
     // Belt-and-suspenders: re-smoke the installed path (catches corrupt write).
