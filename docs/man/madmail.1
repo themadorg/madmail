@@ -82,6 +82,10 @@ preserve selected artifacts.\&
 .RS 4
 Replace this executable from a signed local file or URL
 (raw binary or .tar.gz / .tgz archive).\&
+Runs a host preflight (\fBversion\fR) before stopping services; keeps a
+\fB*.prev\fR backup and rolls back if the new binary cannot run.\&
+Use the same Linux release variant you installed (\fB*-legacy\fR / \fB*-musl\fR
+when required — the default \fBamd64\fR build is not universal).\&
 After replace, may prompt to migrate custom \fBwww_dir\fR (Go templates
 to Minijinja and legacy \fB/qr\fR to client-side QR; see \fBhtml-migrate\fR).\&
 .PP

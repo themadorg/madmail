@@ -112,9 +112,16 @@ To obtain a ready-to-use binary without compiling:
 1. Go to the releases page:  
    **https://github.com/themadorg/madmail/releases**
 
-2. Download the latest release for your architecture (usually `madmail-linux-amd64` or similar).
+2. Download the latest release for your architecture. Releases ship several Linux variants:
 
-   Example with `wget`:
+   | Asset | Use when |
+   |-------|----------|
+   | `madmail-linux-amd64` / `.tar.gz` | Default glibc build (newer distros) |
+   | `madmail-linux-amd64-legacy` / `.tar.gz` | Older glibc (e.g. Ubuntu 22.04; `GLIBC_2.38+` errors) |
+   | `madmail-linux-amd64-musl` / `.tar.gz` | musl alternative |
+   | arm64 equivalents (`…-arm64…`, `…-legacy…`, `…-musl…`) | Same matrix for arm64 |
+
+   Example with `wget` (default amd64):
 
    ```bash
    wget https://github.com/themadorg/madmail/releases/download/vX.Y.Z/madmail-linux-amd64
@@ -122,14 +129,17 @@ To obtain a ready-to-use binary without compiling:
    sudo mv madmail-linux-amd64 /usr/local/bin/madmail
    ```
 
-   The binaries in the official releases are the same ones produced by this project.
+   The binaries in the official releases are the same ones produced by this project. Pick the variant that runs on your host and **keep using that same variant** for later updates.
 
 ## Secure Upgrades with `madmail upgrade`
 
 Once you have `madmail` installed, future updates can be done securely with the built-in upgrade command:
 
 ```bash
-sudo madmail upgrade <path-or-url>
+# Use the same variant you installed (default / legacy / musl)
+sudo madmail upgrade https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz
+# older glibc hosts:
+# sudo madmail upgrade https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64-legacy.tar.gz
 ```
 
 ### How it works
@@ -139,10 +149,12 @@ sudo madmail upgrade <path-or-url>
   2. If the URL is a `.tar.gz` / `.tgz` release archive, extracts the binary first.
   3. **Verifies the digital signature** (Ed25519) that is appended to the release binary.
   4. If the signature is invalid or missing, the upgrade is **aborted** — the binary is never installed. This protects against compromised or tampered releases.
-  5. Stops the `madmail.service` (and iroh-relay if present).
-  6. Atomically replaces the running binary.
-  7. May prompt to convert custom `www_dir` Go templates to Minijinja and fix legacy `/qr?data=` QR (`html-migrate`).
-  8. Restarts the service(s).
+  5. **Host preflight:** runs the new binary (`version`) before touching the live install. Wrong-variant / glibc mismatches abort safely (service stays up).
+  6. Copies the current binary to `madmail.prev` next to the install path.
+  7. Stops the `madmail.service` (and iroh-relay if present).
+  8. Atomically replaces the running binary; on post-install smoke failure, restores `*.prev` and restarts.
+  9. May prompt to convert custom `www_dir` Go templates to Minijinja and fix legacy `/qr?data=` QR (`html-migrate`).
+  10. Restarts the service(s).
 
 This is the supported way to update a production server with signature verification.
 
