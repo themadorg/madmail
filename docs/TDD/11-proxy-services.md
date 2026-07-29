@@ -375,9 +375,9 @@ Full step-by-step plan: **[`docs/plans/b9/`](../plans/b9/README.md)**.
 | **Unit** | HMAC line, parser, config | `cargo test -p chatmail-turn` | Every PR |
 | **Smoke** | STUN Binding, TURN Allocate with issued creds | `cargo test -p chatmail-integration turn_smoke` | Every PR |
 | **Integration** | IMAP `GETMETADATA` + cred validates on TURN | `tests/turn_e2e.rs` + `spawn_mail_servers` | Every PR |
-| **E2E (relay-ping style)** | Raw TCP IMAP dialog like [`tests/support/imap_client.rs`](../../tests/support/imap_client.rs); SMTP optional | `cargo test -p chatmail-integration turn_imap` | Every PR |
-| **E2E (Docker + relay-ping)** | Local image, `relay-ping` connectivity + TURN allocate in configured relay range | `make test-docker-turn-e2e` ([`scripts/docker-turn-e2e.sh`](../../scripts/docker-turn-e2e.sh)) | Manual / pre-release |
-| **E2E (Core)** | `update_metadata` → `ice_servers()` JSON | `scripts/core-e2e-turn.sh` + [`context/core` `chatmail_transport`](../../context/core/src/tests/chatmail_transport.rs) | Nightly or manual |
+| **E2E (IMAP dialog)** | Raw TCP IMAP dialog like [`tests/support/imap_client.rs`](../../tests/support/imap_client.rs); SMTP optional | `cargo test -p chatmail-integration turn_imap` | Every PR |
+| **E2E (Docker live)** | Running Docker madmail: IMAP GETMETADATA + TURN allocate | [`tests/docker_turn_e2e.rs`](../../tests/docker_turn_e2e.rs) (`#[ignore]`, `DOCKER_TURN_*` env) | Manual / pre-release |
+| **E2E (Core)** | `update_metadata` → `ice_servers()` JSON | optional Core tree tests | Nightly or manual |
 
 ### Unit ([RFC 5464](RFC/rfc5464.txt) + [TURN REST draft](RFC/draft-uberti-behave-turn-rest-00.txt))
 
@@ -391,13 +391,12 @@ Full step-by-step plan: **[`docs/plans/b9/`](../plans/b9/README.md)**.
 - TURN Allocate with username/password from `turn_metadata_value` (long-term creds per [RFC 8656](RFC/rfc8656.txt) §4).
 - `chatmail-turn::turn_allocate` client helpers for integration tests.
 
-### Integration + E2E (madmail-v2 + relay-ping patterns)
+### Integration + E2E (madmail-v2)
 
 1. Extend [`tests/support/mod.rs`](../../tests/support/mod.rs) `spawn_mail_servers` with TURN listener + `turn_enable` settings.
 2. Replace stub in [`tests/imap_e2e.rs`](../../tests/imap_e2e.rs): `GETMETADATA "" /shared/vendor/deltachat/turn` (not `/private/turn/relay`).
 3. Verify returned line authenticates on embedded turn-rs.
-4. Docker: [`scripts/docker-turn-e2e.sh`](../../scripts/docker-turn-e2e.sh) — `relay-ping` against a container plus [`tests/docker_turn_e2e.rs`](../../tests/docker_turn_e2e.rs) UDP allocate probe (`make test-docker-turn-e2e`).
-5. Optional: [`context/relay-ping`](../../context/relay-ping) `imapcheck` against running `make run-bg` with TURN enabled.
+4. Optional live Docker: [`tests/docker_turn_e2e.rs`](../../tests/docker_turn_e2e.rs) — set `DOCKER_TURN_*` and run with `--ignored`.
 
 ### E2E (Delta Chat Core)
 

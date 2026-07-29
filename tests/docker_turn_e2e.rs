@@ -32,7 +32,7 @@ fn imap_quote(s: &str) -> String {
 }
 
 #[tokio::test]
-#[ignore = "live docker e2e — run via scripts/docker-turn-e2e.sh"]
+#[ignore = "live docker e2e — set DOCKER_TURN_* env and run with --ignored"]
 async fn docker_turn_live_allocate() {
     let imap_addr: SocketAddr = env_required("DOCKER_TURN_IMAP_ADDR")
         .parse()

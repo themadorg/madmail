@@ -2,7 +2,7 @@
 # Build and run madmail in Docker for local development.
 # State lives under ./data/docker-vm (lib, etc, run bind mounts).
 #
-# Modeled after scripts/docker-turn-e2e.sh and docs/guide/docker.md.
+# Local Docker deploy helper (see docs/guide/docker.md).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
