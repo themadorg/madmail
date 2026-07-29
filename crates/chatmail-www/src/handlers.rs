@@ -485,7 +485,7 @@ pub async fn websmtp_deliver(
 ) -> Result<(), ChatmailError> {
     let raw = body.as_bytes();
     st.app.check_message_size(raw.len())?;
-    validate_submission_headers(raw, user)?;
+    validate_submission_headers(raw, user, Some(user))?;
 
     enforce_encryption(
         raw,
