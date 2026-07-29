@@ -1,3 +1,10 @@
+## [2.18.3](https://github.com/themadorg/madmail/compare/v2.18.2...v2.18.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* **cli:** preflight and rollback madmail update on ABI mismatch ([#119](https://github.com/themadorg/madmail/issues/119)) ([a057319](https://github.com/themadorg/madmail/commit/a057319db507662c942449307aa59119f031e03b))
+
 ## [2.18.2](https://github.com/themadorg/madmail/compare/v2.18.1...v2.18.2) (2026-07-24)
 
 
