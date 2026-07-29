@@ -515,9 +515,7 @@ Content-Type: text/plain\r\n\r\nplain\r\n"
     #[test]
     fn test_reject_pgp_encrypted_marker_in_headerless_style_body() {
         // Still has minimal routing headers (SMTP always has them); no Content-Type.
-        let raw = format!(
-            "From: a@b.test\r\nTo: c@d.test\r\nSubject: hi\r\n\r\n{MARKER}\r\n"
-        );
+        let raw = format!("From: a@b.test\r\nTo: c@d.test\r\nSubject: hi\r\n\r\n{MARKER}\r\n");
         assert_encryption_needed(raw.as_bytes(), "marker-only body without Content-Type");
     }
 
@@ -525,10 +523,7 @@ Content-Type: text/plain\r\n\r\nplain\r\n"
     #[test]
     fn test_reject_pgp_encrypted_marker_with_noise_prefix_suffix() {
         assert_encryption_needed(
-            &plain_with(
-                "Subject: hi\r\n",
-                &format!("XXX{MARKER}YYY\r\n"),
-            ),
+            &plain_with("Subject: hi\r\n", &format!("XXX{MARKER}YYY\r\n")),
             "marker with surrounding noise in body",
         );
     }
