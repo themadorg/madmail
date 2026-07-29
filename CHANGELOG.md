@@ -1,3 +1,10 @@
+## [2.18.4](https://github.com/themadorg/madmail/compare/v2.18.3...v2.18.4) (2026-07-29)
+
+
+### Bug Fixes
+
+* **make:** drop dead context/relay-ping hooks so clean works ([#123](https://github.com/themadorg/madmail/issues/123)) ([472cb2a](https://github.com/themadorg/madmail/commit/472cb2aa734c690403fb0639b39a50e82c79459a)), closes [#122](https://github.com/themadorg/madmail/issues/122)
+
 ## [2.18.3](https://github.com/themadorg/madmail/compare/v2.18.2...v2.18.3) (2026-07-29)
 
 
