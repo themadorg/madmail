@@ -4,7 +4,7 @@
 # Deploy: `make push` builds release chatmail, scp's to test servers, replaces binary, restarts systemd (no signing).
 
 .PHONY: all init build build-admin-web build-chatmail-embed build-chatmail-embed-release build-with-admin-web build-release build-profiling build-release-static build-workspace build-all build-landing preview-landing \
-	test test-unit test-integration test-e2e test-maintenance test-imap test-turn test-docker-turn-e2e test-core-turn test-deltachat test-deltachat-cmlxc test-mini-cmlxc test-full-cmlxc test-cmlxc-fullrun test-cmlxc-fullrun-madmail _test-cmlxc-prereqs test-dclogin relay-ping-build relay-ping-clean t1-bench t1-report-demo \
+	test test-unit test-integration test-e2e test-maintenance test-imap test-turn test-core-turn test-deltachat test-deltachat-cmlxc test-mini-cmlxc test-full-cmlxc test-cmlxc-fullrun test-cmlxc-fullrun-madmail _test-cmlxc-prereqs t1-bench t1-report-demo \
 	check vet lint fmt fmt-check cov run run-bg run-debug restart stop logs reset-db dev-certs clean help \
 	sign push push1 push2 log1 log2 push-signed publish init-publish build-publish \
 	build-windows build-windows-amd64 build-windows-arm64 build-windows-setup \
@@ -25,15 +25,6 @@ CONFIG           ?= $(STATE_DIR)/chatmail.toml
 CHATMAIL_FLAGS   := --state-dir $(STATE_DIR) --config $(CONFIG)
 LOG_FILE         ?= /tmp/chatmail.log
 PID_FILE         ?= /tmp/chatmail.pid
-
-RELAY_PING_DIR   := context/relay-ping
-RELAY_PING_BIN   := $(RELAY_PING_DIR)/bin/relay-ping
-
-# relay-ping / dclogin (override in .env when testing two accounts)
-DCLOGIN1         ?=
-DCLOGIN2         ?=
-RELAY_TIMEOUT    ?= 3m
-RELAY_STEP_TIMEOUT ?= 45s
 
 # Remote deploy hosts (paths/service defaults live in scripts/deploy.sh)
 REMOTE1          ?=
@@ -249,11 +240,6 @@ test-core-turn:
 	@test -x scripts/core-e2e-turn.sh || (echo "scripts/core-e2e-turn.sh missing (P9-S10)"; exit 1)
 	./scripts/core-e2e-turn.sh
 
-# Docker + relay-ping + TURN relay UDP allocate (see scripts/docker-turn-e2e.sh)
-test-docker-turn-e2e: relay-ping-build
-	@chmod +x scripts/docker-turn-e2e.sh
-	./scripts/docker-turn-e2e.sh
-
 # Delta Chat RPC E2E (deltachat-test) via cmlxc/Incus: deploy static madmail-v2 + run deltachat-test.
 # First time:  make test-deltachat-cmlxc DC_TEST_ARGS='--init'
 # Bigfile:      make test-deltachat-cmlxc DC_TEST_ARGS='--test-23 --cool'
@@ -333,15 +319,6 @@ docker-down:
 	$(DOCKER_DEPLOY_SCRIPT) --purge
 
 test: test-unit
-
-# Full SMTP/IMAP/Secure Join probe against a running local chatmail (ports 1143/2525).
-# Set DCLOGIN1 and DCLOGIN2 in .env, or pass: make test-dclogin DCLOGIN1='dclogin:...' DCLOGIN2='dclogin:...'
-test-dclogin: relay-ping-build
-	@test -n "$(DCLOGIN1)" && test -n "$(DCLOGIN2)" || \
-		(echo "Set DCLOGIN1 and DCLOGIN2 (see .env.example)"; exit 1)
-	$(RELAY_PING_BIN) -test dclogin \
-		-dclogin1 '$(DCLOGIN1)' -dclogin2 '$(DCLOGIN2)' \
-		-log-file - -timeout $(RELAY_TIMEOUT) -step-timeout $(RELAY_STEP_TIMEOUT) -vv
 
 # ── Run local server ─────────────────────────────────────────────────────────
 run: build
@@ -507,23 +484,13 @@ publish: build-publish
 	fi
 	@./scripts/publish.sh $(_publish_args)
 
-# ── relay-ping (context/relay-ping) ──────────────────────────────────────────
-relay-ping-build:
-	$(MAKE) -C $(RELAY_PING_DIR) build
-
-relay-ping-clean:
-	$(MAKE) -C $(RELAY_PING_DIR) clean
-
-relay-ping-2x1k: relay-ping-build
-	@chmod +x tests/relay-ping-2x1k.sh
-	./tests/relay-ping-2x1k.sh
-
 # ── Clean ────────────────────────────────────────────────────────────────────
-clean: relay-ping-clean
+# Do not require optional developer-only trees (e.g. a private `context/` checkout).
+clean:
 	cargo clean
-	rm -rf build crates/chatmail-admin-web/embed $(ADMIN_WEB_BUILD) context/madmail/internal/adminweb/build
+	rm -rf build crates/chatmail-admin-web/embed $(ADMIN_WEB_BUILD)
 	rm -f $(PID_FILE)
-	@echo "Removed Cargo artifacts, admin-web embed staging, and relay-ping bin/"
+	@echo "Removed Cargo artifacts and admin-web embed staging"
 
 # ── Manual page (docs/man/madmail.1.scd → docs/man/madmail.1, embedded) ───
 MAN_SCD     := docs/man/madmail.1.scd
@@ -553,9 +520,8 @@ help:
 	@echo "Deploy:    push, push1 (unsigned), push2 (static+sign+upgrade), push-signed, sign (scripts/sign.sh), log1, log2 (scripts/deploy.sh)"
 	@echo "Incus:     incus-up (data/incus-vm), incus-down (purge container + volume + data); INCUS_ARGS='--rebuild|--with-webadmin'"
 	@echo "Docker:    docker-up (data/docker-vm), docker-down (purge container + image + data); DOCKER_ARGS='--rebuild|--with-webadmin'"
-	@echo "Test:      test, test-unit, test-e2e, test-maintenance, test-integration, test-imap, test-turn, test-docker-turn-e2e, test-full-cmlxc (madmail-v2), test-cmlxc-fullrun (cmdeploy+madmail-v2 fullrun), test-cmlxc-fullrun-madmail, test-deltachat-cmlxc, test-mini-cmlxc, test-dclogin"
+	@echo "Test:      test, test-unit, test-e2e, test-maintenance, test-integration, test-imap, test-turn, test-core-turn, test-full-cmlxc (madmail-v2), test-cmlxc-fullrun (cmdeploy+madmail-v2 fullrun), test-cmlxc-fullrun-madmail, test-deltachat-cmlxc, test-mini-cmlxc"
 	@echo "Quality:   check, lint, fmt, fmt-check, cov (unit-test coverage + browser), man, man-lint, man-check"
-	@echo "relay-ping: relay-ping-build (in $(RELAY_PING_DIR))"
 	@echo "Init:      init (download iroh-relay $(IROH_RELAY_VERSION) into $(IROH_ASSETS)/)"
 	@echo "Release:   build-publish, publish (PUBLISH_ARGS=…), init-publish (init + publish)"
 	@echo "Windows:   build-windows*, build-windows-setup, windows-vagrant-up, windows-vagrant-e2e (packaging/windows/)"

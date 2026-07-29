@@ -107,16 +107,12 @@ make test-integration
 make test-imap
 ```
 
-IMAP/SMTP/Secure Join against local chatmail (requires `make run-bg` and two `dclogin:` URIs in `.env`):
+Integration / Secure Join against a local process:
 
 ```bash
-cp .env.example .env
-# edit DCLOGIN1 / DCLOGIN2
-make test-dclogin
-```
-
-```bash
-cargo test -p chatmail-integration boot_test
+make run-bg
+cargo test -p chatmail-integration --test securejoin_e2e
+# or other tests under tests/ (see make test-e2e)
 ```
 
 ## Docs

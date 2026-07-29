@@ -66,7 +66,7 @@ make logs
 
 # 4. Exercise your change
 #    - Use Delta Chat desktop pointed at 127.0.0.1:1143 / 1025 (or whatever your config says)
-#    - Or use the relay-ping tool
+#    - Or cargo test -p chatmail-integration (SMTP/IMAP/SecureJoin helpers under tests/)
 #    - Or curl the admin API with the token from data/admin_token
 #    - Or open http://127.0.0.1:8080/admin/ (after make build-with-admin-web)
 

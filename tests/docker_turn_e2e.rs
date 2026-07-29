@@ -1,6 +1,8 @@
 //! Live Docker E2E: IMAP GETMETADATA + TURN Allocate against a running container.
 //!
-//! Invoked by `scripts/docker-turn-e2e.sh` (not part of default `cargo test`).
+//! Not part of default `cargo test` (`#[ignore]`). Run manually after starting a
+//! Docker madmail with TURN, with `DOCKER_TURN_*` env vars set:
+//! `cargo test -p chatmail-integration --test docker_turn_e2e -- --ignored`.
 
 mod support;
 

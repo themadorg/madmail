@@ -574,13 +574,9 @@ Enable TURN in the admin UI or ensure `turn_enable yes` and `__TURN_ENABLED__` a
 
 ### Verify TURN after building the image
 
-From the repo root (requires Docker and Go for `context/relay-ping`):
-
-```bash
-make test-docker-turn-e2e
-```
-
-This builds a local image, runs `install --simple --ip 127.0.0.1`, maps UDP `3478` and a narrow relay range (`55000–55010` by default), runs `relay-ping` connectivity, and checks that a TURN allocation lands in that relay range. See `scripts/docker-turn-e2e.sh` for env overrides (`DOCKER_TURN_BUILD=0`, `DOCKER_TURN_SKIP_ALLOCATE=1`, `DOCKER_TURN_RELAY_MIN` / `MAX`).
+1. Start a container with TURN enabled and the usual UDP ports published (see above and [Delta Chat calls (TDD)](../TDD/20-deltachat-calls.md)).
+2. From a client or with the admin UI, confirm TURN metadata is present (IMAP `GETMETADATA` /shared/vendor/deltachat/turn).
+3. Optional live allocate probe (not run by default): `tests/docker_turn_e2e.rs` — set `DOCKER_TURN_*` env vars and run with `cargo test -p chatmail-integration --test docker_turn_e2e -- --ignored`.
 
 ## Volumes and layout
 

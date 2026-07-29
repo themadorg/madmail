@@ -31,7 +31,7 @@ Its goal is to help you (a developer, reviewer, operator, or curious human) buil
 | 13 | [13-build-test-deploy.md](./13-build-test-deploy.md) | Makefile targets, embedding admin-web, static release builds, remote push/sign, E2E testing |
 | 14 | [14-understanding-context-and-references.md](./14-understanding-context-and-references.md) | `context/` (madmail Go, stalwart, iroh, webrtc, deltachat-core), external/, why they exist |
 | 15 | [15-development-workflow.md](./15-development-workflow.md) | Local dev loop, `make restart`, debugging, adding features, CLI parity |
-| 16 | [16-troubleshooting-and-testing.md](./16-troubleshooting-and-testing.md) | Common issues, logs, DB inspection, integration tests, Delta Chat E2E, relay-ping |
+| 16 | [16-troubleshooting-and-testing.md](./16-troubleshooting-and-testing.md) | Common issues, logs, DB inspection, integration tests, Delta Chat E2E |
 | 17 | [17-extend-and-contribute.md](./17-extend-and-contribute.md) | Where to change things, testing checklist, docs conventions |
 
 ## Two Complementary Documentation Tracks
