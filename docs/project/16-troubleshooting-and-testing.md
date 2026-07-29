@@ -99,7 +99,8 @@ The `logging.rs` module owns the reloadable `tracing` subscriber, No-Log filter,
 3. **Workspace integration tests** (`tests/` crate) — boots real `madmail` processes, speaks real protocols, exercises ctl binary, checks OpenMetrics, does SecureJoin, exercises TURN, etc.
 4. **Delta Chat client E2E** (`make test-deltachat`) — spins up VMs with incus + cmlxc, deploys the exact static binary you just built, runs real Delta Chat desktop and core clients through registration, messaging, calls, etc.
 5. **TURN** — `make test-turn` and optional ignored live probe `tests/docker_turn_e2e.rs` (env-driven against a running Docker container).
-6. **Throughput benchmarks** (T1) — controlled 1 CPU / 1 GiB environment comparing Go Madmail vs Rust madmail under load.
+6. **relay-ping** (optional) — [themadorg/relay-ping](https://github.com/themadorg/relay-ping): clone that repo, `make build`, then e.g. `./bin/relay-ping -test connectivity -domain https://your.relay/` (see its README for SecureJoin, throughput, latency matrix).
+7. **Throughput benchmarks** (T1) — controlled 1 CPU / 1 GiB environment comparing Go Madmail vs Rust madmail under load.
 
 The higher levels are slow and require extra tooling (incus, uv, cmlxc, sometimes physical test servers), which is why they are not run on every `cargo test`.
 

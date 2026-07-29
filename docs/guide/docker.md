@@ -577,6 +577,7 @@ Enable TURN in the admin UI or ensure `turn_enable yes` and `__TURN_ENABLED__` a
 1. Start a container with TURN enabled and the usual UDP ports published (see above and [Delta Chat calls (TDD)](../TDD/20-deltachat-calls.md)).
 2. From a client or with the admin UI, confirm TURN metadata is present (IMAP `GETMETADATA` /shared/vendor/deltachat/turn).
 3. Optional live allocate probe (not run by default): `tests/docker_turn_e2e.rs` — set `DOCKER_TURN_*` env vars and run with `cargo test -p chatmail-integration --test docker_turn_e2e -- --ignored`.
+4. Optional SMTP/IMAP connectivity from outside this tree: [themadorg/relay-ping](https://github.com/themadorg/relay-ping) (`-test connectivity -domain …`).
 
 ## Volumes and layout
 

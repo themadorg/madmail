@@ -377,6 +377,7 @@ Full step-by-step plan: **[`docs/plans/b9/`](../plans/b9/README.md)**.
 | **Integration** | IMAP `GETMETADATA` + cred validates on TURN | `tests/turn_e2e.rs` + `spawn_mail_servers` | Every PR |
 | **E2E (IMAP dialog)** | Raw TCP IMAP dialog like [`tests/support/imap_client.rs`](../../tests/support/imap_client.rs); SMTP optional | `cargo test -p chatmail-integration turn_imap` | Every PR |
 | **E2E (Docker live)** | Running Docker madmail: IMAP GETMETADATA + TURN allocate | [`tests/docker_turn_e2e.rs`](../../tests/docker_turn_e2e.rs) (`#[ignore]`, `DOCKER_TURN_*` env) | Manual / pre-release |
+| **E2E (relay-ping)** | Optional external connectivity / SecureJoin probe against a live host | [themadorg/relay-ping](https://github.com/themadorg/relay-ping) (separate repo) | Manual |
 | **E2E (Core)** | `update_metadata` → `ice_servers()` JSON | optional Core tree tests | Nightly or manual |
 
 ### Unit ([RFC 5464](RFC/rfc5464.txt) + [TURN REST draft](RFC/draft-uberti-behave-turn-rest-00.txt))

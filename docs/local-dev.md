@@ -115,6 +115,17 @@ cargo test -p chatmail-integration --test securejoin_e2e
 # or other tests under tests/ (see make test-e2e)
 ```
 
+Optional live-host probe (separate project, not part of this tree):
+
+```bash
+git clone https://github.com/themadorg/relay-ping.git
+cd relay-ping && make build
+# with madmail listening (e.g. make run-bg in the madmail repo):
+./bin/relay-ping -test connectivity -domain http://127.0.0.1:8080/ -log-file - -v
+```
+
+See [themadorg/relay-ping](https://github.com/themadorg/relay-ping) for SecureJoin, throughput, and latency-matrix modes.
+
 ## Docs
 
 - Phase 1 steps: [plans/b1/README.md](plans/b1/README.md)
