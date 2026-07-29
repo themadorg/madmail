@@ -98,9 +98,9 @@ The `logging.rs` module owns the reloadable `tracing` subscriber, No-Log filter,
 2. **Crate integration tests** (e.g. `chatmail-turn/tests/`)
 3. **Workspace integration tests** (`tests/` crate) — boots real `madmail` processes, speaks real protocols, exercises ctl binary, checks OpenMetrics, does SecureJoin, exercises TURN, etc.
 4. **Delta Chat client E2E** (`make test-deltachat`) — spins up VMs with incus + cmlxc, deploys the exact static binary you just built, runs real Delta Chat desktop and core clients through registration, messaging, calls, etc.
-5. **Docker TURN E2E** (`make test-docker-turn-e2e`) — builds the local image, bootstraps with `install --simple --ip 127.0.0.1`, runs `context/relay-ping` connectivity (SMTP/IMAP + TURN GETMETADATA), then a Rust probe that TURN-allocates on the configured relay UDP range through Docker port mappings. Script: `scripts/docker-turn-e2e.sh`. Env: `DOCKER_TURN_BUILD=0` to skip rebuild; `DOCKER_TURN_SKIP_ALLOCATE=1` for relay-ping only.
-6. **Throughput benchmarks** (T1) — controlled 1 CPU / 1 GiB environment comparing Go Madmail vs Rust madmail under load.
-7. **Manual / relay-ping** against real test servers (`make test-dclogin`).
+5. **TURN** — `make test-turn` and optional ignored live probe `tests/docker_turn_e2e.rs` (env-driven against a running Docker container).
+6. **relay-ping** (optional) — [themadorg/relay-ping](https://github.com/themadorg/relay-ping): clone that repo, `make build`, then e.g. `./bin/relay-ping -test connectivity -domain https://your.relay/` (see its README for SecureJoin, throughput, latency matrix).
+7. **Throughput benchmarks** (T1) — controlled 1 CPU / 1 GiB environment comparing Go Madmail vs Rust madmail under load.
 
 The higher levels are slow and require extra tooling (incus, uv, cmlxc, sometimes physical test servers), which is why they are not run on every `cargo test`.
 

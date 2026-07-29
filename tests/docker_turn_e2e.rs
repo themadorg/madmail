@@ -1,6 +1,8 @@
 //! Live Docker E2E: IMAP GETMETADATA + TURN Allocate against a running container.
 //!
-//! Invoked by `scripts/docker-turn-e2e.sh` (not part of default `cargo test`).
+//! Not part of default `cargo test` (`#[ignore]`). Run manually after starting a
+//! Docker madmail with TURN, with `DOCKER_TURN_*` env vars set:
+//! `cargo test -p chatmail-integration --test docker_turn_e2e -- --ignored`.
 
 mod support;
 
@@ -30,7 +32,7 @@ fn imap_quote(s: &str) -> String {
 }
 
 #[tokio::test]
-#[ignore = "live docker e2e — run via scripts/docker-turn-e2e.sh"]
+#[ignore = "live docker e2e — set DOCKER_TURN_* env and run with --ignored"]
 async fn docker_turn_live_allocate() {
     let imap_addr: SocketAddr = env_required("DOCKER_TURN_IMAP_ADDR")
         .parse()
