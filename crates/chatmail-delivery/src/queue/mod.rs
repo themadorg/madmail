@@ -23,7 +23,7 @@ mod worker;
 mod tests;
 
 pub use config::QueueConfig;
-pub use store::QueueStore;
+pub use store::{QueueMeta, QueueStore};
 pub use worker::OutboundQueue;
 
 /// Re-export store failpoints for integration tests in sibling modules.

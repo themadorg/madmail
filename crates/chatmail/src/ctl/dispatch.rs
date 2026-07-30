@@ -22,7 +22,7 @@ use chatmail_db::settings_keys;
 
 use super::{
     accounts, admin_token, admin_web, blocklist_cmd, certificate, delete_cmd, docs, endpoint_cache,
-    federation, firewall_cmd, html, install, language, message_size, port, proxy, push,
+    federation, firewall_cmd, html, install, language, message_size, port, proxy, push, queue_cmd,
     registration, registration_tokens, reload, service_cmd, service_toggle, sharing, status_cmd,
     tasks, uninstall, version, webmail_cors,
 };
@@ -117,6 +117,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
             reload::reload(&cli.args, url.as_deref(), *insecure).await
         }
         Some(Command::Tasks(cmd)) => tasks::tasks(&cli.args, cmd).await,
+        Some(Command::Queue { cmd }) => queue_cmd::queue_cmd(&cli.args, cmd.as_ref()).await,
         Some(Command::Completion(shell)) => docs::print_completion(shell),
         Some(Command::GenerateMan) => docs::print_generate_man(&cli.args),
         Some(Command::GenerateFishCompletion) => docs::print_generate_fish_completion(&cli.args),
@@ -132,7 +133,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, language, \
          html-export, html-serve, html-migrate, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
-         status, uninstall, service, firewall, endpoint-cache, port, proxy, reload, message-size, tasks, completion"
+         status, uninstall, service, firewall, endpoint-cache, port, proxy, reload, message-size, tasks, queue, completion"
     )))
 }
 
@@ -166,7 +167,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::MigratePgpConfig => "migrate-pgp-config",
         Command::Status { .. } => "status",
         Command::Port(_) => "port",
-        Command::Queue => "queue",
+        Command::Queue { .. } => "queue",
         Command::RegistrationTokens { .. } => "registration-tokens",
         Command::Reload { .. } => "reload",
         Command::Sharing { .. } => "sharing",

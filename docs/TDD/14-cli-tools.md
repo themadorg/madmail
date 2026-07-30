@@ -86,14 +86,14 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `creds` | [creds.md](../guide/cli/creds.md) | — | **planned** |
 | `hash` | [hash.md](../guide/cli/hash.md) | — | **planned** |
 | `submission-access` | [submission-access.md](../guide/cli/submission-access.md) | — | **planned** |
-| `queue` | [queue.md](../guide/cli/queue.md) | — | **defer** (use `tasks` + `/admin/queue`) |
+| `queue` | [queue.md](../guide/cli/queue.md) | `queue_cmd.rs` | **done** — outbound `remote_queue` status/list/show/remove/purge |
 | `exchanger` | [exchanger.md](../guide/cli/exchanger.md) | — | **defer** |
 | `imap-acct` | [imap-acct.md](../guide/cli/imap-acct.md) | — | **planned** |
 | `imap-mboxes` | [imap-mboxes.md](../guide/cli/imap-mboxes.md) | — | **planned** |
 | `imap-msgs` | [imap-msgs.md](../guide/cli/imap-msgs.md) | — | **defer** |
 | `migrate-pgp-config` | [migrate-pgp-config.md](../guide/cli/migrate-pgp-config.md) | — | **planned** |
 
-`dispatch.rs` `not_implemented` list (parsed but no handler): `creds`, `hash`, `submission-access`, `queue`, `exchanger`, `imap-acct`, `imap-mboxes`, `imap-msgs`, `migrate-pgp-config`.
+`dispatch.rs` `not_implemented` list (parsed but no handler): `creds`, `hash`, `submission-access`, `exchanger`, `imap-acct`, `imap-mboxes`, `imap-msgs`, `migrate-pgp-config`.
 
 ---
 
@@ -137,7 +137,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `language` | [language.md](../guide/cli/language.md) | `ctl/language.go` | **done** |
 | `submission-access` | [submission-access.md](../guide/cli/submission-access.md) | `ctl/submission_access.go` | **planned** |
 | `tasks` | [tasks.md](../guide/cli/tasks.md) | imapsql cleanup | **done** — see [21-scheduled-maintenance.md](21-scheduled-maintenance.md) |
-| `queue` | [queue.md](../guide/cli/queue.md) | `ctl/queue.go` | **defer** |
+| `queue` | [queue.md](../guide/cli/queue.md) | `ctl/queue.go` | **done** — `queue_cmd.rs`; disk store `chatmail-delivery::QueueStore` |
 | `exchanger` | [exchanger.md](../guide/cli/exchanger.md) | `ctl/exchanger.go` | **defer** |
 
 ### Services (DB toggles)
@@ -208,7 +208,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `ctl/users.go` | `creds` | [creds.md](../guide/cli/creds.md) | planned |
 | `ctl/hash.go` | `hash` | [hash.md](../guide/cli/hash.md) | planned |
 | `ctl/imapacct.go` | `imap-acct` | [imap-acct.md](../guide/cli/imap-acct.md) | planned |
-| `ctl/queue.go` | `queue` | [queue.md](../guide/cli/queue.md) | defer |
+| `ctl/queue.go` | `queue` | [queue.md](../guide/cli/queue.md) | **done** (`queue_cmd.rs`) |
 | `ctl/exchanger.go` | `exchanger` | [exchanger.md](../guide/cli/exchanger.md) | defer |
 
 ---

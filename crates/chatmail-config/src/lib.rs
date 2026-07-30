@@ -43,7 +43,7 @@ pub use bool_str::{is_falsy, is_truthy, parse_bool_str, parse_bool_str_opt};
 pub use cli::{
     AdminWebCommand, Args, Cli, Command, CompletionShell, EndpointCacheCommand, FederationCommand,
     FirewallCommand, LanguageCommand, PortCommand, PortServiceCommand, ProxyCommand,
-    ProxySettingCommand, PushCommand, RegistrationCommand, RegistrationTokensCommand,
+    ProxySettingCommand, PushCommand, QueueCommand, RegistrationCommand, RegistrationTokensCommand,
     ServiceCommand, ServiceToggleCommand, SharingCommand, TasksCommand, UninstallArgs,
     DEFAULT_WINDOWS_SERVICE_NAME, FIREWALL_RULE_PREFIX,
 };
