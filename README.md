@@ -77,6 +77,12 @@ More detail:
 - [IP vs domain deployment](docs/project/user-guide/11-deployment-ip-domain-certs.md)
 - [Local development](docs/local-dev.md)
 
+## Community
+
+- [Contributing](CONTRIBUTING.md) — setup, tests, PR expectations
+- [Security policy](SECURITY.md) — how to report vulnerabilities privately
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+
 
 ## Documentation
 
