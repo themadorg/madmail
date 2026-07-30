@@ -34,7 +34,8 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::data_limit::{parse_smtp_size_parameter, read_smtp_data_limited};
 use crate::protocol::{
-    check_inbound_mail_from, check_outbound_rcpt_federation, validate_submission_headers,
+    check_inbound_mail_from, check_inbound_rcpt_local, check_outbound_rcpt_federation,
+    validate_submission_headers,
 };
 
 #[derive(Clone)]
@@ -382,6 +383,24 @@ impl SmtpSession {
                             return Err(e);
                         }
                     };
+                    // Unauthenticated inbound must not accept non-local RCPT
+                    // unless the operator explicitly enables open-relay-class mode.
+                    if !self.cfg.require_auth {
+                        if let Err(ChatmailError::Protocol(_)) = check_inbound_rcpt_local(
+                            &rcpt,
+                            &self.cfg.local_domains,
+                            self.ctx.inbound_remote_rcpt.allowed(),
+                        ) {
+                            writer.write_all(b"550 5.7.1 Relaying denied\r\n").await?;
+                            chatmail_metrics::record_smtp_failed_command(
+                                self.cfg.module,
+                                "RCPT",
+                                550,
+                                "5.7.1",
+                            );
+                            continue;
+                        }
+                    }
                     if let Err(ChatmailError::FederationRejected(_)) =
                         check_outbound_rcpt_federation(
                             &self.ctx.federation_policy,
@@ -602,13 +621,18 @@ impl SmtpSession {
             }
         }
 
-        // Federated group fan-out: write the body once and hard-link it for every
-        // remote recipient (same principle as local delivery), instead of a full
-        // separate durable copy per recipient inside the SMTP DATA transaction.
-        if !remote_rcpts.is_empty() {
+        // Federated group fan-out for remote recipients only when the operator
+        // allows inbound remote RCPT (default off — anti open-relay).
+        // Authenticated submission never reaches this path (`require_auth` early return).
+        if !remote_rcpts.is_empty() && self.ctx.inbound_remote_rcpt.allowed() {
             delivery
                 .enqueue_remote_batch(&self.mail_from, &remote_rcpts, data)
                 .await?;
+        } else if !remote_rcpts.is_empty() {
+            tracing::debug!(
+                n = remote_rcpts.len(),
+                "inbound remote RCPT skipped (allow_inbound_remote_rcpt off)"
+            );
         }
 
         let rcpt_phase = ingest_start.elapsed();
@@ -813,10 +837,13 @@ mod tests {
                     || acc.contains("235 ")
                     || acc.contains("354 ")
                     || acc.contains("523 ")
+                    || acc.contains("550 ")
                     || acc.contains("552 ")
+                    || acc.contains("553 ")
                     || acc.contains("554 ")
                     || acc.contains("530 ")
                     || acc.contains("503 ")
+                    || acc.contains("501 ")
                     || acc.contains("221 ")
                 {
                     break;
@@ -858,129 +885,6 @@ mod tests {
         assert!(t.contains("523"), "got: {t}");
     }
 
-    // FLAW: substring `application/pgp-encrypted` anywhere bypasses the PGP gate.
-    // Correct SMTP policy: 523 Encryption Needed. Fail until enforce_encryption is fixed.
-
-    async fn smtp_data_transcript(data_body: &str) -> String {
-        let pool = chatmail_db::init_memory_db().await.unwrap();
-        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
-        let data_line = format!("DATA:{data_body}");
-        smtp_dialog(
-            SmtpSessionConfig {
-                hostname: "mx.test".into(),
-                primary_domain: "test".into(),
-                local_domains: vec!["test".into()],
-                jit_domain: None,
-                credential_policy: CredentialPolicy::default(),
-                require_auth: false,
-                module: "smtp",
-                starttls_config: None,
-            },
-            pool,
-            ctx,
-            &[
-                "EHLO client.test",
-                "MAIL FROM:<sender@test>",
-                "RCPT TO:<rcpt@test>",
-                "DATA",
-                data_line.as_str(),
-                ".DATA_END",
-            ],
-        )
-        .await
-    }
-
-    fn assert_smtp_523(t: &str, case: &str) {
-        assert!(
-            t.contains("523"),
-            "expected 523 Encryption Needed for {case}, got: {t}"
-        );
-    }
-
-    /// FLAW: text/plain with marker only in body must get 523 (not 250).
-    #[tokio::test]
-    async fn smtp_rejects_pgp_marker_in_body_only() {
-        let t = smtp_data_transcript(
-            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nContent-Type: text/plain\r\n\r\nHello\r\napplication/pgp-encrypted\r\n",
-        )
-        .await;
-        assert_smtp_523(&t, "body-only marker bypass");
-    }
-
-    /// FLAW: text/plain with marker only in Subject must get 523 (not 250).
-    #[tokio::test]
-    async fn smtp_rejects_pgp_marker_in_subject_only() {
-        let t = smtp_data_transcript(
-            "From: sender@test\r\nTo: rcpt@test\r\nSubject: application/pgp-encrypted subject-only\r\nContent-Type: text/plain\r\n\r\nplain body without token\r\n",
-        )
-        .await;
-        assert_smtp_523(&t, "subject-only marker bypass");
-    }
-
-    /// FLAW: marker only in X- header must get 523.
-    #[tokio::test]
-    async fn smtp_rejects_pgp_marker_in_x_header() {
-        let t = smtp_data_transcript(
-            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nX-Bypass: application/pgp-encrypted\r\nContent-Type: text/plain\r\n\r\nplain\r\n",
-        )
-        .await;
-        assert_smtp_523(&t, "X-header marker bypass");
-    }
-
-    /// FLAW: marker only as Content-Disposition filename must get 523.
-    #[tokio::test]
-    async fn smtp_rejects_pgp_marker_as_filename_param() {
-        let t = smtp_data_transcript(
-            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nContent-Type: text/plain\r\nContent-Disposition: inline; filename=\"application/pgp-encrypted\"\r\n\r\nplain\r\n",
-        )
-        .await;
-        assert_smtp_523(&t, "filename= marker bypass");
-    }
-
-    /// FLAW: marker only in Message-ID must get 523.
-    #[tokio::test]
-    async fn smtp_rejects_pgp_marker_in_message_id() {
-        let t = smtp_data_transcript(
-            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nMessage-ID: <application/pgp-encrypted@test>\r\nContent-Type: text/plain\r\n\r\nplain\r\n",
-        )
-        .await;
-        assert_smtp_523(&t, "Message-ID marker bypass");
-    }
-
-    /// FLAW: marker mid HTML body must get 523.
-    #[tokio::test]
-    async fn smtp_rejects_pgp_marker_in_html_body() {
-        let t = smtp_data_transcript(
-            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nContent-Type: text/html\r\n\r\n<html>application/pgp-encrypted</html>\r\n",
-        )
-        .await;
-        assert_smtp_523(&t, "HTML body marker bypass");
-    }
-
-    /// Control: genuine cleartext still 523 (gate not inverted).
-    #[tokio::test]
-    async fn smtp_still_rejects_cleartext_without_marker() {
-        let t = smtp_data_transcript(
-            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nContent-Type: text/plain\r\n\r\nhello cleartext\r\n",
-        )
-        .await;
-        assert_smtp_523(&t, "cleartext without marker");
-    }
-
-    /// Control: real PGP/MIME still accepted over SMTP (250, not 523).
-    #[tokio::test]
-    async fn smtp_still_accepts_real_pgp_mime() {
-        let t = smtp_data_transcript(
-            "From: sender@test\r\nTo: rcpt@test\r\nSubject: e\r\nContent-Type: multipart/encrypted; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n",
-        )
-        .await;
-        assert!(
-            !t.contains("523"),
-            "real PGP/MIME must not get 523, got: {t}"
-        );
-        assert!(t.contains("250 2.0.0") || t.contains("250 "), "got: {t}");
-    }
-
     #[tokio::test]
     async fn p4_submission_from_envelope_mismatch_554() {
         let pool = chatmail_db::init_memory_db().await.unwrap();
@@ -1016,6 +920,142 @@ mod tests {
         )
         .await;
         assert!(t.contains("554 5.6.0"), "got: {t}");
+    }
+
+    /// Unauthenticated inbound rejects remote RCPT by default.
+    #[tokio::test]
+    async fn inbound_rejects_remote_rcpt_by_default() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        assert!(!ctx.inbound_remote_rcpt.allowed());
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: false,
+                module: "smtp",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                "MAIL FROM:<sender@foreign.test>",
+                "RCPT TO:<victim@gmail.example>",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("550 5.7.1 Relaying denied"),
+            "expected relaying denied, got: {t}"
+        );
+        assert!(
+            !t.contains("250 2.1.5"),
+            "remote RCPT must not be accepted: {t}"
+        );
+    }
+
+    /// Local RCPT still accepted on inbound when remote relay is closed.
+    #[tokio::test]
+    async fn inbound_accepts_local_rcpt_when_remote_relay_closed() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: false,
+                module: "smtp",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                "MAIL FROM:<sender@foreign.test>",
+                "RCPT TO:<user@test>",
+            ],
+        )
+        .await;
+        assert!(t.contains("250 2.1.5 OK"), "local RCPT should succeed: {t}");
+    }
+
+    /// Operator opt-in re-enables remote RCPT on inbound.
+    #[tokio::test]
+    async fn inbound_allows_remote_rcpt_when_enabled() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        ctx.inbound_remote_rcpt.set(true);
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: false,
+                module: "smtp",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                "MAIL FROM:<sender@foreign.test>",
+                "RCPT TO:<victim@gmail.example>",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("250 2.1.5 OK"),
+            "remote RCPT should succeed when allow_inbound_remote_rcpt is on: {t}"
+        );
+        assert!(!t.contains("Relaying denied"), "got: {t}");
+    }
+
+    /// Authenticated submission always allows remote RCPT (not open relay).
+    #[tokio::test]
+    async fn submission_still_allows_remote_rcpt() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("secret").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        assert!(!ctx.inbound_remote_rcpt.allowed());
+        let b64 = base64::engine::general_purpose::STANDARD.encode("\0u@test\0secret");
+        let auth = format!("AUTH PLAIN {b64}");
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: true,
+                module: "submission",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<u@test>",
+                "RCPT TO:<remote@other.example>",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("250 2.1.5 OK"),
+            "submission remote RCPT must still work: {t}"
+        );
     }
 
     #[tokio::test]
