@@ -783,9 +783,12 @@ mod tests {
                 tokio::time::sleep(Duration::from_millis(40)).await;
                 transcript.push_str(&read_smtp_chunk(&mut stream, &mut buf).await);
             } else if let Some(body) = line.strip_prefix("DATA:") {
+                // Preserve blank lines (MIME header/body separators). Leading-dot
+                // lines must be RFC 5321 dot-stuffed so the server does not treat
+                // them as end-of-DATA.
                 for part in body.split("\r\n") {
-                    if part.is_empty() {
-                        continue;
+                    if part.starts_with('.') {
+                        stream.write_all(b".").await.unwrap();
                     }
                     stream.write_all(part.as_bytes()).await.unwrap();
                     stream.write_all(b"\r\n").await.unwrap();
@@ -856,6 +859,128 @@ mod tests {
         )
         .await;
         assert!(t.contains("523"), "got: {t}");
+    }
+
+    // Marker-only plaintext must get 523 once enforce_encryption rejects substring bypass.
+
+    async fn smtp_data_transcript(data_body: &str) -> String {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        let data_line = format!("DATA:{data_body}");
+        smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: false,
+                module: "smtp",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                "MAIL FROM:<sender@test>",
+                "RCPT TO:<rcpt@test>",
+                "DATA",
+                data_line.as_str(),
+                ".DATA_END",
+            ],
+        )
+        .await
+    }
+
+    fn assert_smtp_523(t: &str, case: &str) {
+        assert!(
+            t.contains("523"),
+            "expected 523 Encryption Needed for {case}, got: {t}"
+        );
+    }
+
+    /// text/plain with marker only in body must get 523 (not 250).
+    #[tokio::test]
+    async fn smtp_rejects_pgp_marker_in_body_only() {
+        let t = smtp_data_transcript(
+            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nContent-Type: text/plain\r\n\r\nHello\r\napplication/pgp-encrypted\r\n",
+        )
+        .await;
+        assert_smtp_523(&t, "body-only marker bypass");
+    }
+
+    /// text/plain with marker only in Subject must get 523 (not 250).
+    #[tokio::test]
+    async fn smtp_rejects_pgp_marker_in_subject_only() {
+        let t = smtp_data_transcript(
+            "From: sender@test\r\nTo: rcpt@test\r\nSubject: application/pgp-encrypted subject-only\r\nContent-Type: text/plain\r\n\r\nplain body without token\r\n",
+        )
+        .await;
+        assert_smtp_523(&t, "subject-only marker bypass");
+    }
+
+    /// marker only in X- header must get 523.
+    #[tokio::test]
+    async fn smtp_rejects_pgp_marker_in_x_header() {
+        let t = smtp_data_transcript(
+            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nX-Bypass: application/pgp-encrypted\r\nContent-Type: text/plain\r\n\r\nplain\r\n",
+        )
+        .await;
+        assert_smtp_523(&t, "X-header marker bypass");
+    }
+
+    /// marker only as Content-Disposition filename must get 523.
+    #[tokio::test]
+    async fn smtp_rejects_pgp_marker_as_filename_param() {
+        let t = smtp_data_transcript(
+            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nContent-Type: text/plain\r\nContent-Disposition: inline; filename=\"application/pgp-encrypted\"\r\n\r\nplain\r\n",
+        )
+        .await;
+        assert_smtp_523(&t, "filename= marker bypass");
+    }
+
+    /// marker only in Message-ID must get 523.
+    #[tokio::test]
+    async fn smtp_rejects_pgp_marker_in_message_id() {
+        let t = smtp_data_transcript(
+            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nMessage-ID: <application/pgp-encrypted@test>\r\nContent-Type: text/plain\r\n\r\nplain\r\n",
+        )
+        .await;
+        assert_smtp_523(&t, "Message-ID marker bypass");
+    }
+
+    /// marker mid HTML body must get 523.
+    #[tokio::test]
+    async fn smtp_rejects_pgp_marker_in_html_body() {
+        let t = smtp_data_transcript(
+            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nContent-Type: text/html\r\n\r\n<html>application/pgp-encrypted</html>\r\n",
+        )
+        .await;
+        assert_smtp_523(&t, "HTML body marker bypass");
+    }
+
+    /// Control: genuine cleartext still 523 (gate not inverted).
+    #[tokio::test]
+    async fn smtp_still_rejects_cleartext_without_marker() {
+        let t = smtp_data_transcript(
+            "From: sender@test\r\nTo: rcpt@test\r\nSubject: hi\r\nContent-Type: text/plain\r\n\r\nhello cleartext\r\n",
+        )
+        .await;
+        assert_smtp_523(&t, "cleartext without marker");
+    }
+
+    /// Control: real PGP/MIME still accepted over SMTP (250, not 523).
+    #[tokio::test]
+    async fn smtp_still_accepts_real_pgp_mime() {
+        let t = smtp_data_transcript(
+            "From: sender@test\r\nTo: rcpt@test\r\nSubject: e\r\nContent-Type: multipart/encrypted; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n",
+        )
+        .await;
+        assert!(
+            !t.contains("523"),
+            "real PGP/MIME must not get 523, got: {t}"
+        );
+        assert!(t.contains("250 2.0.0") || t.contains("250 "), "got: {t}");
     }
 
     #[tokio::test]
