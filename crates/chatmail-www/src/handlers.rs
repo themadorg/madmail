@@ -460,6 +460,10 @@ pub(crate) fn web_delivery_error(e: &ChatmailError) -> (StatusCode, String) {
             StatusCode::BAD_REQUEST,
             format!("federation rejected: {d}"),
         ),
+        ChatmailError::UnauthorizedSender => (
+            StatusCode::FORBIDDEN,
+            "Unauthorized use of sender address".into(),
+        ),
         ChatmailError::Protocol(m) | ChatmailError::Config(m) | ChatmailError::Storage(m) => {
             (StatusCode::BAD_REQUEST, m.clone())
         }

@@ -68,12 +68,9 @@ pub fn envelope_domain(addr: &str) -> Option<String> {
 ///
 /// Returns the normalized envelope address on success.
 pub fn check_submission_mail_from_identity(auth_user: &str, mail_from: &str) -> Result<String> {
-    let from = normalize_username(mail_from)
-        .map_err(|_| ChatmailError::protocol("Unauthorized use of sender address"))?;
+    let from = normalize_username(mail_from).map_err(|_| ChatmailError::unauthorized_sender())?;
     if !from.eq_ignore_ascii_case(auth_user) {
-        return Err(ChatmailError::protocol(
-            "Unauthorized use of sender address",
-        ));
+        return Err(ChatmailError::unauthorized_sender());
     }
     Ok(from)
 }
@@ -181,7 +178,17 @@ mod tests {
         let forged = b"From: bob@test\r\nTo: x@test\r\nContent-Type: text/plain\r\n\r\nx";
         // Envelope already forged to match header — still fails auth identity.
         let err = validate_submission_headers(forged, "bob@test", Some("alice@test")).unwrap_err();
-        assert!(matches!(err, ChatmailError::Protocol(ref m) if m.contains("Unauthorized")));
+        assert!(
+            err.is_unauthorized_sender(),
+            "forged From must be UnauthorizedSender, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn submission_identity_errors_are_typed_not_protocol_string() {
+        let err = check_submission_mail_from_identity("alice@test", "bob@test").unwrap_err();
+        assert!(matches!(err, ChatmailError::UnauthorizedSender));
+        assert!(!matches!(err, ChatmailError::Protocol(_)));
     }
 
     #[test]

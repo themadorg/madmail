@@ -297,7 +297,7 @@ impl SmtpSession {
                         if let Some(auth_user) = self.authenticated_user.as_deref() {
                             match check_submission_mail_from_identity(auth_user, &self.mail_from) {
                                 Ok(normalized) => self.mail_from = normalized,
-                                Err(_) => {
+                                Err(ChatmailError::UnauthorizedSender) => {
                                     writer
                                         .write_all(
                                             b"553 5.7.0 Unauthorized use of sender address\r\n",
@@ -312,6 +312,7 @@ impl SmtpSession {
                                     self.mail_from.clear();
                                     continue;
                                 }
+                                Err(e) => return Err(e),
                             }
                         }
                     }
@@ -506,9 +507,7 @@ impl SmtpSession {
                                 "5.7.1",
                             );
                         }
-                        Err(ChatmailError::Protocol(ref msg))
-                            if msg.contains("Unauthorized use of sender address") =>
-                        {
+                        Err(ChatmailError::UnauthorizedSender) => {
                             writer
                                 .write_all(b"553 5.7.0 Unauthorized use of sender address\r\n")
                                 .await?;
