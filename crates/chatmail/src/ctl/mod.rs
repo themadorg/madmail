@@ -41,6 +41,7 @@ mod output;
 mod port;
 mod proxy;
 mod push;
+mod queue_cmd;
 mod registration;
 mod registration_tokens;
 mod reload;

@@ -21,6 +21,6 @@ pub mod queue;
 pub mod router;
 pub mod transport;
 
-pub use queue::{OutboundQueue, QueueConfig, QueueStore};
+pub use queue::{OutboundQueue, QueueConfig, QueueMeta, QueueStore};
 pub use router::{outbound_queue, start_outbound_queue, DeliveryContext, OutboundJob};
 pub use transport::DeliveryOutcome;

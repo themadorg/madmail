@@ -192,8 +192,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: Option<MessageSizeCommand>,
     },
-    /// Delivery queue management.
-    Queue,
+    /// Outbound delivery queue (`remote_queue` on disk).
+    #[command(subcommand_required = false)]
+    Queue {
+        #[command(subcommand)]
+        cmd: Option<QueueCommand>,
+    },
     /// Scheduled maintenance jobs (retention, unused accounts, purge).
     #[command(subcommand)]
     Tasks(TasksCommand),
@@ -398,6 +402,36 @@ pub enum LanguageCommand {
     },
     /// Remove DB override (use config default).
     Reset,
+}
+
+/// `madmail queue` — outbound federation/SMTP retry queue on disk.
+#[derive(Debug, Subcommand, Clone)]
+pub enum QueueCommand {
+    /// Show queue path, depth, and config summary (default when no subcommand).
+    Status,
+    /// List pending queue entries (meta only).
+    List,
+    /// Show one entry by id (meta; optional body size).
+    Show {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    /// Remove one queue entry by id.
+    #[command(alias = "delete")]
+    Remove {
+        #[arg(value_name = "ID")]
+        id: String,
+        /// Skip confirmation prompt.
+        #[arg(short = 'y', long = "yes")]
+        yes: bool,
+    },
+    /// Remove all outbound queue entries.
+    #[command(alias = "clear")]
+    Purge {
+        /// Skip confirmation prompt.
+        #[arg(short = 'y', long = "yes")]
+        yes: bool,
+    },
 }
 
 /// `chatmail tasks` — maintenance jobs (Madmail `imapsql` cleanup + queue purge).

@@ -611,6 +611,101 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
 }
 ```
 
+### `queue status`
+
+```json
+{
+  "ok": true,
+  "command": "queue status",
+  "data": {
+    "path": "/var/lib/madmail/remote_queue",
+    "count": 0,
+    "max_tries": 3,
+    "max_parallelism": 16,
+    "initial_retry_secs": 60,
+    "retry_time_scale": 1.25,
+    "max_delivery_secs": 600,
+    "post_init_delay_secs": 10
+  }
+}
+```
+
+### `queue list`
+
+```json
+{
+  "ok": true,
+  "command": "queue list",
+  "data": {
+    "path": "/var/lib/madmail/remote_queue",
+    "count": 1,
+    "entries": [
+      {
+        "id": "6869e998-f3e1-4d4f-8de2-2dd525eed4ab",
+        "mail_from": "a@example.org",
+        "rcpt_to": "b@peer.test",
+        "tries_count": 1,
+        "queued_at_unix": 1700000000,
+        "last_attempt_unix": 1700000060,
+        "next_attempt_unix": 1700000120,
+        "last_error": "connection refused"
+      }
+    ]
+  }
+}
+```
+
+### `queue show`
+
+```json
+{
+  "ok": true,
+  "command": "queue show",
+  "data": {
+    "id": "6869e998-f3e1-4d4f-8de2-2dd525eed4ab",
+    "mail_from": "a@example.org",
+    "rcpt_to": "b@peer.test",
+    "tries_count": 1,
+    "queued_at_unix": 1700000000,
+    "last_attempt_unix": 1700000060,
+    "next_attempt_unix": 1700000120,
+    "last_error": "connection refused",
+    "body_bytes": 4096,
+    "path": "/var/lib/madmail/remote_queue"
+  }
+}
+```
+
+### `queue remove`
+
+```json
+{
+  "ok": true,
+  "command": "queue remove",
+  "message": "Removed queue entry 6869e998-f3e1-4d4f-8de2-2dd525eed4ab",
+  "data": {
+    "id": "6869e998-f3e1-4d4f-8de2-2dd525eed4ab",
+    "mail_from": "a@example.org",
+    "rcpt_to": "b@peer.test",
+    "deleted": 1
+  }
+}
+```
+
+### `queue purge`
+
+```json
+{
+  "ok": true,
+  "command": "queue purge",
+  "message": "Purged 3 queue entries",
+  "data": {
+    "path": "/var/lib/madmail/remote_queue",
+    "deleted": 3
+  }
+}
+```
+
 ### `endpoint-cache list`
 
 ```json
@@ -1099,7 +1194,7 @@ These commands are not implemented yet. With `--json`, they return the **error e
 }
 ```
 
-Affected: `creds`, `exchanger`, `hash`, `imap-acct`, `imap-mboxes`, `imap-msgs`, `migrate-pgp-config`, `queue`, `submission-access`.
+Affected: `creds`, `exchanger`, `hash`, `imap-acct`, `imap-mboxes`, `imap-msgs`, `migrate-pgp-config`, `submission-access`.
 
 ---
 

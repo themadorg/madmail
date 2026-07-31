@@ -49,7 +49,7 @@ Set reasonable default quotas and consider enabling automatic deletion of old re
 
    A response like **405** or **400** means the endpoint is reachable. Connection refused or timeout means DNS, firewall, or nginx routing — not missing DKIM/SPF records.
 
-3. Check the outbound queue in the **admin web UI** (Federation / queue views). A large backlog usually means the other server is down or there is a network problem. (`madmail queue` CLI is not implemented yet — use the admin UI.)
+3. Check the outbound queue in the **admin web UI** (Federation / queue views). A large backlog usually means the other server is down or there is a network problem. (or `madmail queue list` / `madmail queue status` for the outbound retry store.)
 
 4. On **your** server, confirm inbound **443** (and ideally **80**) are reachable so peers can deliver to you:
 

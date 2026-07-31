@@ -159,7 +159,9 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 - [`remove`](sharing-remove.md)
 - [`reserve`](sharing-reserve.md)
 
-### [`queue`](queue.md) *(planned)*
+### [`queue`](queue.md)
+
+Outbound delivery queue (`remote_queue`): status, list, show, remove, purge.
 
 
 ### [`exchanger`](exchanger.md) *(planned)*

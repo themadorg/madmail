@@ -15,10 +15,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Queue admin API — maildir / blob purge (Madmail `resources/queue.go`).
+//! Queue admin API — maildir / blob purge + outbound queue purge (Madmail `resources/queue.go`).
 //!
-//! madmail-v2 has no persistent SMTP retry queue (outbound is in-memory). This endpoint
-//! manages on-disk message storage under `{state_dir}/mail/`, not a delivery queue.
+//! Most actions manage on-disk message storage under `{state_dir}/mail/`.
+//! Action `purge_queue` clears the outbound delivery store (`remote_queue`).
+//! Operators can also use CLI `madmail queue` for list/show/purge of that store.
 
 use std::time::Duration;
 

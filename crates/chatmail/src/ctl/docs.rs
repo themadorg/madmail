@@ -271,6 +271,15 @@ mod tests {
     }
 
     #[test]
+    fn bash_completion_includes_queue_subcommand() {
+        let script = bash_completion("madmail").unwrap();
+        assert!(
+            script.contains("queue"),
+            "bash completion should include top-level queue"
+        );
+    }
+
+    #[test]
     fn bash_completion_includes_openrelay_subcommand() {
         let script = bash_completion("madmail").unwrap();
         assert!(

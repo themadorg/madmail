@@ -43,9 +43,9 @@ pub use bool_str::{is_falsy, is_truthy, parse_bool_str, parse_bool_str_opt};
 pub use cli::{
     AdminWebCommand, Args, Cli, Command, CompletionShell, EndpointCacheCommand, FederationCommand,
     FirewallCommand, LanguageCommand, OpenrelayCommand, PortCommand, PortServiceCommand,
-    ProxyCommand, ProxySettingCommand, PushCommand, RegistrationCommand, RegistrationTokensCommand,
-    ServiceCommand, ServiceToggleCommand, SharingCommand, TasksCommand, UninstallArgs,
-    DEFAULT_WINDOWS_SERVICE_NAME, FIREWALL_RULE_PREFIX,
+    ProxyCommand, ProxySettingCommand, PushCommand, QueueCommand, RegistrationCommand,
+    RegistrationTokensCommand, ServiceCommand, ServiceToggleCommand, SharingCommand, TasksCommand,
+    UninstallArgs, DEFAULT_WINDOWS_SERVICE_NAME, FIREWALL_RULE_PREFIX,
 };
 pub use client_mail::{
     build_dclogin_link, client_connect_host, effective_http_listen, effective_http_plain_listen,
