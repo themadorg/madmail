@@ -1,3 +1,10 @@
+# [2.20.0](https://github.com/themadorg/madmail/compare/v2.19.1...v2.20.0) (2026-07-31)
+
+
+### Features
+
+* **cli:** implement madmail queue for outbound remote_queue ([8ffdbf3](https://github.com/themadorg/madmail/commit/8ffdbf3560c51dabb330668e3acf0f8c2f6c04ad))
+
 ## [2.19.1](https://github.com/themadorg/madmail/compare/v2.19.0...v2.19.1) (2026-07-31)
 
 
