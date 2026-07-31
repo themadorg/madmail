@@ -1,3 +1,15 @@
+# [2.19.0](https://github.com/themadorg/madmail/compare/v2.18.4...v2.19.0) (2026-07-31)
+
+
+### Bug Fixes
+
+* **smtp:** close inbound open-relay by default ([04183f9](https://github.com/themadorg/madmail/commit/04183f9ac870c6712d06e30f232dcf187d69f63b))
+
+
+### Features
+
+* **cli:** add openrelay status/enable/disable ([79b095d](https://github.com/themadorg/madmail/commit/79b095d5ffb6577c9f66a7d75151ffa14cd660e7))
+
 ## [2.18.4](https://github.com/themadorg/madmail/compare/v2.18.3...v2.18.4) (2026-07-29)
 
 
