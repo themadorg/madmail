@@ -130,8 +130,10 @@ async fn dispatch_openrelay_disable_overrides_file_true() {
     );
 
     // Runtime flag hydrate must match CLI/DB (deny despite file true).
-    let mut cfg = chatmail_config::AppConfig::default();
-    cfg.allow_inbound_remote_rcpt = true;
+    let cfg = chatmail_config::AppConfig {
+        allow_inbound_remote_rcpt: true,
+        ..Default::default()
+    };
     let flag = chatmail_state::InboundRemoteRcptFlag::new(&cfg);
     flag.hydrate(&pool, &cfg).await.unwrap();
     assert!(
