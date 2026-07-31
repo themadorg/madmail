@@ -36,6 +36,7 @@ mod html;
 mod install;
 mod language;
 mod message_size;
+mod openrelay;
 mod output;
 mod port;
 mod proxy;
