@@ -18,9 +18,9 @@
 //! In-process tests for operator CLI commands.
 
 use chatmail_config::cli::{
-    EndpointCacheCommand, FederationCommand, LanguageCommand, PortCommand, PortServiceCommand,
-    ProxyCommand, ProxySettingCommand, RegistrationCommand, RegistrationTokensCommand,
-    ServiceToggleCommand, SharingCommand,
+    EndpointCacheCommand, FederationCommand, LanguageCommand, OpenrelayCommand, PortCommand,
+    PortServiceCommand, ProxyCommand, ProxySettingCommand, RegistrationCommand,
+    RegistrationTokensCommand, ServiceToggleCommand, SharingCommand,
 };
 use chatmail_config::{Cli, Command};
 use chatmail_db::{
@@ -51,6 +51,119 @@ async fn dispatch_registration_open_close() {
             .await
             .unwrap()
     );
+}
+
+#[tokio::test]
+async fn dispatch_openrelay_enable_disable_status() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+
+    // Default: no DB override → denied (file default false).
+    let cli = parse_cli(dir.path(), &["openrelay", "status"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Openrelay(OpenrelayCommand::Status))
+    ));
+    dispatch(&cli).await.unwrap();
+    assert!(get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
+        .await
+        .unwrap()
+        .is_none());
+
+    let cli = parse_cli(dir.path(), &["openrelay", "enable"]);
+    dispatch(&cli).await.unwrap();
+    assert_eq!(
+        get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("true")
+    );
+    assert!(
+        get_bool_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT, false)
+            .await
+            .unwrap()
+    );
+
+    let cli = parse_cli(dir.path(), &["openrelay", "disable"]);
+    dispatch(&cli).await.unwrap();
+    assert_eq!(
+        get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("false")
+    );
+    assert!(
+        !get_bool_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT, true)
+            .await
+            .unwrap()
+    );
+}
+
+/// File `allow_inbound_remote_rcpt true` + CLI disable must force-deny via DB.
+#[tokio::test]
+async fn dispatch_openrelay_disable_overrides_file_true() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+    let config = dir.path().join("openrelay_file_true.conf");
+    std::fs::write(
+        &config,
+        "hostname mail.example.org\nallow_inbound_remote_rcpt true\n",
+    )
+    .unwrap();
+
+    // No DB key yet — file default is true.
+    let cli = parse_cli_with_config(dir.path(), &config, &["openrelay", "status"]);
+    dispatch(&cli).await.unwrap();
+    assert!(get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
+        .await
+        .unwrap()
+        .is_none());
+
+    let cli = parse_cli_with_config(dir.path(), &config, &["openrelay", "disable"]);
+    dispatch(&cli).await.unwrap();
+    assert_eq!(
+        get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("false")
+    );
+
+    // Runtime flag hydrate must match CLI/DB (deny despite file true).
+    let mut cfg = chatmail_config::AppConfig::default();
+    cfg.allow_inbound_remote_rcpt = true;
+    let flag = chatmail_state::InboundRemoteRcptFlag::new(&cfg);
+    flag.hydrate(&pool, &cfg).await.unwrap();
+    assert!(
+        !flag.allowed(),
+        "DB disable must win over file allow_inbound_remote_rcpt true"
+    );
+}
+
+/// CLI enable must turn on the live flag after hydrate even when file default is false.
+#[tokio::test]
+async fn dispatch_openrelay_enable_hydrates_allowed() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+
+    let cfg = chatmail_config::AppConfig::default();
+    assert!(!cfg.allow_inbound_remote_rcpt);
+    let flag = chatmail_state::InboundRemoteRcptFlag::new(&cfg);
+    flag.hydrate(&pool, &cfg).await.unwrap();
+    assert!(!flag.allowed());
+
+    let cli = parse_cli(dir.path(), &["openrelay", "enable"]);
+    dispatch(&cli).await.unwrap();
+
+    flag.hydrate(&pool, &cfg).await.unwrap();
+    assert!(
+        flag.allowed(),
+        "after openrelay enable + hydrate, inbound remote RCPT must be allowed"
+    );
+
+    let cli = parse_cli(dir.path(), &["openrelay", "disable"]);
+    dispatch(&cli).await.unwrap();
+    flag.hydrate(&pool, &cfg).await.unwrap();
+    assert!(!flag.allowed());
 }
 
 #[tokio::test]

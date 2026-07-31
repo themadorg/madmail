@@ -47,6 +47,10 @@ pub const PUSH_ENABLED: &str = "__PUSH_ENABLED__";
 pub const PUSH_MODE: &str = "__PUSH_MODE__";
 pub const FEDERATION_POLICY: &str = "__FEDERATION_POLICY__";
 pub const FEDERATION_ENABLED: &str = "__FEDERATION_ENABLED__";
+/// When `"true"`, unauthenticated inbound SMTP (port 25) accepts non-local RCPT
+/// (open-relay-class). Default off — file `allow_inbound_remote_rcpt` is the fallback
+/// when this key is unset.
+pub const ALLOW_INBOUND_REMOTE_RCPT: &str = "__ALLOW_INBOUND_REMOTE_RCPT__";
 
 // ── Port settings ────────────────────────────────────────────────────────────
 pub const SMTP_PORT: &str = "__SMTP_PORT__";

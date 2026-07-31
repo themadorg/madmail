@@ -19,6 +19,7 @@ pub mod auth;
 pub mod events;
 pub mod federation_size;
 pub mod flusher;
+pub mod inbound_remote_rcpt;
 pub mod listener_ports;
 pub mod message_size;
 pub mod policy;
@@ -41,6 +42,7 @@ pub use auth::AuthCache;
 pub use events::{EventBus, NewMessageEvent};
 pub use federation_size::FederationSizeLimit;
 pub use flusher::{flush_federation_stats, flush_modseq, start_flusher, FlusherHandle};
+pub use inbound_remote_rcpt::InboundRemoteRcptFlag;
 pub use listener_ports::{ListenerPorts, ListenerPortsStore};
 pub use message_size::MessageSizeLimit;
 pub use policy::{FederationPolicyCache, PolicyMode};
@@ -59,6 +61,8 @@ pub struct AppState {
     pub federation_tracker: Arc<FederationTracker>,
     pub federation_policy: Arc<FederationPolicyCache>,
     pub federation_silent_dismiss: Arc<FederationSilentDismissCache>,
+    /// When true, inbound port 25 may accept non-local RCPT (open-relay-class). Default off.
+    pub inbound_remote_rcpt: Arc<InboundRemoteRcptFlag>,
     pub mailbox_store: Arc<MailboxStore>,
     pub events: Arc<EventBus>,
     /// FCM/APNS wake-up via Delta Chat notification proxy.
@@ -105,6 +109,7 @@ impl AppState {
             federation_tracker: Arc::new(FederationTracker::new()),
             federation_policy: Arc::new(FederationPolicyCache::new()),
             federation_silent_dismiss: Arc::new(FederationSilentDismissCache::new()),
+            inbound_remote_rcpt: Arc::new(InboundRemoteRcptFlag::new(config)),
             mailbox_store: Arc::new(MailboxStore::with_policy(
                 state_dir,
                 StoragePolicy::from_config(
@@ -157,6 +162,7 @@ impl AppState {
         self.quota.hydrate(pool, &self.mailbox_store).await?;
         self.federation_policy.hydrate(pool).await?;
         self.federation_silent_dismiss.hydrate(pool).await?;
+        self.inbound_remote_rcpt.hydrate(pool, config).await?;
         self.federation_tracker.hydrate(pool).await?;
         // Seed durable INBOX modseq so change-ids stay monotonic across restarts.
         for (user, modseq) in chatmail_db::load_all_modseq(pool).await? {

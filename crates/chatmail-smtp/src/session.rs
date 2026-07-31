@@ -34,8 +34,8 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::data_limit::{parse_smtp_size_parameter, read_smtp_data_limited};
 use crate::protocol::{
-    check_inbound_mail_from, check_outbound_rcpt_federation, check_submission_mail_from_identity,
-    validate_submission_headers,
+    check_inbound_mail_from, check_inbound_rcpt_local, check_outbound_rcpt_federation,
+    check_submission_mail_from_identity, validate_submission_headers,
 };
 
 #[derive(Clone)]
@@ -408,6 +408,24 @@ impl SmtpSession {
                             return Err(e);
                         }
                     };
+                    // Unauthenticated inbound must not accept non-local RCPT
+                    // unless the operator explicitly enables open-relay-class mode.
+                    if !self.cfg.require_auth {
+                        if let Err(ChatmailError::Protocol(_)) = check_inbound_rcpt_local(
+                            &rcpt,
+                            &self.cfg.local_domains,
+                            self.ctx.inbound_remote_rcpt.allowed(),
+                        ) {
+                            writer.write_all(b"550 5.7.1 Relaying denied\r\n").await?;
+                            chatmail_metrics::record_smtp_failed_command(
+                                self.cfg.module,
+                                "RCPT",
+                                550,
+                                "5.7.1",
+                            );
+                            continue;
+                        }
+                    }
                     if let Err(ChatmailError::FederationRejected(_)) =
                         check_outbound_rcpt_federation(
                             &self.ctx.federation_policy,
@@ -639,13 +657,19 @@ impl SmtpSession {
             }
         }
 
-        // Federated group fan-out: write the body once and hard-link it for every
-        // remote recipient (same principle as local delivery), instead of a full
-        // separate durable copy per recipient inside the SMTP DATA transaction.
-        if !remote_rcpts.is_empty() {
+        // Federated group fan-out for remote recipients only when the operator
+        // allows inbound remote RCPT (default off — anti open-relay).
+        // Authenticated submission never reaches this path (`require_auth` early return).
+        // Body is written once and hard-linked per remote recipient when enqueue runs.
+        if !remote_rcpts.is_empty() && self.ctx.inbound_remote_rcpt.allowed() {
             delivery
                 .enqueue_remote_batch(&self.mail_from, &remote_rcpts, data)
                 .await?;
+        } else if !remote_rcpts.is_empty() {
+            tracing::debug!(
+                n = remote_rcpts.len(),
+                "inbound remote RCPT skipped (allow_inbound_remote_rcpt off)"
+            );
         }
 
         let rcpt_phase = ingest_start.elapsed();
@@ -851,6 +875,7 @@ mod tests {
                     || acc.contains("354 ")
                     || acc.contains("523 ")
                     || acc.contains("535 ")
+                    || acc.contains("550 ")
                     || acc.contains("552 ")
                     || acc.contains("553 ")
                     || acc.contains("554 ")
@@ -1557,6 +1582,142 @@ mod tests {
         assert!(
             t.contains("530 5.7.0"),
             "submission without AUTH must require auth: {t}"
+        );
+    }
+
+    /// Unauthenticated inbound rejects remote RCPT by default.
+    #[tokio::test]
+    async fn inbound_rejects_remote_rcpt_by_default() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        assert!(!ctx.inbound_remote_rcpt.allowed());
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: false,
+                module: "smtp",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                "MAIL FROM:<sender@foreign.test>",
+                "RCPT TO:<victim@gmail.example>",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("550 5.7.1 Relaying denied"),
+            "expected relaying denied, got: {t}"
+        );
+        assert!(
+            !t.contains("250 2.1.5"),
+            "remote RCPT must not be accepted: {t}"
+        );
+    }
+
+    /// Local RCPT still accepted on inbound when remote relay is closed.
+    #[tokio::test]
+    async fn inbound_accepts_local_rcpt_when_remote_relay_closed() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: false,
+                module: "smtp",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                "MAIL FROM:<sender@foreign.test>",
+                "RCPT TO:<user@test>",
+            ],
+        )
+        .await;
+        assert!(t.contains("250 2.1.5 OK"), "local RCPT should succeed: {t}");
+    }
+
+    /// Operator opt-in re-enables remote RCPT on inbound.
+    #[tokio::test]
+    async fn inbound_allows_remote_rcpt_when_enabled() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        ctx.inbound_remote_rcpt.set(true);
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: false,
+                module: "smtp",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                "MAIL FROM:<sender@foreign.test>",
+                "RCPT TO:<victim@gmail.example>",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("250 2.1.5 OK"),
+            "remote RCPT should succeed when allow_inbound_remote_rcpt is on: {t}"
+        );
+        assert!(!t.contains("Relaying denied"), "got: {t}");
+    }
+
+    /// Authenticated submission always allows remote RCPT (not open relay).
+    #[tokio::test]
+    async fn submission_still_allows_remote_rcpt() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("secret").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        assert!(!ctx.inbound_remote_rcpt.allowed());
+        let b64 = base64::engine::general_purpose::STANDARD.encode("\0u@test\0secret");
+        let auth = format!("AUTH PLAIN {b64}");
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: true,
+                module: "submission",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<u@test>",
+                "RCPT TO:<remote@other.example>",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("250 2.1.5 OK"),
+            "submission remote RCPT must still work: {t}"
         );
     }
 

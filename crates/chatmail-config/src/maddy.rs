@@ -195,6 +195,9 @@ fn apply_directive(name: &str, args: &[String], block_path: &[&str], cfg: &mut A
             "runtime_dir" if has_value => cfg.runtime_dir = Some(value.clone().into()),
             "debug" => cfg.debug = parse_bool(arg0),
             "log" if has_value => cfg.log_target = Some(value.clone()),
+            "allow_inbound_remote_rcpt" => {
+                cfg.allow_inbound_remote_rcpt = parse_bool(arg0);
+            }
             "max_federation_size" if has_value => {
                 cfg.max_federation_size = Some(value.clone());
             }
@@ -627,6 +630,16 @@ chatmail tcp://0.0.0.0:80 {
         assert_eq!(p.generated_password_length(), 20);
         assert_eq!(p.min_username_length, 6);
         assert_eq!(p.password_min_length, 9);
+    }
+
+    #[test]
+    fn parse_allow_inbound_remote_rcpt_default_off() {
+        let cfg = parse_maddy_config("hostname mail.example.org\n").unwrap();
+        assert!(!cfg.allow_inbound_remote_rcpt);
+        let cfg = parse_maddy_config("allow_inbound_remote_rcpt true\n").unwrap();
+        assert!(cfg.allow_inbound_remote_rcpt);
+        let cfg = parse_maddy_config("allow_inbound_remote_rcpt false\n").unwrap();
+        assert!(!cfg.allow_inbound_remote_rcpt);
     }
 
     #[test]

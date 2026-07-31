@@ -42,8 +42,8 @@ pub use autoconfig::{build_autoconfig_xml, AutoconfigParams};
 pub use bool_str::{is_falsy, is_truthy, parse_bool_str, parse_bool_str_opt};
 pub use cli::{
     AdminWebCommand, Args, Cli, Command, CompletionShell, EndpointCacheCommand, FederationCommand,
-    FirewallCommand, LanguageCommand, PortCommand, PortServiceCommand, ProxyCommand,
-    ProxySettingCommand, PushCommand, RegistrationCommand, RegistrationTokensCommand,
+    FirewallCommand, LanguageCommand, OpenrelayCommand, PortCommand, PortServiceCommand,
+    ProxyCommand, ProxySettingCommand, PushCommand, RegistrationCommand, RegistrationTokensCommand,
     ServiceCommand, ServiceToggleCommand, SharingCommand, TasksCommand, UninstallArgs,
     DEFAULT_WINDOWS_SERVICE_NAME, FIREWALL_RULE_PREFIX,
 };
@@ -139,6 +139,10 @@ pub struct AppConfig {
     pub www_dir: Option<PathBuf>,
     /// `enable_contact_sharing` — Delta Chat `/share` pages and slug URLs.
     pub enable_contact_sharing: bool,
+    /// `allow_inbound_remote_rcpt` — when true, unauthenticated inbound SMTP
+    /// (port 25) accepts non-local RCPT (open-relay-class). **Default false.**
+    /// Overridable at runtime via admin `__ALLOW_INBOUND_REMOTE_RCPT__`.
+    pub allow_inbound_remote_rcpt: bool,
     /// `sharing_dsn` — SQLite path for contact links (default `{state_dir}/sharing.db`).
     pub sharing_dsn: Option<String>,
     /// `admin_path` (default `/api/admin`).

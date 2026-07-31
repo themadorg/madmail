@@ -1,4 +1,4 @@
-//! E2E: language, registration, webimap, html-export.
+//! E2E: language, registration, webimap, html-export, openrelay.
 
 use std::process::Command;
 
@@ -7,6 +7,7 @@ use chatmail_config::AppConfig;
 use chatmail_db::{get_bool_setting, get_setting, init_db, settings_keys};
 use chatmail_integration::chatmail_bin;
 use predicates::prelude::*;
+use serde_json::Value;
 use tempfile::TempDir;
 
 fn chatmail() -> assert_cmd::Command {
@@ -321,4 +322,140 @@ fn e2e_html_migrate_warns_on_literal_brace_url() {
         stdout.contains("download.html") || stdout.contains("raw"),
         "expected warning payload: {stdout}"
     );
+}
+
+#[test]
+fn e2e_openrelay_status_enable_disable_json() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    // Default status: denied, no DB override.
+    let out = chatmail()
+        .args(base.clone())
+        .args(["openrelay", "status", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("openrelay status JSON");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "openrelay status");
+    assert_eq!(envelope["data"]["allowed"], false);
+    assert_eq!(envelope["data"]["file_default"], false);
+    assert!(envelope["data"]["db_override"].is_null());
+    assert_eq!(envelope["data"]["reload_required"], false);
+
+    // Enable → DB true + JSON contract.
+    let out = chatmail()
+        .args(base.clone())
+        .args(["openrelay", "enable", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("openrelay enable JSON");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "openrelay enable");
+    assert_eq!(envelope["data"]["allowed"], true);
+    assert_eq!(envelope["data"]["reload_required"], true);
+    assert!(
+        envelope["message"]
+            .as_str()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .contains("enabled"),
+        "message={:?}",
+        envelope["message"]
+    );
+
+    let out = chatmail()
+        .args(base.clone())
+        .args(["openrelay", "status", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("openrelay status after enable");
+    assert_eq!(envelope["data"]["allowed"], true);
+    assert_eq!(envelope["data"]["db_override"], true);
+
+    // Disable → DB false.
+    let out = chatmail()
+        .args(base.clone())
+        .args(["openrelay", "disable", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("openrelay disable JSON");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "openrelay disable");
+    assert_eq!(envelope["data"]["allowed"], false);
+    assert_eq!(envelope["data"]["reload_required"], true);
+
+    let out = chatmail()
+        .args(base)
+        .args(["openrelay", "status", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("openrelay status after disable");
+    assert_eq!(envelope["data"]["allowed"], false);
+    assert_eq!(envelope["data"]["db_override"], false);
+
+    let db_path = effective_app_db_path(dir.path(), &AppConfig::default());
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let pool = init_db(&db_path).await.unwrap();
+        assert_eq!(
+            get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("false")
+        );
+        assert!(
+            !get_bool_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT, true)
+                .await
+                .unwrap()
+        );
+    });
+}
+
+#[test]
+fn e2e_openrelay_human_status_and_enable() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    chatmail()
+        .args(base.clone())
+        .args(["openrelay", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("denied"))
+        .stdout(
+            predicate::str::contains("file default").or(predicate::str::contains("File default")),
+        );
+
+    chatmail()
+        .args(base.clone())
+        .args(["openrelay", "enable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ENABLED").or(predicate::str::contains("enabled")));
+
+    chatmail()
+        .args(base)
+        .args(["openrelay", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("allowed"));
 }

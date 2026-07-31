@@ -119,6 +119,21 @@ pub fn check_outbound_rcpt_federation(
     }
 }
 
+/// Inbound (unauthenticated) port 25: non-local RCPT is open-relay-class.
+///
+/// When `allow_inbound_remote_rcpt` is false (default), only local-domain recipients
+/// are accepted. Submission (`require_auth`) never calls this.
+pub fn check_inbound_rcpt_local(
+    rcpt: &str,
+    local_domains: &[String],
+    allow_inbound_remote_rcpt: bool,
+) -> Result<()> {
+    if allow_inbound_remote_rcpt || address_is_local(rcpt, local_domains) {
+        return Ok(());
+    }
+    Err(ChatmailError::protocol("Relaying denied"))
+}
+
 /// Inbound port 25: federation policy on `MAIL FROM` domain (TDD `02-smtp-server.md`).
 pub fn check_inbound_mail_from(
     mail_from: &str,
@@ -216,5 +231,14 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ChatmailError::FederationRejected(_)));
+    }
+
+    #[test]
+    fn inbound_rcpt_local_only_by_default() {
+        let local = vec!["test".into()];
+        assert!(check_inbound_rcpt_local("a@test", &local, false).is_ok());
+        assert!(check_inbound_rcpt_local("a@evil.example", &local, false).is_err());
+        assert!(check_inbound_rcpt_local("a@evil.example", &local, true).is_ok());
+        assert!(check_inbound_rcpt_local("a@[1.2.3.4]", &["1.2.3.4".into()], false).is_ok());
     }
 }
