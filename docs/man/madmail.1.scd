@@ -116,6 +116,11 @@ Extended documentation:
 
 ## Mail policy and delivery
 
+*openrelay*
+	Allow or deny non\-local RCPT on unauthenticated inbound SMTP
+	(open\-relay\-class; default denied). Subcommands: *status*, *enable*,
+	*disable*. Run *reload* after enable/disable on a running server.
+
 *federation*
 	Federation policy, domain rules, and silent\-dismiss lists.
 

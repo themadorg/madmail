@@ -22,7 +22,7 @@ use chatmail_db::settings_keys;
 
 use super::{
     accounts, admin_token, admin_web, blocklist_cmd, certificate, delete_cmd, docs, endpoint_cache,
-    federation, firewall_cmd, html, install, language, message_size, port, proxy, push,
+    federation, firewall_cmd, html, install, language, message_size, openrelay, port, proxy, push,
     registration, registration_tokens, reload, service_cmd, service_toggle, sharing, status_cmd,
     tasks, uninstall, version, webmail_cors,
 };
@@ -79,6 +79,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
             message_size::message_size(&cli.args, cmd.as_ref()).await
         }
         Some(Command::Registration(cmd)) => registration::registration(&cli.args, cmd).await,
+        Some(Command::Openrelay(cmd)) => openrelay::openrelay(&cli.args, cmd).await,
         Some(Command::Webimap(cmd)) => {
             service_toggle::run(
                 &cli.args,
@@ -130,7 +131,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
         "'madmail {name}' is not implemented in madmail-v2 yet.\n\
          See docs/TDD/14-cli-tools.md and context/madmail/docs/chatmail/commands.md.\n\
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
-         accounts, ban-list, blocklist, create-user, delete, registration, language, \
+         accounts, ban-list, blocklist, create-user, delete, registration, openrelay, language, \
          html-export, html-serve, html-migrate, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
          status, uninstall, service, firewall, endpoint-cache, port, proxy, reload, message-size, tasks, completion"
     )))
@@ -163,6 +164,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Certificate { cmd: _ } => "certificate",
         Command::Language { .. } => "language",
         Command::Registration { .. } => "registration",
+        Command::Openrelay { .. } => "openrelay",
         Command::MigratePgpConfig => "migrate-pgp-config",
         Command::Status { .. } => "status",
         Command::Port(_) => "port",

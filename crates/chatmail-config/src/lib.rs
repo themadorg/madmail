@@ -42,8 +42,8 @@ pub use autoconfig::{build_autoconfig_xml, AutoconfigParams};
 pub use bool_str::{is_falsy, is_truthy, parse_bool_str, parse_bool_str_opt};
 pub use cli::{
     AdminWebCommand, Args, Cli, Command, CompletionShell, EndpointCacheCommand, FederationCommand,
-    FirewallCommand, LanguageCommand, PortCommand, PortServiceCommand, ProxyCommand,
-    ProxySettingCommand, PushCommand, RegistrationCommand, RegistrationTokensCommand,
+    FirewallCommand, LanguageCommand, OpenrelayCommand, PortCommand, PortServiceCommand,
+    ProxyCommand, ProxySettingCommand, PushCommand, RegistrationCommand, RegistrationTokensCommand,
     ServiceCommand, ServiceToggleCommand, SharingCommand, TasksCommand, UninstallArgs,
     DEFAULT_WINDOWS_SERVICE_NAME, FIREWALL_RULE_PREFIX,
 };

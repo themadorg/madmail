@@ -88,4 +88,31 @@ mod tests {
         flag.hydrate(&pool, &cfg).await.unwrap();
         assert!(!flag.allowed());
     }
+
+    #[tokio::test]
+    async fn hydrate_db_true_overrides_file_false() {
+        let pool = init_memory_db().await.unwrap();
+        let cfg = AppConfig {
+            allow_inbound_remote_rcpt: false,
+            ..Default::default()
+        };
+        set_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT, "true")
+            .await
+            .unwrap();
+        let flag = InboundRemoteRcptFlag::new(&cfg);
+        assert!(!flag.allowed(), "starts from file default");
+        flag.hydrate(&pool, &cfg).await.unwrap();
+        assert!(flag.allowed(), "DB true must win over file false");
+    }
+
+    #[tokio::test]
+    async fn set_toggles_live_without_hydrate() {
+        let cfg = AppConfig::default();
+        let flag = InboundRemoteRcptFlag::new(&cfg);
+        assert!(!flag.allowed());
+        flag.set(true);
+        assert!(flag.allowed());
+        flag.set(false);
+        assert!(!flag.allowed());
+    }
 }

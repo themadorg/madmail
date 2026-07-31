@@ -516,6 +516,37 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
 
 ## Policy & delivery
 
+### `openrelay status`
+
+```json
+{
+  "ok": true,
+  "command": "openrelay status",
+  "data": {
+    "allowed": false,
+    "file_default": false,
+    "db_override": null,
+    "reload_required": false
+  }
+}
+```
+
+`db_override` is `true` / `false` when `__ALLOW_INBOUND_REMOTE_RCPT__` is set, or `null` when the file default is used.
+
+### `openrelay enable` / `disable`
+
+```json
+{
+  "ok": true,
+  "command": "openrelay enable",
+  "message": "Inbound remote RCPT enabled",
+  "data": {
+    "allowed": true,
+    "reload_required": true
+  }
+}
+```
+
 ### `federation list`
 
 ```json
