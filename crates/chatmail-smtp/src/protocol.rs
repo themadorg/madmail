@@ -17,6 +17,7 @@
 
 //! SMTP DATA validation helpers (Madmail `submission.go` / TDD `02-smtp-server.md`).
 
+use chatmail_auth::normalize_username;
 use chatmail_state::policy::{FederationPolicyCache, PolicyMode};
 use chatmail_types::{address_domain, address_is_local, ChatmailError, Result};
 
@@ -62,8 +63,27 @@ pub fn envelope_domain(addr: &str) -> Option<String> {
     addr.rsplit('@').next().map(|d| d.to_ascii_lowercase())
 }
 
+/// Submission: `MAIL FROM` must be the authenticated identity (TDD `02-smtp-server.md`,
+/// Madmail `check.authorize_sender`).
+///
+/// Returns the normalized envelope address on success.
+pub fn check_submission_mail_from_identity(auth_user: &str, mail_from: &str) -> Result<String> {
+    let from = normalize_username(mail_from).map_err(|_| ChatmailError::unauthorized_sender())?;
+    if !from.eq_ignore_ascii_case(auth_user) {
+        return Err(ChatmailError::unauthorized_sender());
+    }
+    Ok(from)
+}
+
 /// Submission checks before PGP gate (TDD: From required, must match MAIL FROM).
-pub fn validate_submission_headers(raw: &[u8], mail_from: &str) -> Result<()> {
+///
+/// When `auth_user` is provided, MIME `From` must also match that identity
+/// (same rule as Madmail `authorize_sender` body check).
+pub fn validate_submission_headers(
+    raw: &[u8],
+    mail_from: &str,
+    auth_user: Option<&str>,
+) -> Result<()> {
     let from_hdr = header_value(raw, "From")
         .ok_or_else(|| ChatmailError::protocol("Message does not contain a From header field"))?;
     let from_addr = parse_mailbox_addr(&from_hdr);
@@ -71,6 +91,9 @@ pub fn validate_submission_headers(raw: &[u8], mail_from: &str) -> Result<()> {
         return Err(ChatmailError::protocol(
             "From header does not match envelope sender",
         ));
+    }
+    if let Some(auth_user) = auth_user {
+        check_submission_mail_from_identity(auth_user, &from_addr)?;
     }
     Ok(())
 }
@@ -94,6 +117,21 @@ pub fn check_outbound_rcpt_federation(
     } else {
         Err(ChatmailError::FederationRejected(domain))
     }
+}
+
+/// Inbound (unauthenticated) port 25: non-local RCPT is open-relay-class.
+///
+/// When `allow_inbound_remote_rcpt` is false (default), only local-domain recipients
+/// are accepted. Submission (`require_auth`) never calls this.
+pub fn check_inbound_rcpt_local(
+    rcpt: &str,
+    local_domains: &[String],
+    allow_inbound_remote_rcpt: bool,
+) -> Result<()> {
+    if allow_inbound_remote_rcpt || address_is_local(rcpt, local_domains) {
+        return Ok(());
+    }
+    Err(ChatmailError::protocol("Relaying denied"))
 }
 
 /// Inbound port 25: federation policy on `MAIL FROM` domain (TDD `02-smtp-server.md`).
@@ -127,8 +165,58 @@ mod tests {
     #[test]
     fn submission_from_must_match_envelope() {
         let raw = b"From: other@test.org\r\nTo: x@test.org\r\nContent-Type: text/plain\r\n\r\nx";
-        let err = validate_submission_headers(raw, "sender@test.org").unwrap_err();
+        let err = validate_submission_headers(raw, "sender@test.org", None).unwrap_err();
         assert!(matches!(err, ChatmailError::Protocol(_)));
+    }
+
+    #[test]
+    fn submission_mail_from_must_match_auth_identity() {
+        assert_eq!(
+            check_submission_mail_from_identity("alice@test", "alice@test").unwrap(),
+            "alice@test"
+        );
+        assert_eq!(
+            check_submission_mail_from_identity("alice@test", "Alice@Test").unwrap(),
+            "alice@test"
+        );
+        assert!(check_submission_mail_from_identity("alice@test", "bob@test").is_err());
+        assert!(check_submission_mail_from_identity("alice@test", "alice@evil").is_err());
+        assert!(check_submission_mail_from_identity("alice@test", "").is_err());
+        assert!(check_submission_mail_from_identity("alice@test", "not-an-email").is_err());
+    }
+
+    #[test]
+    fn submission_from_header_must_match_auth_when_provided() {
+        let ok = b"From: Alice <alice@test>\r\nTo: x@test\r\nContent-Type: text/plain\r\n\r\nx";
+        validate_submission_headers(ok, "alice@test", Some("alice@test")).unwrap();
+
+        let forged = b"From: bob@test\r\nTo: x@test\r\nContent-Type: text/plain\r\n\r\nx";
+        // Envelope already forged to match header — still fails auth identity.
+        let err = validate_submission_headers(forged, "bob@test", Some("alice@test")).unwrap_err();
+        assert!(
+            err.is_unauthorized_sender(),
+            "forged From must be UnauthorizedSender, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn submission_identity_errors_are_typed_not_protocol_string() {
+        let err = check_submission_mail_from_identity("alice@test", "bob@test").unwrap_err();
+        assert!(matches!(err, ChatmailError::UnauthorizedSender));
+        assert!(!matches!(err, ChatmailError::Protocol(_)));
+    }
+
+    #[test]
+    fn submission_identity_rejects_whitespace_only_and_angle_empty() {
+        assert!(check_submission_mail_from_identity("alice@test", "   ").is_err());
+        assert!(check_submission_mail_from_identity("alice@test", "<>").is_err());
+    }
+
+    #[test]
+    fn submission_identity_accepts_normalized_equal() {
+        let n =
+            check_submission_mail_from_identity("user@example.org", "USER@Example.ORG").unwrap();
+        assert_eq!(n, "user@example.org");
     }
 
     #[test]
@@ -143,5 +231,14 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ChatmailError::FederationRejected(_)));
+    }
+
+    #[test]
+    fn inbound_rcpt_local_only_by_default() {
+        let local = vec!["test".into()];
+        assert!(check_inbound_rcpt_local("a@test", &local, false).is_ok());
+        assert!(check_inbound_rcpt_local("a@evil.example", &local, false).is_err());
+        assert!(check_inbound_rcpt_local("a@evil.example", &local, true).is_ok());
+        assert!(check_inbound_rcpt_local("a@[1.2.3.4]", &["1.2.3.4".into()], false).is_ok());
     }
 }

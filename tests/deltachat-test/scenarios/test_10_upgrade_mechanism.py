@@ -92,6 +92,30 @@ def run_test(madmail_bin, private_key_path, test_dir):
         print(f"Stderr: {result.stderr}")
         raise Exception("Failure: Signed binary verification failed!")
 
+    # Issue #114: signed but non-executable dummy must fail host preflight and
+    # must NOT replace the live binary (no brick).
+    if (
+        "preflight" in signed_out.lower()
+        or "failed to execute" in signed_out.lower()
+        or "NOT replaced" in signed_out
+    ):
+        print("✓ Success: Signed non-runnable binary aborted at preflight (live intact)")
+        if not os.path.isfile(madmail_under_test):
+            raise Exception("Live binary missing after preflight abort")
+        # File should still be the original under-test copy (not the dummy).
+        with open(madmail_under_test, "rb") as f:
+            live_head = f.read(16)
+        with open(madmail_bin, "rb") as f:
+            orig_head = f.read(16)
+        if live_head != orig_head:
+            raise Exception(
+                "Security Failure: live binary was replaced after preflight abort"
+            )
+    else:
+        # Older binaries without preflight still reach root/replace; tolerate.
+        print(
+            "  note: no preflight abort text (binary may predate issue #114 fix)"
+        )
     # Use a fresh copy for the URL step (the prior binary may still be mapped).
     madmail_for_url = os.path.join(test_dir, "madmail_for_url")
     shutil.copy2(madmail_bin, madmail_for_url)

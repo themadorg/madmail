@@ -131,6 +131,10 @@ pub async fn all_settings(st: &AdminState, method: &str) -> AdminResult {
     );
     body.insert("federation_enabled".into(), json!(federation_enabled));
     body.insert("federation_policy".into(), json!(federation_policy));
+    body.insert(
+        "allow_inbound_remote_rcpt".into(),
+        json!(get_toggle_disabled_default(pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT).await?),
+    );
 
     insert_setting(
         &mut body,
@@ -533,6 +537,13 @@ fn named_routes() -> HashMap<&'static str, NamedRoute> {
             kind: NamedKind::DbToggleDefaultDisabled,
         },
     );
+    m.insert(
+        "allow_inbound_remote_rcpt",
+        NamedRoute {
+            db_key: k::ALLOW_INBOUND_REMOTE_RCPT,
+            kind: NamedKind::DbToggleDefaultDisabled,
+        },
+    );
     m
 }
 
@@ -674,6 +685,10 @@ async fn db_toggle_setting(
             set_setting(&st.pool, db_key, if on { "true" } else { "false" })
                 .await
                 .map_err(db_err)?;
+            // Live flag for inbound remote RCPT — no full soft-reload required.
+            if db_key == settings_keys::ALLOW_INBOUND_REMOTE_RCPT {
+                st.app.inbound_remote_rcpt.set(on);
+            }
             let status = if on { "enabled" } else { "disabled" };
             Ok((200, Some(json!({ "status": status }))))
         }

@@ -1,5 +1,7 @@
 # 17 — Extending the Project & Contribution Guide
 
+> **Start here for pull requests:** the repository root [`CONTRIBUTING.md`](../../CONTRIBUTING.md) (setup, quality bar, security reporting). This page is the deeper map of where to change code.
+
 You have read the step-by-step tour. Now you want to change something.
 
 ## First Principles

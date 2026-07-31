@@ -55,7 +55,7 @@ The real Delta Chat core (C + Rust FFI).
 - `certbot/` (ACME reference)
 - `lers/` (another ACME / TLS thing)
 - `chatmail-turn/` (the turn-rs reference implementation)
-- `relay-ping/` (the dclogin / step-by-step test tool)
+- Older notes sometimes mentioned a local `relay-ping/` under `context/`; that path is **not** part of this repo. The live tool is a separate project: **[themadorg/relay-ping](https://github.com/themadorg/relay-ping)** (clone and run on its own).
 
 ## `external/` — The Editable Submodules You Actually Ship
 

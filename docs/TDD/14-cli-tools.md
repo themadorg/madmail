@@ -70,6 +70,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `delete` | [delete.md](../guide/cli/delete.md) | `delete_cmd.rs` | **done** |
 | `registration` | [registration.md](../guide/cli/registration.md) | `registration.rs` | **done** |
 | `registration-tokens` | [registration-tokens.md](../guide/cli/registration-tokens.md) | `registration_tokens.rs` | **done** |
+| `openrelay` | [openrelay.md](../guide/cli/openrelay.md) | `openrelay.rs` | **done** (`status` / `enable` / `disable`; `__ALLOW_INBOUND_REMOTE_RCPT__`) |
 | `federation` | [federation.md](../guide/cli/federation.md) | `federation.rs` | **done** (+ `dismiss`, `undismiss`, `dismiss-list`, `dismiss-flush`) |
 | `endpoint-cache` / `dns-cache` | [endpoint-cache.md](../guide/cli/endpoint-cache.md) | `endpoint_cache.rs` | **done** |
 | `sharing` | [sharing.md](../guide/cli/sharing.md) | `sharing.rs` | **done** |
@@ -129,6 +130,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 | Command | Guide | Madmail source | madmail-v2 |
 |---------|-------|----------------|-------------|
+| `openrelay` | [openrelay.md](../guide/cli/openrelay.md) | — (v2; inbound anti open-relay) | **done** — `__ALLOW_INBOUND_REMOTE_RCPT__` / `allow_inbound_remote_rcpt` |
 | `federation` | [federation.md](../guide/cli/federation.md) | `ctl/federation.go` | **done** — includes silent dismiss (`chatmail-state::silent_dismiss`) |
 | `endpoint-cache` | [endpoint-cache.md](../guide/cli/endpoint-cache.md) | `ctl/dnscache.go` | **done** |
 | `sharing` | [sharing.md](../guide/cli/sharing.md) | `ctl/sharing.go` | **done** |

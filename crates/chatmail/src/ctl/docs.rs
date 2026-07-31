@@ -280,6 +280,15 @@ mod tests {
     }
 
     #[test]
+    fn bash_completion_includes_openrelay_subcommand() {
+        let script = bash_completion("madmail").unwrap();
+        assert!(
+            script.contains("openrelay"),
+            "bash completion should list openrelay"
+        );
+    }
+
+    #[test]
     fn bash_completion_includes_proxy_subcommand() {
         let script = bash_completion("madmail").unwrap();
         assert!(

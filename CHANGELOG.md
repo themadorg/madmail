@@ -1,3 +1,37 @@
+## [2.19.1](https://github.com/themadorg/madmail/compare/v2.19.0...v2.19.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* bind SMTP MAIL FROM to authenticated identity ([6d52d03](https://github.com/themadorg/madmail/commit/6d52d03ec59e11c24410e56a44d7323c3ac88af8))
+* **smtp:** use UnauthorizedSender error for F-003 DATA mapping ([95687fe](https://github.com/themadorg/madmail/commit/95687fe895e79a684d10822f56e0f31e47d2279c))
+
+# [2.19.0](https://github.com/themadorg/madmail/compare/v2.18.4...v2.19.0) (2026-07-31)
+
+
+### Bug Fixes
+
+* **smtp:** close inbound open-relay by default ([04183f9](https://github.com/themadorg/madmail/commit/04183f9ac870c6712d06e30f232dcf187d69f63b))
+
+
+### Features
+
+* **cli:** add openrelay status/enable/disable ([79b095d](https://github.com/themadorg/madmail/commit/79b095d5ffb6577c9f66a7d75151ffa14cd660e7))
+
+## [2.18.4](https://github.com/themadorg/madmail/compare/v2.18.3...v2.18.4) (2026-07-29)
+
+
+### Bug Fixes
+
+* **make:** drop dead context/relay-ping hooks so clean works ([#123](https://github.com/themadorg/madmail/issues/123)) ([472cb2a](https://github.com/themadorg/madmail/commit/472cb2aa734c690403fb0639b39a50e82c79459a)), closes [#122](https://github.com/themadorg/madmail/issues/122)
+
+## [2.18.3](https://github.com/themadorg/madmail/compare/v2.18.2...v2.18.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* **cli:** preflight and rollback madmail update on ABI mismatch ([#119](https://github.com/themadorg/madmail/issues/119)) ([a057319](https://github.com/themadorg/madmail/commit/a057319db507662c942449307aa59119f031e03b))
+
 ## [2.18.2](https://github.com/themadorg/madmail/compare/v2.18.1...v2.18.2) (2026-07-24)
 
 

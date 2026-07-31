@@ -460,6 +460,10 @@ pub(crate) fn web_delivery_error(e: &ChatmailError) -> (StatusCode, String) {
             StatusCode::BAD_REQUEST,
             format!("federation rejected: {d}"),
         ),
+        ChatmailError::UnauthorizedSender => (
+            StatusCode::FORBIDDEN,
+            "Unauthorized use of sender address".into(),
+        ),
         ChatmailError::Protocol(m) | ChatmailError::Config(m) | ChatmailError::Storage(m) => {
             (StatusCode::BAD_REQUEST, m.clone())
         }
@@ -485,7 +489,7 @@ pub async fn websmtp_deliver(
 ) -> Result<(), ChatmailError> {
     let raw = body.as_bytes();
     st.app.check_message_size(raw.len())?;
-    validate_submission_headers(raw, user)?;
+    validate_submission_headers(raw, user, Some(user))?;
 
     enforce_encryption(
         raw,

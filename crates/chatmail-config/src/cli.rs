@@ -168,6 +168,12 @@ pub enum Command {
     /// Open / close public account registration (`__REGISTRATION_OPEN__`).
     #[command(subcommand)]
     Registration(RegistrationCommand),
+    /// Allow or deny non-local RCPT on unauthenticated inbound SMTP (open-relay-class).
+    ///
+    /// Default is denied (`allow_inbound_remote_rcpt` / `__ALLOW_INBOUND_REMOTE_RCPT__`).
+    /// Authenticated submission is unaffected.
+    #[command(name = "openrelay", subcommand)]
+    Openrelay(OpenrelayCommand),
     /// Migrate submission PGP policy in config.
     #[command(name = "migrate-pgp-config")]
     MigratePgpConfig,
@@ -732,6 +738,17 @@ pub enum RegistrationCommand {
     Status,
 }
 
+/// `madmail openrelay` — `__ALLOW_INBOUND_REMOTE_RCPT__` / `allow_inbound_remote_rcpt`.
+#[derive(Debug, Subcommand, Clone)]
+pub enum OpenrelayCommand {
+    /// Show whether inbound remote RCPT (open relay) is allowed.
+    Status,
+    /// Allow non-local RCPT on unauthenticated inbound SMTP (lab/special only).
+    Enable,
+    /// Deny non-local RCPT on unauthenticated inbound SMTP (default-safe).
+    Disable,
+}
+
 /// `chatmail accounts` / `madmail accounts` (direct DB).
 #[derive(Debug, Subcommand, Clone)]
 pub enum AccountsCommand {
@@ -1146,5 +1163,24 @@ mod tests {
             "state_dir should be unset for default install, got {:?}",
             args.state_dir
         );
+    }
+
+    #[test]
+    fn parse_openrelay_status_enable_disable() {
+        let cli = Cli::try_parse_from(["madmail", "openrelay", "status"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Openrelay(OpenrelayCommand::Status))
+        ));
+        let cli = Cli::try_parse_from(["madmail", "openrelay", "enable"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Openrelay(OpenrelayCommand::Enable))
+        ));
+        let cli = Cli::try_parse_from(["madmail", "openrelay", "disable"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Openrelay(OpenrelayCommand::Disable))
+        ));
     }
 }

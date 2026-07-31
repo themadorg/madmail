@@ -169,6 +169,13 @@ Outbound delivery queue (`remote_queue`): status, list, show, remove, purge.
 
 ### [`submission-access`](submission-access.md) *(planned)*
 
+
+### [`openrelay`](openrelay.md)
+
+- [`status`](openrelay-status.md)
+- [`enable`](openrelay-enable.md)
+- [`disable`](openrelay-disable.md)
+
 ## Services & limits
 
 ### [`port`](port.md)

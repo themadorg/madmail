@@ -68,6 +68,10 @@ Extended documentation:
 *upgrade*, *update*
 	Replace this executable from a signed local file or URL
 	(raw binary or .tar.gz / .tgz archive).
+	Runs a host preflight (*version*) before stopping services; keeps a
+	*.prev* backup and rolls back if the new binary cannot run.
+	Use the same Linux release variant you installed (*\-legacy* / *\-musl*
+	when required — the default *amd64* build is not universal).
 	After replace, may prompt to convert custom *www_dir* Go templates
 	to Minijinja (see *html\-migrate*).
 
@@ -111,6 +115,11 @@ Extended documentation:
 	Manage invite tokens for account creation.
 
 ## Mail policy and delivery
+
+*openrelay*
+	Allow or deny non\-local RCPT on unauthenticated inbound SMTP
+	(open\-relay\-class; default denied). Subcommands: *status*, *enable*,
+	*disable*. Run *reload* after enable/disable on a running server.
 
 *federation*
 	Federation policy, domain rules, and silent\-dismiss lists.

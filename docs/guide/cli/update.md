@@ -32,12 +32,18 @@ madmail update <PATH_OR_URL> [--accept-unsafe-https]
 
 ```bash
 madmail update /tmp/madmail-signed
-madmail update https://relay.example/releases/madmail
-madmail update --accept-unsafe-https https://self-signed.example/madmail
+
+# Default amd64 (newer glibc)
 madmail update https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz
+
+# Older distros — use the matching variant you installed with
+madmail update https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64-legacy.tar.gz
+madmail update https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64-musl.tar.gz
+
+madmail update --accept-unsafe-https https://self-signed.example/madmail
 ```
 
-See [upgrade](upgrade.md) for full behavior (TLS policy, archive extract, signature verify, systemd stop/replace/start, custom www template migration).
+See [upgrade](upgrade.md) for full behavior: TLS policy, archive extract, signature verify, **host preflight**, **`*.prev` backup/rollback**, Linux release variants, systemd stop/replace/start, custom www template migration.
 
 ## JSON output (`--json`)
 
