@@ -44,7 +44,7 @@ pub fn mxdeliv_http_status(err: &ChatmailError) -> StatusCode {
         ChatmailError::EncryptionNeeded(_) => StatusCode::FORBIDDEN,
         ChatmailError::QuotaExceeded { .. } => StatusCode::INSUFFICIENT_STORAGE,
         ChatmailError::MessageTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
-        ChatmailError::Protocol(_) => StatusCode::BAD_REQUEST,
+        ChatmailError::Protocol(_) | ChatmailError::UnauthorizedSender => StatusCode::BAD_REQUEST,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
@@ -66,7 +66,7 @@ fn status_body(err: &ChatmailError) -> &'static str {
         ChatmailError::EncryptionNeeded(_) => "Encryption Needed: Invalid Unencrypted Mail",
         ChatmailError::QuotaExceeded { .. } => "quota",
         ChatmailError::MessageTooLarge => "message too large",
-        ChatmailError::Protocol(_) => "bad request",
+        ChatmailError::Protocol(_) | ChatmailError::UnauthorizedSender => "bad request",
         _ => "error",
     }
 }

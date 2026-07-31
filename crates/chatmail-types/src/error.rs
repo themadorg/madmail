@@ -59,6 +59,13 @@ pub enum ChatmailError {
     #[error("federation rejected: {0}")]
     FederationRejected(String),
 
+    /// Submission: envelope or MIME From is not the authenticated identity (F-003).
+    ///
+    /// SMTP maps this to `553 5.7.0 Unauthorized use of sender address` without
+    /// relying on message-text substring matching.
+    #[error("Unauthorized use of sender address")]
+    UnauthorizedSender,
+
     #[error("protocol error: {0}")]
     Protocol(String),
 }
@@ -76,12 +83,20 @@ impl ChatmailError {
         Self::Protocol(msg.into())
     }
 
+    pub fn unauthorized_sender() -> Self {
+        Self::UnauthorizedSender
+    }
+
     pub fn message_too_large() -> Self {
         Self::MessageTooLarge
     }
 
     pub fn is_message_too_large(&self) -> bool {
         matches!(self, Self::MessageTooLarge)
+    }
+
+    pub fn is_unauthorized_sender(&self) -> bool {
+        matches!(self, Self::UnauthorizedSender)
     }
 }
 
@@ -113,6 +128,11 @@ mod tests {
             ChatmailError::protocol("syntax"),
             ChatmailError::Protocol(_)
         ));
+        assert!(ChatmailError::unauthorized_sender().is_unauthorized_sender());
+        assert_eq!(
+            format!("{}", ChatmailError::UnauthorizedSender),
+            "Unauthorized use of sender address"
+        );
     }
 
     #[test]

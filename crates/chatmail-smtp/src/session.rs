@@ -35,7 +35,7 @@ use tokio_rustls::TlsAcceptor;
 use crate::data_limit::{parse_smtp_size_parameter, read_smtp_data_limited};
 use crate::protocol::{
     check_inbound_mail_from, check_inbound_rcpt_local, check_outbound_rcpt_federation,
-    validate_submission_headers,
+    check_submission_mail_from_identity, validate_submission_headers,
 };
 
 #[derive(Clone)]
@@ -291,6 +291,31 @@ impl SmtpSession {
                             return Err(e);
                         }
                     }
+                    // Submission: envelope sender must be the authenticated identity
+                    // (TDD 02-smtp-server / Madmail authorize_sender).
+                    if self.cfg.require_auth {
+                        if let Some(auth_user) = self.authenticated_user.as_deref() {
+                            match check_submission_mail_from_identity(auth_user, &self.mail_from) {
+                                Ok(normalized) => self.mail_from = normalized,
+                                Err(ChatmailError::UnauthorizedSender) => {
+                                    writer
+                                        .write_all(
+                                            b"553 5.7.0 Unauthorized use of sender address\r\n",
+                                        )
+                                        .await?;
+                                    chatmail_metrics::record_smtp_failed_command(
+                                        self.cfg.module,
+                                        "MAIL",
+                                        553,
+                                        "5.7.0",
+                                    );
+                                    self.mail_from.clear();
+                                    continue;
+                                }
+                                Err(e) => return Err(e),
+                            }
+                        }
+                    }
                     let declared = match parse_smtp_size_parameter(&line) {
                         Ok(s) => s,
                         Err(_) => {
@@ -500,6 +525,17 @@ impl SmtpSession {
                                 "5.7.1",
                             );
                         }
+                        Err(ChatmailError::UnauthorizedSender) => {
+                            writer
+                                .write_all(b"553 5.7.0 Unauthorized use of sender address\r\n")
+                                .await?;
+                            chatmail_metrics::record_smtp_failed_command(
+                                self.cfg.module,
+                                "DATA",
+                                553,
+                                "5.7.0",
+                            );
+                        }
                         Err(ChatmailError::Protocol(_)) => {
                             writer
                                 .write_all(
@@ -554,7 +590,7 @@ impl SmtpSession {
 
         // Authenticated submission (587/465) — same path as WebSMTP.
         if self.cfg.require_auth {
-            validate_submission_headers(data, &self.mail_from)?;
+            validate_submission_headers(data, &self.mail_from, self.authenticated_user.as_deref())?;
             enforce_encryption(
                 data,
                 &EnforceOptions {
@@ -624,6 +660,7 @@ impl SmtpSession {
         // Federated group fan-out for remote recipients only when the operator
         // allows inbound remote RCPT (default off — anti open-relay).
         // Authenticated submission never reaches this path (`require_auth` early return).
+        // Body is written once and hard-linked per remote recipient when enqueue runs.
         if !remote_rcpts.is_empty() && self.ctx.inbound_remote_rcpt.allowed() {
             delivery
                 .enqueue_remote_batch(&self.mail_from, &remote_rcpts, data)
@@ -837,6 +874,7 @@ mod tests {
                     || acc.contains("235 ")
                     || acc.contains("354 ")
                     || acc.contains("523 ")
+                    || acc.contains("535 ")
                     || acc.contains("550 ")
                     || acc.contains("552 ")
                     || acc.contains("553 ")
@@ -920,6 +958,631 @@ mod tests {
         )
         .await;
         assert!(t.contains("554 5.6.0"), "got: {t}");
+    }
+
+    /// Shared submission config + AUTH PLAIN for identity-binding tests.
+    /// AUTH always uses `users[0]`; additional entries are only created in the DB.
+    async fn submission_auth_setup(
+        users: &[(&str, &str)],
+    ) -> (DbPool, Arc<AppState>, SmtpSessionConfig, String) {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        for (u, p) in users {
+            let hash = hash_password(p).unwrap();
+            chatmail_db::passwords::create_user(&pool, u, &hash)
+                .await
+                .unwrap();
+        }
+        let (auth_user, auth_pass) = users[0];
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        let b64 =
+            base64::engine::general_purpose::STANDARD.encode(format!("\0{auth_user}\0{auth_pass}"));
+        let auth = format!("AUTH PLAIN {b64}");
+        let cfg = SmtpSessionConfig {
+            hostname: "mx.test".into(),
+            primary_domain: "test".into(),
+            local_domains: vec!["test".into()],
+            jit_domain: None,
+            credential_policy: CredentialPolicy::default(),
+            require_auth: true,
+            module: "submission",
+            starttls_config: None,
+        };
+        (pool, ctx, cfg, auth)
+    }
+
+    /// AUTH as A, MAIL FROM as A → accepted.
+    #[tokio::test]
+    async fn submission_mail_from_matches_auth_identity_ok() {
+        let (pool, ctx, cfg, auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:<alice@test>"],
+        )
+        .await;
+        assert!(
+            t.contains("235 2.7.0") && t.contains("250 2.1.0"),
+            "AUTH+MAIL FROM same identity must succeed: {t}"
+        );
+    }
+
+    /// AUTH as A, MAIL FROM as other local user B → 553 (impersonation).
+    #[tokio::test]
+    async fn submission_mail_from_other_local_user_rejected() {
+        let (pool, ctx, cfg, auth) =
+            submission_auth_setup(&[("alice@test", "secret"), ("bob@test", "other")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:<bob@test>"],
+        )
+        .await;
+        assert!(
+            t.contains("553 5.7.0") && t.contains("Unauthorized use of sender address"),
+            "forging other local user must be rejected: {t}"
+        );
+        assert!(
+            !t.contains("250 2.1.0"),
+            "MAIL FROM must not succeed after impersonation attempt: {t}"
+        );
+    }
+
+    /// F-003 full attack path (must not return 250 OK on DATA):
+    /// AUTH as A, MAIL FROM:<B>, From: B, encrypted-looking body.
+    #[tokio::test]
+    async fn f003_auth_a_mail_from_b_from_b_data_not_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let (pool, _ctx, cfg, auth) =
+            submission_auth_setup(&[("alice@test", "secret"), ("bob@test", "other")]).await;
+        // Own AppState under temp dir so we can assert no maildir write for bob/alice.
+        let ctx = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let body = std::str::from_utf8(PGP_MIME_BODY)
+            .unwrap()
+            .replace("sender@test", "bob@test")
+            .replace("rcpt@test", "alice@test");
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx.clone(),
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<bob@test>",
+                "RCPT TO:<alice@test>",
+                "DATA",
+                &format!("DATA:{body}"),
+                ".DATA_END",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("553 5.7.0"),
+            "F-003: forged MAIL FROM must be 553, got: {t}"
+        );
+        assert!(
+            !t.contains("250 2.1.0"),
+            "F-003: MAIL FROM must not be accepted: {t}"
+        );
+        assert!(
+            !t.contains("354 "),
+            "F-003: must not enter DATA after forged MAIL FROM: {t}"
+        );
+        assert!(
+            !t.contains("250 2.0.0"),
+            "F-003: DATA must not succeed (was the 250 OK bug): {t}"
+        );
+        for user in ["alice@test", "bob@test"] {
+            let paths = ctx.mailbox_store.maildir_for_user(user);
+            let n_new = std::fs::read_dir(&paths.new)
+                .map(|d| d.count())
+                .unwrap_or(0);
+            let n_cur = std::fs::read_dir(&paths.cur)
+                .map(|d| d.count())
+                .unwrap_or(0);
+            assert_eq!(
+                n_new + n_cur,
+                0,
+                "F-003: no delivery for {user} after impersonation"
+            );
+        }
+    }
+
+    /// AUTH as A, MAIL FROM as external address → 553.
+    #[tokio::test]
+    async fn submission_mail_from_external_address_rejected() {
+        let (pool, ctx, cfg, auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<spoof@external.example>",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("553 5.7.0"),
+            "forging external MAIL FROM must be rejected: {t}"
+        );
+    }
+
+    /// AUTH as A, MAIL FROM with different local-part same domain → 553.
+    #[tokio::test]
+    async fn submission_mail_from_different_local_part_rejected() {
+        let (pool, ctx, cfg, auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:<alice2@test>"],
+        )
+        .await;
+        assert!(t.contains("553 5.7.0"), "got: {t}");
+    }
+
+    /// AUTH as A, MAIL FROM with different domain but same local-part → 553.
+    #[tokio::test]
+    async fn submission_mail_from_different_domain_rejected() {
+        let (pool, ctx, cfg, auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:<alice@other.test>"],
+        )
+        .await;
+        assert!(t.contains("553 5.7.0"), "got: {t}");
+    }
+
+    /// Case folding: store lowercased, AUTH with mixed-case credentials, MAIL FROM lower → OK.
+    #[tokio::test]
+    async fn submission_mail_from_case_insensitive_auth_user() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("secret").unwrap();
+        // Accounts are stored in normalized form; AUTH still accepts mixed case.
+        chatmail_db::passwords::create_user(&pool, "alice@test", &hash)
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        let b64 = base64::engine::general_purpose::STANDARD.encode("\0Alice@Test\0secret");
+        let auth = format!("AUTH PLAIN {b64}");
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: true,
+                module: "submission",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:<alice@test>"],
+        )
+        .await;
+        assert!(
+            t.contains("235 2.7.0") && t.contains("250 2.1.0"),
+            "case-insensitive AUTH + MAIL FROM must succeed: {t}"
+        );
+    }
+
+    /// Case folding: AUTH lower, MAIL FROM mixed case → OK.
+    #[tokio::test]
+    async fn submission_mail_from_case_insensitive_envelope() {
+        let (pool, ctx, cfg, auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:<Alice@Test>"],
+        )
+        .await;
+        assert!(
+            t.contains("250 2.1.0"),
+            "case-insensitive envelope must succeed: {t}"
+        );
+    }
+
+    /// Null reverse-path on submission → 553 (not owned / invalid identity).
+    #[tokio::test]
+    async fn submission_mail_from_null_sender_rejected() {
+        let (pool, ctx, cfg, auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let t = smtp_dialog(cfg, pool, ctx, &["EHLO client.test", &auth, "MAIL FROM:<>"]).await;
+        assert!(
+            t.contains("553 5.7.0"),
+            "null reverse-path must not bypass identity binding: {t}"
+        );
+    }
+
+    /// After a rejected forged MAIL FROM, a correct MAIL FROM still works (session recoverable).
+    #[tokio::test]
+    async fn submission_mail_from_recover_after_impersonation_reject() {
+        let (pool, ctx, cfg, auth) =
+            submission_auth_setup(&[("alice@test", "secret"), ("bob@test", "x")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<bob@test>",
+                "MAIL FROM:<alice@test>",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("553 5.7.0"),
+            "first MAIL FROM must be rejected: {t}"
+        );
+        // Second MAIL FROM should get 250 after the 553.
+        let mail_oks: Vec<_> = t.match_indices("250 2.1.0").collect();
+        assert!(
+            !mail_oks.is_empty(),
+            "correct MAIL FROM after reject must succeed: {t}"
+        );
+    }
+
+    /// SASL PLAIN authzid ≠ authcid: identity is authcid; cannot MAIL FROM as authzid claim.
+    /// Payload form: `\0authzid\0authcid\0password` (RFC 4616).
+    #[tokio::test]
+    async fn submission_authzid_claim_cannot_forge_mail_from() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("secret").unwrap();
+        chatmail_db::passwords::create_user(&pool, "alice@test", &hash)
+            .await
+            .unwrap();
+        chatmail_db::passwords::create_user(&pool, "bob@test", &hash_password("x").unwrap())
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        // RFC 4616: authzid UTF8NUL authcid UTF8NUL passwd (authzid claim = bob).
+        // Server binds identity to authcid (alice), not the authzid claim.
+        let b64 = base64::engine::general_purpose::STANDARD.encode("bob@test\0alice@test\0secret");
+        let auth = format!("AUTH PLAIN {b64}");
+        let cfg = SmtpSessionConfig {
+            hostname: "mx.test".into(),
+            primary_domain: "test".into(),
+            local_domains: vec!["test".into()],
+            jit_domain: None,
+            credential_policy: CredentialPolicy::default(),
+            require_auth: true,
+            module: "submission",
+            starttls_config: None,
+        };
+        let t_forge = smtp_dialog(
+            cfg.clone(),
+            pool.clone(),
+            Arc::clone(&ctx),
+            &["EHLO client.test", &auth, "MAIL FROM:<bob@test>"],
+        )
+        .await;
+        assert!(
+            t_forge.contains("235 2.7.0"),
+            "AUTH with non-empty authzid must still succeed as authcid: {t_forge}"
+        );
+        assert!(
+            t_forge.contains("553 5.7.0"),
+            "MAIL FROM as authzid must not override authcid identity: {t_forge}"
+        );
+
+        let t_ok = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:<alice@test>"],
+        )
+        .await;
+        assert!(
+            t_ok.contains("250 2.1.0"),
+            "MAIL FROM as authcid must succeed: {t_ok}"
+        );
+    }
+
+    /// SIZE= on MAIL FROM must not skip identity check.
+    #[tokio::test]
+    async fn submission_mail_from_size_param_still_checks_identity() {
+        let (pool, ctx, cfg, auth) =
+            submission_auth_setup(&[("alice@test", "secret"), ("bob@test", "x")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:<bob@test> SIZE=1024"],
+        )
+        .await;
+        assert!(
+            t.contains("553 5.7.0"),
+            "SIZE= must not bypass sender binding: {t}"
+        );
+    }
+
+    /// Bare address (no angle brackets) still bound.
+    #[tokio::test]
+    async fn submission_mail_from_bare_address_still_bound() {
+        let (pool, ctx, cfg, auth) =
+            submission_auth_setup(&[("alice@test", "secret"), ("bob@test", "x")]).await;
+        let t_bad = smtp_dialog(
+            cfg.clone(),
+            pool.clone(),
+            Arc::clone(&ctx),
+            &["EHLO client.test", &auth, "MAIL FROM:bob@test"],
+        )
+        .await;
+        assert!(
+            t_bad.contains("553 5.7.0"),
+            "bare forged address must be 553: {t_bad}"
+        );
+        let t_ok = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:alice@test"],
+        )
+        .await;
+        assert!(
+            t_ok.contains("250 2.1.0"),
+            "bare matching address must be 250: {t_ok}"
+        );
+    }
+
+    /// Subaddress / plus-tag is not an alias under strict equality.
+    #[tokio::test]
+    async fn submission_mail_from_subaddress_rejected() {
+        let (pool, ctx, cfg, auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", &auth, "MAIL FROM:<alice+tag@test>"],
+        )
+        .await;
+        assert!(
+            t.contains("553 5.7.0"),
+            "subaddress is not authorized without aliases policy: {t}"
+        );
+    }
+
+    /// After forged MAIL FROM rejected, RCPT must fail (no leftover envelope).
+    #[tokio::test]
+    async fn submission_rcpt_after_forged_mail_from_rejected() {
+        let (pool, ctx, cfg, auth) =
+            submission_auth_setup(&[("alice@test", "secret"), ("bob@test", "x")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<bob@test>",
+                "RCPT TO:<alice@test>",
+            ],
+        )
+        .await;
+        assert!(t.contains("553 5.7.0"), "forged MAIL FROM: {t}");
+        assert!(
+            t.contains("503 5.5.1"),
+            "RCPT without accepted MAIL FROM must be 503: {t}"
+        );
+    }
+
+    /// RSET clears envelope but not AUTH; binding still applies after RSET.
+    #[tokio::test]
+    async fn submission_rset_keeps_auth_binding() {
+        let (pool, ctx, cfg, auth) =
+            submission_auth_setup(&[("alice@test", "secret"), ("bob@test", "x")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<alice@test>",
+                "RSET",
+                "MAIL FROM:<bob@test>",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("250 2.1.0"),
+            "first MAIL FROM as self must succeed: {t}"
+        );
+        assert!(
+            t.contains("553 5.7.0"),
+            "after RSET, forged MAIL FROM must still be 553: {t}"
+        );
+    }
+
+    /// Matching AUTH + envelope, but MIME From forges B → 554 (header vs envelope).
+    #[tokio::test]
+    async fn submission_auth_ok_envelope_ok_from_header_forged_554() {
+        let (pool, ctx, cfg, auth) =
+            submission_auth_setup(&[("alice@test", "secret"), ("bob@test", "x")]).await;
+        let body = std::str::from_utf8(PGP_MIME_BODY)
+            .unwrap()
+            .replace("sender@test", "bob@test")
+            .replace("rcpt@test", "alice@test");
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<alice@test>",
+                "RCPT TO:<alice@test>",
+                "DATA",
+                &format!("DATA:{body}"),
+                ".DATA_END",
+            ],
+        )
+        .await;
+        assert!(t.contains("250 2.1.0"), "MAIL FROM as self OK: {t}");
+        assert!(
+            t.contains("554 5.6.0"),
+            "From header ≠ envelope must still be 554: {t}"
+        );
+        assert!(
+            !t.contains("250 2.0.0"),
+            "DATA must not accept mismatched From: {t}"
+        );
+    }
+
+    /// Display-name From with correct mailbox still OK when envelope matches AUTH.
+    #[tokio::test]
+    async fn submission_from_display_name_matching_mailbox_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let (pool, _ctx, cfg, auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let ctx = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let body = "From: Alice Example <alice@test>\r\nTo: alice@test\r\nSubject: e\r\nContent-Type: multipart/encrypted; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<alice@test>",
+                "RCPT TO:<alice@test>",
+                "DATA",
+                &format!("DATA:{body}"),
+                ".DATA_END",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("250 2.0.0 OK"),
+            "display-name From with matching addr must deliver: {t}"
+        );
+    }
+
+    /// Display-name From with wrong mailbox rejected even if display text says "Alice".
+    #[tokio::test]
+    async fn submission_from_display_name_wrong_mailbox_rejected() {
+        let (pool, ctx, cfg, auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let body = "From: Alice <bob@test>\r\nTo: alice@test\r\nSubject: e\r\nContent-Type: multipart/encrypted; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<alice@test>",
+                "RCPT TO:<alice@test>",
+                "DATA",
+                &format!("DATA:{body}"),
+                ".DATA_END",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("554 5.6.0"),
+            "display-name cannot hide wrong mailbox: {t}"
+        );
+    }
+
+    /// Full path: AUTH matches envelope matches From header → DATA OK.
+    #[tokio::test]
+    async fn submission_auth_envelope_from_aligned_data_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("secret").unwrap();
+        chatmail_db::passwords::create_user(&pool, "alice@test", &hash)
+            .await
+            .unwrap();
+        let ctx = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let b64 = base64::engine::general_purpose::STANDARD.encode("\0alice@test\0secret");
+        let auth = format!("AUTH PLAIN {b64}");
+        let body = std::str::from_utf8(PGP_MIME_BODY)
+            .unwrap()
+            .replace("sender@test", "alice@test")
+            .replace("rcpt@test", "alice@test");
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: true,
+                module: "submission",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &[
+                "EHLO client.test",
+                &auth,
+                "MAIL FROM:<alice@test>",
+                "RCPT TO:<alice@test>",
+                "DATA",
+                &format!("DATA:{body}"),
+                ".DATA_END",
+            ],
+        )
+        .await;
+        assert!(
+            t.contains("250 2.0.0 OK"),
+            "aligned submission must deliver: {t}"
+        );
+        assert!(!t.contains("553 "), "must not see unauthorized sender: {t}");
+    }
+
+    /// Inbound (no AUTH required) must still accept arbitrary MAIL FROM (not submission).
+    #[tokio::test]
+    async fn inbound_mail_from_not_bound_to_auth() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let ctx = Arc::new(AppState::new(std::env::temp_dir(), pool.clone()));
+        let t = smtp_dialog(
+            SmtpSessionConfig {
+                hostname: "mx.test".into(),
+                primary_domain: "test".into(),
+                local_domains: vec!["test".into()],
+                jit_domain: None,
+                credential_policy: CredentialPolicy::default(),
+                require_auth: false,
+                module: "smtp",
+                starttls_config: None,
+            },
+            pool,
+            ctx,
+            &["EHLO peer.test", "MAIL FROM:<stranger@peer.test>"],
+        )
+        .await;
+        assert!(
+            t.contains("250 2.1.0"),
+            "inbound must not require AUTH identity match: {t}"
+        );
+        assert!(
+            !t.contains("553 "),
+            "inbound must not 553 on foreign FROM: {t}"
+        );
+    }
+
+    /// Submission without AUTH still 530 (identity check is not a substitute for AUTH).
+    #[tokio::test]
+    async fn submission_mail_from_without_auth_still_530() {
+        let (pool, ctx, cfg, _auth) = submission_auth_setup(&[("alice@test", "secret")]).await;
+        let t = smtp_dialog(
+            cfg,
+            pool,
+            ctx,
+            &["EHLO client.test", "MAIL FROM:<alice@test>"],
+        )
+        .await;
+        assert!(
+            t.contains("530 5.7.0"),
+            "submission without AUTH must require auth: {t}"
+        );
     }
 
     /// Unauthenticated inbound rejects remote RCPT by default.
