@@ -1,3 +1,11 @@
+## [2.19.1](https://github.com/themadorg/madmail/compare/v2.19.0...v2.19.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* bind SMTP MAIL FROM to authenticated identity ([6d52d03](https://github.com/themadorg/madmail/commit/6d52d03ec59e11c24410e56a44d7323c3ac88af8))
+* **smtp:** use UnauthorizedSender error for F-003 DATA mapping ([95687fe](https://github.com/themadorg/madmail/commit/95687fe895e79a684d10822f56e0f31e47d2279c))
+
 # [2.19.0](https://github.com/themadorg/madmail/compare/v2.18.4...v2.19.0) (2026-07-31)
 
 
