@@ -1,14 +1,15 @@
-# Version manager (`/opt/madmail`)
+# Version manager (platform install root)
 
 **Status:** design plan (not implemented)  
 **Related code today:**
 
 | Area | Location | Current behavior |
 |------|----------|------------------|
-| Install binary | `crates/chatmail/src/ctl/install/system.rs` | Copies live exe → `/usr/local/bin/madmail` |
-| systemd unit | `crates/chatmail/src/ctl/install/systemd.rs` | `ExecStart=/usr/local/bin/madmail …` |
+| Install binary | `crates/chatmail/src/ctl/install/system.rs` | Unix: copies live exe → `/usr/local/bin/madmail`; Windows: install path under ProgramData-style layout |
+| Service | `systemd.rs` (Unix); Windows service install | Unix: `ExecStart=/usr/local/bin/madmail …`; Windows: service ImagePath to installed exe |
 | Signed upgrade | `crates/chatmail/src/upgrade.rs` | In-place replace of `current_exe`; sibling `*.prev` only |
-| Deploy scripts | `scripts/deploy.sh`, `scripts/deploy.defaults.sh` | `REMOTE_BIN=/usr/local/bin/madmail` |
+| Deploy scripts | `scripts/deploy.sh`, `scripts/deploy.defaults.sh` | Linux: `REMOTE_BIN=/usr/local/bin/madmail` |
+| Install roots | `ctl/install/mod.rs` | Windows config/state: `%ProgramData%\Madmail\{config,data}` via `windows_madmail_root()` — **no `/opt`** |
 | Version stamp | `.version`, workspace `Cargo.toml` | e.g. `2.20.0` |
 
 **Operator CLI (planned):** [`../guide/cli/`](../guide/cli/README.md) — new `versions` / extend `upgrade` (see below).  
@@ -23,33 +24,52 @@ Upgrades keep **one** previous binary (`/usr/local/bin/madmail.prev`). That is e
 - Keep a **history** of N known-good releases on disk
 - Switch between versions without re-downloading
 - Inspect **which** build is live vs archived
-- Avoid filling `/usr/local/bin` with ad-hoc folders of old bins
+- Avoid filling PATH directories (`/usr/local/bin`, or a Windows “bin” folder) with ad-hoc copies of old bins
 
-Putting archives under `/usr/local/bin/` is the wrong place: that directory is for **PATH commands**, not version trees.
+Putting archives next to the PATH command is the wrong place: PATH is for the **stable launcher**, not the version tree. **Windows has no `/opt`** — use a Windows-native install root instead (below).
 
 ---
 
 ## Goals
 
-1. Store versioned madmail binaries under **`/opt/madmail`** (FHS-friendly app root).
-2. Keep **`/usr/local/bin/madmail`** as a stable PATH entry (symlink → active version).
+1. Store versioned madmail binaries under a **platform install root** (not the PATH directory alone):
+   - **Linux/Unix:** `/opt/madmail` (FHS add-on app root)
+   - **Windows:** `%ProgramFiles%\Madmail` (default; no `/opt`)
+2. Keep a **stable PATH / service entry** that points at the active version (symlink, junction, or small launcher — platform-appropriate).
 3. On every successful **install** / **upgrade**, archive the previous binary with a **version id**.
 4. Support **list**, **use** (switch), **prune**, and **rollback** without re-fetch.
-5. Preserve existing safety: Ed25519 signature check, host preflight (`version`), systemd stop/start, automatic rollback if post-install smoke fails.
-6. **Signature on every activation path:** any install/upgrade that writes a binary into the version tree **must** verify Ed25519 first; `versions use` **must** re-verify the on-disk binary before flipping the active symlink. Inventory commands (`list`, `current`, `path`, `prune`, `remove`) do **not** need a signature check.
-7. **One-shot “get latest from GitHub”:** `madmail update latest` downloads the current release asset from GitHub Releases, then runs the **same** URL-upgrade security pipeline (TLS, size caps, archive rules, **mandatory Ed25519 signature check**, host preflight, version-tree install, smoke/rollback) as an explicit download URL. **GitHub does not replace signature verification** — unsigned or bad-signed assets must always abort.
-8. Migrate smoothly from the current single-file install.
+5. Preserve existing safety: Ed25519 signature check, host preflight (`version`), service stop/start (systemd or Windows service), automatic rollback if post-install smoke fails.
+6. **Signature on every activation path:** any install/upgrade that writes a binary into the version tree **must** verify Ed25519 first; `versions use` **must** re-verify the on-disk binary before flipping the active pointer. Inventory commands (`list`, `current`, `path`, `prune`, `remove`) do **not** need a signature check.
+7. **One-shot “get latest from GitHub”:** `madmail update latest` downloads the current **host-matching** release asset (Linux or Windows), then runs the **same** URL-upgrade security pipeline (TLS, size caps, archive rules, **mandatory Ed25519 signature check**, host preflight, version-tree install, smoke/rollback). **GitHub does not replace signature verification** — unsigned or bad-signed assets must always abort.
+8. Migrate smoothly from the current single-file install on **both** Unix and Windows.
+9. **Same CLI semantics** on Windows and Unix (`versions list|use|…`, `update latest`); only roots and service integration differ.
 
 ### Non-goals (v1)
 
 - Multi-arch side-by-side on one host (one primary arch per install tree).
-- Storing full release tarballs / Windows artifacts under `/opt` (Linux server binary only).
+- Storing full multi-platform release tarballs in the version tree (store **this host’s** extracted binary only: `madmail` or `madmail.exe`).
 - Replacing GitHub Releases / `publish.sh` as the distribution channel.
-- Per-user non-root installs (upgrade/install remain root-owned system tools).
+- Per-user non-admin installs as the default (system install remains elevated: root / Administrator). Optional later: per-user root under `%LOCALAPPDATA%\Madmail`.
 
 ---
 
 ## Layout
+
+Paths are resolved by a single helper, e.g. `install_root()` → env override or platform default. **Never hardcode `/opt` on Windows.**
+
+### Platform defaults
+
+| Role | Linux / Unix | Windows |
+|------|----------------|---------|
+| Install / version root | `/opt/madmail` | `%ProgramFiles%\Madmail` (e.g. `C:\Program Files\Madmail`) |
+| Version dirs | `{root}/versions/<ver>/madmail` | `{root}\versions\<ver>\madmail.exe` |
+| Optional `current` pointer | `{root}/current` → `versions/<ver>` (symlink) | `{root}\current` → `versions\<ver>` (**directory junction** or symlink; both need appropriate privileges) |
+| Stable PATH / service binary | `/usr/local/bin/madmail` → active exe (symlink) | Prefer `{root}\bin\madmail.exe` → active exe, **or** re-point Windows service `ImagePath` to active path; add `{root}\bin` to machine PATH if desired |
+| Runtime state (mail, DB) | `/var/lib/madmail` (or `state_dir`) | `%ProgramData%\Madmail\data` (existing `windows_madmail_root()` — **not** under Program Files version tree) |
+| Config | `/etc/…` / configured path | `%ProgramData%\Madmail\config` |
+| Env override (tests + custom) | `MADMAIL_INSTALL_ROOT` (alias: `MADMAIL_OPT_ROOT` on Unix for backward naming) | Same `MADMAIL_INSTALL_ROOT` (e.g. `C:\Temp\madmail-install-test`) |
+
+### Linux tree
 
 ```text
 /opt/madmail/
@@ -57,17 +77,44 @@ Putting archives under `/usr/local/bin/` is the wrong place: that directory is f
   versions/
     2.19.0/
       madmail                        # executable (mode 0755)
-      meta.json                      # optional install metadata
+      meta.json
     2.20.0/
       madmail
       meta.json
-  state/                             # reserved; do NOT put maildir here
-                                     # (runtime state stays under InstallConfig.state_dir,
-                                     #  typically /var/lib/madmail)
 
 /usr/local/bin/madmail -> /opt/madmail/versions/2.20.0/madmail
-# or -> /opt/madmail/current/madmail
 ```
+
+### Windows tree
+
+```text
+%ProgramFiles%\Madmail\
+  current → versions\2.20.0          # junction or symlink (optional)
+  versions\
+    2.19.0\
+      madmail.exe
+      meta.json
+    2.20.0\
+      madmail.exe
+      meta.json
+  bin\
+    madmail.exe → ..\versions\2.20.0\madmail.exe   # stable entry (symlink/junction/hardlink)
+
+# Runtime state stays separate:
+%ProgramData%\Madmail\config\
+%ProgramData%\Madmail\data\
+```
+
+**Windows notes:**
+
+| Topic | Detail |
+|-------|--------|
+| No `/opt` | Do not create or document `C:\opt\madmail` as the default. |
+| Symlinks | Creating symlinks often requires Administrator or Developer Mode; **directory junctions** (`mklink /J`) or **replace-file** of a stable `bin\madmail.exe` copy are acceptable if symlink fails — document chosen strategy in implementation. Prefer **atomic replace** of the active pointer. |
+| Locked exe | Windows may lock the running `madmail.exe`; upgrade must stop the Windows service (and any other holders) before replace, same as stop-systemd-before-replace on Linux. |
+| Binary name | Always `madmail.exe` in version dirs; CLI still invoked as `madmail` when on PATH. |
+| `update latest` asset | Host-matching Windows asset (e.g. `madmail-windows-amd64.zip` / `.tar.gz` / signed exe — follow whatever `publish.sh` ships); same size + signature rules as Linux. |
+| Archive formats | If Windows releases use `.zip`, either allow `.zip` **only for Windows builds** in the download helper or ship `.tar.gz` for both; document in PR that implements `update latest`. |
 
 ### Version directory naming
 
@@ -75,8 +122,8 @@ Putting archives under `/usr/local/bin/` is the wrong place: that directory is f
 |------|--------|
 | Primary id | Semver from binary (`madmail version` / embedded package version), e.g. `2.20.0` |
 | Collision | Same semver rebuilt → use `2.20.0+YYYYMMDDHHMMSS` or `2.20.0+git.<shortsha>` if available |
-| Invalid chars | Reject path separators; only `[0-9A-Za-z._+-]` |
-| Active pointer | Atomic symlink replace for `current` and `/usr/local/bin/madmail` |
+| Invalid chars | Reject path separators (`/`, `\`) and Windows-reserved names; only `[0-9A-Za-z._+-]` |
+| Active pointer | Atomic update of `current` + stable PATH entry (symlink/junction/replace) |
 
 ### `meta.json` (optional but recommended)
 
@@ -88,22 +135,27 @@ Putting archives under `/usr/local/bin/` is the wrong place: that directory is f
   "source_url": "https://github.com/themadorg/madmail/releases/download/v2.20.0/madmail-linux-amd64",
   "sha256": "…",
   "variant": "linux-amd64",
+  "os": "linux",
   "signature_ok": true
 }
 ```
+
+On Windows, `variant` / `os` reflect the Windows asset (e.g. `"windows-amd64"`, `"windows"`).
 
 ---
 
 ## Runtime and PATH contract
 
-| Consumer | Resolution |
-|----------|------------|
-| Shell / admin | `/usr/local/bin/madmail` on `PATH` |
-| systemd | Prefer **stable path** in unit file: either keep `ExecStart=/usr/local/bin/madmail` (symlink) **or** `ExecStart=/opt/madmail/current/madmail` |
-| `madmail upgrade` | Resolves **real** path via `current_exe` + canonicalize; installs new version **next to** version tree, then flips symlink |
-| `*.prev` | Deprecated after migration; keep one generation for compatibility or map to “previous version dir” |
+| Consumer | Linux / Unix | Windows |
+|----------|--------------|---------|
+| Shell / admin | `/usr/local/bin/madmail` on `PATH` | `{install_root}\bin\madmail.exe` on machine PATH (or service-only if PATH not updated) |
+| Service | Prefer stable `ExecStart=/usr/local/bin/madmail` (symlink) | Prefer stable service `ImagePath` → `{install_root}\bin\madmail.exe` (or `current\madmail.exe`) so version flips do not require rewriting the service definition when possible |
+| `madmail upgrade` | Resolve real path via `current_exe` + canonicalize; install into version tree; flip active pointer | Same algorithm; stop Windows service before replace if file is locked |
+| `*.prev` | Deprecated after migration | Same |
 
-**Recommendation:** keep `ExecStart=/usr/local/bin/madmail` so existing units and `REMOTE_BIN` defaults keep working; only the symlink target changes.
+**Recommendation (Linux):** keep `ExecStart=/usr/local/bin/madmail` so existing units and `REMOTE_BIN` defaults keep working; only the symlink target changes.
+
+**Recommendation (Windows):** keep one stable path for the service and PATH; never scatter versioned exes on the user PATH.
 
 ---
 
@@ -124,7 +176,7 @@ madmail versions path [version]     # print filesystem path
 
 | Command | Behavior |
 |---------|----------|
-| `list` | Enumerate **local** `/opt/madmail/versions/*`; mark active; show size, mtime, meta |
+| `list` | Enumerate **local** `{install_root}/versions/*` (Unix `/opt/madmail`, Windows `%ProgramFiles%\Madmail`); mark active; show size, mtime, meta |
 | `list --remote` | Query **GitHub Releases** (same project as `update latest`) and list remote version tags/assets available for this host; mark which are already installed locally and which is active; indicate remote `latest` |
 | `current` | Print active version id + resolved path |
 | `use V` | **Must** re-verify Ed25519 signature on `versions/V/madmail`, then preflight `version`, stop services, flip symlinks, start services; on smoke failure flip back. Refuse switch if signature fails (treat as tampered / unsigned archive). |
@@ -161,7 +213,7 @@ VERSION     SOURCE   ACTIVE  NOTES
 | Operation | Ed25519 signature |
 |-----------|-------------------|
 | Install new binary into the version tree (`install` / `upgrade` from path or URL) | **Always required** before write/activate (same as today — never skip) |
-| **`madmail update latest`** (and `upgrade latest`) | **Always required** after download/extract, **before** writing into `/opt/madmail/versions/` or stopping services. Same `verify_signature` as `perform_upgrade`. **Never skip** because the source is “official GitHub”. Fail closed: unsigned / invalid signature → abort, leave active version unchanged. |
+| **`madmail update latest`** (and `upgrade latest`) | **Always required** after download/extract, **before** writing into `{install_root}/versions/` or stopping services. Same `verify_signature` as `perform_upgrade`. **Never skip** because the source is “official GitHub”. Fail closed: unsigned / invalid signature → abort, leave active version unchanged. |
 | `versions use <V>` (activate an already-archived binary) | **Always required** on that on-disk file before stop/symlink flip |
 | `versions list` (local), `list --remote`, `current`, `path`, `prune`, `remove` | Not required — inventory/metadata only; remote list does **not** download or activate binaries |
 
@@ -184,7 +236,7 @@ Resolve the **latest** published madmail binary from **GitHub Releases** and ins
 |------|------|
 | Intent | “Give me the newest signed release for this host” |
 | Source | GitHub only: `https://github.com/themadorg/madmail/releases` (not arbitrary mirrors) |
-| Default asset | Prefer host-appropriate Linux server asset, e.g. `madmail-linux-amd64.tar.gz` (or musl / arch variant if detection already exists); document exact name table in operator CLI docs |
+| Default asset | Prefer **host OS + arch** asset: e.g. Linux `madmail-linux-amd64.tar.gz` (or musl); Windows `madmail-windows-amd64…` as published; document exact name table in operator CLI docs |
 | Resolution strategy (v1) | Prefer stable redirect URL: `…/releases/latest/download/<asset>` (same family as existing test fixture URL). Optional later: GitHub Releases API for tag/metadata before download. |
 | Entry point | Clap: `update` subcommand accepts either a path/URL **or** the keyword `latest` (not a free-form path). `upgrade latest` should behave the same for parity. |
 | After resolve | Call the **identical** code path as `handle_update_url` → versioned `perform_upgrade` (no bypass of checks). |
@@ -199,7 +251,7 @@ Resolve the **latest** published madmail binary from **GitHub Releases** and ins
 5. extract madmail from tar.gz when needed (owner-only temp; path safety)
 6. **verify Ed25519 signature on candidate (MANDATORY — refuse unsigned / invalid; do not proceed to install)**
 7. host preflight: candidate `version` (captures version id; aborts on exec/loader failure)
-8. install into /opt/madmail/versions/<VERSION>/, flip symlinks, smoke, rollback on failure
+8. install into `{install_root}/versions/<VERSION>/` (`madmail` or `madmail.exe`), flip active pointer, smoke, rollback on failure
 9. optional prune --keep N after success
 ```
 
@@ -224,44 +276,46 @@ Replace the current “overwrite file + `*.prev`” path in `perform_upgrade` wi
 1. verify Ed25519 signature on candidate
 2. preflight: candidate `version` (captures VERSION string)
 3. require root
-4. ensure /opt/madmail/versions exists (mode root-owned 0755)
+4. ensure `{install_root}/versions` exists (Unix: root-owned 0755; Windows: Administrators / appropriate ACLs)
 5. VERSION = parse from preflight output (fallback: meta / timestamp)
-6. DEST = /opt/madmail/versions/VERSION/
+6. DEST = `{install_root}/versions/VERSION/`
    - if DEST exists and same content hash → skip copy or refuse
-   - else install candidate → DEST/madmail (atomic write via temp + rename)
+   - else install candidate → `DEST/madmail` or `DEST/madmail.exe` (atomic write via temp + rename)
 7. write meta.json
-8. PREV = resolve current symlink target (or legacy /usr/local/bin/madmail file)
-9. stop systemd units
-10. atomic symlink update:
-    - /opt/madmail/current → versions/VERSION
-    - /usr/local/bin/madmail → versions/VERSION/madmail
+8. PREV = resolve current active pointer (or legacy single-file install path)
+9. stop services (systemd **or** Windows service)
+10. atomic active-pointer update:
+    - `{install_root}/current` → `versions/VERSION`
+    - stable PATH entry → active binary (Unix symlink; Windows junction/symlink/replace)
 11. smoke preflight on resolved path
-12. on failure: restore previous symlink targets, start services, error
+12. on failure: restore previous active pointer, start services, error
 13. on success: start services; optional prune --keep N
-14. post-upgrade hooks (www migrate, docs refresh) unchanged
+14. post-upgrade hooks (www migrate, docs refresh) unchanged where applicable
 ```
 
 ### Migration from legacy install
 
 | On-disk state | Action on first versioned upgrade/install |
 |---------------|-------------------------------------------|
-| Regular file `/usr/local/bin/madmail` | Copy into `versions/<oldver>/`, then convert PATH entry to symlink |
-| `/usr/local/bin/madmail.prev` | Import as `versions/<prevver>/` if version parseable; else `versions/prev-import-<ts>/` |
-| Already symlink into `/opt/madmail/…` | No-op migrate; continue versioned flow |
-| Unit still points at old path | Symlink keeps unit valid; optional `systemctl daemon-reload` only if unit text changes |
+| Regular file `/usr/local/bin/madmail` (Unix) | Copy into `versions/<oldver>/`, then convert PATH entry to symlink |
+| Single installed `madmail.exe` (Windows) | Copy into `versions\<oldver>\madmail.exe`, establish stable `bin\` or service path |
+| `*.prev` sibling | Import as `versions/<prevver>/` if version parseable; else `versions/prev-import-<ts>/` |
+| Already under platform install root version tree | No-op migrate; continue versioned flow |
+| Service still points at old path | Prefer updating only the stable entry target; rewrite service ImagePath/unit only if needed |
 
 ---
 
 ## Install path changes
 
-`InstallConfig.binary_path` today defaults to `/usr/local/bin/madmail`.
+`InstallConfig.binary_path` today defaults to `/usr/local/bin/madmail` on Unix; Windows uses its install defaults.
 
 | Phase | Install behavior |
 |-------|------------------|
-| v1 | Install into `/opt/madmail/versions/<ver>/madmail`, create `/usr/local/bin/madmail` symlink, leave `binary_path` as the **symlink path** for unit generation |
-| later | Optional flag `--binary-root /opt/madmail` for custom roots (test VMs, multi-instance) |
+| v1 (Unix) | Install into `/opt/madmail/versions/<ver>/madmail`, create `/usr/local/bin/madmail` symlink; `binary_path` stays the **stable** path for unit generation |
+| v1 (Windows) | Install into `%ProgramFiles%\Madmail\versions\<ver>\madmail.exe`, stable entry under `%ProgramFiles%\Madmail\bin\madmail.exe` (or equivalent); service uses stable path |
+| later | Optional flag `--install-root <path>` / `MADMAIL_INSTALL_ROOT` for custom roots (test VMs, multi-instance); **do not** require `/opt` on Windows |
 
-Dry-run (`install --dry-run`) must print both the version dir and the symlink plan.
+Dry-run (`install --dry-run`) must print platform-resolved version dir and stable-entry plan.
 
 ---
 
@@ -270,23 +324,29 @@ Dry-run (`install --dry-run`) must print both the version dir and the symlink pl
 | Knob | Today | After |
 |------|-------|--------|
 | `REMOTE_BIN` | `/usr/local/bin/madmail` | Unchanged (symlink) |
-| Unsigned deploy | `install -m 755` overwrites file | Prefer `madmail upgrade` or a small helper that writes into `/opt/madmail/versions/…` |
+| Unsigned deploy | overwrites single binary | Prefer `madmail upgrade` / helper into `{install_root}/versions/…` |
 | Signed deploy | `madmail upgrade` | Same command; version manager is internal |
 | Disk | N/A | Document prune policy; default keep 5 |
+| Linux servers | `REMOTE_BIN` symlink path | Unchanged |
+| Windows hosts | N/A in `deploy.sh` today | Document manual/service path; version tree under Program Files |
 
-Local dev / CI: version manager is **production-install** concern; unit tests use a temp root via env, e.g. `MADMAIL_OPT_ROOT=/tmp/madmail-opt-test`.
+Local dev / CI: version manager is a **production-install** concern; unit tests use a temp root via env, e.g. `MADMAIL_INSTALL_ROOT=/tmp/madmail-install-test` (Unix) or a temp directory on Windows CI. Accept `MADMAIL_OPT_ROOT` as a **deprecated alias** for the same override on Unix only.
 
 ---
 
 ## Configuration
 
-| Mechanism | Key / env | Default |
-|-----------|-----------|---------|
-| Env (test/override) | `MADMAIL_OPT_ROOT` | `/opt/madmail` |
-| Keep count | setting or flag `--keep` | `5` |
-| Config file | optional later in `madmail.conf` | not required for v1 |
+| Mechanism | Key / env | Default (Unix) | Default (Windows) |
+|-----------|-----------|----------------|-------------------|
+| Env (test/override) | `MADMAIL_INSTALL_ROOT` | `/opt/madmail` | `%ProgramFiles%\Madmail` |
+| Env (alias) | `MADMAIL_OPT_ROOT` | same as install root if set | ignored or maps to install root (document one behavior) |
+| Keep count | setting or flag `--keep` | `5` | `5` |
+| Config file | optional later in conf | not required for v1 | not required for v1 |
 
-Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains `/var/lib/madmail` (or configured `state_dir`).
+Do **not** store mailboxes or `chatmail.db` under the install/version root. State remains:
+
+- Unix: `/var/lib/madmail` (or configured `state_dir`)
+- Windows: `%ProgramData%\Madmail\data` (existing layout)
 
 ---
 
@@ -294,19 +354,19 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 
 | Concern | Mitigation |
 |---------|------------|
-| Untrusted binaries entering versions/ | **Always** Ed25519-verify the candidate before writing into `/opt/madmail/versions/` on install/upgrade (same as today; never skip) |
+| Untrusted binaries entering versions/ | **Always** Ed25519-verify the candidate before writing into `{install_root}/versions/` on install/upgrade (same as today; never skip) |
 | `update latest` / URL download | Same size caps (`MAX_DOWNLOAD_SIZE`), archive allow-list, TLS defaults, then **mandatory Ed25519** + preflight; GitHub “latest” is **not** a trust shortcut and **never** waives signature verification |
 | Tampered archived binary activated via `use` | **Always** re-run Ed25519 verify on `versions/V/madmail` before stop/symlink flip; refuse if verify fails |
 | Inventory without crypto cost | `list` / `list --remote` / `current` / `path` / `prune` / `remove` do not verify binary signatures (remote list is metadata only; installing still requires sig) |
 | Symlink attacks | Create dirs as root; refuse to follow unexpected symlinks when writing DEST |
-| PATH hijack | `/usr/local/bin/madmail` owned root:root, mode 755 symlink |
+| PATH hijack | Unix: `/usr/local/bin/madmail` root:root 755 symlink; Windows: ACL so only Administrators write install root / `bin` |
 | Prune deletes active | Refuse remove/prune of active target |
 | Rollback window | Keep at least previous version until next successful upgrade + prune |
 
 ### Activation order for `versions use V`
 
 ```text
-1. resolve path = versions/V/madmail (reject missing / not a regular file)
+1. resolve path = versions/V/madmail[.exe] (reject missing / not a regular file)
 2. verify_signature(path)  — hard fail if false (do not stop services)
 3. preflight path version
 4. stop systemd units
@@ -322,8 +382,8 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 
 | Layer | Cases |
 |-------|--------|
-| Unit | Version id sanitization; symlink atomic update helpers; meta parse; keep-N selection |
-| Unit (upgrade) | Extend `upgrade.rs` tests: install root via `MADMAIL_OPT_ROOT` temp dir; no real systemd; signature always required on install |
+| Unit | Version id sanitization; path helpers for Unix **and** Windows roots; active-pointer update helpers; meta parse; keep-N selection |
+| Unit (upgrade) | Extend `upgrade.rs` tests: install root via `MADMAIL_INSTALL_ROOT` temp dir; no real systemd/service; signature always required on install; `#[cfg(windows)]` path/exe naming |
 | Unit (`use`) | Signed archive → switch OK; unsigned/tampered on-disk binary → refuse before service stop; no sig check on `list` |
 | Unit (`list --remote`) | Mock GitHub API: merge remote tags with local tree; mark active/installed/latest; offline/error path; local-only rows preserved |
 | Unit (`update latest`) | Resolves expected GitHub latest URL for arch; rejects non-GitHub resolution; oversize download aborted; **unsigned / bad-signature payload fails after download and never flips symlink or stops services**; already-latest short-circuit still only after successful sig check on candidate |
@@ -337,15 +397,16 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 
 ### PR1 — Layout helpers + docs
 
-- Add module e.g. `crates/chatmail/src/ctl/versions.rs` (or `version_manager.rs`): paths, ensure dirs, read/write meta, list, resolve active.
-- Env `MADMAIL_OPT_ROOT` for tests.
+- Add module e.g. `crates/chatmail/src/ctl/versions.rs` (or `version_manager.rs`): **platform `install_root()`**, paths, ensure dirs, read/write meta, list, resolve active.
+- Env `MADMAIL_INSTALL_ROOT` (and Unix alias `MADMAIL_OPT_ROOT`) for tests.
+- Defaults: Unix `/opt/madmail`; Windows `%ProgramFiles%\Madmail` — **never** `/opt` on Windows.
 - This TDD file + stub operator page under `docs/guide/cli/versions.md` (can land with PR3).
-- Unit tests for pure path logic.
+- Unit tests for pure path logic on both `cfg(unix)` and `cfg(windows)`.
 
 ### PR2 — Install writes version tree
 
-- `install_binary`: copy into `/opt/madmail/versions/<ver>/madmail`, point `/usr/local/bin/madmail` symlink.
-- systemd unit generation unchanged (`ExecStart` still symlink path).
+- `install_binary`: copy into `{install_root}/versions/<ver>/madmail[.exe]`, update stable PATH entry.
+- systemd unit generation unchanged on Unix (`ExecStart` still stable path); Windows service keeps stable ImagePath when possible.
 - Migration: if existing real file at binary_path, import into versions first.
 
 ### PR3 — Upgrade uses version tree
@@ -353,13 +414,13 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 - Change `perform_upgrade` to install-to-versions + flip symlink (algorithm above).
 - Map rollback to previous version dir (keep `*.prev` import for one release if needed).
 - CLI: `madmail versions list [--remote]|current|use|prune|remove|path`.
-- `versions list --remote`: GitHub Releases metadata client; merge with local `/opt/madmail/versions`; no binary download.
+- `versions list --remote`: GitHub Releases metadata client; merge with local `{install_root}/versions`; no binary download; filter or label assets by OS.
 - `versions use`: call same `verify_signature` as `perform_upgrade` **before** stop/preflight-activate; fail closed if unsigned/bad signature.
 - Wire clap + `--json`; update parity matrix in `14-cli-tools.md`.
 
 ### PR4 — `update latest` (GitHub)
 
-- Clap: `madmail update latest` and `madmail upgrade latest` resolve GitHub Releases latest asset for this host.
+- Clap: `madmail update latest` and `madmail upgrade latest` resolve GitHub Releases latest asset for **this OS/arch** (Linux and Windows assets).
 - Implement resolver → call existing `handle_update_url` / shared download helper → **`perform_upgrade` (or shared install that always calls `verify_signature`)** — **no** separate install path that skips size/sig/preflight.
 - Hard requirement: signature failure aborts with the same class of error as a bad local upgrade (`INVALID SIGNATURE` / equivalent); active binary and services untouched.
 - Unit tests with mock HTTP for size limit + **signature failure must be covered**; fixture URL shape matching `…/releases/latest/download/…`.
@@ -376,17 +437,18 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 
 ## Acceptance criteria
 
-- [ ] Fresh `madmail install` produces `/opt/madmail/versions/<v>/madmail` and `/usr/local/bin/madmail` → that file.
+- [ ] Fresh install produces versioned binary under platform root: Unix `/opt/madmail/versions/<v>/madmail` + `/usr/local/bin/madmail` pointer; Windows `%ProgramFiles%\Madmail\versions\<v>\madmail.exe` + stable `bin` (or service) entry — **not** under `/opt` on Windows.
 - [ ] `madmail upgrade` adds a new version directory without deleting the previous one (until prune).
 - [ ] Failed post-install smoke restores previous active version and services recover (same guarantees as today).
 - [ ] `madmail versions list` / `use` work with `--json`.
 - [ ] `madmail versions list --remote` shows GitHub releases plus local install state (active/installed/available/latest); default `list` stays local-only and offline.
 - [ ] Install/upgrade **never** places a binary under `versions/` without a successful Ed25519 check.
 - [ ] `versions use` **always** re-verifies signature; fails before stopping services if verify fails; `list`/`path`/etc. do not require it.
-- [ ] `madmail update latest` fetches from GitHub Releases latest for this host and applies **full** URL-upgrade security (size cap, archive rules, **mandatory Ed25519 signature**, preflight, smoke/rollback) into the version tree.
+- [ ] `madmail update latest` fetches from GitHub Releases latest for this host OS/arch and applies **full** URL-upgrade security (size cap, archive rules, **mandatory Ed25519 signature**, preflight, smoke/rollback) into the version tree.
 - [ ] `madmail update latest` **never** activates or archives a binary that failed `verify_signature`; GitHub origin does not waive the check.
-- [ ] Existing systemd units with `ExecStart=/usr/local/bin/madmail` need no edit for v1.
-- [ ] Tests pass with `MADMAIL_OPT_ROOT` under tmp; no requirement to write real `/opt` in CI.
+- [ ] Existing systemd units with `ExecStart=/usr/local/bin/madmail` need no edit for v1 (Unix).
+- [ ] Windows service can keep a stable ImagePath across version flips when using `bin\` or `current` pointer.
+- [ ] Tests pass with `MADMAIL_INSTALL_ROOT` under tmp; no requirement to write real `/opt` or real `Program Files` in CI.
 
 ---
 
@@ -394,12 +456,14 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 
 1. **Exact CLI name:** `versions` vs `version` vs `bin`?
 2. **Keep count default:** 5 vs 3 vs unlimited until explicit prune?
-3. **Should `current` symlink under `/opt` be required**, or only `/usr/local/bin/madmail`?
+3. **Should `current` under install root be required**, or only the stable PATH entry (`/usr/local/bin/madmail` / `bin\madmail.exe`)?
 4. **Import policy for `madmail.prev`:** always import, or only when version string is recoverable?
-5. **Multi-instance hosts:** one `/opt/madmail` vs `/opt/madmail-<instance>` (out of scope unless needed).
-6. **`update latest` asset selection:** hardcode `madmail-linux-amd64.tar.gz` vs auto-detect arch/musl (prefer auto if reliable; document fallback).
+5. **Multi-instance hosts:** one install root vs `Madmail-<instance>` (out of scope unless needed).
+6. **`update latest` asset selection:** auto-detect OS/arch (required) vs hardcode; Linux musl vs gnu; Windows asset naming from `publish.sh`.
 7. **`update latest` vs Releases API:** redirect URL only (v1) vs API for tag display / multi-asset pick. Note: `versions list --remote` **needs** the Releases API (or equivalent) even if `update latest` uses the redirect URL.
 8. **`list --remote` depth:** all releases vs last N (e.g. 20) vs only latest; default suggest last **20** non-prerelease unless `--all`.
+9. **Windows active pointer:** symlink vs junction vs replace-file for `bin\madmail.exe` when symlinks are restricted.
+10. **Windows default root:** `%ProgramFiles%\Madmail` vs `%ProgramData%\Madmail\bin` tree (prefer Program Files for exes; keep state in ProgramData).
 
 ---
 
@@ -407,7 +471,10 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 
 - Current upgrade safety (issue #114 notes in `upgrade.rs`): preflight before stop; backup; post smoke; rollback.
 - URL download path in `upgrade.rs`: `handle_update_url`, `MAX_DOWNLOAD_SIZE` (100 MiB), `check_supported_url_archive`, Ed25519 after extract.
-- FHS: `/opt/<package>` for add-on application software; `/usr/local/bin` for local admin commands on PATH.
+- FHS (Unix): `/opt/<package>` for add-on application software; `/usr/local/bin` for local admin commands on PATH.
+- Windows: `%ProgramFiles%` for application binaries; `%ProgramData%\Madmail` for config/state (`windows_madmail_root()` in install code). **No `/opt` on Windows.**
 - Sibling TDD: [`14-cli-tools.md`](14-cli-tools.md), [`13-configuration.md`](13-configuration.md), [`12-security.md`](12-security.md).
-- Deploy defaults: `scripts/deploy.defaults.sh` (`REMOTE_BIN`).
-- Example latest asset shape: `https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz`.
+- Deploy defaults: `scripts/deploy.defaults.sh` (`REMOTE_BIN`) — Linux-oriented; Windows uses service/PATH docs.
+- Example latest asset shapes:
+  - Linux: `https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64.tar.gz`
+  - Windows: publish-defined name under the same `…/releases/latest/download/` prefix.
