@@ -112,7 +112,7 @@ Putting archives under `/usr/local/bin/` is the wrong place: that directory is f
 Surface either as top-level group or under `upgrade` — prefer a dedicated group for clarity:
 
 ```text
-madmail versions list
+madmail versions list [--remote]
 madmail versions current
 madmail versions use <version>
 madmail versions prune [--keep N] [--yes]
@@ -124,12 +124,37 @@ madmail versions path [version]     # print filesystem path
 
 | Command | Behavior |
 |---------|----------|
-| `list` | Enumerate `/opt/madmail/versions/*`; mark active; show size, mtime, meta |
+| `list` | Enumerate **local** `/opt/madmail/versions/*`; mark active; show size, mtime, meta |
+| `list --remote` | Query **GitHub Releases** (same project as `update latest`) and list remote version tags/assets available for this host; mark which are already installed locally and which is active; indicate remote `latest` |
 | `current` | Print active version id + resolved path |
 | `use V` | **Must** re-verify Ed25519 signature on `versions/V/madmail`, then preflight `version`, stop services, flip symlinks, start services; on smoke failure flip back. Refuse switch if signature fails (treat as tampered / unsigned archive). |
 | `prune --keep N` | Delete oldest non-active versions beyond N (default **N=5**). No signature check (does not execute or activate). |
 | `remove V` | Error if V is active or only remaining version. No signature check. |
-| `list` / `current` / `path` | Read-only; **no** signature check required. |
+| `list` / `current` / `path` | Read-only; **no** binary signature check required (metadata only; `list --remote` does not download binaries) |
+
+#### `versions list --remote`
+
+| Item | Spec |
+|------|------|
+| Intent | “What releases exist upstream, and how do they compare to what I have installed?” |
+| Source | GitHub only: `themadorg/madmail` Releases (HTTPS; default TLS verify; honor `--accept-unsafe-https` if the parent CLI already exposes it for network ops) |
+| Default (no flag) | **Local only** — no network |
+| With `--remote` | Fetch release **metadata** (tags, published_at, asset names/sizes for host-matching assets). **Do not** download full binaries; **no** Ed25519 check on list (nothing to verify until install/`update`) |
+| Compare | Annotate each remote entry: `installed` / `active` / `available` (not on disk) / `latest` |
+| Local rows | Still show local-only versions (e.g. custom builds) that are not on GitHub, clearly labeled `local-only` |
+| Failure | Network/API error → non-zero exit with clear message; do not pretend local list is remote |
+| Rate limits | Prefer GitHub Releases API with modest page size; document unauthenticated limit; optional later: `GH_TOKEN` / `GITHUB_TOKEN` for higher limits |
+| `--json` | Array of objects with at least: `version`, `source` (`local` \| `remote` \| `both`), `active`, `installed`, `remote_latest`, optional `published_at`, `asset`, `asset_size` |
+
+Example human output (illustrative):
+
+```text
+VERSION     SOURCE   ACTIVE  NOTES
+2.20.1      both     *       remote latest; installed
+2.20.0      both             installed
+2.19.0      local            local-only (not on GitHub)
+2.18.0      remote           available (not installed)
+```
 
 **Signature policy (activation vs inventory):**
 
@@ -138,7 +163,7 @@ madmail versions path [version]     # print filesystem path
 | Install new binary into the version tree (`install` / `upgrade` from path or URL) | **Always required** before write/activate (same as today — never skip) |
 | **`madmail update latest`** (and `upgrade latest`) | **Always required** after download/extract, **before** writing into `/opt/madmail/versions/` or stopping services. Same `verify_signature` as `perform_upgrade`. **Never skip** because the source is “official GitHub”. Fail closed: unsigned / invalid signature → abort, leave active version unchanged. |
 | `versions use <V>` (activate an already-archived binary) | **Always required** on that on-disk file before stop/symlink flip |
-| `versions list`, `current`, `path`, `prune`, `remove` | Not required (no execution / no new trust boundary) |
+| `versions list` (local), `list --remote`, `current`, `path`, `prune`, `remove` | Not required — inventory/metadata only; remote list does **not** download or activate binaries |
 
 **JSON:** all commands support `--json` for automation (same style as other ctl commands).
 
@@ -272,7 +297,7 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 | Untrusted binaries entering versions/ | **Always** Ed25519-verify the candidate before writing into `/opt/madmail/versions/` on install/upgrade (same as today; never skip) |
 | `update latest` / URL download | Same size caps (`MAX_DOWNLOAD_SIZE`), archive allow-list, TLS defaults, then **mandatory Ed25519** + preflight; GitHub “latest” is **not** a trust shortcut and **never** waives signature verification |
 | Tampered archived binary activated via `use` | **Always** re-run Ed25519 verify on `versions/V/madmail` before stop/symlink flip; refuse if verify fails |
-| Inventory without crypto cost | `list` / `current` / `path` / `prune` / `remove` do not verify signatures |
+| Inventory without crypto cost | `list` / `list --remote` / `current` / `path` / `prune` / `remove` do not verify binary signatures (remote list is metadata only; installing still requires sig) |
 | Symlink attacks | Create dirs as root; refuse to follow unexpected symlinks when writing DEST |
 | PATH hijack | `/usr/local/bin/madmail` owned root:root, mode 755 symlink |
 | Prune deletes active | Refuse remove/prune of active target |
@@ -300,6 +325,7 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 | Unit | Version id sanitization; symlink atomic update helpers; meta parse; keep-N selection |
 | Unit (upgrade) | Extend `upgrade.rs` tests: install root via `MADMAIL_OPT_ROOT` temp dir; no real systemd; signature always required on install |
 | Unit (`use`) | Signed archive → switch OK; unsigned/tampered on-disk binary → refuse before service stop; no sig check on `list` |
+| Unit (`list --remote`) | Mock GitHub API: merge remote tags with local tree; mark active/installed/latest; offline/error path; local-only rows preserved |
 | Unit (`update latest`) | Resolves expected GitHub latest URL for arch; rejects non-GitHub resolution; oversize download aborted; **unsigned / bad-signature payload fails after download and never flips symlink or stops services**; already-latest short-circuit still only after successful sig check on candidate |
 | Integration | Legacy file → versioned tree migration; `use` switches active only after sig + preflight; failed smoke restores previous |
 | E2E / manual | VM or docker: install → upgrade twice → `versions list` → `use` older → service healthy; optional `update latest` against real/mock GitHub |
@@ -326,7 +352,8 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 
 - Change `perform_upgrade` to install-to-versions + flip symlink (algorithm above).
 - Map rollback to previous version dir (keep `*.prev` import for one release if needed).
-- CLI: `madmail versions list|current|use|prune|remove|path`.
+- CLI: `madmail versions list [--remote]|current|use|prune|remove|path`.
+- `versions list --remote`: GitHub Releases metadata client; merge with local `/opt/madmail/versions`; no binary download.
 - `versions use`: call same `verify_signature` as `perform_upgrade` **before** stop/preflight-activate; fail closed if unsigned/bad signature.
 - Wire clap + `--json`; update parity matrix in `14-cli-tools.md`.
 
@@ -353,6 +380,7 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 - [ ] `madmail upgrade` adds a new version directory without deleting the previous one (until prune).
 - [ ] Failed post-install smoke restores previous active version and services recover (same guarantees as today).
 - [ ] `madmail versions list` / `use` work with `--json`.
+- [ ] `madmail versions list --remote` shows GitHub releases plus local install state (active/installed/available/latest); default `list` stays local-only and offline.
 - [ ] Install/upgrade **never** places a binary under `versions/` without a successful Ed25519 check.
 - [ ] `versions use` **always** re-verifies signature; fails before stopping services if verify fails; `list`/`path`/etc. do not require it.
 - [ ] `madmail update latest` fetches from GitHub Releases latest for this host and applies **full** URL-upgrade security (size cap, archive rules, **mandatory Ed25519 signature**, preflight, smoke/rollback) into the version tree.
@@ -370,7 +398,8 @@ Do **not** store mailboxes or `chatmail.db` under `/opt/madmail`; state remains 
 4. **Import policy for `madmail.prev`:** always import, or only when version string is recoverable?
 5. **Multi-instance hosts:** one `/opt/madmail` vs `/opt/madmail-<instance>` (out of scope unless needed).
 6. **`update latest` asset selection:** hardcode `madmail-linux-amd64.tar.gz` vs auto-detect arch/musl (prefer auto if reliable; document fallback).
-7. **`update latest` vs Releases API:** redirect URL only (v1) vs API for tag display / multi-asset pick.
+7. **`update latest` vs Releases API:** redirect URL only (v1) vs API for tag display / multi-asset pick. Note: `versions list --remote` **needs** the Releases API (or equivalent) even if `update latest` uses the redirect URL.
+8. **`list --remote` depth:** all releases vs last N (e.g. 20) vs only latest; default suggest last **20** non-prerelease unless `--all`.
 
 ---
 
