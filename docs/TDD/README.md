@@ -53,6 +53,7 @@ Twenty-three library crates under `crates/` plus integration tests in `tests/`. 
 | `21-scheduled-maintenance.md` | Retention, dormant accounts (`chatmail-tasks`) |
 | `22-bandwidth-monitoring.md` | Bandwidth spec (planned) |
 | `23-push-notifications.md` | XDELTAPUSH, `notifications.delta.chat`, modes, CLI `madmail push` |
+| `24-version-manager.md` | **Plan:** `/opt/madmail` versioned binaries, PATH symlink, upgrade/rollback |
 
 ## RFC reference library
 
