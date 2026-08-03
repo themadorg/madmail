@@ -1,3 +1,10 @@
+## [2.20.1](https://github.com/themadorg/madmail/compare/v2.20.0...v2.20.1) (2026-08-03)
+
+
+### Bug Fixes
+
+* **upgrade:** keep installed binary world-executable (0755) ([def1766](https://github.com/themadorg/madmail/commit/def176607af7137572c8f1fe384ec729af3862e6)), closes [#131](https://github.com/themadorg/madmail/issues/131)
+
 # [2.20.0](https://github.com/themadorg/madmail/compare/v2.19.1...v2.20.0) (2026-07-31)
 
 
