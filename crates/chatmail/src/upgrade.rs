@@ -649,11 +649,9 @@ pub fn preflight_binary_for_version_manager(new_bin: &Path) -> Result<()> {
 
 fn capture_version_id(new_bin: &Path) -> String {
     match Command::new(new_bin).arg("version").output() {
-        Ok(o) if o.status.success() => {
-            crate::version_manager::parse_version_from_preflight_output(&String::from_utf8_lossy(
-                &o.stdout,
-            ))
-        }
+        Ok(o) if o.status.success() => crate::version_manager::parse_version_from_preflight_output(
+            &String::from_utf8_lossy(&o.stdout),
+        ),
         _ => crate::version_manager::parse_version_from_preflight_output(env!("CARGO_PKG_VERSION")),
     }
 }
@@ -887,10 +885,7 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
             true
         }
         Err(e) => {
-            eprintln!(
-                "⚠️ Version tree install skipped ({}): {e}",
-                vroot.display()
-            );
+            eprintln!("⚠️ Version tree install skipped ({}): {e}", vroot.display());
             false
         }
     };
@@ -1313,9 +1308,7 @@ mod tests {
     #[test]
     fn upgrade_latest_keyword_resolves_github_url() {
         let url = crate::version_manager::github_latest_asset_url();
-        assert!(
-            url.starts_with("https://github.com/themadorg/madmail/releases/latest/download/")
-        );
+        assert!(url.starts_with("https://github.com/themadorg/madmail/releases/latest/download/"));
         assert!(url.contains("madmail"));
         // Keyword is handled before local-path open; empty/whitespace still rejected.
         assert!(upgrade_command("  ", &test_args(), false).is_err());

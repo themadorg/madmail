@@ -255,9 +255,8 @@ pub struct VersionListEntry {
 /// Ensure `{root}/versions` exists.
 pub fn ensure_install_layout(root: &Path) -> Result<()> {
     let vdir = versions_dir(root);
-    fs::create_dir_all(&vdir).map_err(|e| {
-        ChatmailError::config(format!("failed to create {}: {e}", vdir.display()))
-    })?;
+    fs::create_dir_all(&vdir)
+        .map_err(|e| ChatmailError::config(format!("failed to create {}: {e}", vdir.display())))?;
     Ok(())
 }
 
@@ -295,10 +294,7 @@ pub fn resolve_active_version(root: &Path) -> Result<Option<String>> {
             let target = if target.is_absolute() {
                 target
             } else {
-                current
-                    .parent()
-                    .unwrap_or(root)
-                    .join(target)
+                current.parent().unwrap_or(root).join(target)
             };
             if let Some(name) = target.file_name().and_then(|s| s.to_str()) {
                 if versions_dir(root).join(name).is_dir() {
@@ -361,11 +357,7 @@ pub fn list_installed(root: &Path) -> Result<Vec<InstalledVersion>> {
         let ent = ent.map_err(|e| ChatmailError::config(format!("readdir: {e}")))?;
         let name = ent.file_name();
         let name = name.to_string_lossy();
-        if !ent
-            .file_type()
-            .map(|t| t.is_dir())
-            .unwrap_or(false)
-        {
+        if !ent.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             continue;
         }
         let Ok(id) = sanitize_version_id(&name) else {
@@ -403,7 +395,11 @@ pub fn install_candidate(
     let dest = version_binary_path(root, &id);
 
     // Refuse to follow unexpected symlink dest
-    if dest.symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+    if dest
+        .symlink_metadata()
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
         return Err(ChatmailError::config(format!(
             "refusing to write through symlink at {}",
             dest.display()
@@ -424,9 +420,8 @@ pub fn install_candidate(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&staging, fs::Permissions::from_mode(0o755)).map_err(|e| {
-            ChatmailError::config(format!("chmod staging: {e}"))
-        })?;
+        fs::set_permissions(&staging, fs::Permissions::from_mode(0o755))
+            .map_err(|e| ChatmailError::config(format!("chmod staging: {e}")))?;
     }
     fs::rename(&staging, &dest).map_err(|e| {
         let _ = fs::remove_file(&staging);
@@ -455,9 +450,8 @@ pub fn set_active(root: &Path, version_id: &str, stable_path: &Path) -> Result<(
 
     // stable PATH -> binary
     if let Some(parent) = stable_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            ChatmailError::config(format!("mkdir {}: {e}", parent.display()))
-        })?;
+        fs::create_dir_all(parent)
+            .map_err(|e| ChatmailError::config(format!("mkdir {}: {e}", parent.display())))?;
     }
     atomic_symlink(&bin, stable_path)?;
     Ok(())
@@ -528,12 +522,8 @@ pub fn prune(root: &Path, keep: usize) -> Result<Vec<String>> {
     let mut installed = list_installed(root)?;
     // sort by version string descending already; for prune use mtime of dir
     installed.sort_by(|a, b| {
-        let ma = fs::metadata(&a.path)
-            .and_then(|m| m.modified())
-            .ok();
-        let mb = fs::metadata(&b.path)
-            .and_then(|m| m.modified())
-            .ok();
+        let ma = fs::metadata(&a.path).and_then(|m| m.modified()).ok();
+        let mb = fs::metadata(&b.path).and_then(|m| m.modified()).ok();
         mb.cmp(&ma)
     });
     let mut removed = Vec::new();
@@ -603,16 +593,18 @@ pub fn merge_local_and_remote(
     }
 
     for r in remote {
-        let e = map.entry(r.version.clone()).or_insert_with(|| VersionListEntry {
-            version: r.version.clone(),
-            source: "remote".into(),
-            active: false,
-            installed: false,
-            remote_latest: false,
-            published_at: None,
-            asset: None,
-            asset_size: None,
-        });
+        let e = map
+            .entry(r.version.clone())
+            .or_insert_with(|| VersionListEntry {
+                version: r.version.clone(),
+                source: "remote".into(),
+                active: false,
+                installed: false,
+                remote_latest: false,
+                published_at: None,
+                asset: None,
+                asset_size: None,
+            });
         if e.installed {
             e.source = "both".into();
         } else {
@@ -636,7 +628,10 @@ pub fn normalize_release_tag(tag: &str) -> String {
 }
 
 /// Parse a minimal subset of GitHub releases JSON into [`RemoteRelease`]s.
-pub fn parse_github_releases_json(body: &str, host_asset_substr: &str) -> Result<Vec<RemoteRelease>> {
+pub fn parse_github_releases_json(
+    body: &str,
+    host_asset_substr: &str,
+) -> Result<Vec<RemoteRelease>> {
     let val: serde_json::Value = serde_json::from_str(body)
         .map_err(|e| ChatmailError::config(format!("github releases json: {e}")))?;
     let arr = val
@@ -681,9 +676,7 @@ pub fn parse_github_releases_json(body: &str, host_asset_substr: &str) -> Result
                     || name.contains("madmail")
                 {
                     // Prefer exact host asset
-                    if name == host_release_asset_name()
-                        || name.contains(host_asset_substr)
-                    {
+                    if name == host_release_asset_name() || name.contains(host_asset_substr) {
                         asset = Some(name.to_string());
                         asset_size = a.get("size").and_then(|s| s.as_u64());
                         if name == host_release_asset_name() {
@@ -729,11 +722,7 @@ pub fn fetch_remote_releases(accept_invalid_certs: bool) -> Result<Vec<RemoteRel
     let body = resp
         .text()
         .map_err(|e| ChatmailError::config(format!("github releases body: {e}")))?;
-    let substr = if cfg!(windows) {
-        "windows"
-    } else {
-        "linux"
-    };
+    let substr = if cfg!(windows) { "windows" } else { "linux" };
     parse_github_releases_json(&body, substr)
 }
 
@@ -775,10 +764,7 @@ mod tests {
             parse_version_from_preflight_output("madmail-v2 2.20.1\n"),
             "2.20.1"
         );
-        assert_eq!(
-            parse_version_from_preflight_output("2.19.0"),
-            "2.19.0"
-        );
+        assert_eq!(parse_version_from_preflight_output("2.19.0"), "2.19.0");
     }
 
     #[test]
@@ -807,9 +793,7 @@ mod tests {
     #[test]
     fn github_latest_url_uses_releases_latest_download() {
         let url = github_latest_asset_url();
-        assert!(url.starts_with(
-            "https://github.com/themadorg/madmail/releases/latest/download/"
-        ));
+        assert!(url.starts_with("https://github.com/themadorg/madmail/releases/latest/download/"));
         assert!(url.contains("madmail"));
     }
 
@@ -935,10 +919,7 @@ mod tests {
         let rels = parse_github_releases_json(body, "linux").unwrap();
         assert_eq!(rels[0].version, "2.20.1");
         assert!(rels[0].is_latest);
-        assert_eq!(
-            rels[0].asset.as_deref(),
-            Some("madmail-linux-amd64.tar.gz")
-        );
+        assert_eq!(rels[0].asset.as_deref(), Some("madmail-linux-amd64.tar.gz"));
         assert_eq!(rels[1].version, "2.20.0");
     }
 
@@ -1015,9 +996,15 @@ mod tests {
         );
         assert_eq!(
             version_binary_path(&root, "2.1.0"),
-            PathBuf::from(format!("/opt/madmail/versions/2.1.0/{}", binary_file_name()))
+            PathBuf::from(format!(
+                "/opt/madmail/versions/2.1.0/{}",
+                binary_file_name()
+            ))
         );
-        assert_eq!(current_link_path(&root), PathBuf::from("/opt/madmail/current"));
+        assert_eq!(
+            current_link_path(&root),
+            PathBuf::from("/opt/madmail/current")
+        );
         assert_eq!(default_keep(), 5);
         assert_eq!(
             github_releases_api_url(),
@@ -1402,7 +1389,10 @@ mod tests {
         // Cross-check: default_install_root documentation contract for non-Windows.
         #[cfg(not(windows))]
         {
-            assert_eq!(default_stable_binary_path(), PathBuf::from("/usr/local/bin/madmail"));
+            assert_eq!(
+                default_stable_binary_path(),
+                PathBuf::from("/usr/local/bin/madmail")
+            );
         }
         #[cfg(windows)]
         {

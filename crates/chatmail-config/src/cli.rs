@@ -1300,8 +1300,7 @@ mod tests {
             }))
         ));
 
-        let cli =
-            Cli::try_parse_from(["madmail", "versions", "remove", "1.0.0", "--yes"]).unwrap();
+        let cli = Cli::try_parse_from(["madmail", "versions", "remove", "1.0.0", "--yes"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(Command::Versions(VersionsCommand::Remove {
