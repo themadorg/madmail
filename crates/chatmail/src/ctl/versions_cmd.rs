@@ -65,10 +65,7 @@ fn list_cmd(args: &Args, root: &std::path::Path, remote: bool) -> Result<()> {
         if local.is_empty() {
             out.line("  (no versions installed)");
         } else {
-            out.line(format!(
-                "{:<12} {:<8} {}",
-                "VERSION", "ACTIVE", "PATH"
-            ));
+            out.line(format!("{:<12} {:<8} {}", "VERSION", "ACTIVE", "PATH"));
             for v in &local {
                 out.line(format!(
                     "{:<12} {:<8} {}",
@@ -83,12 +80,8 @@ fn list_cmd(args: &Args, root: &std::path::Path, remote: bool) -> Result<()> {
     }
 
     // --remote: metadata only (no binary download / no signature)
-    let remote_list = version_manager::fetch_remote_releases(false).or_else(|e| {
-        // allow TLS override only via global flag is not on Args here; fail clearly
-        Err(ChatmailError::config(format!(
-            "versions list --remote failed: {e}"
-        )))
-    })?;
+    let remote_list = version_manager::fetch_remote_releases(false)
+        .map_err(|e| ChatmailError::config(format!("versions list --remote failed: {e}")))?;
     let merged = merge_local_and_remote(&local, &remote_list);
     if out.is_json() {
         return out.emit(json!({
@@ -131,9 +124,7 @@ fn list_cmd(args: &Args, root: &std::path::Path, remote: bool) -> Result<()> {
 fn current_cmd(args: &Args, root: &std::path::Path) -> Result<()> {
     let out = CtlOut::from_args(args, "versions current");
     let active = resolve_active_version(root)?;
-    let path = active
-        .as_ref()
-        .map(|id| version_binary_path(root, id));
+    let path = active.as_ref().map(|id| version_binary_path(root, id));
     if out.is_json() {
         return out.emit(json!({
             "install_root": root,
@@ -234,7 +225,10 @@ fn prune_cmd(args: &Args, root: &std::path::Path, keep: Option<usize>, yes: bool
     }
     let removed = version_manager::prune(root, keep)?;
     out.done_msg(
-        format!("✅ Pruned {} version(s) (keep non-active={keep})", removed.len()),
+        format!(
+            "✅ Pruned {} version(s) (keep non-active={keep})",
+            removed.len()
+        ),
         json!({ "removed": removed, "keep": keep }),
         "Pruned old versions",
     )
@@ -243,9 +237,7 @@ fn prune_cmd(args: &Args, root: &std::path::Path, keep: Option<usize>, yes: bool
 fn remove_cmd(args: &Args, root: &std::path::Path, version: &str, yes: bool) -> Result<()> {
     let out = CtlOut::from_args(args, "versions remove");
     if !yes && !args.json {
-        return Err(ChatmailError::config(
-            "versions remove requires --yes",
-        ));
+        return Err(ChatmailError::config("versions remove requires --yes"));
     }
     version_manager::remove_version(root, version)?;
     out.done_msg(
@@ -273,7 +265,7 @@ fn path_cmd(args: &Args, root: &std::path::Path, version: Option<&str>) -> Resul
         return out.emit(json!({
             "path": path,
             "install_root": root,
-            "version_dir": version.and_then(|v| sanitize_ok(v)).map(|id| version_dir(root, &id)),
+            "version_dir": version.and_then(sanitize_ok).map(|id| version_dir(root, &id)),
         }));
     }
     out.line(path.display().to_string());
