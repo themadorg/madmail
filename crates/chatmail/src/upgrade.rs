@@ -607,17 +607,40 @@ fn warn_if_default_linux_asset(url: &str) {
     );
 }
 
-/// Ensure the candidate binary can actually execute on this host (`madmail version`).
+/// Where the binary lives for a smoke/`version` check.
+///
+/// Staging extracts may stay owner-only. The **installed** path is executed by
+/// systemd as `User=madmail` (not root), so it must be world-executable (`0755`).
+/// Applying `0700` to the install path causes `Permission denied` / 203/EXEC
+/// (GitHub issue #131).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BinaryExecLocation {
+    /// Download/extract temp or other non-service path.
+    Staging,
+    /// Live install path (e.g. `/usr/local/bin/madmail`).
+    Installed,
+}
+
+#[cfg(unix)]
+const STAGING_EXEC_MODE: u32 = 0o700;
+#[cfg(unix)]
+const INSTALLED_EXEC_MODE: u32 = 0o755;
+
+/// Ensure the binary can actually execute on this host (`madmail version`).
 ///
 /// Catches wrong-variant installs (default glibc build on older distros) **before**
 /// services are stopped or the live binary is replaced. Signature verification must
 /// already have passed — we only exec trusted, signed bytes.
-fn preflight_new_binary(new_bin: &Path) -> Result<()> {
+fn preflight_new_binary(new_bin: &Path, location: BinaryExecLocation) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        // Owner rwx so we can exec a temp extract (mode may still be 0600).
-        fs::set_permissions(new_bin, fs::Permissions::from_mode(0o700)).map_err(|e| {
+        let mode = match location {
+            BinaryExecLocation::Staging => STAGING_EXEC_MODE,
+            // Service user (madmail) must be able to exec; root-only 0700 breaks systemd.
+            BinaryExecLocation::Installed => INSTALLED_EXEC_MODE,
+        };
+        fs::set_permissions(new_bin, fs::Permissions::from_mode(mode)).map_err(|e| {
             ChatmailError::config(format!(
                 "failed to set executable bit on {}: {e}",
                 new_bin.display()
@@ -625,14 +648,24 @@ fn preflight_new_binary(new_bin: &Path) -> Result<()> {
         })?;
     }
 
-    eprintln!("🧪 Preflight: running new binary (`version`) on this host...");
+    let label = match location {
+        BinaryExecLocation::Staging => "Preflight",
+        BinaryExecLocation::Installed => "Smoke check",
+    };
+    eprintln!("🧪 {label}: running binary (`version`) on this host...");
 
     let output = match Command::new(new_bin).arg("version").output() {
         Ok(o) => o,
         Err(e) => {
+            let not_replaced = matches!(location, BinaryExecLocation::Staging);
             return Err(ChatmailError::config(format!(
-                "new binary failed to execute (loader/ABI incompatibility?): {e}\n\
-                 The live binary was NOT replaced.\n{VARIANT_HINT}"
+                "binary failed to execute (loader/ABI incompatibility?): {e}\n\
+                 {}\n{VARIANT_HINT}",
+                if not_replaced {
+                    "The live binary was NOT replaced."
+                } else {
+                    "The installed binary cannot run."
+                }
             )));
         }
     };
@@ -647,9 +680,15 @@ fn preflight_new_binary(new_bin: &Path) -> Result<()> {
         } else {
             format!("exit status {}", output.status)
         };
+        let not_replaced = matches!(location, BinaryExecLocation::Staging);
         return Err(ChatmailError::config(format!(
-            "new binary failed host preflight (`madmail version`):\n{detail}\n\n\
-             The live binary was NOT replaced.\n{VARIANT_HINT}"
+            "binary failed host check (`madmail version`):\n{detail}\n\n\
+             {}\n{VARIANT_HINT}",
+            if not_replaced {
+                "The live binary was NOT replaced."
+            } else {
+                "The installed binary cannot run."
+            }
         )));
     }
 
@@ -659,7 +698,7 @@ fn preflight_new_binary(new_bin: &Path) -> Result<()> {
         .map(str::trim)
         .find(|l| !l.is_empty())
         .unwrap_or("ok");
-    eprintln!("✅ Preflight OK ({first})");
+    eprintln!("✅ {label} OK ({first})");
     Ok(())
 }
 
@@ -708,7 +747,7 @@ fn restore_backup(backup: &Path, current: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(INSTALLED_EXEC_MODE))?;
     }
     fs::rename(&tmp, current).map_err(|e| {
         let _ = fs::remove_file(&tmp);
@@ -766,7 +805,7 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     }
 
     // Abort early (services still up, live binary untouched) if this host cannot run it.
-    preflight_new_binary(new_bin_path)?;
+    preflight_new_binary(new_bin_path, BinaryExecLocation::Staging)?;
 
     let current_bin = std::env::current_exe()
         .map_err(|e| ChatmailError::config(format!("failed to get current executable: {e}")))?;
@@ -807,7 +846,8 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o755))?;
+        // Install path must stay 0755 so systemd User=madmail can exec (issue #131).
+        fs::set_permissions(&tmp_path, fs::Permissions::from_mode(INSTALLED_EXEC_MODE))?;
     }
 
     if let Err(e) = fs::rename(&tmp_path, &real_bin_path) {
@@ -821,7 +861,8 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     }
 
     // Belt-and-suspenders: re-smoke the installed path (catches corrupt write).
-    if let Err(e) = preflight_new_binary(&real_bin_path) {
+    // Uses Installed mode so we do **not** chmod 0700 the live path.
+    if let Err(e) = preflight_new_binary(&real_bin_path, BinaryExecLocation::Installed) {
         return rollback_on_broken_install(
             &real_bin_path,
             &backup,
@@ -839,7 +880,7 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     if !started {
         // Service unit failed — only roll back if the binary itself is broken.
         // Config/port issues must not undo a good ABI-compatible upgrade.
-        if preflight_new_binary(&real_bin_path).is_err() {
+        if preflight_new_binary(&real_bin_path, BinaryExecLocation::Installed).is_err() {
             return rollback_on_broken_install(
                 &real_bin_path,
                 &backup,
@@ -859,7 +900,7 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
         // Catch crash-loops where systemctl start returns success then the unit dies.
         thread::sleep(Duration::from_secs(1));
         if !systemctl_succeeded(&["is-active", "--quiet", &service])
-            && preflight_new_binary(&real_bin_path).is_err()
+            && preflight_new_binary(&real_bin_path, BinaryExecLocation::Installed).is_err()
         {
             return rollback_on_broken_install(
                 &real_bin_path,
@@ -1032,8 +1073,28 @@ mod tests {
         let bin = dir.path().join("fake-madmail");
         fs::write(&bin, b"#!/bin/sh\necho 'madmail 9.9.9-test'\n").unwrap();
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
-        preflight_new_binary(&bin).unwrap();
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o600)).unwrap();
+        preflight_new_binary(&bin, BinaryExecLocation::Staging).unwrap();
+        let mode = fs::metadata(&bin).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, STAGING_EXEC_MODE, "staging preflight mode {mode:#o}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preflight_installed_keeps_world_executable() {
+        // Regression for #131: must not leave install path as 0700 (systemd User=madmail).
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail");
+        fs::write(&bin, b"#!/bin/sh\necho 'madmail 2.20.0'\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o600)).unwrap();
+        preflight_new_binary(&bin, BinaryExecLocation::Installed).unwrap();
+        let mode = fs::metadata(&bin).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, INSTALLED_EXEC_MODE,
+            "installed mode must be 0755, got {mode:#o}"
+        );
+        assert_ne!(mode, STAGING_EXEC_MODE);
     }
 
     #[cfg(unix)]
@@ -1048,10 +1109,10 @@ mod tests {
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
-        let err = preflight_new_binary(&bin).unwrap_err();
+        let err = preflight_new_binary(&bin, BinaryExecLocation::Staging).unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("preflight") || msg.contains("GLIBC"),
+            msg.contains("host check") || msg.contains("GLIBC") || msg.contains("failed"),
             "got: {msg}"
         );
         assert!(
@@ -1072,10 +1133,56 @@ mod tests {
         let backup = backup_current_binary(&current).unwrap();
         assert!(backup.ends_with("madmail.prev"));
         assert_eq!(fs::read(&backup).unwrap(), b"old-binary-bytes");
+        let bak_mode = fs::metadata(&backup).unwrap().permissions().mode() & 0o777;
+        assert_eq!(bak_mode, 0o755, "backup should keep live mode");
 
         fs::write(&current, b"new-broken-bytes").unwrap();
         restore_backup(&backup, &current).unwrap();
         assert_eq!(fs::read(&current).unwrap(), b"old-binary-bytes");
+        let live_mode = fs::metadata(&current).unwrap().permissions().mode() & 0o777;
+        assert_eq!(live_mode, INSTALLED_EXEC_MODE);
+    }
+
+    /// Restore must force 0755 even when `*.prev` was copied from a broken 0700 install.
+    #[cfg(unix)]
+    #[test]
+    fn restore_backup_forces_world_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let current = dir.path().join("madmail");
+        // Script so we can actually exec after restore.
+        fs::write(&current, b"#!/bin/sh\necho old-version\n").unwrap();
+        fs::set_permissions(&current, fs::Permissions::from_mode(0o700)).unwrap();
+
+        let backup = backup_current_binary(&current).unwrap();
+        let bak_mode = fs::metadata(&backup).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            bak_mode, 0o700,
+            "backup copies source mode including broken 0700"
+        );
+
+        fs::write(&current, b"#!/bin/sh\necho new-broken\n").unwrap();
+        fs::set_permissions(&current, fs::Permissions::from_mode(0o700)).unwrap();
+
+        restore_backup(&backup, &current).unwrap();
+        assert_eq!(
+            fs::read(&current).unwrap(),
+            b"#!/bin/sh\necho old-version\n"
+        );
+        let live_mode = fs::metadata(&current).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            live_mode, INSTALLED_EXEC_MODE,
+            "restore must leave install path 0755 for User=madmail, got {live_mode:#o}"
+        );
+        let out = std::process::Command::new(&current)
+            .output()
+            .expect("exec restored binary");
+        assert!(out.status.success(), "restored binary must be executable");
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("old-version"),
+            "stdout={:?}",
+            String::from_utf8_lossy(&out.stdout)
+        );
     }
 
     #[test]
@@ -1333,7 +1440,7 @@ mod tests {
             "signed payload must verify before packaging"
         );
         // Preflight must accept this signed runnable payload (not just signature).
-        preflight_new_binary(&payload).unwrap();
+        preflight_new_binary(&payload, BinaryExecLocation::Staging).unwrap();
 
         let archive = dir.path().join("madmail-linux-amd64.tar.gz");
         let bytes = fs::read(&payload).unwrap();
