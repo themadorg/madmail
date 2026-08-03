@@ -1,6 +1,6 @@
 # Version manager (platform install root)
 
-**Status:** design plan (not implemented)  
+**Status:** partially implemented (layout helpers, CLI `versions`, `update latest` URL resolve, upgrade archives into version tree; install-path migration / service-polish still open)  
 **Related code today:**
 
 | Area | Location | Current behavior |

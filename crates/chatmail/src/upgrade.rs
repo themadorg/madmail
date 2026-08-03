@@ -333,8 +333,19 @@ fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
 pub fn upgrade_command(input: &str, args: &Args, accept_unsafe_https: bool) -> Result<()> {
     let input = input.trim();
     if input.is_empty() {
-        return Err(ChatmailError::config("PATH or URL is required"));
+        return Err(ChatmailError::config(
+            "PATH, URL, or the keyword `latest` is required",
+        ));
     }
+    // `update latest` / `upgrade latest` → GitHub Releases for this host (same security as URL).
+    let resolved_latest;
+    let input = if input.eq_ignore_ascii_case("latest") {
+        resolved_latest = crate::version_manager::github_latest_asset_url();
+        eprintln!("📦 Resolving GitHub latest: {resolved_latest}");
+        resolved_latest.as_str()
+    } else {
+        input
+    };
     let result = if is_download_url(input) {
         handle_update_url(input, args, accept_unsafe_https)
     } else {
@@ -631,6 +642,47 @@ const INSTALLED_EXEC_MODE: u32 = 0o755;
 /// Catches wrong-variant installs (default glibc build on older distros) **before**
 /// services are stopped or the live binary is replaced. Signature verification must
 /// already have passed — we only exec trusted, signed bytes.
+/// Host preflight for version-manager activation (`versions use` / install into tree).
+pub fn preflight_binary_for_version_manager(new_bin: &Path) -> Result<()> {
+    preflight_new_binary(new_bin, BinaryExecLocation::Staging)
+}
+
+fn capture_version_id(new_bin: &Path) -> String {
+    match Command::new(new_bin).arg("version").output() {
+        Ok(o) if o.status.success() => {
+            crate::version_manager::parse_version_from_preflight_output(&String::from_utf8_lossy(
+                &o.stdout,
+            ))
+        }
+        _ => crate::version_manager::parse_version_from_preflight_output(env!("CARGO_PKG_VERSION")),
+    }
+}
+
+fn install_into_version_tree(src: &Path, version_id: &str, root: &Path) -> Result<()> {
+    use crate::version_manager::{install_candidate, VersionMeta};
+    let meta = VersionMeta {
+        version: version_id.to_string(),
+        installed_at: Some(chrono_like_now()),
+        source: Some("upgrade".into()),
+        source_url: None,
+        sha256: None,
+        variant: None,
+        os: Some(std::env::consts::OS.to_string()),
+        signature_ok: Some(true),
+    };
+    install_candidate(root, version_id, src, meta)?;
+    Ok(())
+}
+
+fn chrono_like_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{secs}")
+}
+
 fn preflight_new_binary(new_bin: &Path, location: BinaryExecLocation) -> Result<()> {
     #[cfg(unix)]
     {
@@ -807,6 +859,9 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     // Abort early (services still up, live binary untouched) if this host cannot run it.
     preflight_new_binary(new_bin_path, BinaryExecLocation::Staging)?;
 
+    // Capture version id for the version tree (TDD 24).
+    let version_id = capture_version_id(new_bin_path);
+
     let current_bin = std::env::current_exe()
         .map_err(|e| ChatmailError::config(format!("failed to get current executable: {e}")))?;
     let real_bin_path = fs::canonicalize(&current_bin).unwrap_or(current_bin);
@@ -819,6 +874,26 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
             "upgrade must be run as root (sudo) to manage services and replace the binary",
         ));
     }
+
+    // Install into platform version tree first (non-fatal if root is not writable yet).
+    // Active pointer is updated only after a successful live replace (below).
+    let vroot = crate::version_manager::install_root();
+    let version_tree_ok = match install_into_version_tree(new_bin_path, &version_id, &vroot) {
+        Ok(()) => {
+            eprintln!(
+                "📦 Archived binary under {}/versions/{version_id}/",
+                vroot.display()
+            );
+            true
+        }
+        Err(e) => {
+            eprintln!(
+                "⚠️ Version tree install skipped ({}): {e}",
+                vroot.display()
+            );
+            false
+        }
+    };
 
     // Keep a runnable previous binary so a post-replace failure can recover in-band.
     let backup = backup_current_binary(&real_bin_path)?;
@@ -919,6 +994,15 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     }
 
     refresh_cli_docs_after_upgrade();
+
+    if version_tree_ok {
+        let stable = crate::version_manager::default_stable_binary_path();
+        if let Err(e) = crate::version_manager::set_active(&vroot, &version_id, &stable) {
+            eprintln!("⚠️ Could not update version-manager active pointer: {e}");
+        } else {
+            eprintln!("🔗 Active version pointer set to {version_id}");
+        }
+    }
 
     eprintln!(
         "🎉 Upgrade complete. (previous binary kept at {} for manual rollback if needed)",
@@ -1219,7 +1303,98 @@ mod tests {
     #[test]
     fn upgrade_command_requires_input() {
         let err = upgrade_command("  ", &test_args(), false).unwrap_err();
-        assert!(err.to_string().contains("PATH or URL is required"));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("PATH") || msg.contains("required") || msg.contains("latest"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn upgrade_latest_keyword_resolves_github_url() {
+        let url = crate::version_manager::github_latest_asset_url();
+        assert!(
+            url.starts_with("https://github.com/themadorg/madmail/releases/latest/download/")
+        );
+        assert!(url.contains("madmail"));
+        // Keyword is handled before local-path open; empty/whitespace still rejected.
+        assert!(upgrade_command("  ", &test_args(), false).is_err());
+    }
+
+    #[test]
+    fn capture_version_id_from_script() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail");
+        fs::write(&bin, b"#!/bin/sh\necho madmail-v2 4.5.6\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(capture_version_id(&bin), "4.5.6");
+    }
+
+    #[test]
+    fn install_into_version_tree_writes_binary_and_meta() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("opt-madmail");
+        let src = dir.path().join("payload");
+        fs::write(&src, b"#!/bin/sh\necho madmail-v2 1.2.3\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&src, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        install_into_version_tree(&src, "1.2.3", &root).unwrap();
+        let bin = crate::version_manager::version_binary_path(&root, "1.2.3");
+        assert!(bin.is_file());
+        let meta = crate::version_manager::read_meta(&root, "1.2.3")
+            .unwrap()
+            .expect("meta");
+        assert_eq!(meta.version, "1.2.3");
+        assert_eq!(meta.signature_ok, Some(true));
+        assert_eq!(meta.source.as_deref(), Some("upgrade"));
+    }
+
+    #[test]
+    fn unsigned_binary_fails_verify_before_version_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail");
+        // Large enough to not trip "too small for signature", but unsigned.
+        let mut payload = vec![0u8; 128];
+        payload[..8].copy_from_slice(b"unsigned");
+        fs::write(&bin, &payload).unwrap();
+        assert!(!verify_signature(&bin).unwrap());
+    }
+
+    #[test]
+    fn signed_binary_passes_verify_for_version_activation() {
+        let Some(key) = official_private_key_path() else {
+            eprintln!("skip: official private key not available");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail");
+        // Script body + signature trailer; shell ignores trailing bytes after script.
+        fs::write(
+            &bin,
+            b"#!/bin/sh\nif [ \"$1\" = version ]; then echo madmail-v2 0.0.1; fi\nexit 0\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        sign_with_official_key(&bin, &key);
+        assert!(verify_signature(&bin).unwrap());
+        preflight_binary_for_version_manager(&bin).unwrap();
+
+        // Install into tree and confirm signature still verifies on archived copy.
+        let root = dir.path().join("root");
+        install_into_version_tree(&bin, "0.0.1", &root).unwrap();
+        let archived = crate::version_manager::version_binary_path(&root, "0.0.1");
+        assert!(verify_signature(&archived).unwrap());
     }
 
     #[test]

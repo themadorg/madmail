@@ -31,3 +31,4 @@ pub mod supervisor;
 pub mod tls_boot;
 pub mod turn_boot;
 pub mod upgrade;
+pub mod version_manager;

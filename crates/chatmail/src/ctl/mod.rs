@@ -54,6 +54,7 @@ mod tasks;
 mod uninstall;
 pub(crate) mod util;
 mod version;
+mod versions_cmd;
 mod webmail_cors;
 
 #[cfg(test)]
