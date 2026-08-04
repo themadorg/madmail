@@ -17,6 +17,7 @@
 
 //! Bootstrap TLS PEMs for first-run / `tls_mode self_signed`, with actionable errors.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use chatmail_acme::generate_self_signed;
@@ -25,13 +26,19 @@ use chatmail_types::{ChatmailError, Result};
 
 /// Ensure cert/key PEMs exist for listeners that need TLS.
 ///
+/// Paths may be **symlinks** (common for ACME / Let's Encrypt under `/etc/ssl/…`).
+/// Existence checks follow links to the target; the configured path is kept as-is so
+/// renewals that rewrite the symlink target keep working without a config change.
+///
 /// When files are missing:
 /// - `tls_mode self_signed`, or bare defaults (no mode and no explicit `tls file` paths):
 ///   generate a self-signed pair under the effective PEM paths.
 /// - `autocert` / `file` / explicit paths: return a configuration error with next steps.
 pub fn ensure_tls_pem_files(config: &AppConfig, state_dir: &Path) -> Result<(PathBuf, PathBuf)> {
     let (cert, key) = effective_tls_pem_paths(config, state_dir);
-    if cert.is_file() && key.is_file() {
+    let cert_ok = pem_path_ready(&cert);
+    let key_ok = pem_path_ready(&key);
+    if cert_ok.is_ok() && key_ok.is_ok() {
         return Ok((cert, key));
     }
 
@@ -59,7 +66,35 @@ pub fn ensure_tls_pem_files(config: &AppConfig, state_dir: &Path) -> Result<(Pat
         return Ok((cert, key));
     }
 
-    Err(missing_tls_error(&cert, &key))
+    Err(missing_tls_error(&cert, &key, cert_ok.err(), key_ok.err()))
+}
+
+/// True when `path` is a readable regular file, **following symlinks**.
+///
+/// Returns `Err` with a short reason when the path is missing, a broken link,
+/// not a file, or unreadable (e.g. permission denied on a symlink target).
+pub fn pem_path_ready(path: &Path) -> std::result::Result<(), String> {
+    // Prefer open (follows symlinks) so we match what rustls will do at load time.
+    match fs::File::open(path) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let link_note = describe_symlink(path);
+            Err(format!("{} ({e}){link_note}", path.display()))
+        }
+    }
+}
+
+fn describe_symlink(path: &Path) -> String {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => match fs::read_link(path) {
+            Ok(target) => format!(
+                "\n  (symlink → {}; ensure the target exists and is readable by the madmail process)",
+                target.display()
+            ),
+            Err(_) => "\n  (path is a symlink but the target could not be read)".into(),
+        },
+        _ => String::new(),
+    }
 }
 
 /// Bootstrap when operators chose self-signed, or when running with no TLS mode and
@@ -92,10 +127,24 @@ fn strip_brackets(s: &str) -> String {
     s.trim().trim_matches(|c| c == '[' || c == ']').to_string()
 }
 
-fn missing_tls_error(cert: &Path, key: &Path) -> ChatmailError {
+fn missing_tls_error(
+    cert: &Path,
+    key: &Path,
+    cert_detail: Option<String>,
+    key_detail: Option<String>,
+) -> ChatmailError {
+    let mut detail = String::new();
+    if let Some(d) = cert_detail {
+        detail.push_str(&format!("\nCertificate: {d}"));
+    }
+    if let Some(d) = key_detail {
+        detail.push_str(&format!("\nPrivate key: {d}"));
+    }
     ChatmailError::config(format!(
-        "TLS certificate not found: {}\n  private key: {}\n\n\
-         Madmail needs PEM files before SMTP/IMAP/HTTPS listeners can start.\n\n\
+        "TLS certificate not found: {}\n  private key: {}{detail}\n\n\
+         Madmail needs PEM files before SMTP/IMAP/HTTPS listeners can start.\n\
+         Symlinks are supported (e.g. ACME links under /etc/ssl/); the target must exist\n\
+         and be readable by the madmail process (service user / OpenWrt procd user).\n\n\
          First-time / local setup (self-signed):\n\
            madmail install --simple --ip <YOUR_IP_OR_127.0.0.1> --tls-mode self_signed --lang en\n\
          On Windows, defaults write under %ProgramData%\\Madmail (no Unix FHS paths).\n\
@@ -105,7 +154,8 @@ fn missing_tls_error(cert: &Path, key: &Path) -> ChatmailError {
          Let's Encrypt (public IP/domain, port 80 free):\n\
            madmail install --simple --ip <PUBLIC_IP> --auto-ip-cert --acme-email you@example.com\n\
            # or: madmail certificate get\n\n\
-         Or place fullchain.pem + privkey.pem at the paths above.",
+         Or place fullchain.pem + privkey.pem at the paths above (or point tls file at\n\
+         durable symlinks that always resolve to the current PEMs).",
         cert.display(),
         key.display()
     ))
@@ -182,5 +232,68 @@ mod tests {
         assert!(msg.contains("TLS certificate not found"), "{msg}");
         assert!(msg.contains("install --simple"), "{msg}");
         assert!(msg.contains("Windows"), "{msg}");
+        assert!(msg.contains("Symlinks are supported"), "{msg}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_accepts_symlinked_pem_paths() {
+        // Operators often point `tls file` at /etc/ssl/acme/*.crt symlinks (#133).
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        let link_dir = dir.path().join("ssl");
+        fs::create_dir_all(&real).unwrap();
+        fs::create_dir_all(&link_dir).unwrap();
+
+        let cfg_gen = AppConfig {
+            tls_mode: Some("self_signed".into()),
+            hostname: Some("127.0.0.1".into()),
+            primary_domain: Some("127.0.0.1".into()),
+            ..Default::default()
+        };
+        let (cert_real, key_real) = ensure_tls_pem_files(&cfg_gen, &real).unwrap();
+
+        let cert_link = link_dir.join("fullchain.crt");
+        let key_link = link_dir.join("privkey.key");
+        std::os::unix::fs::symlink(&cert_real, &cert_link).unwrap();
+        std::os::unix::fs::symlink(&key_real, &key_link).unwrap();
+        assert!(cert_link.is_symlink());
+        assert!(key_link.is_symlink());
+
+        let cfg = AppConfig {
+            tls_mode: Some("file".into()),
+            tls_cert_path: Some(cert_link.clone()),
+            tls_key_path: Some(key_link.clone()),
+            ..Default::default()
+        };
+        let (c, k) = ensure_tls_pem_files(&cfg, dir.path()).unwrap();
+        // Config paths preserved (symlink paths), not rewritten to realpath.
+        assert_eq!(c, cert_link);
+        assert_eq!(k, key_link);
+        load_server_config(&c, &k).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_reports_broken_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("missing.crt");
+        let key_link = dir.path().join("missing.key");
+        std::os::unix::fs::symlink(dir.path().join("no-such-cert.pem"), &link).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("no-such-key.pem"), &key_link).unwrap();
+
+        let cfg = AppConfig {
+            tls_mode: Some("file".into()),
+            tls_cert_path: Some(link),
+            tls_key_path: Some(key_link),
+            ..Default::default()
+        };
+        let err = ensure_tls_pem_files(&cfg, dir.path()).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("TLS certificate not found"), "{msg}");
+        assert!(
+            msg.contains("symlink") || msg.contains("No such file"),
+            "{msg}"
+        );
     }
 }
