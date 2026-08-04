@@ -393,6 +393,13 @@ install when certificate issuance runs):
 sudo madmail install --simple --domain mail.\&example.\&org --acme-email admin@example.\&org --lang en
 .PP
 .RE
+Domain install without \fB--ip\fR resolves \fB$(public_ip)\fR from DNS (public IPv4
+preferred over IPv6 when both exist; pass \fB--ip\fR to force an address):
+.PP
+.RS 4
+sudo madmail install --simple --domain mail.\&example.\&org --ip 203.\&0.\&113.\&50 --acme-email admin@example.\&org --lang en
+.PP
+.RE
 Preview a system install without writing files:
 .PP
 .RS 4
@@ -448,6 +455,10 @@ installs that skip those steps.\&
 Interactive \fBinstall\fR (without \fB--simple\fR or \fB--non-interactive\fR) may
 not be available in all builds; use \fB--simple\fR or \fB--non-interactive\fR
 in scripts.\&
+.PP
+When \fBinstall\fR fills \fB$(public_ip)\fR from a domain (no \fB--ip\fR), dual-stack
+DNS prefers a public IPv4 address for TURN and discovery.\&
+Use \fB--ip\fR for IPv6-only hosts or to pin a specific address.\&
 .PP
 When \fB--json\fR is set, successful operator commands print a single JSON
 object on standard output.\&

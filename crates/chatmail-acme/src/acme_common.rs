@@ -156,12 +156,30 @@ pub fn ip_order_not_ready_error(status: OrderStatus, ip: IpAddr) -> ChatmailErro
     ))
 }
 
+/// Prefer a public **IPv4** address when present; otherwise the first public IPv6.
+///
+/// Used for install-time `$(public_ip)` / TURN relay advertising. Dual-stack DNS
+/// often returns AAAA before A (`getaddrinfo` / Happy Eyeballs); picking the first
+/// address therefore selected IPv6 and broke voice/video for IPv4-only clients (#132).
+/// Operators who need IPv6 can still pass `--ip` explicitly.
+pub fn prefer_public_ip_for_install(ips: impl IntoIterator<Item = IpAddr>) -> Option<IpAddr> {
+    let public: Vec<IpAddr> = ips.into_iter().filter(is_public_ip).collect();
+    public
+        .iter()
+        .copied()
+        .find(IpAddr::is_ipv4)
+        .or_else(|| public.into_iter().find(IpAddr::is_ipv6))
+}
+
 /// Resolve a DNS hostname to a public IP for install-time `$(public_ip)`.
+///
+/// When both A and AAAA records exist, **IPv4 is preferred** (see
+/// [`prefer_public_ip_for_install`]). Pass `--ip` to force a specific address.
 pub fn resolve_domain_to_public_ip(domain: &str) -> Result<String> {
     use std::net::ToSocketAddrs;
 
     let bare = domain.trim().trim_matches(|c| c == '[' || c == ']');
-    let addrs: Vec<_> = format!("{bare}:0")
+    let addrs: Vec<IpAddr> = format!("{bare}:0")
         .to_socket_addrs()
         .map_err(|e| {
             ChatmailError::config(format!(
@@ -169,20 +187,21 @@ pub fn resolve_domain_to_public_ip(domain: &str) -> Result<String> {
             ))
         })?
         .map(|a| a.ip())
-        .filter(is_public_ip)
-        .map(|ip| ip.to_string())
         .collect();
 
-    addrs.into_iter().next().ok_or_else(|| {
-        ChatmailError::config(format!(
-            "no public IP found in DNS for {bare}. Point the domain's A/AAAA record at this server, or pass --ip."
-        ))
-    })
+    prefer_public_ip_for_install(addrs)
+        .map(|ip| ip.to_string())
+        .ok_or_else(|| {
+            ChatmailError::config(format!(
+                "no public IP found in DNS for {bare}. Point the domain's A/AAAA record at this server, or pass --ip."
+            ))
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
 
     #[test]
     fn acme_contact_rejects_ip_domain() {
@@ -191,5 +210,52 @@ mod tests {
             acme_mailto_contact("admin@example.com").unwrap(),
             "mailto:admin@example.com"
         );
+    }
+
+    #[test]
+    fn prefer_public_ip_picks_ipv4_when_both_families() {
+        // IPv6 first (common getaddrinfo order) must not win over public IPv4.
+        // Use globally routable examples (TEST-NET / 2001:db8:: are not `is_public_ip`).
+        let v6: IpAddr = "2606:4700:4700::1111".parse().unwrap();
+        let v4: IpAddr = "1.1.1.1".parse().unwrap();
+        assert_eq!(
+            prefer_public_ip_for_install([v6, v4]),
+            Some(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)))
+        );
+        assert_eq!(
+            prefer_public_ip_for_install([v4, v6]),
+            Some(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)))
+        );
+    }
+
+    #[test]
+    fn prefer_public_ip_falls_back_to_ipv6_only() {
+        let v6: IpAddr = "2606:4700:4700::1111".parse().unwrap();
+        assert_eq!(
+            prefer_public_ip_for_install([v6]),
+            Some(IpAddr::V6(
+                "2606:4700:4700::1111".parse::<Ipv6Addr>().unwrap()
+            ))
+        );
+    }
+
+    #[test]
+    fn prefer_public_ip_skips_private_and_link_local() {
+        let private_v4: IpAddr = "192.168.1.10".parse().unwrap();
+        let link_local_v6: IpAddr = "fe80::1".parse().unwrap();
+        let public_v4: IpAddr = "8.8.8.8".parse().unwrap();
+        assert_eq!(
+            prefer_public_ip_for_install([private_v4, link_local_v6, public_v4]),
+            Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)))
+        );
+        assert_eq!(
+            prefer_public_ip_for_install([private_v4, link_local_v6]),
+            None
+        );
+    }
+
+    #[test]
+    fn prefer_public_ip_empty() {
+        assert_eq!(prefer_public_ip_for_install(std::iter::empty()), None);
     }
 }
