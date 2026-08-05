@@ -1,3 +1,10 @@
+## [2.20.2](https://github.com/themadorg/madmail/compare/v2.20.1...v2.20.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* **tls:** accept PEM paths that are symlinks ([#133](https://github.com/themadorg/madmail/issues/133)) ([c377cb7](https://github.com/themadorg/madmail/commit/c377cb7d55f843c5c53d6028fd71e7f64fdbf492))
+
 ## [2.20.1](https://github.com/themadorg/madmail/compare/v2.20.0...v2.20.1) (2026-08-03)
 
 
