@@ -77,6 +77,8 @@ From the integration tests and TDD:
 - GETMETADATA / SETMETADATA (the Chatmail magic for TURN/Iroh discovery)
 - STATUS, etc.
 
+**Pre-auth fingerprinting (#120):** Unauthenticated `CAPABILITY` is generic (no `XCHATMAIL` / `XDELTAPUSH` / `METADATA`). Those tokens appear only after login. SMTP greeting is `220 {hostname} ESMTP` without a product name. See TDD [03-imap-server.md](../TDD/03-imap-server.md) and [02-smtp-server.md](../TDD/02-smtp-server.md).
+
 ### IDLE & Push
 
 When a client does `IDLE`, the session registers with the `EventBus` (in `AppState`).
