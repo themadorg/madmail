@@ -947,6 +947,58 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
 
 When Shadowsocks is not configured (`ss_addr` / `ss_password` missing), `configured` and `enabled` are `false` and string fields are empty.
 
+### `iroh status`
+
+```json
+{
+  "ok": true,
+  "command": "iroh status",
+  "data": {
+    "configured": true,
+    "admin_enabled": true,
+    "runtime_enabled": true,
+    "port": 3340,
+    "local_only": false,
+    "relay_url": "http://203.0.113.50:3340",
+    "listening": false,
+    "reload_required": false
+  }
+}
+```
+
+`runtime_enabled` is `configured && admin_enabled`. `listening` is a best-effort localhost TCP probe.
+
+### `iroh install`
+
+```json
+{
+  "ok": true,
+  "command": "iroh install",
+  "message": "Iroh installed and enabled",
+  "data": {
+    "configured": true,
+    "config_updated": true,
+    "enabled": true,
+    "relay_url": "http://203.0.113.50:3340",
+    "reload_required": true
+  }
+}
+```
+
+### `iroh enable` / `disable`
+
+```json
+{
+  "ok": true,
+  "command": "iroh enable",
+  "message": "Iroh enabled",
+  "data": {
+    "enabled": true,
+    "reload_required": true
+  }
+}
+```
+
 ### `proxy enable` / `disable`
 
 ```json

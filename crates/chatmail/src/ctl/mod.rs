@@ -34,6 +34,7 @@ mod federation;
 mod firewall_cmd;
 mod html;
 mod install;
+mod iroh;
 mod language;
 mod message_size;
 mod openrelay;
