@@ -1,3 +1,10 @@
+# [2.21.0](https://github.com/themadorg/madmail/compare/v2.20.2...v2.21.0) (2026-08-07)
+
+
+### Features
+
+* **imap/smtp:** reduce pre-auth fingerprinting ([#120](https://github.com/themadorg/madmail/issues/120)) ([9e614ea](https://github.com/themadorg/madmail/commit/9e614ea3d99736055c9d536974a6152168d836e0))
+
 ## [2.20.2](https://github.com/themadorg/madmail/compare/v2.20.1...v2.20.2) (2026-08-05)
 
 
