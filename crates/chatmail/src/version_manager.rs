@@ -435,11 +435,28 @@ pub fn install_candidate(
 pub fn set_active(root: &Path, version_id: &str, stable_path: &Path) -> Result<()> {
     let id = sanitize_version_id(version_id)?;
     let bin = version_binary_path(root, &id);
-    if !bin.is_file() {
-        return Err(ChatmailError::config(format!(
-            "version {id} binary not found at {}",
-            bin.display()
-        )));
+    // Defense in depth: same regular-file rule as `versions use` (do not follow
+    // symlink-to-file via `is_file()` and activate a symlink path).
+    match fs::symlink_metadata(&bin) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(ChatmailError::config(format!(
+                "version {id} binary at {} is a symlink; refusing to activate",
+                bin.display()
+            )));
+        }
+        Ok(meta) if meta.is_file() => {}
+        Ok(_) => {
+            return Err(ChatmailError::config(format!(
+                "version {id} binary at {} is not a regular file",
+                bin.display()
+            )));
+        }
+        Err(_) => {
+            return Err(ChatmailError::config(format!(
+                "version {id} binary not found at {}",
+                bin.display()
+            )));
+        }
     }
     ensure_install_layout(root)?;
 
@@ -551,6 +568,10 @@ pub fn prune(root: &Path, keep: usize) -> Result<Vec<String>> {
             kept += 1;
             continue;
         }
+        // Do not empty the tree (remove_version also refuses only-remaining).
+        if list_installed(root)?.len() <= 1 {
+            break;
+        }
         remove_version(root, &v.version)?;
         removed.push(v.version.clone());
     }
@@ -567,6 +588,14 @@ pub fn remove_version(root: &Path, version_id: &str) -> Result<()> {
     let dir = version_dir(root, &id);
     if !dir.is_dir() {
         return Err(ChatmailError::config(format!("version {id} not found")));
+    }
+    // TDD 24: refuse removing the only remaining installed version (even if
+    // the active pointer is missing / broken).
+    let installed = list_installed(root)?;
+    if installed.len() == 1 && installed[0].version == id {
+        return Err(ChatmailError::config(format!(
+            "refusing to remove the only remaining version {id}"
+        )));
     }
     fs::remove_dir_all(&dir)
         .map_err(|e| ChatmailError::config(format!("remove {}: {e}", dir.display())))?;
@@ -1286,6 +1315,53 @@ mod tests {
         let root = TempDir::new().unwrap();
         let err = remove_version(root.path(), "0.0.1").unwrap_err();
         assert!(err.to_string().contains("not found"), "got: {err}");
+    }
+
+    #[test]
+    fn remove_only_remaining_version_errors() {
+        let root = TempDir::new().unwrap();
+        let src = root.path().join("p");
+        write_fake_bin(&src);
+        install_candidate(
+            root.path(),
+            "1.0.0",
+            &src,
+            VersionMeta {
+                version: "1.0.0".into(),
+                installed_at: None,
+                source: None,
+                source_url: None,
+                sha256: None,
+                variant: None,
+                os: None,
+                signature_ok: None,
+            },
+        )
+        .unwrap();
+        // No active pointer: still refuse deleting the sole install.
+        let err = remove_version(root.path(), "1.0.0").unwrap_err();
+        assert!(
+            err.to_string().contains("only remaining"),
+            "got: {err}"
+        );
+        assert_eq!(list_installed(root.path()).unwrap().len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn set_active_rejects_symlink_binary() {
+        let root = TempDir::new().unwrap();
+        let stable = root.path().join("bin").join(binary_file_name());
+        let vdir = version_dir(root.path(), "1.0.0");
+        fs::create_dir_all(&vdir).unwrap();
+        let target = root.path().join("real-bin");
+        write_fake_bin(&target);
+        std::os::unix::fs::symlink(&target, version_binary_path(root.path(), "1.0.0")).unwrap();
+        let err = set_active(root.path(), "1.0.0", &stable).unwrap_err();
+        assert!(
+            err.to_string().contains("symlink"),
+            "expected symlink refuse, got: {err}"
+        );
     }
 
     #[test]

@@ -179,7 +179,7 @@ madmail versions path [version]     # print filesystem path
 | `list` | Enumerate **local** `{install_root}/versions/*` (Unix `/opt/madmail`, Windows `%ProgramFiles%\Madmail`); mark active; show size, mtime, meta |
 | `list --remote` | Query **GitHub Releases** (same project as `update latest`) and list remote version tags/assets available for this host; mark which are already installed locally and which is active; indicate remote `latest` |
 | `current` | Print active version id + resolved path |
-| `use V` | **Must** re-verify Ed25519 signature on `versions/V/madmail`, then preflight `version`, stop services, flip symlinks, start services; on smoke failure flip back. Refuse switch if signature fails (treat as tampered / unsigned archive). |
+| `use V` | **Must** re-verify Ed25519 signature on `versions/V/madmail`, then preflight `version` with **installed** exec mode (`0755` on Unix — not staging `0700`, so non-root service users can still exec after switch), stop services, flip symlinks, start services; on smoke failure flip back. Refuse switch if signature fails (treat as tampered / unsigned archive). Refuse non-regular files / symlinks under `versions/V/`. |
 | `prune --keep N` | Delete oldest non-active versions beyond N (default **N=5**). **Always requires `--yes`** (including with `--json`; never treat JSON as implicit confirm). No signature check (does not execute or activate). |
 | `remove V` | Error if V is active or only remaining version. **Always requires `--yes`** (including with `--json`). No signature check. |
 | `list` / `current` / `path` | Read-only; **no** binary signature check required (metadata only; `list --remote` does not download binaries) |
@@ -358,20 +358,22 @@ Do **not** store mailboxes or `chatmail.db` under the install/version root. Stat
 | `update latest` / URL download | Same size caps (`MAX_DOWNLOAD_SIZE`), archive allow-list, TLS defaults, then **mandatory Ed25519** + preflight; GitHub “latest” is **not** a trust shortcut and **never** waives signature verification |
 | Tampered archived binary activated via `use` | **Always** re-run Ed25519 verify on `versions/V/madmail` before stop/symlink flip; refuse if verify fails |
 | Inventory without crypto cost | `list` / `list --remote` / `current` / `path` / `prune` / `remove` do not verify binary signatures (remote list is metadata only; installing still requires sig) |
-| Symlink attacks | Create dirs as root; refuse to follow unexpected symlinks when writing DEST |
+| Symlink attacks | Create dirs as root; refuse to follow unexpected symlinks when writing DEST; `set_active` / `versions use` reject a symlink at `versions/V/madmail` |
 | PATH hijack | Unix: `/usr/local/bin/madmail` root:root 755 symlink; Windows: ACL so only Administrators write install root / `bin` |
 | Prune deletes active | Refuse remove/prune of active target |
+| Remove only remaining | `remove V` errors if V is the sole installed version (even with a broken active pointer); prune must not empty the tree |
 | Rollback window | Keep at least previous version until next successful upgrade + prune |
+| `versions use` chmod | Preflight/smoke on archived binaries uses **Installed** mode (`0755`); never apply staging `0700` to `versions/<id>/` (breaks `User=` service units) |
 
 ### Activation order for `versions use V`
 
 ```text
-1. resolve path = versions/V/madmail[.exe] (reject missing / not a regular file)
+1. resolve path = versions/V/madmail[.exe] (reject missing / not a regular file / symlink)
 2. verify_signature(path)  — hard fail if false (do not stop services)
-3. preflight path version
+3. preflight path version with Installed exec mode (0755)
 4. stop systemd units
-5. atomic symlink flip (current + /usr/local/bin/madmail)
-6. smoke preflight on resolved path
+5. atomic symlink flip (current + /usr/local/bin/madmail); set_active also rejects non-regular binary
+6. smoke preflight on resolved path (Installed mode again)
 7. on failure: restore previous symlink targets, start services, error
 8. on success: start services
 ```

@@ -642,9 +642,13 @@ const INSTALLED_EXEC_MODE: u32 = 0o755;
 /// Catches wrong-variant installs (default glibc build on older distros) **before**
 /// services are stopped or the live binary is replaced. Signature verification must
 /// already have passed — we only exec trusted, signed bytes.
-/// Host preflight for version-manager activation (`versions use` / install into tree).
+/// Host preflight for live archives under the version tree (`versions use`).
+///
+/// Uses [`BinaryExecLocation::Installed`] (`0755`) so a successful switch does not
+/// leave `versions/<id>/madmail` owner-only (`0700`). Staging downloads still use
+/// [`preflight_new_binary`] with [`BinaryExecLocation::Staging`] in the upgrade path.
 pub fn preflight_binary_for_version_manager(new_bin: &Path) -> Result<()> {
-    preflight_new_binary(new_bin, BinaryExecLocation::Staging)
+    preflight_new_binary(new_bin, BinaryExecLocation::Installed)
 }
 
 fn capture_version_id(new_bin: &Path) -> String {
@@ -1423,6 +1427,23 @@ mod tests {
             "installed mode must be 0755, got {mode:#o}"
         );
         assert_ne!(mode, STAGING_EXEC_MODE);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preflight_for_version_manager_keeps_world_executable() {
+        // `versions use` must not chmod archived binaries to 0700 (non-root User=).
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail");
+        fs::write(&bin, b"#!/bin/sh\necho 'madmail 2.20.0'\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o600)).unwrap();
+        preflight_binary_for_version_manager(&bin).unwrap();
+        let mode = fs::metadata(&bin).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, INSTALLED_EXEC_MODE,
+            "versions use preflight must leave 0755, got {mode:#o}"
+        );
     }
 
     #[cfg(unix)]
