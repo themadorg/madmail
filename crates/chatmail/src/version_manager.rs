@@ -1340,10 +1340,7 @@ mod tests {
         .unwrap();
         // No active pointer: still refuse deleting the sole install.
         let err = remove_version(root.path(), "1.0.0").unwrap_err();
-        assert!(
-            err.to_string().contains("only remaining"),
-            "got: {err}"
-        );
+        assert!(err.to_string().contains("only remaining"), "got: {err}");
         assert_eq!(list_installed(root.path()).unwrap().len(), 1);
     }
 
