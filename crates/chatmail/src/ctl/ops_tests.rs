@@ -18,8 +18,8 @@
 //! In-process tests for operator CLI commands.
 
 use chatmail_config::cli::{
-    EndpointCacheCommand, FederationCommand, LanguageCommand, OpenrelayCommand, PortCommand,
-    PortServiceCommand, ProxyCommand, ProxySettingCommand, RegistrationCommand,
+    EndpointCacheCommand, FederationCommand, IrohCommand, LanguageCommand, OpenrelayCommand,
+    PortCommand, PortServiceCommand, ProxyCommand, ProxySettingCommand, RegistrationCommand,
     RegistrationTokensCommand, ServiceToggleCommand, SharingCommand,
 };
 use chatmail_config::{Cli, Command};
@@ -30,7 +30,10 @@ use chatmail_db::{
 use clap::Parser;
 
 use super::dispatch;
-use super::test_harness::{parse_cli, parse_cli_with_config, setup_ctl_env, write_ss_test_config};
+use super::test_harness::{
+    parse_cli, parse_cli_with_config, setup_ctl_env, write_iroh_test_config,
+    write_plain_imap_test_config, write_ss_test_config,
+};
 
 #[tokio::test]
 async fn dispatch_registration_open_close() {
@@ -403,6 +406,80 @@ async fn dispatch_sharing_create_and_remove() {
 }
 
 #[tokio::test]
+async fn dispatch_iroh_not_configured_status_and_enable_guard() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+
+    let cli = parse_cli(dir.path(), &["iroh", "status"]);
+    dispatch(&cli).await.unwrap();
+
+    let cli = parse_cli(dir.path(), &["iroh", "disable"]);
+    dispatch(&cli).await.unwrap();
+    assert!(!get_bool_setting(&pool, settings_keys::IROH_ENABLED, true)
+        .await
+        .unwrap());
+
+    let cli = parse_cli(dir.path(), &["iroh", "enable"]);
+    let err = dispatch(&cli).await.unwrap_err().to_string();
+    assert!(err.contains("not configured"));
+}
+
+#[tokio::test]
+async fn dispatch_iroh_configured_enable_disable() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+    let config = write_iroh_test_config(dir.path());
+
+    let cli = parse_cli_with_config(dir.path(), &config, &["iroh", "status"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Iroh {
+            cmd: Some(IrohCommand::Status)
+        })
+    ));
+    dispatch(&cli).await.unwrap();
+
+    let cli = parse_cli_with_config(dir.path(), &config, &["iroh", "disable"]);
+    dispatch(&cli).await.unwrap();
+    assert!(!get_bool_setting(&pool, settings_keys::IROH_ENABLED, true)
+        .await
+        .unwrap());
+
+    let cli = parse_cli_with_config(dir.path(), &config, &["iroh", "enable"]);
+    dispatch(&cli).await.unwrap();
+    assert!(get_bool_setting(&pool, settings_keys::IROH_ENABLED, false)
+        .await
+        .unwrap());
+}
+
+#[tokio::test]
+async fn dispatch_iroh_install_writes_config_and_enables() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+    let config = write_plain_imap_test_config(dir.path());
+    let before = std::fs::read_to_string(&config).unwrap();
+    assert!(!before.contains("iroh_relay_url"));
+
+    let cli = parse_cli_with_config(dir.path(), &config, &["iroh", "install"]);
+    dispatch(&cli).await.unwrap();
+
+    let after = std::fs::read_to_string(&config).unwrap();
+    assert!(
+        after.contains("iroh_relay_url"),
+        "install should add iroh_relay_url: {after}"
+    );
+    assert!(get_bool_setting(&pool, settings_keys::IROH_ENABLED, false)
+        .await
+        .unwrap());
+
+    // Second install is idempotent and keeps toggle on.
+    let cli = parse_cli_with_config(dir.path(), &config, &["iroh", "install"]);
+    dispatch(&cli).await.unwrap();
+    let after2 = std::fs::read_to_string(&config).unwrap();
+    assert_eq!(
+        after.matches("iroh_relay_url").count(),
+        after2.matches("iroh_relay_url").count()
+    );
+}
+
+#[tokio::test]
 async fn dispatch_proxy_not_configured_status_and_enable_guard() {
     let (dir, _args, _db, pool) = setup_ctl_env().await;
 
@@ -693,6 +770,21 @@ fn cli_language_and_registration_parse() {
     assert!(matches!(
         cli.command,
         Some(Command::Reload { insecure: true, .. })
+    ));
+
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["iroh", "status"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Iroh {
+            cmd: Some(IrohCommand::Status)
+        })
+    ));
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["iroh", "install"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Iroh {
+            cmd: Some(IrohCommand::Install)
+        })
     ));
 
     let cli = parse_cli(std::path::Path::new("/tmp"), &["proxy", "status"]);

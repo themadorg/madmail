@@ -161,6 +161,13 @@ Extended documentation:
 	Port overrides use *port shadowsocks*.
 	Run *reload* after changes to apply to a running server.
 
+*iroh*
+	Iroh relay and IMAP discovery (*status*, *install*, *enable*,
+	*disable*). *install* adds *iroh_relay_url* to the config when
+	missing (same idea as *install --enable-iroh*). Runtime toggle is
+	*__IROH_ENABLED__*. Port / local-only use *port iroh*.
+	Run *reload* after changes to apply to a running server.
+
 *webimap*, *websmtp*
 	Enable or disable WebIMAP and WebSMTP HTTP APIs.
 
@@ -315,6 +322,12 @@ Enable Shadowsocks and show the client URL:
 
 	madmail proxy enable
 	madmail proxy status
+	madmail reload
+
+Enable Iroh on an existing install:
+
+	madmail iroh install
+	madmail iroh status
 	madmail reload
 
 # NOTES

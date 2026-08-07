@@ -271,6 +271,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: Option<ProxyCommand>,
     },
+    /// Manage Iroh relay + IMAP discovery (status, install, enable, disable).
+    #[command(subcommand_required = false)]
+    Iroh {
+        #[command(subcommand)]
+        cmd: Option<IrohCommand>,
+    },
     /// Print shell tab-completion scripts (`bash`, `zsh`, `fish`).
     #[command(subcommand)]
     Completion(CompletionShell),
@@ -331,6 +337,19 @@ pub enum CompletionShell {
     Zsh,
     /// Fish completion script for `/usr/share/fish/vendor_completions.d/<binary>.fish`.
     Fish,
+}
+
+/// `madmail iroh` — Iroh relay + IMAP METADATA discovery (`__IROH_*__`).
+#[derive(Debug, Subcommand, Clone)]
+pub enum IrohCommand {
+    /// Show Iroh configuration, admin toggle, and listen status (default).
+    Status,
+    /// Enable Iroh in config (install-time `--enable-iroh` without reinstall) and turn admin toggle on.
+    Install,
+    /// Enable runtime Iroh (`__IROH_ENABLED__`; requires config `iroh_relay_url` / `iroh_enable`).
+    Enable,
+    /// Disable runtime Iroh (`__IROH_ENABLED__` = false).
+    Disable,
 }
 
 /// `madmail proxy` — Shadowsocks (`__SS_*__`).

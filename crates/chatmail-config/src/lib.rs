@@ -20,6 +20,7 @@ pub mod bool_str;
 pub mod cli;
 pub mod client_mail;
 pub mod config_autocert;
+pub mod config_iroh;
 pub mod config_www;
 pub mod credential_policy;
 pub mod data_size;
@@ -34,6 +35,7 @@ pub mod queue;
 pub mod turn_relay_ports;
 
 pub use config_autocert::update_config_autocert;
+pub use config_iroh::update_config_iroh_enable;
 pub use config_www::update_config_www_dir;
 
 use std::path::PathBuf;
@@ -42,10 +44,11 @@ pub use autoconfig::{build_autoconfig_xml, AutoconfigParams};
 pub use bool_str::{is_falsy, is_truthy, parse_bool_str, parse_bool_str_opt};
 pub use cli::{
     AdminWebCommand, Args, Cli, Command, CompletionShell, EndpointCacheCommand, FederationCommand,
-    FirewallCommand, LanguageCommand, OpenrelayCommand, PortCommand, PortServiceCommand,
-    ProxyCommand, ProxySettingCommand, PushCommand, QueueCommand, RegistrationCommand,
-    RegistrationTokensCommand, ServiceCommand, ServiceToggleCommand, SharingCommand, TasksCommand,
-    UninstallArgs, VersionsCommand, DEFAULT_WINDOWS_SERVICE_NAME, FIREWALL_RULE_PREFIX,
+    FirewallCommand, IrohCommand, LanguageCommand, OpenrelayCommand, PortCommand,
+    PortServiceCommand, ProxyCommand, ProxySettingCommand, PushCommand, QueueCommand,
+    RegistrationCommand, RegistrationTokensCommand, ServiceCommand, ServiceToggleCommand,
+    SharingCommand, TasksCommand, UninstallArgs, VersionsCommand, DEFAULT_WINDOWS_SERVICE_NAME,
+    FIREWALL_RULE_PREFIX,
 };
 pub use client_mail::{
     build_dclogin_link, client_connect_host, effective_http_listen, effective_http_plain_listen,

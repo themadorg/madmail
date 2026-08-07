@@ -234,6 +234,13 @@ Alias: [`pr`](pr.md).
 - [`password set`](proxy-password-set.md)
 - [`password reset`](proxy-password-reset.md)
 
+### [`iroh`](iroh.md)
+
+- [`status`](iroh-status.md)
+- [`install`](iroh-install.md)
+- [`enable`](iroh-enable.md)
+- [`disable`](iroh-disable.md)
+
 ### [`language`](language.md)
 
 - [`reset`](language-reset.md)

@@ -69,6 +69,40 @@ chatmail tcp://0.0.0.0:80 {
     config
 }
 
+/// Minimal `maddy.conf` with Iroh discovery on the `imap` block.
+pub fn write_iroh_test_config(dir: &Path) -> PathBuf {
+    let config = dir.join("test_iroh.conf");
+    std::fs::write(
+        &config,
+        r#"
+hostname mail.test
+public_ip 203.0.113.50
+imap tcp://0.0.0.0:143 {
+    iroh_relay_url http://203.0.113.50:3340
+}
+"#,
+    )
+    .expect("write iroh test config");
+    config
+}
+
+/// Minimal `maddy.conf` without Iroh (for `iroh install`).
+pub fn write_plain_imap_test_config(dir: &Path) -> PathBuf {
+    let config = dir.join("test_plain_imap.conf");
+    std::fs::write(
+        &config,
+        r#"
+hostname mail.test
+public_ip 203.0.113.50
+imap tcp://0.0.0.0:143 {
+    auth &local_authdb
+}
+"#,
+    )
+    .expect("write plain imap test config");
+    config
+}
+
 pub fn parse_cli_with_config(state_dir: &Path, config: &Path, subcommand: &[&str]) -> Cli {
     let mut argv = vec![
         "chatmail",
