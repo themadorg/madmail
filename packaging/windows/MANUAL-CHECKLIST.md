@@ -15,7 +15,8 @@ CI: merges to **`main`** run lint/smoke/arm64; published **GitHub Releases** run
 - [ ] **Local self-signed:** setup wizard or  
   `madmail install --simple --ip 127.0.0.1 --tls-mode self_signed --install-service --start-service --firewall`
 - [ ] Service shows **Running** (`madmail service status` / Services MMC)
-- [ ] Firewall rules present (`Madmail (*)` in Windows Firewall)
+- [ ] Firewall rules present (`Madmail (*)` in Windows Firewall), including **TURN** (UDP/TCP 3478) and **TURN-relay** (UDP 49152–65535) when TURN is enabled
+- [ ] Delta Chat audio/video can connect (same LAN or WAN) when TURN is enabled
 - [ ] `madmail-tray --smoke-exit` exits 0; tray start/stop service and “copy admin token” work
 - [ ] Admin token file under `%ProgramData%\Madmail\data\admin_token` (use CLI / `POST /api/admin` — Windows builds do not embed the admin-web SPA)
 - [ ] Service install does **not** fail with sc exit **1639** (uses Win32 CreateService, not quoted `sc start=`)

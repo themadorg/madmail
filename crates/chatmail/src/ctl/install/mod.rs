@@ -665,7 +665,8 @@ impl InstallConfig {
         };
 
         let enable_ss = args.enable_ss || args.simple;
-        let enable_turn = true;
+        // TURN defaults on (Delta Chat calls); `--no-turn` opts out (installer checkbox).
+        let enable_turn = !args.no_turn;
         let language = validate_language_code(&args.lang)?;
         let enable_chatmail = args.enable_chatmail || args.simple || args.domain.is_some();
 
@@ -831,6 +832,7 @@ mod tests {
             enable_chatmail: false,
             enable_ss: false,
             enable_iroh: false,
+            no_turn: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -933,6 +935,7 @@ mod tests {
             enable_chatmail: false,
             enable_ss: false,
             enable_iroh: false,
+            no_turn: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -984,6 +987,7 @@ mod tests {
             enable_chatmail: false,
             enable_ss: false,
             enable_iroh: false,
+            no_turn: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -1040,6 +1044,7 @@ mod tests {
             enable_chatmail: false,
             enable_ss: false,
             enable_iroh: false,
+            no_turn: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -1087,6 +1092,7 @@ mod tests {
                 enable_chatmail: false,
                 enable_ss: false,
                 enable_iroh: false,
+                no_turn: false,
                 turn_off_tls: false,
                 dry_run: false,
                 skip_systemd: false,
@@ -1132,6 +1138,7 @@ mod tests {
             enable_chatmail: false,
             enable_ss: false,
             enable_iroh: false,
+            no_turn: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,
@@ -1185,6 +1192,7 @@ mod tests {
                 enable_chatmail: false,
                 enable_ss: false,
                 enable_iroh: false,
+                no_turn: false,
                 turn_off_tls: false,
                 dry_run: false,
                 skip_systemd: false,
@@ -1224,6 +1232,7 @@ mod tests {
                 enable_chatmail: false,
                 enable_ss: false,
                 enable_iroh: false,
+                no_turn: false,
                 turn_off_tls: false,
                 dry_run: false,
                 skip_systemd: false,
@@ -1271,6 +1280,7 @@ mod tests {
                 enable_chatmail: false,
                 enable_ss: false,
                 enable_iroh: false,
+                no_turn: false,
                 turn_off_tls: false,
                 dry_run: false,
                 skip_systemd: false,
@@ -1288,6 +1298,54 @@ mod tests {
             }
         };
         assert!(InstallConfig::from_args(&global, &args).is_err());
+    }
+
+    #[test]
+    fn no_turn_disables_turn_in_install_config() {
+        let global = Args {
+            config: PathBuf::from("/etc/madmail/madmail.conf"),
+            state_dir: PathBuf::from("./data"),
+            boot_once: false,
+            json: false,
+        };
+        let args = InstallArgs {
+            no_turn: true,
+            ..InstallArgs {
+                non_interactive: false,
+                simple: true,
+                domain: None,
+                hostname: None,
+                ip: Some(EXAMPLE_PUBLIC_IP.into()),
+                config_dir: None,
+                state_dir: None,
+                tls_mode: None,
+                cert_path: None,
+                key_path: None,
+                acme_email: None,
+                enable_chatmail: false,
+                enable_ss: false,
+                enable_iroh: false,
+                no_turn: false,
+                turn_off_tls: false,
+                dry_run: false,
+                skip_systemd: false,
+                skip_user: false,
+                install_service: false,
+                start_service: false,
+                firewall: false,
+                binary_path: None,
+                obtain_certificate: false,
+                no_obtain_certificate: true,
+                cert_only: false,
+                http_listen: "0.0.0.0:80".into(),
+                auto_ip_cert: false,
+                lang: "en".into(),
+            }
+        };
+        let cfg = InstallConfig::from_args(&global, &args).unwrap();
+        assert!(!cfg.enable_turn);
+        let conf = render_maddy_conf(&cfg);
+        assert!(!conf.contains("turn_enable yes"), "{conf}");
     }
 
     #[test]
@@ -1313,6 +1371,7 @@ mod tests {
             enable_chatmail: false,
             enable_ss: false,
             enable_iroh: true,
+            no_turn: false,
             turn_off_tls: false,
             dry_run: false,
             skip_systemd: false,

@@ -74,6 +74,11 @@ pub struct InstallArgs {
     #[arg(long)]
     pub enable_iroh: bool,
 
+    /// Disable embedded TURN for Delta Chat audio/video calls (default: TURN is enabled).
+    /// When set, install omits TURN from config and Windows firewall skips TURN ports.
+    #[arg(long = "no-turn")]
+    pub no_turn: bool,
+
     #[arg(long)]
     pub turn_off_tls: bool,
 

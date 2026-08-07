@@ -781,7 +781,7 @@ pub const FIREWALL_RULE_PREFIX: &str = "Madmail";
 pub enum FirewallCommand {
     /// Create named inbound allow rules for mail/HTTP ports.
     Apply {
-        /// Also open TURN (UDP/TCP 3478).
+        /// Also open TURN: UDP/TCP 3478 (control) and UDP 49152–65535 (media relay).
         #[arg(long)]
         turn: bool,
         /// Also open Shadowsocks (TCP 8388).
