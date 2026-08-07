@@ -1,3 +1,10 @@
+# [2.23.0](https://github.com/themadorg/madmail/compare/v2.22.0...v2.23.0) (2026-08-07)
+
+
+### Features
+
+* **cli:** add madmail iroh status/install/enable/disable ([#140](https://github.com/themadorg/madmail/issues/140)) ([749a8d5](https://github.com/themadorg/madmail/commit/749a8d52722d9603ec6e9c09849cc85f4bc22f5a))
+
 # [2.22.0](https://github.com/themadorg/madmail/compare/v2.21.0...v2.22.0) (2026-08-07)
 
 
