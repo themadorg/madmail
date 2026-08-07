@@ -45,7 +45,7 @@ pub use cli::{
     FirewallCommand, LanguageCommand, OpenrelayCommand, PortCommand, PortServiceCommand,
     ProxyCommand, ProxySettingCommand, PushCommand, QueueCommand, RegistrationCommand,
     RegistrationTokensCommand, ServiceCommand, ServiceToggleCommand, SharingCommand, TasksCommand,
-    UninstallArgs, DEFAULT_WINDOWS_SERVICE_NAME, FIREWALL_RULE_PREFIX,
+    UninstallArgs, VersionsCommand, DEFAULT_WINDOWS_SERVICE_NAME, FIREWALL_RULE_PREFIX,
 };
 pub use client_mail::{
     build_dclogin_link, client_connect_host, effective_http_listen, effective_http_plain_listen,
