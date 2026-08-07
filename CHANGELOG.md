@@ -1,3 +1,16 @@
+# [2.22.0](https://github.com/themadorg/madmail/compare/v2.21.0...v2.22.0) (2026-08-07)
+
+
+### Bug Fixes
+
+* **versions:** avoid clobbering archived binaries on upgrade ([09ce140](https://github.com/themadorg/madmail/commit/09ce14050e43101ad4cb6e73e609bf08df09f8a3))
+* **versions:** use Installed preflight mode and tighten remove/set_active ([e7704c5](https://github.com/themadorg/madmail/commit/e7704c589c298032f466f34f488dec38a7befcde)), closes [#136](https://github.com/themadorg/madmail/issues/136)
+
+
+### Features
+
+* **versions:** add version manager, update latest, and CLI ([93ffb8b](https://github.com/themadorg/madmail/commit/93ffb8b762fc9391639afe8caedc1ba1fde1de8c))
+
 # [2.21.0](https://github.com/themadorg/madmail/compare/v2.20.2...v2.21.0) (2026-08-07)
 
 
