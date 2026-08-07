@@ -178,7 +178,7 @@ Config on `imap { }` block ([`maddy.conf`](../../context/madmail/maddy.conf)):
 | `turn_ttl` | `86400` | Seconds added to `now` for username expiry |
 | `turn_prefer_tls` | `yes` | **Stored but not used** in GETMETADATA today |
 
-Capability `METADATA` is advertised when TURN and/or Iroh URL is configured ([`03-imap-server.md`](03-imap-server.md)).
+Capability `METADATA` is advertised **post-auth** when TURN and/or Iroh URL is configured ([`03-imap-server.md`](03-imap-server.md)). Pre-auth CAPABILITY intentionally omits `METADATA` so probes cannot fingerprint chatmail (#120).
 
 ### Integrated TURN server
 
@@ -483,7 +483,7 @@ Initial `GETMETADATA` request (with TURN keys):
 
 | Requirement | Implementation |
 |-------------|----------------|
-| Capability `METADATA` | When TURN **or** Iroh discovery is active ([`ImapSessionConfig::advertise_metadata`](../../crates/chatmail-imap/src/session.rs)) |
+| Capability `METADATA` | **Post-auth** when TURN **or** Iroh discovery is active ([`ImapSessionConfig::advertise_metadata`](../../crates/chatmail-imap/src/session.rs)); never pre-auth (#120) |
 | Key `/shared/vendor/deltachat/irohrelay` | Value = configured URL string (quoted) |
 | Authenticated, mailbox `""` | Same as TURN GETMETADATA |
 

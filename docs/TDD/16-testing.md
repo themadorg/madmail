@@ -39,9 +39,10 @@ Chatmail's correctness is defined by **real Delta Chat client behavior**, not ju
 | Auth cache + JIT | `chatmail-state`, `chatmail-auth` | `hydrate_loads_blocklist_and_jit_flag`, `jit_coalesces_concurrent_creates_for_same_user` |
 | TLS for STARTTLS | `chatmail-config` | `listeners_need_tls_cert_for_starttls_only_ports` |
 | Autoconfig | `chatmail-config`, `chatmail-www` | `autoconfig_omits_https_alpn_even_when_http_tls_bound` |
-| IMAP caps | `chatmail-imap` | `p5_ut01_test_capability_includes_chatmail_extensions` (`XDELTAPUSH`) |
+| IMAP caps (pre/post-auth) | `chatmail-imap` | `p5_ut01_test_capability_includes_chatmail_extensions` — pre-auth omits `XCHATMAIL`/`XDELTAPUSH`/`METADATA`; post-auth includes chatmail tokens (#120) |
 | Push notify | `chatmail-push`, `chatmail-admin` | `push_mode_and_circuit_breaker`, `successful_delivery_increments_push_stats`, `p9_push_service_toggle` |
-| IMAP push E2E | `tests/imap_e2e.rs` | `imap_e2e_push_devicetoken_setmetadata`, `imap_e2e_push_disabled_hides_capabilities` |
+| IMAP push E2E | `tests/imap_e2e.rs` | `imap_e2e_push_devicetoken_setmetadata` (post-auth caps), `imap_e2e_push_disabled_hides_capabilities`, `imap_e2e_greeting_and_capability` |
+| TURN CAPABILITY | `tests/turn_e2e.rs` | `turn_imap_e2e_capability_metadata` — `METADATA` only after LOGIN |
 | SMTP submission | `chatmail-smtp` | `submission_starttls_upgrade_then_auth_allowed` |
 | Federation body limit | `chatmail-fed`, `chatmail-state`, `chatmail-config`, `chatmail-admin` | `p7_ut04`–`p7_ut06`, `federation_size_*`, `admin_federation_size_*` |
 | Bigfile roundtrip E2E | `tests/deltachat-test` | `test_23_bigfile_roundtrip.py` (5 MiB SHA-256, two relays, &lt;60s) |
@@ -115,7 +116,7 @@ These tests target a **live deployed** Chatmail host (env `CHATMAIL_DOMAIN`, opt
 | File | Validates |
 |------|-----------|
 | `test_0_login.py` | IMAP/SMTP login, JIT auto-create, password rules, concurrent logins |
-| `test_0_login.py` (`test_capabilities`) | IMAP caps: `XCHATMAIL`, `XDELTAPUSH` |
+| `test_0_login.py` (`test_capabilities`) | IMAP caps: `XCHATMAIL`, `XDELTAPUSH` (cmdeploy/Dovecot often pre-auth; madmail-v2 exposes these **post-auth only** — #120) |
 | `test_0_qr.py` | QR / invite flows (HTTP, not IMAP) |
 | `test_1_basic.py` | SSH + SMTP send (`swaks`), DNS, deliverability smoke |
 | `test_2_deltachat.py` | Delta Chat RPC: 1:1 chat, metadata SET/GET on INBOX |
@@ -133,7 +134,7 @@ cd context/cmdeploy && pytest src/cmdeploy/tests/online/test_0_login.py -v
 | cmdeploy test | Primary TDD section |
 |---------------|---------------------|
 | Login / JIT | `05-authentication.md`, `03-imap-server.md` |
-| `XCHATMAIL` / `XDELTAPUSH` | `03-imap-server.md` |
+| `XCHATMAIL` / `XDELTAPUSH` (post-auth on madmail-v2) | `03-imap-server.md` (#120 pre-auth fingerprinting) |
 | Delta Chat send/receive | `02-smtp-server.md` + `03-imap-server.md` + `16-testing.md` (deltachat-test) |
 
 **Gaps:** cmdeploy does **not** cover `523 Encryption Needed`, federation ACCEPT/REJECT, or Admin API — use `context/madmail/tests/deltachat-test/` for those.
