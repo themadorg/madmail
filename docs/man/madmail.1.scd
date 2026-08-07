@@ -286,6 +286,11 @@ install when certificate issuance runs):
 
 	sudo madmail install --simple --domain mail.example.org --acme-email admin@example.org --lang en
 
+Domain install without *\-\-ip* resolves *$(public_ip)* from DNS (public IPv4
+preferred over IPv6 when both exist; pass *\-\-ip* to force an address):
+
+	sudo madmail install --simple --domain mail.example.org --ip 203.0.113.50 --acme-email admin@example.org --lang en
+
 Preview a system install without writing files:
 
 	sudo madmail install --simple --ip 203.0.113.50 --dry-run
@@ -327,6 +332,10 @@ installs that skip those steps.
 Interactive *install* (without *\-\-simple* or *\-\-non\-interactive*) may
 not be available in all builds; use *\-\-simple* or *\-\-non\-interactive*
 in scripts.
+
+When *install* fills *$(public_ip)* from a domain (no *\-\-ip*), dual\-stack
+DNS prefers a public IPv4 address for TURN and discovery. Use *\-\-ip* for
+IPv6\-only hosts or to pin a specific address.
 
 When *\-\-json* is set, successful operator commands print a single JSON
 object on standard output.

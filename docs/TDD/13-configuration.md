@@ -17,7 +17,7 @@ Reference: [`context/madmail/maddy.conf`](../../context/madmail/maddy.conf), [`s
 | `$(hostname)` | SMTP EHLO, TLS, DKIM |
 | `$(primary_domain)` | Local delivery domain |
 | `$(local_domains)` | Accepted recipient domains (space-separated) |
-| `$(public_ip)` | QR, TURN, Iroh discovery |
+| `$(public_ip)` | QR, TURN, Iroh discovery. On `madmail install` without `--ip`, filled from DNS with **public IPv4 preferred** over IPv6 when both exist (#132); operators may set `--ip` or edit the config later. |
 
 ## Top-level directives
 
