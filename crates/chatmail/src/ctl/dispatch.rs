@@ -24,7 +24,7 @@ use super::{
     accounts, admin_token, admin_web, blocklist_cmd, certificate, delete_cmd, docs, endpoint_cache,
     federation, firewall_cmd, html, install, iroh, language, message_size, openrelay, port, proxy,
     push, queue_cmd, registration, registration_tokens, reload, service_cmd, service_toggle,
-    sharing, status_cmd, tasks, uninstall, version, webmail_cors,
+    sharing, status_cmd, tasks, uninstall, version, versions_cmd, webmail_cors,
 };
 
 pub async fn dispatch(cli: &Cli) -> Result<()> {
@@ -123,6 +123,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::Completion(shell)) => docs::print_completion(shell),
         Some(Command::GenerateMan) => docs::print_generate_man(&cli.args),
         Some(Command::GenerateFishCompletion) => docs::print_generate_fish_completion(&cli.args),
+        Some(Command::Versions(cmd)) => versions_cmd::versions(&cli.args, cmd).await,
         Some(cmd) => not_implemented(cmd),
     }
 }
@@ -135,7 +136,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, openrelay, language, \
          html-export, html-serve, html-migrate, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
-         status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, reload, message-size, tasks, queue, completion"
+         status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, reload, message-size, tasks, queue, versions, completion"
     )))
 }
 
@@ -144,6 +145,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Run => "run",
         Command::Upgrade { .. } => "upgrade",
         Command::Update { .. } => "update",
+        Command::Versions(_) => "versions",
         Command::AdminToken { .. } => "admin-token",
         Command::AdminWeb { .. } => "admin-web",
         Command::Version => "version",

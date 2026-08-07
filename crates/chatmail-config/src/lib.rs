@@ -47,7 +47,7 @@ pub use cli::{
     FirewallCommand, IrohCommand, LanguageCommand, OpenrelayCommand, PortCommand,
     PortServiceCommand, ProxyCommand, ProxySettingCommand, PushCommand, QueueCommand,
     RegistrationCommand, RegistrationTokensCommand, ServiceCommand, ServiceToggleCommand,
-    SharingCommand, TasksCommand, UninstallArgs, DEFAULT_WINDOWS_SERVICE_NAME,
+    SharingCommand, TasksCommand, UninstallArgs, VersionsCommand, DEFAULT_WINDOWS_SERVICE_NAME,
     FIREWALL_RULE_PREFIX,
 };
 pub use client_mail::{

@@ -428,6 +428,20 @@ From `imap-proto/src/parser/mod.rs` + `imap/src/op/mod.rs`:
 
 ## Rust implementation notes (`madmail-v2`)
 
+### Pre-auth vs post-auth CAPABILITY (#120)
+
+madmail-v2 splits advertised IMAP capabilities so unauthenticated probes cannot fingerprint a chatmail relay. Dovecot historically has a single capability set for pre- and post-auth; Madmail’s custom stack does not.
+
+| Session state | Advertised capabilities |
+|---------------|-------------------------|
+| **Pre-auth** (greeting / unauthenticated `CAPABILITY`) | Generic IMAP only: `IMAP4rev1`, `IDLE`, `QUOTA`, `MOVE`, `UIDPLUS`, `AUTH=PLAIN`, `LITERAL+`, and `STARTTLS` when applicable. **No** `XCHATMAIL`, `XDELTAPUSH`, or `METADATA`. |
+| **Post-auth** (after successful `LOGIN` / `AUTHENTICATE`) | Pre-auth set **plus** `XCHATMAIL`, and when configured `XDELTAPUSH` and/or `METADATA` (TURN/Iroh/push discovery). |
+
+- Implementation: `capability_string(authenticated, …)` in [`crates/chatmail-imap/src/session.rs`](../../crates/chatmail-imap/src/session.rs).
+- Greeting remains bland: `* OK {host} IMAP4rev1 ready`.
+- `LOGOUT` sends `* BYE Logging out` (no product token).
+- Delta Chat does not require chatmail-specific capabilities before login; clients discover extensions after auth.
+
 ### `crates/chatmail-storage` — mailbox backend
 
 IMAP sessions use `AppState::mailbox_store` (`MailboxStore`):
@@ -461,13 +475,13 @@ Mirrors Madmail `go-imap-sql/delivery.go` and Delta Chat `context/core/src/imap/
 - `handle_fetch`: reload maildir on each FETCH; **sequence** `FETCH n` uses 1-based index; **`UID FETCH`** uses UID (was a common bug).
 - FETCH literals: close with `)\r\n` immediately after literal (go-imap compatible).
 
-**Tests:** `p5_ut01_test_capability_includes_chatmail_extensions` (includes `XDELTAPUSH`), `p6_ut01_test_idle_receives_delivery_event`, `p6_imap_idle_unsolicited_exists`, `imap_starttls_capability_and_login_gate`, `imap_starttls_upgrade_then_login` in `crates/chatmail-imap/src/session.rs`.
+**Tests:** `p5_ut01_test_capability_includes_chatmail_extensions` (pre-auth generic; post-auth includes chatmail tokens / `XDELTAPUSH` when enabled), `p6_ut01_test_idle_receives_delivery_event`, `p6_imap_idle_unsolicited_exists`, `imap_starttls_capability_and_login_gate`, `imap_starttls_upgrade_then_login` in `crates/chatmail-imap/src/session.rs`.
 
 **relay-ping:** `internal/check/imapcheck/idle.go` — `waitInboxGrow` (IDLE + EXISTS), `probeIdleDelivery` (IDLE + second-session APPEND). Cross-delivery and Secure Join start IDLE **before** SMTP submit (core lifecycle).
 
 ### `crates/chatmail-imap` — XDELTAPUSH / SETMETADATA (implemented)
 
-When `__PUSH_MODE__` is `auto` or `on`, `CAPABILITY` includes `METADATA` + `XDELTAPUSH`. When `off` (**default**), neither is advertised and `SETMETADATA` is rejected.
+When `__PUSH_MODE__` is `auto` or `on`, **post-auth** `CAPABILITY` includes `METADATA` + `XDELTAPUSH`. Pre-auth CAPABILITY never advertises those tokens (#120). When push is `off` (**default**), neither is advertised post-auth and `SETMETADATA` is rejected.
 
 | Command | Behavior |
 |---------|----------|
@@ -493,7 +507,7 @@ After rebuilding chatmail, Delta Chat should pass folder configure and enter **I
 ### Minimum viable server (Delta Chat parity with Madmail)
 
 1. **Session**: AUTH, SELECT, UID FETCH, UID STORE, UID MOVE, CLOSE, LIST, STATUS, IDLE.
-2. **Extensions**: MOVE, SPECIAL-USE, QUOTA (`GETQUOTA`/`GETQUOTAROOT`), METADATA GET (Chatmail keys), `XCHATMAIL`, **`XDELTAPUSH`** + `SETMETADATA /private/devicetoken` when push enabled (implemented in madmail-v2; default **off**).
+2. **Extensions**: MOVE, SPECIAL-USE, QUOTA (`GETQUOTA`/`GETQUOTAROOT`), METADATA GET (Chatmail keys), `XCHATMAIL`, **`XDELTAPUSH`** + `SETMETADATA /private/devicetoken` when push enabled (implemented in madmail-v2; default **off**). Chatmail-specific capabilities are advertised **post-auth only** (#120).
 3. **APPEND**: With PGP enforcement (mirror `encryptionWrapperUser`).
 4. **IDLE**: Unsolicited `EXISTS` on delivery (SMTP + `/mxdeliv` + local append) — **see table above**.
 5. **JIT**: Account/mailbox creation on first LOGIN (see `05-authentication.md`).

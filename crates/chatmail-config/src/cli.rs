@@ -44,8 +44,11 @@ pub enum Command {
     /// Start the mail server (default).
     Run,
     /// Replace this executable from a signed local file or URL.
+    ///
+    /// Pass `latest` to download the current GitHub Releases asset for this host
+    /// (full signature, size, and preflight checks — same as an explicit URL).
     Upgrade {
-        /// Path to signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive.
+        /// Path to signed binary, `http(s)://` URL, or the keyword `latest` (GitHub Releases).
         #[arg(value_name = "PATH_OR_URL")]
         path_or_url: String,
         /// Allow HTTPS downloads with self-signed or otherwise untrusted TLS certificates.
@@ -57,8 +60,11 @@ pub enum Command {
         accept_unsafe_https: bool,
     },
     /// Replace this executable from a signed local file or URL (alias for `upgrade`).
+    ///
+    /// `madmail update latest` fetches the latest GitHub release for this OS/arch with
+    /// mandatory Ed25519 verification (TLS relax does not skip signatures).
     Update {
-        /// Path to signed binary, or `http://` / `https://` URL to a raw binary or `.tar.gz` / `.tgz` archive.
+        /// Path to signed binary, `http(s)://` URL, or the keyword `latest` (GitHub Releases).
         #[arg(value_name = "PATH_OR_URL")]
         path_or_url: String,
         /// Allow HTTPS downloads with self-signed or otherwise untrusted TLS certificates.
@@ -69,6 +75,9 @@ pub enum Command {
         #[arg(long = "accept-unsafe-https")]
         accept_unsafe_https: bool,
     },
+    /// Manage versioned installs under the platform install root (`/opt/madmail` or `%ProgramFiles%\\Madmail`).
+    #[command(subcommand)]
+    Versions(VersionsCommand),
     /// Display the admin API credentials.
     #[command(name = "admin-token")]
     AdminToken {
@@ -277,6 +286,46 @@ pub enum Command {
     /// Emit fish completion script (Madmail hidden helper).
     #[command(name = "generate-fish-completion", hide = true)]
     GenerateFishCompletion,
+}
+
+/// `madmail versions` — list / switch / prune versioned binaries.
+#[derive(Debug, Subcommand, Clone)]
+pub enum VersionsCommand {
+    /// List installed versions (add `--remote` for GitHub Releases metadata).
+    List {
+        /// Also show remote GitHub releases and compare to local installs (no binary download).
+        #[arg(long)]
+        remote: bool,
+    },
+    /// Print the active version id and path.
+    Current,
+    /// Activate an installed version (Ed25519 signature + host preflight required).
+    Use {
+        /// Version directory id (e.g. `2.20.0`).
+        version: String,
+    },
+    /// Delete oldest non-active versions beyond `--keep` (default 5).
+    Prune {
+        /// Number of non-active versions to retain.
+        #[arg(long)]
+        keep: Option<usize>,
+        /// Confirm deletion.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+    /// Remove one non-active version directory.
+    Remove {
+        /// Version directory id.
+        version: String,
+        /// Confirm deletion.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+    /// Print filesystem path for a version (default: active).
+    Path {
+        /// Optional version id.
+        version: Option<String>,
+    },
 }
 
 /// `madmail completion` — shell tab completion (clap_complete).
@@ -1201,5 +1250,92 @@ mod tests {
             cli.command,
             Some(Command::Openrelay(OpenrelayCommand::Disable))
         ));
+    }
+
+    #[test]
+    fn parses_update_latest_and_versions_list() {
+        let cli = Cli::try_parse_from(["madmail", "update", "latest"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Update {
+                path_or_url,
+                accept_unsafe_https: false
+            }) if path_or_url == "latest"
+        ));
+        let cli = Cli::try_parse_from(["madmail", "versions", "list", "--remote"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Versions(VersionsCommand::List { remote: true }))
+        ));
+        let cli = Cli::try_parse_from(["madmail", "versions", "use", "2.20.0"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Versions(VersionsCommand::Use { version })) if version == "2.20.0"
+        ));
+    }
+
+    #[test]
+    fn parses_upgrade_latest_and_versions_subcommands() {
+        let cli = Cli::try_parse_from(["madmail", "upgrade", "latest"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Upgrade {
+                path_or_url,
+                ..
+            }) if path_or_url == "latest"
+        ));
+
+        let cli = Cli::try_parse_from(["madmail", "versions", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Versions(VersionsCommand::List { remote: false }))
+        ));
+
+        let cli = Cli::try_parse_from(["madmail", "versions", "current"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Versions(VersionsCommand::Current))
+        ));
+
+        let cli = Cli::try_parse_from(["madmail", "versions", "path"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Versions(VersionsCommand::Path { version: None }))
+        ));
+
+        let cli = Cli::try_parse_from(["madmail", "versions", "path", "2.1.0"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Versions(VersionsCommand::Path { version: Some(v) })) if v == "2.1.0"
+        ));
+
+        let cli =
+            Cli::try_parse_from(["madmail", "versions", "prune", "--keep", "3", "-y"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Versions(VersionsCommand::Prune {
+                keep: Some(3),
+                yes: true
+            }))
+        ));
+
+        let cli = Cli::try_parse_from(["madmail", "versions", "remove", "1.0.0", "--yes"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Versions(VersionsCommand::Remove {
+                version,
+                yes: true
+            })) if version == "1.0.0"
+        ));
+    }
+
+    #[test]
+    fn versions_use_requires_version_arg() {
+        let err = Cli::try_parse_from(["madmail", "versions", "use"]).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("required") || msg.contains("VERSION") || msg.contains("version"),
+            "got: {msg}"
+        );
     }
 }

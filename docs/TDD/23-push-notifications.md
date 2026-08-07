@@ -3,11 +3,13 @@
 Delta Chat mobile wake-up via IMAP `SETMETADATA` device tokens and the central notification proxy at `https://notifications.delta.chat/notify`.
 
 **Crate:** `crates/chatmail-push/` (`notifier`, `store`, `mode`, `enabled`, `stats`)  
-**IMAP:** `crates/chatmail-imap/` (`XDELTAPUSH`, `METADATA`, `/private/devicetoken`)
+**IMAP:** `crates/chatmail-imap/` (`XDELTAPUSH`, `METADATA`, `/private/devicetoken`)  
 **Admin:** `/admin/services/push`, `push` block in `/admin/status` and `/admin/overview`  
 **CLI:** `madmail push` — guide: [`../guide/cli/push.md`](../guide/cli/push.md) (binary name is **`madmail`**, not `chatmail`)
 
 Reference: Dovecot/chatmaild `notifier.py`, cmdeploy `XDELTAPUSH` capability.
+
+**Advertisement (#120):** When push is enabled, `XDELTAPUSH` and `METADATA` appear only on **post-auth** IMAP `CAPABILITY`. Pre-auth responses stay generic so unauthenticated probes do not fingerprint the relay.
 
 ---
 
@@ -90,7 +92,7 @@ When auto mode trips, the server logs an error and suggests `madmail push auto` 
 | `disable` / `off` | Mode **off** |
 | `auto` | Mode **auto** |
 
-Response includes `restart_required: true` (soft reload refreshes IMAP `XDELTAPUSH` advertisement).
+Response includes `restart_required: true` (soft reload refreshes post-auth IMAP `XDELTAPUSH` advertisement).
 
 ### Status / overview
 
@@ -141,8 +143,8 @@ Successful deliveries increment `push_successful_notifications` in the `message_
 
 | ID | Scope |
 |----|--------|
-| `imap_e2e_push_devicetoken_setmetadata` | IMAP SET/GET METADATA round-trip |
-| `imap_e2e_push_disabled_hides_capabilities` | Push off → no `XDELTAPUSH` |
+| `imap_e2e_push_devicetoken_setmetadata` | Pre-auth omits push caps; post-auth SET/GET METADATA round-trip |
+| `imap_e2e_push_disabled_hides_capabilities` | Push off → no post-auth `XDELTAPUSH` |
 | `p9_push_service_toggle` | Admin GET/POST `/admin/services/push` |
 | `p9_status_push_stats` | `push` block in `/admin/status` |
 | `push_mode_and_circuit_breaker` | Auto trip after 5 failures (`chatmail-push`) |

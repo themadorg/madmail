@@ -209,9 +209,7 @@ impl ImapSession {
                 writer.write_all(r.as_bytes()).await?;
             }
             if cmd_upper == "LOGOUT" {
-                writer
-                    .write_all(b"* BYE madmail-v2 logging out\r\n")
-                    .await?;
+                writer.write_all(b"* BYE Logging out\r\n").await?;
                 if let Some(t) = tag {
                     writer
                         .write_all(format!("{t} OK LOGOUT completed\r\n").as_bytes())
@@ -280,9 +278,7 @@ impl ImapSession {
                 writer.write_all(r.as_bytes()).await?;
             }
             if cmd_upper == "LOGOUT" {
-                writer
-                    .write_all(b"* BYE madmail-v2 logging out\r\n")
-                    .await?;
+                writer.write_all(b"* BYE Logging out\r\n").await?;
                 if let Some(t) = tag {
                     writer
                         .write_all(format!("{t} OK LOGOUT completed\r\n").as_bytes())
@@ -312,6 +308,7 @@ impl ImapSession {
             "CAPABILITY" => Ok(Some(format!(
                 "* CAPABILITY {}\r\n{t} OK CAPABILITY completed\r\n",
                 capability_string(
+                    self.authenticated_user.is_some(),
                     self.cfg.advertise_metadata(),
                     self.cfg.push_enabled,
                     self.cfg.starttls_config.is_some() && !tls_active,
@@ -1362,7 +1359,12 @@ fn parse_uid_set_and_mailbox(args: &str) -> Result<(Vec<u32>, String)> {
 }
 
 /// Advertised IMAP capabilities (TDD `03-imap-server.md`: XCHATMAIL, XDELTAPUSH, IDLE, QUOTA, METADATA).
+///
+/// Pre-auth responses intentionally omit chatmail-identifying tokens (`XCHATMAIL`,
+/// `XDELTAPUSH`, `METADATA`) so unauthenticated probes see a generic IMAP4rev1
+/// server (#120). Delta Chat only needs those after login.
 pub fn capability_string(
+    authenticated: bool,
     advertise_metadata: bool,
     advertise_push: bool,
     advertise_starttls: bool,
@@ -1375,16 +1377,18 @@ pub fn capability_string(
         "UIDPLUS",
         "AUTH=PLAIN",
         "LITERAL+",
-        "XCHATMAIL",
     ];
-    if advertise_push {
-        caps.push("XDELTAPUSH");
-    }
     if advertise_starttls {
         caps.push("STARTTLS");
     }
-    if advertise_metadata {
-        caps.push("METADATA");
+    if authenticated {
+        caps.push("XCHATMAIL");
+        if advertise_push {
+            caps.push("XDELTAPUSH");
+        }
+        if advertise_metadata {
+            caps.push("METADATA");
+        }
     }
     caps.join(" ")
 }
@@ -1836,14 +1840,30 @@ mod tests {
     use std::time::Duration;
     // write_blob delivers to INBOX
 
-    /// P5-UT01: CAPABILITY includes Chatmail extensions (TDD + cmdeploy `test_capabilities`).
+    /// P5-UT01: post-auth CAPABILITY includes Chatmail extensions; pre-auth stays generic (#120).
     #[test]
     fn p5_ut01_test_capability_includes_chatmail_extensions() {
-        let caps = capability_string(false, false, false);
+        let pre = capability_string(false, true, true, true);
+        assert!(pre.contains("IMAP4rev1"));
+        assert!(pre.contains("IDLE"));
+        assert!(pre.contains("QUOTA"));
+        assert!(pre.contains("MOVE"));
+        assert!(pre.contains("STARTTLS"));
+        assert!(
+            !pre.contains("XCHATMAIL"),
+            "XCHATMAIL must not leak pre-auth: {pre}"
+        );
+        assert!(
+            !pre.contains("XDELTAPUSH"),
+            "XDELTAPUSH must not leak pre-auth: {pre}"
+        );
+        assert!(
+            !pre.contains("METADATA"),
+            "METADATA must not leak pre-auth: {pre}"
+        );
+
+        let caps = capability_string(true, false, false, false);
         assert!(caps.contains("IMAP4rev1"));
-        assert!(caps.contains("IDLE"));
-        assert!(caps.contains("QUOTA"));
-        assert!(caps.contains("MOVE"));
         assert!(caps.contains("XCHATMAIL"));
         assert!(
             !caps.contains("XDELTAPUSH"),
@@ -1854,13 +1874,13 @@ mod tests {
             "METADATA is advertised only when TURN/Iroh/push discovery is enabled"
         );
 
-        let with_push = capability_string(false, true, false);
+        let with_push = capability_string(true, false, true, false);
         assert!(with_push.contains("XDELTAPUSH"));
 
-        let with_starttls = capability_string(false, false, true);
+        let with_starttls = capability_string(false, false, false, true);
         assert!(with_starttls.contains("STARTTLS"));
 
-        let with_metadata = capability_string(true, false, false);
+        let with_metadata = capability_string(true, true, false, false);
         assert!(with_metadata.contains("METADATA"));
     }
 
@@ -2560,6 +2580,7 @@ mod integration_tests {
             &[
                 "a001 CAPABILITY",
                 "a002 LOGIN u@test pw",
+                "a002b CAPABILITY",
                 "a003 SELECT INBOX",
                 "a003b STATUS INBOX (UIDNEXT MESSAGES)",
                 "a004 UID FETCH 1 (UID INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM)])",
@@ -2567,7 +2588,18 @@ mod integration_tests {
             ],
         )
         .await;
-        assert!(t.contains("XCHATMAIL"), "caps: {t}");
+        // Pre-auth CAPABILITY must not fingerprint chatmail (#120).
+        // Transcript is server responses only (no client command text).
+        let pre = t
+            .split("a002 OK LOGIN")
+            .next()
+            .expect("transcript includes pre-login CAPABILITY");
+        assert!(
+            !pre.contains("XCHATMAIL"),
+            "pre-auth must not advertise XCHATMAIL: {pre}"
+        );
+        assert!(t.contains("a002b OK CAPABILITY"), "post-auth caps: {t}");
+        assert!(t.contains("XCHATMAIL"), "post-auth caps: {t}");
         assert!(t.contains("a002 OK LOGIN"), "login: {t}");
         assert!(t.contains("UIDNEXT"), "select: {t}");
         assert!(t.contains("EXISTS"), "select: {t}");

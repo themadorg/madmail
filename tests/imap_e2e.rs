@@ -29,16 +29,25 @@ async fn imap_e2e_greeting_and_capability() {
     assert!(c.transcript().contains("IMAP4rev1 ready"));
 
     let r = c.command("c001 CAPABILITY").await;
-    for cap in [
-        "IMAP4rev1",
-        "IDLE",
-        "QUOTA",
-        "MOVE",
-        "AUTH=PLAIN",
-        "XCHATMAIL",
-    ] {
+    for cap in ["IMAP4rev1", "IDLE", "QUOTA", "MOVE", "AUTH=PLAIN"] {
         assert!(r.contains(cap), "missing capability {cap}: {r}");
     }
+    // Pre-auth CAPABILITY must not advertise chatmail-specific tokens (#120).
+    assert!(
+        !r.contains("XCHATMAIL"),
+        "pre-auth must not advertise XCHATMAIL: {r}"
+    );
+    assert!(
+        !r.contains("XDELTAPUSH"),
+        "pre-auth must not advertise XDELTAPUSH: {r}"
+    );
+
+    c.command(&format!("c002 LOGIN {USER} {PASS}")).await;
+    let post = c.command("c003 CAPABILITY").await;
+    assert!(
+        post.contains("XCHATMAIL"),
+        "post-auth must advertise XCHATMAIL: {post}"
+    );
 }
 
 #[tokio::test]
@@ -468,12 +477,22 @@ async fn imap_e2e_delta_chat_sync_session() {
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
     let caps = c.command("dc01 CAPABILITY").await;
-    assert!(caps.contains("IDLE") && caps.contains("XCHATMAIL"));
+    assert!(caps.contains("IDLE"));
+    assert!(
+        !caps.contains("XCHATMAIL"),
+        "pre-auth CAPABILITY must not fingerprint: {caps}"
+    );
 
     assert!(c
         .command(&format!("dc02 LOGIN {USER} {PASS}"))
         .await
         .contains("OK LOGIN"));
+
+    let post = c.command("dc02b CAPABILITY").await;
+    assert!(
+        post.contains("XCHATMAIL"),
+        "post-auth CAPABILITY must keep chatmail tokens: {post}"
+    );
 
     assert!(c.command("dc03 LIST \"\" \"*\"").await.contains("INBOX"));
 
@@ -505,11 +524,16 @@ async fn imap_e2e_push_devicetoken_setmetadata() {
     create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
-    let caps = c.command("p001 CAPABILITY").await;
-    assert!(caps.contains("XDELTAPUSH"), "push cap: {caps}");
-    assert!(caps.contains("METADATA"), "metadata cap: {caps}");
+    let pre = c.command("p001 CAPABILITY").await;
+    assert!(
+        !pre.contains("XDELTAPUSH") && !pre.contains("METADATA"),
+        "push/metadata caps must not leak pre-auth: {pre}"
+    );
 
     c.command(&format!("p002 LOGIN {USER} {PASS}")).await;
+    let caps = c.command("p002b CAPABILITY").await;
+    assert!(caps.contains("XDELTAPUSH"), "push cap: {caps}");
+    assert!(caps.contains("METADATA"), "metadata cap: {caps}");
     let set = c
         .command(r#"p003 SETMETADATA INBOX (/private/devicetoken "openpgp:relay-ping-token" )"#)
         .await;
