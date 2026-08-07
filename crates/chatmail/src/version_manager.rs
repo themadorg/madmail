@@ -498,20 +498,35 @@ fn atomic_symlink(target: &Path, link: &Path) -> Result<()> {
             ))
         })?;
     }
-    // Replace existing link/file
-    if link.exists() || link.symlink_metadata().is_ok() {
-        let _ = fs::remove_file(link);
-        // directory junction/symlink
-        let _ = fs::remove_dir(link);
+    // Prefer atomic rename over an existing symlink/file so the stable PATH entry
+    // is never briefly missing (Linux rename replaces the destination inode).
+    // Windows often cannot rename-over an existing name; remove then rename there.
+    #[cfg(unix)]
+    {
+        fs::rename(&tmp, link).map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            ChatmailError::config(format!(
+                "activate link {} -> {}: {e}",
+                link.display(),
+                target.display()
+            ))
+        })?;
     }
-    fs::rename(&tmp, link).map_err(|e| {
-        let _ = fs::remove_file(&tmp);
-        ChatmailError::config(format!(
-            "activate link {} -> {}: {e}",
-            link.display(),
-            target.display()
-        ))
-    })?;
+    #[cfg(windows)]
+    {
+        if link.exists() || link.symlink_metadata().is_ok() {
+            let _ = fs::remove_file(link);
+            let _ = fs::remove_dir(link);
+        }
+        fs::rename(&tmp, link).map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            ChatmailError::config(format!(
+                "activate link {} -> {}: {e}",
+                link.display(),
+                target.display()
+            ))
+        })?;
+    }
     Ok(())
 }
 
@@ -795,6 +810,104 @@ mod tests {
         let url = github_latest_asset_url();
         assert!(url.starts_with("https://github.com/themadorg/madmail/releases/latest/download/"));
         assert!(url.contains("madmail"));
+    }
+
+    /// Dual-upgrade regression: installing v2 must leave v1 bytes unchanged
+    /// (review #136 — in-place replace via canonicalize clobbered versions/<old>/).
+    #[test]
+    fn dual_install_leaves_prior_version_bytes_unchanged() {
+        let root = TempDir::new().unwrap();
+        let stable = root.path().join("bin").join(binary_file_name());
+        let src_v1 = root.path().join("payload-v1");
+        let src_v2 = root.path().join("payload-v2");
+        fs::write(&src_v1, b"VERSION-2.18.2-UNIQUE-BYTES").unwrap();
+        fs::write(&src_v2, b"VERSION-2.20.0-UNIQUE-BYTES").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&src_v1, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&src_v2, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        install_candidate(
+            root.path(),
+            "2.18.2",
+            &src_v1,
+            VersionMeta {
+                version: "2.18.2".into(),
+                installed_at: None,
+                source: Some("test".into()),
+                source_url: None,
+                sha256: None,
+                variant: None,
+                os: None,
+                signature_ok: Some(true),
+            },
+        )
+        .unwrap();
+        set_active(root.path(), "2.18.2", &stable).unwrap();
+        let v1_path = version_binary_path(root.path(), "2.18.2");
+        let v1_before = fs::read(&v1_path).unwrap();
+        assert_eq!(v1_before, b"VERSION-2.18.2-UNIQUE-BYTES");
+
+        // Second install + activate (mirrors upgrade #2) must not rewrite v1.
+        install_candidate(
+            root.path(),
+            "2.20.0",
+            &src_v2,
+            VersionMeta {
+                version: "2.20.0".into(),
+                installed_at: None,
+                source: Some("test".into()),
+                source_url: None,
+                sha256: None,
+                variant: None,
+                os: None,
+                signature_ok: Some(true),
+            },
+        )
+        .unwrap();
+        set_active(root.path(), "2.20.0", &stable).unwrap();
+
+        assert_eq!(
+            fs::read(&v1_path).unwrap(),
+            v1_before,
+            "versions/2.18.2 must remain bit-identical after installing 2.20.0"
+        );
+        assert_eq!(
+            fs::read(version_binary_path(root.path(), "2.20.0")).unwrap(),
+            b"VERSION-2.20.0-UNIQUE-BYTES"
+        );
+        assert_eq!(
+            resolve_active_version(root.path()).unwrap().as_deref(),
+            Some("2.20.0")
+        );
+        let real = fs::canonicalize(&stable).unwrap();
+        assert!(
+            real.to_string_lossy().contains("2.20.0"),
+            "stable PATH should resolve into 2.20.0, got {}",
+            real.display()
+        );
+    }
+
+    /// `atomic_symlink` must replace without leaving a missing PATH entry on Unix
+    /// (rename-over; no remove-then-rename window).
+    #[cfg(unix)]
+    #[test]
+    fn atomic_symlink_replaces_existing_without_pre_delete_gap() {
+        let root = TempDir::new().unwrap();
+        let link = root.path().join("stable");
+        let t1 = root.path().join("t1");
+        let t2 = root.path().join("t2");
+        fs::write(&t1, b"one").unwrap();
+        fs::write(&t2, b"two").unwrap();
+        atomic_symlink(&t1, &link).unwrap();
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(fs::read(&link).unwrap(), b"one");
+        atomic_symlink(&t2, &link).unwrap();
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(fs::read(&link).unwrap(), b"two");
+        assert_eq!(fs::read_link(&link).unwrap(), t2);
     }
 
     #[test]

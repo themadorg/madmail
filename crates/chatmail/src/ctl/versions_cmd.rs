@@ -146,11 +146,30 @@ fn use_cmd(args: &Args, root: &std::path::Path, version: &str) -> Result<()> {
     let out = CtlOut::from_args(args, "versions use");
     let id = version_manager::sanitize_version_id(version)?;
     let bin = version_binary_path(root, &id);
-    if !bin.is_file() {
-        return Err(ChatmailError::config(format!(
-            "version {id} not found at {}",
-            bin.display()
-        )));
+    // TDD: activation requires a regular file under versions/<id>/ — not a symlink
+    // (symlink would pass verify/preflight against the target while set_active
+    // still points at the symlink path).
+    match std::fs::symlink_metadata(&bin) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(ChatmailError::config(format!(
+                "version {id} binary at {} is a symlink; refusing to activate \
+                 (install a regular file under versions/{id}/)",
+                bin.display()
+            )));
+        }
+        Ok(meta) if meta.is_file() => {}
+        Ok(_) => {
+            return Err(ChatmailError::config(format!(
+                "version {id} binary at {} is not a regular file",
+                bin.display()
+            )));
+        }
+        Err(_) => {
+            return Err(ChatmailError::config(format!(
+                "version {id} not found at {}",
+                bin.display()
+            )));
+        }
     }
 
     // Mandatory signature check before stop/activate
@@ -186,15 +205,18 @@ fn use_cmd(args: &Args, root: &std::path::Path, version: &str) -> Result<()> {
     }
 
     if let Err(e) = preflight_binary_for_version_manager(&bin) {
-        // restore previous
-        if let Some(p) = prev.as_deref() {
-            let _ = set_active(root, p, &stable);
-        }
+        let restore_note = match prev.as_deref() {
+            Some(p) => match set_active(root, p, &stable) {
+                Ok(()) => format!("restored previous version {p}"),
+                Err(re) => format!("FAILED to restore previous version {p}: {re}"),
+            },
+            None => "no previous version to restore".to_string(),
+        };
         if manage_services {
             start_services_best_effort();
         }
         return Err(ChatmailError::config(format!(
-            "smoke check failed after switch; restored previous: {e}"
+            "smoke check failed after switch ({restore_note}): {e}"
         )));
     }
 
@@ -217,8 +239,8 @@ fn use_cmd(args: &Args, root: &std::path::Path, version: &str) -> Result<()> {
 fn prune_cmd(args: &Args, root: &std::path::Path, keep: Option<usize>, yes: bool) -> Result<()> {
     let out = CtlOut::from_args(args, "versions prune");
     let keep = keep.unwrap_or(version_manager::default_keep());
-    if !yes && !args.json {
-        // non-interactive require --yes for destructive
+    // Always require --yes for destructive ops (including --json automation).
+    if !yes {
         return Err(ChatmailError::config(
             "versions prune requires --yes to delete old versions",
         ));
@@ -236,7 +258,8 @@ fn prune_cmd(args: &Args, root: &std::path::Path, keep: Option<usize>, yes: bool
 
 fn remove_cmd(args: &Args, root: &std::path::Path, version: &str, yes: bool) -> Result<()> {
     let out = CtlOut::from_args(args, "versions remove");
-    if !yes && !args.json {
+    // Always require --yes (including with --json) to avoid accidental deletes.
+    if !yes {
         return Err(ChatmailError::config("versions remove requires --yes"));
     }
     version_manager::remove_version(root, version)?;

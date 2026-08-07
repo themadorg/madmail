@@ -180,8 +180,8 @@ madmail versions path [version]     # print filesystem path
 | `list --remote` | Query **GitHub Releases** (same project as `update latest`) and list remote version tags/assets available for this host; mark which are already installed locally and which is active; indicate remote `latest` |
 | `current` | Print active version id + resolved path |
 | `use V` | **Must** re-verify Ed25519 signature on `versions/V/madmail`, then preflight `version`, stop services, flip symlinks, start services; on smoke failure flip back. Refuse switch if signature fails (treat as tampered / unsigned archive). |
-| `prune --keep N` | Delete oldest non-active versions beyond N (default **N=5**). No signature check (does not execute or activate). |
-| `remove V` | Error if V is active or only remaining version. No signature check. |
+| `prune --keep N` | Delete oldest non-active versions beyond N (default **N=5**). **Always requires `--yes`** (including with `--json`; never treat JSON as implicit confirm). No signature check (does not execute or activate). |
+| `remove V` | Error if V is active or only remaining version. **Always requires `--yes`** (including with `--json`). No signature check. |
 | `list` / `current` / `path` | Read-only; **no** binary signature check required (metadata only; `list --remote` does not download binaries) |
 
 #### `versions list --remote`
@@ -270,7 +270,7 @@ Resolve the **latest** published madmail binary from **GitHub Releases** and ins
 
 ## Upgrade algorithm (target)
 
-Replace the current “overwrite file + `*.prev`” path in `perform_upgrade` with versioned install:
+Prefer versioned install over “overwrite file + `*.prev`”. After the first successful versioned upgrade the stable PATH entry is a symlink into `versions/<id>/`; **never** `canonicalize` that path and write into `versions/<old>/` (that clobbers archive history while signatures still verify).
 
 ```text
 1. verify Ed25519 signature on candidate
@@ -279,18 +279,18 @@ Replace the current “overwrite file + `*.prev`” path in `perform_upgrade` wi
 4. ensure `{install_root}/versions` exists (Unix: root-owned 0755; Windows: Administrators / appropriate ACLs)
 5. VERSION = parse from preflight output (fallback: meta / timestamp)
 6. DEST = `{install_root}/versions/VERSION/`
-   - if DEST exists and same content hash → skip copy or refuse
-   - else install candidate → `DEST/madmail` or `DEST/madmail.exe` (atomic write via temp + rename)
+   - install via install_candidate only (atomic write via temp + rename; refuse symlink dest)
 7. write meta.json
 8. PREV = resolve current active pointer (or legacy single-file install path)
 9. stop services (systemd **or** Windows service)
-10. atomic active-pointer update:
+10. atomic active-pointer update only (no in-place replace of any path under versions/):
     - `{install_root}/current` → `versions/VERSION`
-    - stable PATH entry → active binary (Unix symlink; Windows junction/symlink/replace)
-11. smoke preflight on resolved path
-12. on failure: restore previous active pointer, start services, error
+    - stable PATH entry → active binary (Unix: rename temp symlink over existing; Windows: remove+rename)
+11. smoke preflight on versions/VERSION binary (regular file)
+12. on failure: restore previous active pointer (report honestly if restore fails), start services, error
 13. on success: start services; optional prune --keep N
 14. post-upgrade hooks (www migrate, docs refresh) unchanged where applicable
+15. if install root is not writable: legacy single-file replace of a path **outside** versions/; refuse to clobber version-tree targets
 ```
 
 ### Migration from legacy install
