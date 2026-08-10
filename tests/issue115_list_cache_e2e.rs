@@ -57,7 +57,10 @@ async fn issue115_concurrent_deliver_and_list_sees_all() {
         listed.len(),
         n,
         "all delivered messages must be listed; got {:?}",
-        listed.iter().map(|m| m.base_id.as_str()).collect::<Vec<_>>()
+        listed
+            .iter()
+            .map(|m| m.base_id.as_str())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -83,9 +86,7 @@ async fn issue115_imap_search_sees_all_after_concurrent_deliver() {
         tokio::spawn(async move {
             for _ in 0..30 {
                 let mut c = ImapClient::connect(addr).await;
-                let _ = c
-                    .command(&format!("a LOGIN {BOB} {PASS}"))
-                    .await;
+                let _ = c.command(&format!("a LOGIN {BOB} {PASS}")).await;
                 let _ = c.command("a SELECT INBOX").await;
                 let _ = c.command("a SEARCH ALL").await;
                 let _ = c.command("a LOGOUT").await;
