@@ -65,3 +65,7 @@ path = "ctl_ops_e2e.rs"
 [[test]]
 name = "openmetrics_e2e"
 path = "openmetrics_e2e.rs"
+
+[[test]]
+name = "issue115_list_cache_e2e"
+path = "issue115_list_cache_e2e.rs"

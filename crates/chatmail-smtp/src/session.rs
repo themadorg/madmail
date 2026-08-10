@@ -696,6 +696,23 @@ impl SmtpSession {
                     failed = outcome.failed.len(),
                     "partial local fan-out: some recipients did not receive the message"
                 );
+                tracing::info!(
+                    total_rcpts,
+                    local_n,
+                    delivered = outcome.delivered.len(),
+                    failed = outcome.failed.len(),
+                    rcpt_phase_ms = rcpt_phase.as_millis(),
+                    deliver_ms = deliver_ms.as_millis(),
+                    notify_ms = notify_start.elapsed().as_millis(),
+                    ingest_ms = ingest_start.elapsed().as_millis(),
+                    "SMTP local fan-out timing"
+                );
+                // Inbound DATA must not 250 when some local recipients missed the body (#115).
+                return Err(ChatmailError::storage(format!(
+                    "local delivery failed for {} of {} recipient(s)",
+                    outcome.failed.len(),
+                    local_n
+                )));
             }
             tracing::info!(
                 total_rcpts,

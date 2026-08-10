@@ -181,6 +181,25 @@ impl DeliveryContext {
                     failed = outcome.failed.len(),
                     "partial local fan-out: some recipients did not receive the message"
                 );
+                // Do not report SMTP/WebSMTP success when any local recipient missed the
+                // message (#115). The client can retry; delivered recipients keep their copy.
+                info!(
+                    total_rcpts,
+                    local_n,
+                    remote_enqueued,
+                    delivered = outcome.delivered.len(),
+                    failed = outcome.failed.len(),
+                    rcpt_phase_ms = rcpt_phase.as_millis(),
+                    deliver_ms = deliver_ms.as_millis(),
+                    notify_ms = notify_start.elapsed().as_millis(),
+                    ingest_ms = ingest_start.elapsed().as_millis(),
+                    "authenticated submission fan-out timing"
+                );
+                return Err(ChatmailError::storage(format!(
+                    "local delivery failed for {} of {} recipient(s)",
+                    outcome.failed.len(),
+                    local_n
+                )));
             }
             info!(
                 total_rcpts,
@@ -291,6 +310,12 @@ impl DeliveryContext {
                     failed = outcome.failed.len(),
                     "partial local fan-out: some recipients did not receive the message"
                 );
+                // Match authenticated path: never accept after a partial local miss (#115).
+                return Err(ChatmailError::storage(format!(
+                    "local delivery failed for {} of {} recipient(s)",
+                    outcome.failed.len(),
+                    outcome.delivered.len() + outcome.failed.len()
+                )));
             }
         }
         chatmail_db::record_inbound_delivery();
