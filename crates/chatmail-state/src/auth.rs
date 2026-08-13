@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use chatmail_db::{
     blocklist, get_bool_setting, is_federation_rcpt_blocked, passwords, settings_keys, DbPool,
 };
-use chatmail_types::Result;
+use chatmail_types::{wrap_ip_domain, Result};
 use dashmap::DashMap;
 
 /// How long a successful password verification is trusted before bcrypt re-runs.
@@ -116,11 +116,27 @@ impl AuthCache {
     }
 
     /// Whether inbound mail may be delivered locally (reserved rcpt + account exists).
+    ///
+    /// Looks up both the raw address and the IP-literal-normalized form so that
+    /// `user@1.2.3.4` matches a registered `user@[1.2.3.4]` (and vice versa).
     pub fn local_recipient_allowed(&self, rcpt: &str) -> bool {
         if is_federation_rcpt_blocked(rcpt) {
             return false;
         }
-        self.user_exists(rcpt)
+        if self.user_exists(rcpt) {
+            return true;
+        }
+        if let Some((local, domain)) = rcpt.rsplit_once('@') {
+            let norm = format!(
+                "{}@{}",
+                local.to_ascii_lowercase(),
+                wrap_ip_domain(domain).to_ascii_lowercase()
+            );
+            if norm != rcpt && self.user_exists(&norm) {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn len(&self) -> usize {

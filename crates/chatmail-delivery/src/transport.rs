@@ -253,13 +253,29 @@ fn record_failure(ctx: &DeliveryContext, domain: &str, method: &str) {
     ctx.state.federation_tracker.decrement_queue(domain);
 }
 
-/// Host suitable for `https://HOST/mxdeliv` (bare IPv4, bracketed IPv6, DNS names unchanged).
+/// Host suitable for `https://HOST/mxdeliv` (bare IPv4, optional `:port`, bracketed IPv6, DNS).
 pub fn mxdeliv_host_for_url(host: &str) -> String {
-    let bare = host.trim().trim_matches(|c| c == '[' || c == ']');
+    let host = host.trim();
+    // IPv4 with optional port — must NOT be wrapped as IPv6 (`[127.0.0.1:19080]` is invalid).
+    if !host.starts_with('[') {
+        if let Some((h, port)) = host.rsplit_once(':') {
+            if is_ipv4_literal(h) && !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) {
+                return format!("{h}:{port}");
+            }
+        }
+        if is_ipv4_literal(host) {
+            return host.to_string();
+        }
+    }
+    let bare = host.trim_matches(|c| c == '[' || c == ']');
     if is_ipv4_literal(bare) {
         return bare.to_string();
     }
     if bare.contains(':') {
+        // IPv6 (optionally already bracketed)
+        if host.starts_with('[') {
+            return host.to_string();
+        }
         return format!("[{bare}]");
     }
     bare.to_string()
@@ -343,6 +359,16 @@ mod tests {
         assert_eq!(
             normalize_rewrite_url("https://relay.example.com"),
             "https://relay.example.com/mxdeliv"
+        );
+    }
+
+    #[test]
+    fn ipv4_with_port_not_wrapped_as_ipv6() {
+        assert_eq!(mxdeliv_host_for_url("127.0.0.1:19080"), "127.0.0.1:19080");
+        assert_eq!(mxdeliv_host_for_url("127.0.0.1"), "127.0.0.1");
+        assert_eq!(
+            mxdeliv_host_for_url("2001:db8::1"),
+            "[2001:db8::1]"
         );
     }
 }

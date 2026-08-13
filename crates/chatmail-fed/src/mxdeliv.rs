@@ -25,9 +25,24 @@ use chatmail_db::{is_federation_sender_blocked, DbPool};
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
 use chatmail_state::AppState;
 use chatmail_storage::deliver_local_messages;
-use chatmail_types::ChatmailError;
+use chatmail_types::{wrap_ip_domain, ChatmailError};
 
 use crate::security::recipient_matches_server;
+
+/// Case-fold localpart and wrap bare IPv4 domains in brackets so lookups match
+/// `passwords.username` / maildir paths created at registration.
+fn normalize_addr(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let (local, domain) = trimmed.rsplit_once('@')?;
+    if local.is_empty() || domain.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{}@{}",
+        local.to_ascii_lowercase(),
+        wrap_ip_domain(domain).to_ascii_lowercase()
+    ))
+}
 
 #[derive(Clone)]
 pub struct FedState {
@@ -76,10 +91,16 @@ async fn handle_mxdeliv(
     headers: &HeaderMap,
     body: &[u8],
 ) -> chatmail_types::Result<()> {
-    let mail_from = header_str(headers, "x-mail-from").unwrap_or_default();
+    let mail_from = header_str(headers, "x-mail-from")
+        .and_then(|s| normalize_addr(&s))
+        .unwrap_or_default();
     // One POST carries one X-Mail-To header per recipient on this server
     // (TDD 07-federation.md); deliver to each of them.
-    let mut rcpts = header_strs(headers, "x-mail-to");
+    // Normalize so bare `user@1.2.3.4` matches registered `user@[1.2.3.4]`.
+    let mut rcpts: Vec<String> = header_strs(headers, "x-mail-to")
+        .into_iter()
+        .filter_map(|r| normalize_addr(&r))
+        .collect();
     if rcpts.is_empty() {
         return Err(ChatmailError::protocol("missing X-Mail-To"));
     }
