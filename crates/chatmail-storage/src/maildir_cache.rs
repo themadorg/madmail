@@ -15,9 +15,23 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Maildir listing cache keyed on directory mtimes (Dovecot `DIR_MTIME_CHANGED` fast path).
+//! Maildir listing cache keyed on directory mtimes (Dovecot `DIR_MTIME_CHANGED` fast path)
+//! plus a per-mailbox generation counter so concurrent delivery cannot re-poison the cache.
+//!
+//! ## Why a generation?
+//!
+//! Directory mtime alone is not enough:
+//! 1. Some filesystems only update mtime at 1-second resolution — two deliveries in the same
+//!    second can leave the cached listing missing the newer message while mtime still "matches".
+//! 2. A concurrent `list_mailbox_messages` that started before a delivery can finish its
+//!    `uidlist::sync` *after* `invalidate`, then `store` an incomplete listing under the new
+//!    mtime. Subsequent hits serve that incomplete set until the next invalidate (#115).
+//!
+//! Every invalidate bumps the generation. `store` only inserts when the caller's generation
+//! still matches, so a listing that raced with delivery never becomes the cached view.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use dashmap::DashMap;
@@ -42,21 +56,41 @@ impl DirMtime {
 
 #[derive(Debug, Clone)]
 struct CachedListing {
+    /// Generation observed when this entry was written; must match current gen on hit.
+    generation: u64,
     new_mtime: Option<DirMtime>,
     cur_mtime: Option<DirMtime>,
     messages: Vec<StoredMessage>,
 }
 
-/// Per-mailbox listing cache invalidated when `new/` or `cur/` mtimes change.
+/// Per-mailbox listing cache invalidated when `new/` or `cur/` change (or on explicit bump).
 #[derive(Debug, Default)]
 pub struct MaildirListCache {
     entries: DashMap<(String, String), CachedListing>,
+    /// Monotonic per-mailbox epoch; bumped on every [`Self::invalidate`].
+    generations: DashMap<(String, String), AtomicU64>,
 }
 
 impl MaildirListCache {
+    fn key(user: &str, mailbox: &str) -> (String, String) {
+        (user.to_string(), mailbox.to_string())
+    }
+
+    /// Current generation for `(user, mailbox)` (0 if never invalidated).
+    pub fn generation(&self, user: &str, mailbox: &str) -> u64 {
+        self.generations
+            .get(&Self::key(user, mailbox))
+            .map(|g| g.load(Ordering::Acquire))
+            .unwrap_or(0)
+    }
+
     pub fn invalidate(&self, user: &str, mailbox: &str) {
-        self.entries
-            .remove(&(user.to_string(), mailbox.to_string()));
+        let key = Self::key(user, mailbox);
+        self.generations
+            .entry(key.clone())
+            .or_insert_with(|| AtomicU64::new(0))
+            .fetch_add(1, Ordering::AcqRel);
+        self.entries.remove(&key);
     }
 
     pub(crate) async fn dir_mtime(path: &Path) -> Option<DirMtime> {
@@ -80,26 +114,38 @@ impl MaildirListCache {
         // Read mtimes before locking the shard: never hold a DashMap guard across `.await`.
         let new_mtime = Self::dir_mtime(new_dir).await;
         let cur_mtime = Self::dir_mtime(cur_dir).await;
-        let key = (user.to_string(), mailbox.to_string());
+        let gen = self.generation(user, mailbox);
+        let key = Self::key(user, mailbox);
         let cached = self.entries.get(&key)?;
-        if cached.new_mtime == new_mtime && cached.cur_mtime == cur_mtime {
+        if cached.generation == gen
+            && cached.new_mtime == new_mtime
+            && cached.cur_mtime == cur_mtime
+        {
             Some(cached.messages.clone())
         } else {
             None
         }
     }
 
+    /// Cache `messages` only if `expected_generation` is still the live generation for this
+    /// mailbox. Callers snapshot the generation *before* a slow `uidlist::sync` so a concurrent
+    /// delivery's invalidate discards the incomplete listing.
     pub(crate) fn store(
         &self,
         user: &str,
         mailbox: &str,
+        expected_generation: u64,
         new_mtime: Option<DirMtime>,
         cur_mtime: Option<DirMtime>,
         messages: Vec<StoredMessage>,
     ) {
+        if self.generation(user, mailbox) != expected_generation {
+            return;
+        }
         self.entries.insert(
-            (user.to_string(), mailbox.to_string()),
+            Self::key(user, mailbox),
             CachedListing {
+                generation: expected_generation,
                 new_mtime,
                 cur_mtime,
                 messages,
@@ -135,10 +181,11 @@ mod tests {
         tokio::fs::create_dir_all(&cur_dir).await.unwrap();
 
         let cache = MaildirListCache::default();
+        let gen = cache.generation("u@test", "INBOX");
         let new_mtime = MaildirListCache::dir_mtime(&new_dir).await;
         let cur_mtime = MaildirListCache::dir_mtime(&cur_dir).await;
         let msgs = vec![sample_msg("a")];
-        cache.store("u@test", "INBOX", new_mtime, cur_mtime, msgs.clone());
+        cache.store("u@test", "INBOX", gen, new_mtime, cur_mtime, msgs.clone());
 
         let hit = cache
             .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
@@ -158,18 +205,101 @@ mod tests {
         tokio::fs::create_dir_all(&cur_dir).await.unwrap();
 
         let cache = MaildirListCache::default();
+        let gen = cache.generation("u@test", "INBOX");
         let new_mtime = MaildirListCache::dir_mtime(&new_dir).await;
         let cur_mtime = MaildirListCache::dir_mtime(&cur_dir).await;
         cache.store(
             "u@test",
             "INBOX",
+            gen,
             new_mtime,
             cur_mtime,
             vec![sample_msg("old")],
         );
 
         tokio::fs::write(new_dir.join("msg"), b"x").await.unwrap();
+        // Some filesystems keep the same second-granularity mtime; invalidate is the
+        // production signal. Mimic a delivery that also bumps generation.
+        cache.invalidate("u@test", "INBOX");
 
+        assert!(cache
+            .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
+            .await
+            .is_none());
+    }
+
+    /// Issue #115: a listing that races with delivery must not re-poison the cache after
+    /// invalidate (stale incomplete listing under a matching mtime).
+    #[tokio::test]
+    async fn store_after_invalidate_is_discarded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let new_dir = tmp.path().join("new");
+        let cur_dir = tmp.path().join("cur");
+        tokio::fs::create_dir_all(&new_dir).await.unwrap();
+        tokio::fs::create_dir_all(&cur_dir).await.unwrap();
+
+        let cache = MaildirListCache::default();
+        let gen_before = cache.generation("u@test", "INBOX");
+        let m = MaildirListCache::dir_mtime(&new_dir).await;
+
+        // Delivery lands and invalidates while a concurrent list still holds gen_before.
+        cache.invalidate("u@test", "INBOX");
+        assert_ne!(cache.generation("u@test", "INBOX"), gen_before);
+
+        // Incomplete listing tries to publish under the old generation — must be ignored.
+        cache.store(
+            "u@test",
+            "INBOX",
+            gen_before,
+            m,
+            m,
+            vec![sample_msg("stale-only")],
+        );
+        assert!(
+            cache
+                .entries
+                .get(&("u@test".into(), "INBOX".into()))
+                .is_none(),
+            "store with stale generation must not insert"
+        );
+
+        // A correct post-delivery listing uses the new generation.
+        let gen_after = cache.generation("u@test", "INBOX");
+        cache.store(
+            "u@test",
+            "INBOX",
+            gen_after,
+            m,
+            m,
+            vec![sample_msg("fresh")],
+        );
+        let hit = cache
+            .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
+            .await
+            .expect("fresh listing should hit");
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].base_id, "fresh");
+    }
+
+    /// Same-second mtime: invalidate alone must force a miss even when dir mtime is unchanged.
+    #[tokio::test]
+    async fn invalidate_misses_even_when_mtime_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let new_dir = tmp.path().join("new");
+        let cur_dir = tmp.path().join("cur");
+        tokio::fs::create_dir_all(&new_dir).await.unwrap();
+        tokio::fs::create_dir_all(&cur_dir).await.unwrap();
+
+        let cache = MaildirListCache::default();
+        let gen = cache.generation("u@test", "INBOX");
+        let m = MaildirListCache::dir_mtime(&new_dir).await;
+        cache.store("u@test", "INBOX", gen, m, m, vec![sample_msg("a")]);
+        assert!(cache
+            .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
+            .await
+            .is_some());
+
+        cache.invalidate("u@test", "INBOX");
         assert!(cache
             .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
             .await
@@ -196,10 +326,9 @@ mod tests {
 
                 let cache = std::sync::Arc::new(MaildirListCache::default());
                 let m = MaildirListCache::dir_mtime(&new_dir).await;
-                cache.store("u@test", "INBOX", m, m, vec![sample_msg("a")]);
+                let gen = cache.generation("u@test", "INBOX");
+                cache.store("u@test", "INBOX", gen, m, m, vec![sample_msg("a")]);
 
-                // Reader suspends inside get_if_fresh (at the mtime .await); the single worker then
-                // runs the writer, whose store() takes the same shard's write lock.
                 let reader = {
                     let cache = cache.clone();
                     let new_dir = new_dir.clone();
@@ -214,7 +343,8 @@ mod tests {
                     let cache = cache.clone();
                     tokio::spawn(async move {
                         for i in 0..50 {
-                            cache.store("u@test", "INBOX", None, None, vec![sample_msg("b")]);
+                            let g = cache.generation("u@test", "INBOX");
+                            cache.store("u@test", "INBOX", g, None, None, vec![sample_msg("b")]);
                             cache.invalidate("u@test", "INBOX");
                             if i % 7 == 0 {
                                 tokio::task::yield_now().await;
@@ -227,8 +357,6 @@ mod tests {
             });
         });
 
-        // Watchdog: a runtime-internal timeout can't fire once the worker deadlocks in futex, so
-        // poll thread completion from outside the runtime.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while !worker.is_finished() {
             if std::time::Instant::now() > deadline {
@@ -243,7 +371,8 @@ mod tests {
     #[tokio::test]
     async fn p11_ut06_invalidate_clears_entry() {
         let cache = MaildirListCache::default();
-        cache.store("u@test", "INBOX", None, None, vec![sample_msg("x")]);
+        let gen = cache.generation("u@test", "INBOX");
+        cache.store("u@test", "INBOX", gen, None, None, vec![sample_msg("x")]);
         cache.invalidate("u@test", "INBOX");
         assert!(cache
             .entries

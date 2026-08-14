@@ -170,6 +170,14 @@ async fn handle_mxdeliv(
     for (rcpt, _msg_id, err) in &outcome.failed {
         tracing::warn!(rcpt = %rcpt, error = %err, "mxdeliv: local delivery failed for recipient");
     }
+    if !outcome.failed.is_empty() {
+        // Same contract as SMTP AUTH: do not 200-OK when some locals missed the body (#115).
+        return Err(ChatmailError::storage(format!(
+            "mxdeliv: local delivery failed for {} of {} recipient(s)",
+            outcome.failed.len(),
+            outcome.delivered.len() + outcome.failed.len()
+        )));
+    }
 
     chatmail_db::record_inbound_delivery();
     Ok(())

@@ -95,7 +95,7 @@ impl SmtpSession {
         let mut lines = BufReader::new(reader);
 
         writer
-            .write_all(format!("220 {} ESMTP madmail-v2\r\n", self.cfg.hostname).as_bytes())
+            .write_all(format!("220 {} ESMTP\r\n", self.cfg.hostname).as_bytes())
             .await?;
 
         loop {
@@ -184,7 +184,7 @@ impl SmtpSession {
         // RFC 8314: banner on cleartext and on implicit TLS (:465); skip duplicate after STARTTLS upgrade.
         if !tls_active || self.cfg.starttls_config.is_none() {
             writer
-                .write_all(format!("220 {} ESMTP madmail-v2\r\n", self.cfg.hostname).as_bytes())
+                .write_all(format!("220 {} ESMTP\r\n", self.cfg.hostname).as_bytes())
                 .await?;
         }
 
@@ -696,6 +696,23 @@ impl SmtpSession {
                     failed = outcome.failed.len(),
                     "partial local fan-out: some recipients did not receive the message"
                 );
+                tracing::info!(
+                    total_rcpts,
+                    local_n,
+                    delivered = outcome.delivered.len(),
+                    failed = outcome.failed.len(),
+                    rcpt_phase_ms = rcpt_phase.as_millis(),
+                    deliver_ms = deliver_ms.as_millis(),
+                    notify_ms = notify_start.elapsed().as_millis(),
+                    ingest_ms = ingest_start.elapsed().as_millis(),
+                    "SMTP local fan-out timing"
+                );
+                // Inbound DATA must not 250 when some local recipients missed the body (#115).
+                return Err(ChatmailError::storage(format!(
+                    "local delivery failed for {} of {} recipient(s)",
+                    outcome.failed.len(),
+                    local_n
+                )));
             }
             tracing::info!(
                 total_rcpts,

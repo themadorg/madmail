@@ -34,6 +34,7 @@ mod federation;
 mod firewall_cmd;
 mod html;
 mod install;
+mod iroh;
 mod language;
 mod message_size;
 mod openrelay;
@@ -54,6 +55,7 @@ mod tasks;
 mod uninstall;
 pub(crate) mod util;
 mod version;
+mod versions_cmd;
 mod webmail_cors;
 
 #[cfg(test)]

@@ -1,3 +1,44 @@
+## [2.23.1](https://github.com/themadorg/madmail/compare/v2.23.0...v2.23.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* **storage:** prevent sticky incomplete maildir list after concurrent delivery ([9b384d1](https://github.com/themadorg/madmail/commit/9b384d19aeffba656736bbb0a0372868eb88e210)), closes [#115](https://github.com/themadorg/madmail/issues/115)
+
+# [2.23.0](https://github.com/themadorg/madmail/compare/v2.22.0...v2.23.0) (2026-08-07)
+
+
+### Features
+
+* **cli:** add madmail iroh status/install/enable/disable ([#140](https://github.com/themadorg/madmail/issues/140)) ([749a8d5](https://github.com/themadorg/madmail/commit/749a8d52722d9603ec6e9c09849cc85f4bc22f5a))
+
+# [2.22.0](https://github.com/themadorg/madmail/compare/v2.21.0...v2.22.0) (2026-08-07)
+
+
+### Bug Fixes
+
+* **versions:** avoid clobbering archived binaries on upgrade ([09ce140](https://github.com/themadorg/madmail/commit/09ce14050e43101ad4cb6e73e609bf08df09f8a3))
+* **versions:** use Installed preflight mode and tighten remove/set_active ([e7704c5](https://github.com/themadorg/madmail/commit/e7704c589c298032f466f34f488dec38a7befcde)), closes [#136](https://github.com/themadorg/madmail/issues/136)
+
+
+### Features
+
+* **versions:** add version manager, update latest, and CLI ([93ffb8b](https://github.com/themadorg/madmail/commit/93ffb8b762fc9391639afe8caedc1ba1fde1de8c))
+
+# [2.21.0](https://github.com/themadorg/madmail/compare/v2.20.2...v2.21.0) (2026-08-07)
+
+
+### Features
+
+* **imap/smtp:** reduce pre-auth fingerprinting ([#120](https://github.com/themadorg/madmail/issues/120)) ([9e614ea](https://github.com/themadorg/madmail/commit/9e614ea3d99736055c9d536974a6152168d836e0))
+
+## [2.20.2](https://github.com/themadorg/madmail/compare/v2.20.1...v2.20.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* **tls:** accept PEM paths that are symlinks ([#133](https://github.com/themadorg/madmail/issues/133)) ([c377cb7](https://github.com/themadorg/madmail/commit/c377cb7d55f843c5c53d6028fd71e7f64fdbf492))
+
 ## [2.20.1](https://github.com/themadorg/madmail/compare/v2.20.0...v2.20.1) (2026-08-03)
 
 

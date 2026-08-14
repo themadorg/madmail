@@ -302,6 +302,15 @@ mod tests {
     }
 
     #[test]
+    fn bash_completion_includes_iroh_subcommand() {
+        let script = bash_completion("madmail").unwrap();
+        assert!(
+            script.contains("iroh"),
+            "bash completion should list iroh subcommand"
+        );
+    }
+
+    #[test]
     fn bash_completion_prefix_pr_matches_proxy() {
         let script = bash_completion("madmail").unwrap();
         let dir = tempfile::tempdir().expect("tempdir");

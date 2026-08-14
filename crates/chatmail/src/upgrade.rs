@@ -333,8 +333,19 @@ fn extract_binary_from_tar_gz(archive_path: &Path, dest: &Path) -> Result<()> {
 pub fn upgrade_command(input: &str, args: &Args, accept_unsafe_https: bool) -> Result<()> {
     let input = input.trim();
     if input.is_empty() {
-        return Err(ChatmailError::config("PATH or URL is required"));
+        return Err(ChatmailError::config(
+            "PATH, URL, or the keyword `latest` is required",
+        ));
     }
+    // `update latest` / `upgrade latest` → GitHub Releases for this host (same security as URL).
+    let resolved_latest;
+    let input = if input.eq_ignore_ascii_case("latest") {
+        resolved_latest = crate::version_manager::github_latest_asset_url();
+        eprintln!("📦 Resolving GitHub latest: {resolved_latest}");
+        resolved_latest.as_str()
+    } else {
+        input
+    };
     let result = if is_download_url(input) {
         handle_update_url(input, args, accept_unsafe_https)
     } else {
@@ -631,6 +642,49 @@ const INSTALLED_EXEC_MODE: u32 = 0o755;
 /// Catches wrong-variant installs (default glibc build on older distros) **before**
 /// services are stopped or the live binary is replaced. Signature verification must
 /// already have passed — we only exec trusted, signed bytes.
+/// Host preflight for live archives under the version tree (`versions use`).
+///
+/// Uses installed exec mode (`0755` on Unix) so a successful switch does not leave
+/// `versions/<id>/madmail` owner-only (`0700`). Staging downloads still use staging
+/// mode (`0700`) only on the upgrade download path.
+pub fn preflight_binary_for_version_manager(new_bin: &Path) -> Result<()> {
+    preflight_new_binary(new_bin, BinaryExecLocation::Installed)
+}
+
+fn capture_version_id(new_bin: &Path) -> String {
+    match Command::new(new_bin).arg("version").output() {
+        Ok(o) if o.status.success() => crate::version_manager::parse_version_from_preflight_output(
+            &String::from_utf8_lossy(&o.stdout),
+        ),
+        _ => crate::version_manager::parse_version_from_preflight_output(env!("CARGO_PKG_VERSION")),
+    }
+}
+
+fn install_into_version_tree(src: &Path, version_id: &str, root: &Path) -> Result<()> {
+    use crate::version_manager::{install_candidate, VersionMeta};
+    let meta = VersionMeta {
+        version: version_id.to_string(),
+        installed_at: Some(chrono_like_now()),
+        source: Some("upgrade".into()),
+        source_url: None,
+        sha256: None,
+        variant: None,
+        os: Some(std::env::consts::OS.to_string()),
+        signature_ok: Some(true),
+    };
+    install_candidate(root, version_id, src, meta)?;
+    Ok(())
+}
+
+fn chrono_like_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{secs}")
+}
+
 fn preflight_new_binary(new_bin: &Path, location: BinaryExecLocation) -> Result<()> {
     #[cfg(unix)]
     {
@@ -787,12 +841,21 @@ fn rollback_on_broken_install(
     )))
 }
 
-/// Upgrade in place: verify signature, preflight, backup, stop service, replace, start.
+/// Upgrade: verify signature, preflight, install, activate, start.
+///
+/// Prefer the version tree (TDD 24): `install_candidate` into
+/// `{install_root}/versions/<id>/` then flip `current` + stable PATH symlink.
+/// Never in-place overwrite a file under the version tree (that would clobber
+/// archived history after the first upgrade when PATH is a symlink into
+/// `versions/<old>/`).
+///
+/// If the install root is not writable, fall back to legacy single-file replace
+/// of a non-version-tree path (with `*.prev` backup).
 ///
 /// Safety (issue #114):
-/// - Host preflight (`new_bin version`) runs **before** services stop / binary replace.
-/// - Live binary is copied to `*.prev` before replace.
-/// - If the installed binary fails a post-replace smoke check, restore `*.prev` and restart.
+/// - Host preflight (`new_bin version`) runs **before** services stop / activate.
+/// - Versioned path: previous version remains on disk; rollback flips the pointer.
+/// - Legacy path: live binary is copied to `*.prev` before replace.
 pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     eprintln!("🔍 Verifying digital signature...");
     match verify_signature(new_bin_path)? {
@@ -807,11 +870,8 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     // Abort early (services still up, live binary untouched) if this host cannot run it.
     preflight_new_binary(new_bin_path, BinaryExecLocation::Staging)?;
 
-    let current_bin = std::env::current_exe()
-        .map_err(|e| ChatmailError::config(format!("failed to get current executable: {e}")))?;
-    let real_bin_path = fs::canonicalize(&current_bin).unwrap_or(current_bin);
-
-    eprintln!("🚀 Target binary: {}", real_bin_path.display());
+    // Capture version id for the version tree (TDD 24).
+    let version_id = capture_version_id(new_bin_path);
 
     #[cfg(unix)]
     if unsafe { libc::geteuid() } != 0 {
@@ -820,7 +880,301 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
         ));
     }
 
+    let vroot = crate::version_manager::install_root();
+    let stable = crate::version_manager::default_stable_binary_path();
+
+    // Prefer version-tree install + pointer flip (no write into versions/<old>/).
+    // Probe install root while services are still up; only stop after a successful
+    // archive write so a non-writable tree falls back to legacy cleanly.
+    match install_into_version_tree(new_bin_path, &version_id, &vroot) {
+        Ok(()) => {
+            eprintln!(
+                "📦 Installed candidate under {}/versions/{version_id}/",
+                vroot.display()
+            );
+            return finish_versioned_upgrade(&version_id, &vroot, &stable, args);
+        }
+        Err(e) => {
+            eprintln!(
+                "⚠️ Version tree install skipped ({}): {e} — falling back to in-place replace",
+                vroot.display()
+            );
+        }
+    }
+
+    perform_upgrade_legacy_inplace(new_bin_path, &vroot, args)
+}
+
+/// Stop services, flip active pointer, smoke, start services (candidate already archived).
+fn finish_versioned_upgrade(
+    version_id: &str,
+    vroot: &Path,
+    stable: &Path,
+    args: &Args,
+) -> Result<()> {
+    use crate::version_manager::version_binary_path;
+
+    let installed_bin = version_binary_path(vroot, version_id);
+
+    eprintln!(
+        "🚀 Versioned activate: {} (stable entry {})",
+        installed_bin.display(),
+        stable.display()
+    );
+
+    let service = systemd_service_name();
+    eprintln!("⏹️ Stopping services...");
+    run_systemctl(&["stop", &service]);
+    run_systemctl(&["stop", "iroh-relay.service"]);
+    thread::sleep(Duration::from_secs(1));
+
+    eprintln!("🔗 Switching active version to {version_id}...");
+    let prev = match activate_versioned_install(version_id, vroot, stable) {
+        Ok(prev) => prev,
+        Err(e) => {
+            eprintln!("▶️ Starting services after failed activate...");
+            let _ = systemctl_succeeded(&["start", &service]);
+            return Err(ChatmailError::config(format!(
+                "upgrade rolled back: {e}\n{VARIANT_HINT}"
+            )));
+        }
+    };
+
+    run_post_upgrade_www_migrate(&installed_bin, args);
+
+    eprintln!("▶️ Starting services...");
+    let started = systemctl_succeeded(&["start", &service]);
+    if !started {
+        if preflight_new_binary(&installed_bin, BinaryExecLocation::Installed).is_err() {
+            let restore_note = restore_previous_active(vroot, prev.as_deref(), stable);
+            let _ = systemctl_succeeded(&["start", &service]);
+            return Err(ChatmailError::config(format!(
+                "upgrade rolled back: failed to start {service} and binary fails smoke check\n\
+                 {restore_note}\n{VARIANT_HINT}"
+            )));
+        }
+        eprintln!(
+            "⚠️ Warning: failed to start {service}; the new binary passed smoke checks. \
+             Try: systemctl start {service}  (and inspect journalctl -u {service}). \
+             Previous version pointer: {:?}.",
+            prev
+        );
+    } else {
+        thread::sleep(Duration::from_secs(1));
+        if !systemctl_succeeded(&["is-active", "--quiet", &service])
+            && preflight_new_binary(&installed_bin, BinaryExecLocation::Installed).is_err()
+        {
+            let restore_note = restore_previous_active(vroot, prev.as_deref(), stable);
+            let _ = systemctl_succeeded(&["start", &service]);
+            return Err(ChatmailError::config(format!(
+                "upgrade rolled back: {service} is not active and installed binary fails smoke check\n\
+                 {restore_note}\n{VARIANT_HINT}"
+            )));
+        }
+    }
+
+    let iroh_unit = PathBuf::from("/etc/systemd/system/iroh-relay.service");
+    if iroh_unit.is_file() && !systemctl_succeeded(&["start", "iroh-relay.service"]) {
+        eprintln!(
+            "⚠️ Warning: failed to start iroh-relay.service; try: systemctl start iroh-relay.service"
+        );
+    }
+
+    refresh_cli_docs_after_upgrade();
+    eprintln!(
+        "🎉 Upgrade complete. Active version {version_id} (previous: {:?}).",
+        prev
+    );
+    Ok(())
+}
+
+/// Best-effort restore of the previous active version pointer after a failed activate.
+fn restore_previous_active(vroot: &Path, prev: Option<&str>, stable: &Path) -> String {
+    use crate::version_manager::set_active;
+    match prev {
+        Some(p) => match set_active(vroot, p, stable) {
+            Ok(()) => format!("restored previous version {p}"),
+            Err(re) => format!("FAILED to restore previous version {p}: {re}"),
+        },
+        None => "no previous version pointer to restore".to_string(),
+    }
+}
+
+/// True if resolving `path` (following symlinks) lands under `{root}/versions/`.
+///
+/// After the first versioned upgrade, the stable PATH entry is a symlink into the
+/// tree, so `canonicalize(stable)` is under `versions/` even though the *entry*
+/// lives outside it (e.g. `/usr/local/bin/madmail`).
+fn path_resolves_into_version_tree(path: &Path, root: &Path) -> bool {
+    let versions = crate::version_manager::versions_dir(root);
+    let versions_real = fs::canonicalize(&versions).unwrap_or_else(|_| versions.clone());
+    let path_real = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    path_real.starts_with(&versions_real)
+}
+
+/// True if the path **entry** itself lives under `{root}/versions/` (no follow of
+/// the final component). Used to refuse writing *into* the archive tree.
+fn path_entry_is_under_version_tree(path: &Path, root: &Path) -> bool {
+    let versions = crate::version_manager::versions_dir(root);
+    let versions_real = fs::canonicalize(&versions).unwrap_or_else(|_| versions.clone());
+    // Absolute-ize without following a final symlink: canonicalize the parent,
+    // then join the file name.
+    if let Some(parent) = path.parent() {
+        if parent.as_os_str().is_empty() {
+            return false;
+        }
+        let parent_real = fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+        if parent_real.starts_with(&versions_real) {
+            return true;
+        }
+    }
+    path.starts_with(&versions) || path.starts_with(&versions_real)
+}
+
+/// Choose the filesystem path to replace for a legacy (non-version-tree) upgrade.
+///
+/// After `set_active`, `current_bin` often resolves into `versions/<old>/`. Writing
+/// there clobbers history. Prefer the stable PATH **entry** (symlink/file node)
+/// outside the tree so replace unlinks the symlink instead of writing through it.
+///
+/// Returns an error only when every candidate would write into the version tree.
+fn legacy_upgrade_replace_target(
+    current_bin: &Path,
+    vroot: &Path,
+    stable: &Path,
+) -> Result<PathBuf> {
+    let canonical = fs::canonicalize(current_bin).unwrap_or_else(|_| current_bin.to_path_buf());
+
+    // Safe: replace path is outside the archive tree.
+    if !path_resolves_into_version_tree(&canonical, vroot)
+        && !path_entry_is_under_version_tree(&canonical, vroot)
+    {
+        return Ok(canonical);
+    }
+
+    // Current exe resolved into versions/ — use stable PATH entry if its *location*
+    // is outside the tree (even when it is a symlink whose target is inside).
+    if !path_entry_is_under_version_tree(stable, vroot) {
+        return Ok(stable.to_path_buf());
+    }
+
+    // Last resort: non-canonical current_exe path if it is not under versions/.
+    if !path_entry_is_under_version_tree(current_bin, vroot) {
+        return Ok(current_bin.to_path_buf());
+    }
+
+    Err(ChatmailError::config(format!(
+        "refusing to clobber version-tree binary at {}; \
+         fix permissions on {} so upgrades can install via install_candidate",
+        canonical.display(),
+        vroot.display()
+    )))
+}
+
+/// Flip `current` + stable PATH to `version_id` and smoke-check (no systemd).
+///
+/// Candidate must already be installed under `versions/<id>/`. Never writes into
+/// an older version directory.
+fn activate_versioned_install(
+    version_id: &str,
+    vroot: &Path,
+    stable: &Path,
+) -> Result<Option<String>> {
+    use crate::version_manager::{resolve_active_version, set_active, version_binary_path};
+
+    let installed_bin = version_binary_path(vroot, version_id);
+    let prev = resolve_active_version(vroot)?;
+
+    set_active(vroot, version_id, stable).map_err(|e| {
+        ChatmailError::config(format!(
+            "failed to activate version {version_id} at {}: {e}",
+            installed_bin.display()
+        ))
+    })?;
+
+    if let Err(e) = preflight_new_binary(&installed_bin, BinaryExecLocation::Installed) {
+        let restore_note = restore_previous_active(vroot, prev.as_deref(), stable);
+        return Err(ChatmailError::config(format!(
+            "installed binary failed smoke check: {e} ({restore_note})"
+        )));
+    }
+    Ok(prev)
+}
+
+/// Install candidate into the version tree and flip active pointers (no systemd).
+///
+/// Dual-upgrade-safe core used by tests; production uses install +
+/// [`activate_versioned_install`] after the service stop window.
+#[cfg(test)]
+fn apply_versioned_install_and_activate(
+    new_bin_path: &Path,
+    version_id: &str,
+    vroot: &Path,
+    stable: &Path,
+) -> Result<Option<String>> {
+    install_into_version_tree(new_bin_path, version_id, vroot)?;
+    activate_versioned_install(version_id, vroot, stable)
+}
+
+/// Replace a PATH entry (file or symlink) with `new_bin` **without** following a
+/// symlink into the version tree (unlink the entry first when it is a symlink).
+fn replace_path_entry_without_following(new_bin: &Path, dest: &Path) -> Result<()> {
+    let parent = dest
+        .parent()
+        .ok_or_else(|| ChatmailError::config("replace path has no parent"))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| ChatmailError::config(format!("mkdir {}: {e}", parent.display())))?;
+    let tmp = parent.join(format!(".madmail-replace-{}", std::process::id()));
+    {
+        let mut src = File::open(new_bin)
+            .map_err(|e| ChatmailError::config(format!("open {}: {e}", new_bin.display())))?;
+        let mut dst = File::create(&tmp)
+            .map_err(|e| ChatmailError::config(format!("create {}: {e}", tmp.display())))?;
+        io::copy(&mut src, &mut dst)
+            .map_err(|e| ChatmailError::config(format!("copy replace staging: {e}")))?;
+        dst.sync_all()
+            .map_err(|e| ChatmailError::config(format!("sync replace staging: {e}")))?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(INSTALLED_EXEC_MODE))
+            .map_err(|e| ChatmailError::config(format!("chmod replace staging: {e}")))?;
+    }
+    // Replace the entry node: if `dest` is a symlink into versions/, remove it
+    // first so rename does not write through to the archive.
+    if dest
+        .symlink_metadata()
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        fs::remove_file(dest).map_err(|e| {
+            ChatmailError::config(format!("unlink symlink {}: {e}", dest.display()))
+        })?;
+    }
+    fs::rename(&tmp, dest).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        ChatmailError::config(format!("replace entry {}: {e}", dest.display()))
+    })?;
+    Ok(())
+}
+
+/// Legacy single-file replace used when the version tree is not writable.
+///
+/// Refuses to write into `{install_root}/versions/**` (would clobber archives).
+fn perform_upgrade_legacy_inplace(new_bin_path: &Path, vroot: &Path, args: &Args) -> Result<()> {
+    let current_bin = std::env::current_exe()
+        .map_err(|e| ChatmailError::config(format!("failed to get current executable: {e}")))?;
+    let stable = crate::version_manager::default_stable_binary_path();
+    let real_bin_path = legacy_upgrade_replace_target(&current_bin, vroot, &stable)?;
+
+    eprintln!(
+        "🚀 Target binary (legacy in-place): {}",
+        real_bin_path.display()
+    );
+
     // Keep a runnable previous binary so a post-replace failure can recover in-band.
+    // When real_bin_path is a symlink, copy follows the target for backup contents.
     let backup = backup_current_binary(&real_bin_path)?;
 
     let service = systemd_service_name();
@@ -830,34 +1184,12 @@ pub fn perform_upgrade(new_bin_path: &Path, args: &Args) -> Result<()> {
     thread::sleep(Duration::from_secs(1));
 
     eprintln!("🔄 Replacing binary...");
-    let tmp_dir = real_bin_path
-        .parent()
-        .ok_or_else(|| ChatmailError::config("executable has no parent directory"))?;
-
-    let tmp_path = tmp_dir.join(format!(".chatmail-upgrade-{}", std::process::id()));
-
-    {
-        let mut src = File::open(new_bin_path)?;
-        let mut dst = File::create(&tmp_path)?;
-        io::copy(&mut src, &mut dst)?;
-        dst.sync_all()?;
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // Install path must stay 0755 so systemd User=madmail can exec (issue #131).
-        fs::set_permissions(&tmp_path, fs::Permissions::from_mode(INSTALLED_EXEC_MODE))?;
-    }
-
-    if let Err(e) = fs::rename(&tmp_path, &real_bin_path) {
-        let _ = fs::remove_file(&tmp_path);
-        // Live binary should still be the old one if rename failed; try to keep services up.
+    // Never write through a symlink into versions/<old>/ — unlink the PATH entry
+    // first when needed (see replace_path_entry_without_following).
+    if let Err(e) = replace_path_entry_without_following(new_bin_path, &real_bin_path) {
         eprintln!("▶️ Starting services after failed replace...");
         let _ = systemctl_succeeded(&["start", &service]);
-        return Err(ChatmailError::config(format!(
-            "failed to replace binary: {e}"
-        )));
+        return Err(e);
     }
 
     // Belt-and-suspenders: re-smoke the installed path (catches corrupt write).
@@ -1099,6 +1431,23 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn preflight_for_version_manager_keeps_world_executable() {
+        // `versions use` must not chmod archived binaries to 0700 (non-root User=).
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail");
+        fs::write(&bin, b"#!/bin/sh\necho 'madmail 2.20.0'\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o600)).unwrap();
+        preflight_binary_for_version_manager(&bin).unwrap();
+        let mode = fs::metadata(&bin).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, INSTALLED_EXEC_MODE,
+            "versions use preflight must leave 0755, got {mode:#o}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn preflight_rejects_binary_that_exits_nonzero() {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("broken-madmail");
@@ -1219,7 +1568,315 @@ mod tests {
     #[test]
     fn upgrade_command_requires_input() {
         let err = upgrade_command("  ", &test_args(), false).unwrap_err();
-        assert!(err.to_string().contains("PATH or URL is required"));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("PATH") || msg.contains("required") || msg.contains("latest"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn upgrade_latest_keyword_resolves_github_url() {
+        let url = crate::version_manager::github_latest_asset_url();
+        assert!(url.starts_with("https://github.com/themadorg/madmail/releases/latest/download/"));
+        assert!(url.contains("madmail"));
+        // Keyword is handled before local-path open; empty/whitespace still rejected.
+        assert!(upgrade_command("  ", &test_args(), false).is_err());
+    }
+
+    #[test]
+    fn capture_version_id_from_script() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail");
+        fs::write(&bin, b"#!/bin/sh\necho madmail-v2 4.5.6\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(capture_version_id(&bin), "4.5.6");
+    }
+
+    #[test]
+    fn install_into_version_tree_writes_binary_and_meta() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("opt-madmail");
+        let src = dir.path().join("payload");
+        fs::write(&src, b"#!/bin/sh\necho madmail-v2 1.2.3\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&src, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        install_into_version_tree(&src, "1.2.3", &root).unwrap();
+        let bin = crate::version_manager::version_binary_path(&root, "1.2.3");
+        assert!(bin.is_file());
+        let meta = crate::version_manager::read_meta(&root, "1.2.3")
+            .unwrap()
+            .expect("meta");
+        assert_eq!(meta.version, "1.2.3");
+        assert_eq!(meta.signature_ok, Some(true));
+        assert_eq!(meta.source.as_deref(), Some("upgrade"));
+    }
+
+    fn write_version_script(path: &Path, version: &str, marker: &str) {
+        let body = format!(
+            "#!/bin/sh\nif [ \"$1\" = version ]; then echo madmail-v2 {version}; fi\necho {marker}\nexit 0\n"
+        );
+        fs::write(path, body.as_bytes()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
+    #[test]
+    fn path_tree_helpers_distinguish_symlink_entry_from_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("opt");
+        let versions = crate::version_manager::versions_dir(&root);
+        let archived = versions.join("2.18.2").join("madmail");
+        fs::create_dir_all(archived.parent().unwrap()).unwrap();
+        fs::write(&archived, b"old").unwrap();
+
+        assert!(path_resolves_into_version_tree(&archived, &root));
+        assert!(path_entry_is_under_version_tree(&archived, &root));
+
+        let outside = dir.path().join("outside-madmail");
+        fs::write(&outside, b"live").unwrap();
+        assert!(!path_resolves_into_version_tree(&outside, &root));
+        assert!(!path_entry_is_under_version_tree(&outside, &root));
+
+        // Stable PATH symlink into the tree: resolves into tree, but entry is outside.
+        let stable = dir.path().join("bin").join("madmail");
+        fs::create_dir_all(stable.parent().unwrap()).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&archived, &stable).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&archived, &stable).unwrap();
+
+        assert!(
+            path_resolves_into_version_tree(&stable, &root),
+            "canonicalize(stable) must land under versions/"
+        );
+        assert!(
+            !path_entry_is_under_version_tree(&stable, &root),
+            "stable PATH entry itself must not be considered under versions/"
+        );
+    }
+
+    /// Full dual-upgrade regression for review #136:
+    /// 1) install+activate v1 (PATH becomes symlink into versions/v1)
+    /// 2) install+activate v2 via the same core as perform_upgrade
+    /// 3) v1 bytes must stay bit-identical
+    /// 4) legacy replace target must be the stable *entry*, not versions/v1
+    /// 5) legacy replace of the stable entry must not clobber v1
+    /// 6) document that write-through canonicalize(stable) would destroy v1
+    #[test]
+    fn dual_upgrade_preserves_prior_archive_and_legacy_target() {
+        use crate::version_manager::{resolve_active_version, version_binary_path};
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("opt-madmail");
+        let stable = dir.path().join("usr-local-bin").join("madmail");
+        fs::create_dir_all(stable.parent().unwrap()).unwrap();
+
+        let v1_src = dir.path().join("payload-v1");
+        let v2_src = dir.path().join("payload-v2");
+        write_version_script(&v1_src, "2.18.2", "MARKER-V1");
+        write_version_script(&v2_src, "2.20.0", "MARKER-V2");
+
+        // --- Upgrade #1 (versioned core) ---
+        let prev1 =
+            apply_versioned_install_and_activate(&v1_src, "2.18.2", &root, &stable).unwrap();
+        assert_eq!(prev1, None);
+        assert_eq!(
+            resolve_active_version(&root).unwrap().as_deref(),
+            Some("2.18.2")
+        );
+        let v1_path = version_binary_path(&root, "2.18.2");
+        let v1_bytes = fs::read(&v1_path).unwrap();
+        assert!(
+            String::from_utf8_lossy(&v1_bytes).contains("MARKER-V1"),
+            "v1 archive should contain marker"
+        );
+
+        // After activate, PATH entry is a symlink into the version tree — the
+        // dangerous canonicalize target that the old upgrade used.
+        let meta = fs::symlink_metadata(&stable).unwrap();
+        assert!(
+            meta.file_type().is_symlink(),
+            "stable PATH must be a symlink after set_active"
+        );
+        let clobber_target = fs::canonicalize(&stable).unwrap();
+        assert!(
+            path_resolves_into_version_tree(&clobber_target, &root),
+            "canonicalize(stable) should resolve under versions/"
+        );
+        assert_eq!(
+            clobber_target,
+            fs::canonicalize(&v1_path).unwrap(),
+            "stable should resolve to the v1 archive binary"
+        );
+
+        // Legacy replace target must be the stable entry, NOT the archive path.
+        let replace_target = legacy_upgrade_replace_target(&stable, &root, &stable).unwrap();
+        assert_eq!(
+            replace_target, stable,
+            "must replace the PATH entry, not versions/<old>/madmail"
+        );
+        assert!(
+            !path_entry_is_under_version_tree(&replace_target, &root),
+            "replace target entry must live outside the version tree"
+        );
+
+        // --- Document the old bug: write-through would destroy v1 ---
+        // (do not leave this state — restore immediately after the assert setup)
+        let destroyed_probe = dir.path().join("would-clobber");
+        fs::write(&destroyed_probe, b"V2-OVERWRITE").unwrap();
+        // Simulate old code: copy onto canonicalize(stable)
+        fs::copy(&destroyed_probe, &clobber_target).unwrap();
+        assert_ne!(
+            fs::read(&v1_path).unwrap(),
+            v1_bytes,
+            "sanity: writing through canonicalize(stable) must clobber v1"
+        );
+        // Restore v1 archive for the real dual-upgrade path
+        fs::write(&v1_path, &v1_bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&v1_path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        // --- Upgrade #2 via versioned core (install_candidate + set_active) ---
+        let prev2 =
+            apply_versioned_install_and_activate(&v2_src, "2.20.0", &root, &stable).unwrap();
+        assert_eq!(prev2.as_deref(), Some("2.18.2"));
+        assert_eq!(
+            resolve_active_version(&root).unwrap().as_deref(),
+            Some("2.20.0")
+        );
+
+        assert_eq!(
+            fs::read(&v1_path).unwrap(),
+            v1_bytes,
+            "versions/2.18.2 must remain bit-identical after installing 2.20.0"
+        );
+        let v2_path = version_binary_path(&root, "2.20.0");
+        assert!(
+            String::from_utf8_lossy(&fs::read(&v2_path).unwrap()).contains("MARKER-V2"),
+            "v2 archive should contain its own marker"
+        );
+        let real = fs::canonicalize(&stable).unwrap();
+        assert!(
+            real.to_string_lossy().contains("2.20.0"),
+            "stable should now resolve into 2.20.0, got {}",
+            real.display()
+        );
+
+        // --- Legacy replace of stable entry must not touch either archive ---
+        let v1_after = fs::read(&v1_path).unwrap();
+        let v2_after = fs::read(&v2_path).unwrap();
+        let v3_src = dir.path().join("payload-v3");
+        write_version_script(&v3_src, "2.21.0", "MARKER-LEGACY");
+        let target = legacy_upgrade_replace_target(&stable, &root, &stable).unwrap();
+        replace_path_entry_without_following(&v3_src, &target).unwrap();
+        assert_eq!(
+            fs::read(&v1_path).unwrap(),
+            v1_after,
+            "legacy replace must not clobber versions/2.18.2"
+        );
+        assert_eq!(
+            fs::read(&v2_path).unwrap(),
+            v2_after,
+            "legacy replace must not clobber versions/2.20.0"
+        );
+        // Stable is now a regular file (symlink replaced), not a version-tree path.
+        let stable_meta = fs::symlink_metadata(&stable).unwrap();
+        assert!(
+            !stable_meta.file_type().is_symlink(),
+            "legacy replace should leave a regular file at the PATH entry"
+        );
+        assert!(
+            String::from_utf8_lossy(&fs::read(&stable).unwrap()).contains("MARKER-LEGACY"),
+            "stable entry should hold the legacy-replaced binary"
+        );
+    }
+
+    #[test]
+    fn legacy_target_refuses_when_only_version_tree_paths_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("opt");
+        let versions = crate::version_manager::versions_dir(&root);
+        let archived = versions.join("1.0.0").join("madmail");
+        fs::create_dir_all(archived.parent().unwrap()).unwrap();
+        fs::write(&archived, b"x").unwrap();
+        // Both current and stable live under versions/ → refuse.
+        let err = legacy_upgrade_replace_target(&archived, &root, &archived).unwrap_err();
+        assert!(
+            err.to_string().contains("refusing to clobber"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn restore_previous_active_reports_honest_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("opt");
+        let stable = dir.path().join("bin").join("madmail");
+        // No previous → honest message
+        let note = restore_previous_active(&root, None, &stable);
+        assert!(note.contains("no previous"), "got: {note}");
+        // Missing prev version → failed restore, not "restored"
+        let note = restore_previous_active(&root, Some("9.9.9"), &stable);
+        assert!(
+            note.contains("FAILED") || note.contains("not found"),
+            "got: {note}"
+        );
+        assert!(!note.starts_with("restored previous"), "got: {note}");
+    }
+
+    #[test]
+    fn unsigned_binary_fails_verify_before_version_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail");
+        // Large enough to not trip "too small for signature", but unsigned.
+        let mut payload = vec![0u8; 128];
+        payload[..8].copy_from_slice(b"unsigned");
+        fs::write(&bin, &payload).unwrap();
+        assert!(!verify_signature(&bin).unwrap());
+    }
+
+    #[test]
+    fn signed_binary_passes_verify_for_version_activation() {
+        let Some(key) = official_private_key_path() else {
+            eprintln!("skip: official private key not available");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("madmail");
+        // Script body + signature trailer; shell ignores trailing bytes after script.
+        fs::write(
+            &bin,
+            b"#!/bin/sh\nif [ \"$1\" = version ]; then echo madmail-v2 0.0.1; fi\nexit 0\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        sign_with_official_key(&bin, &key);
+        assert!(verify_signature(&bin).unwrap());
+        preflight_binary_for_version_manager(&bin).unwrap();
+
+        // Install into tree and confirm signature still verifies on archived copy.
+        let root = dir.path().join("root");
+        install_into_version_tree(&bin, "0.0.1", &root).unwrap();
+        let archived = crate::version_manager::version_binary_path(&root, "0.0.1");
+        assert!(verify_signature(&archived).unwrap());
     }
 
     #[test]

@@ -36,8 +36,19 @@ async fn turn_imap_e2e_capability_metadata() {
     create_user(&srv.ctx, &srv.pool, USER, PASS).await;
 
     let mut c = ImapClient::connect(srv.imap_addr).await;
-    let r = c.command("c001 CAPABILITY").await;
-    assert!(r.contains("METADATA"), "CAPABILITY: {r}");
+    // Pre-auth CAPABILITY must not fingerprint chatmail (#120).
+    let pre = c.command("c001 CAPABILITY").await;
+    assert!(
+        !pre.contains("METADATA") && !pre.contains("XCHATMAIL"),
+        "pre-auth CAPABILITY must not advertise METADATA/XCHATMAIL: {pre}"
+    );
+
+    c.command(&format!("c002 LOGIN {USER} {PASS}")).await;
+    let post = c.command("c003 CAPABILITY").await;
+    assert!(
+        post.contains("METADATA"),
+        "post-auth CAPABILITY must advertise METADATA when TURN is enabled: {post}"
+    );
 }
 
 #[tokio::test]

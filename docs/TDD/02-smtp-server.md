@@ -141,6 +141,16 @@ Madmail uses deep OpenPGP packet inspection. **madmail-v2** (`chatmail-pgp`) imp
 | `chatmail-delivery` | Local deliver + HTTP `/mxdeliv` + SMTP fallback outbound |
 | `chatmail-auth` | JIT + credential verify on AUTH |
 
+### Greeting / banner (#120)
+
+The 220 greeting is intentionally generic (no product token), on both cleartext and implicit-TLS submission paths:
+
+```text
+220 {hostname} ESMTP
+```
+
+Previously the banner ended with `madmail-v2`, which made active probes trivial to classify. See also pre-auth IMAP CAPABILITY split in [03-imap-server.md](03-imap-server.md).
+
 ### Minimum SMTP command set (MVP)
 
 | Command | Inbound 25 | Submission |
