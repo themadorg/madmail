@@ -38,7 +38,8 @@ pub struct InstallArgs {
     #[arg(long)]
     pub hostname: Option<String>,
 
-    /// Public IP (`--simple` sets domain from this).
+    /// Public IP (`--simple` sets domain from this). With domain install, omit to
+    /// auto-detect from DNS (public IPv4 preferred over IPv6 when both exist).
     #[arg(long)]
     pub ip: Option<String>,
 

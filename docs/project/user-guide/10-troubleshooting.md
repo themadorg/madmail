@@ -75,6 +75,7 @@ In most cases messages will eventually go through via the SMTP fallback if HTTPS
 
 - Is TURN enabled in the admin settings (`__TURN_ENABLED__`)?
 - Are the required UDP ports open in the firewall? (The admin interface usually tells you which ports are needed.)
+- Confirm `$(public_ip)` / `turn_server` / `relay_ip` in the config is an address **clients can reach**. On dual-stack installs without `--ip`, madmail prefers **public IPv4** for this field; if you only have usable IPv6 (or the wrong address was written), set `--ip` on reinstall or edit the config and restart.
 - Are you testing between two users who are both behind difficult NAT? In that case the relay is required.
 - Try forcing “relay only” mode in a test (some debug tools exist for this).
 

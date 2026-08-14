@@ -1159,6 +1159,60 @@ mod tests {
         assert_eq!(cfg.tls_mode, "autocert");
     }
 
+    /// Explicit `--ip` must win over DNS auto-detect so IPv6-only / dual-stack
+    /// operators can still force AAAA when desired (#132).
+    #[test]
+    fn domain_install_explicit_ipv6_ip_overrides_auto_detect() {
+        let global = Args {
+            config: PathBuf::from("/etc/madmail/madmail.conf"),
+            state_dir: PathBuf::from("./data"),
+            boot_once: false,
+            json: false,
+        };
+        const IPV6: &str = "2606:4700:4700::1111";
+        let args = InstallArgs {
+            non_interactive: true,
+            simple: true,
+            domain: Some("mail.example.org".into()),
+            hostname: None,
+            ip: Some(IPV6.into()),
+            config_dir: Some(PathBuf::from("/tmp/madmail-ipv6-override")),
+            state_dir: Some(PathBuf::from("/tmp/madmail-ipv6-override-state")),
+            tls_mode: None,
+            cert_path: None,
+            key_path: None,
+            acme_email: Some("admin@example.com".into()),
+            enable_chatmail: false,
+            enable_ss: false,
+            enable_iroh: false,
+            turn_off_tls: false,
+            dry_run: false,
+            skip_systemd: true,
+            skip_user: true,
+            install_service: false,
+            start_service: false,
+            firewall: false,
+            binary_path: None,
+            obtain_certificate: false,
+            no_obtain_certificate: true,
+            cert_only: false,
+            http_listen: "0.0.0.0:80".into(),
+            auto_ip_cert: false,
+            lang: "en".into(),
+        };
+        let cfg = InstallConfig::from_args(&global, &args).unwrap();
+        assert_eq!(cfg.public_ip, IPV6);
+        let conf = super::config::render_maddy_conf(&cfg);
+        assert!(
+            conf.contains(&format!("$(public_ip) = {IPV6}")),
+            "public_ip macro missing: {conf}"
+        );
+        assert!(
+            conf.contains(&format!("relay_ip {IPV6}")),
+            "TURN relay_ip should use explicit IPv6: {conf}"
+        );
+    }
+
     #[test]
     fn simple_domain_rejects_ip_literal() {
         let global = Args {

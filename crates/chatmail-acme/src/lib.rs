@@ -28,7 +28,7 @@ mod obtain_ip;
 mod self_signed;
 mod status;
 
-pub use acme_common::resolve_domain_to_public_ip;
+pub use acme_common::{prefer_public_ip_for_install, resolve_domain_to_public_ip};
 pub use obtain::{
     cert_needs_renewal, obtain_certificate, parse_http_listen, ObtainOptions,
     DNS_CERT_RENEW_WITHIN_DAYS,

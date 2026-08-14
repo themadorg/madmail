@@ -97,6 +97,8 @@ madmail install --simple --domain mail.example.org \
 
 Before install, point an **`A` or `AAAA`** record at your server and keep port **80** free for Let's Encrypt. After install, add an **`MX`** record for SMTP fallback federation.
 
+Dual-stack tip: when both A and AAAA resolve, install prefers a **public IPv4** for `$(public_ip)` (used by TURN and client discovery) so IPv4-only clients can still use voice/video. Force a specific address with `--ip` if needed.
+
 `install --domain` obtains TLS and generates DKIM signing keys on the server; it does **not** publish SPF, DKIM TXT, or DMARC in your DNS. Federation with other chatmail servers does not require those records.
 
 Full checklist, examples, and verification commands: **[DNS and Mail Authentication](./12-dns-mail-auth.md)**.

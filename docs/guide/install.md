@@ -42,6 +42,8 @@ Port **80** must be free during install when autocert issuance runs (default for
 
 **Before install (domain):** create an **`A` or `AAAA`** record for the hostname pointing at this machine. See [DNS and Mail Authentication](../project/user-guide/12-dns-mail-auth.md) for the full checklist (MX, SPF, DKIM, DMARC, federation).
 
+When you omit `--ip`, install resolves the domain for `$(public_ip)` (TURN relay advertising, QR hints, Iroh). On **dual-stack** hosts (both A and AAAA), it **prefers a public IPv4** so voice/video clients that lack IPv6 still work. Pass `--ip` explicitly to force IPv6 or a specific address.
+
 ### Windows (Inno or CLI)
 
 Prefer **`madmail-windows-amd64-setup.exe`** from [GitHub Releases](https://github.com/themadorg/madmail/releases) (unsigned — UAC / SmartScreen notes in the packaging guide). Or elevated CLI:
@@ -212,7 +214,7 @@ If `--tls-mode` is omitted, install **auto-detects**:
 | `--non-interactive` | `-n` | — | off | Non-interactive install for scripts. Requires `--domain` when not using `--simple`. |
 | `--domain` | | string | — | Mail primary domain (DNS hostname). With `--simple --domain`: must **not** be an IP — use `--ip` for IP installs. |
 | `--hostname` | | string | same as domain | Server hostname (`$(hostname)` in config). SMTP EHLO, TLS SANs, etc. |
-| `--ip` | | string | — | Public IP address. With `--simple --ip`: sets wrapped primary domain `[IP]`, hostname, and `public_ip`. |
+| `--ip` | | string | — | Public IP (IPv4 or IPv6). With `--simple --ip`: sets wrapped primary domain `[IP]`, hostname, and `public_ip`. With domain install, omit to auto-detect from DNS (**public IPv4 preferred** over IPv6 when both exist; use this flag to force a specific address). |
 | `--config-dir` | | path | `/etc/madmail` | Directory for `madmail.conf` and `certs/`. Overrides default layout; affects systemd unit when paths differ from defaults. |
 | `--state-dir` | | path | `/var/lib/<binary>` for `--simple` / `/etc` config | Database, queues, `admin_token`, autocert state. |
 | `--tls-mode` | | `autocert` \| `file` \| `self_signed` | auto | Force TLS mode; see [TLS](#tls). |
@@ -238,6 +240,8 @@ If `--tls-mode` is omitted, install **auto-detects**:
 | `--simple --domain mail.example.org` | `mail.example.org` | `--hostname` or domain | `$(primary_domain)` | `autocert` (DNS) |
 
 `--simple --domain` rejects IP literals; `--simple --ip` requires a valid `IPv4`/`IPv6` address.
+
+For domain install without `--ip`, `$(public_ip)` is filled from DNS (A preferred over AAAA when both are public). That value is written into TURN (`turn_server` / `relay_ip` / `realm`) and related discovery fields — prefer IPv4 unless you intentionally pass `--ip` with an IPv6 address.
 
 ---
 

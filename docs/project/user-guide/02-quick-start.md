@@ -52,6 +52,8 @@ sudo systemctl start madmail
 
 Before install, create an **`A`/`AAAA`** record for the hostname pointing at your server. After install, add **`MX`** and (optionally) SPF/DKIM/DMARC — see [DNS and Mail Authentication](./12-dns-mail-auth.md).
 
+If both A and AAAA exist and you omit `--ip`, install sets `$(public_ip)` (TURN / discovery) from a **public IPv4** when available. To advertise IPv6 for TURN instead, pass `--ip` with that address.
+
 ### Windows
 
 Prefer the **setup wizard** when available (`madmail-windows-amd64-setup.exe` from the GitHub **Release** assets), or use the CLI.
