@@ -111,12 +111,37 @@ pub async fn list_mailbox_messages(
         return Ok(cached);
     }
 
+    // Snapshot generation before the slow sync so a concurrent delivery's invalidate
+    // discards any incomplete listing we might try to publish (#115).
+    let gen = store.list_cache().generation(user, mailbox);
     let new_mtime = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.new).await;
     let cur_mtime = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.cur).await;
-    let messages = store.uidlist().sync(user, mailbox, &paths).await?;
+    let mut messages = store.uidlist().sync(user, mailbox, &paths).await?;
+
+    // If the directory changed while we were scanning (or generation advanced), re-sync once
+    // so we do not return a half-complete view to IMAP IDLE / FETCH.
+    let new_mtime_after = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.new).await;
+    let cur_mtime_after = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.cur).await;
+    let gen_after = store.list_cache().generation(user, mailbox);
+    if gen_after != gen || new_mtime_after != new_mtime || cur_mtime_after != cur_mtime {
+        messages = store.uidlist().sync(user, mailbox, &paths).await?;
+        let gen_final = store.list_cache().generation(user, mailbox);
+        let new_final = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.new).await;
+        let cur_final = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.cur).await;
+        store.list_cache().store(
+            user,
+            mailbox,
+            gen_final,
+            new_final,
+            cur_final,
+            messages.clone(),
+        );
+        return Ok(messages);
+    }
+
     store
         .list_cache()
-        .store(user, mailbox, new_mtime, cur_mtime, messages.clone());
+        .store(user, mailbox, gen, new_mtime, cur_mtime, messages.clone());
     Ok(messages)
 }
 
@@ -343,5 +368,54 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(after.len(), 2);
+    }
+
+    /// Issue #115: concurrent delivery while listing must not leave IMAP serving a permanently
+    /// incomplete cached listing (generation-guarded store + invalidate on write).
+    #[tokio::test]
+    async fn issue115_concurrent_deliver_and_list_never_loses_message() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = std::sync::Arc::new(MailboxStore::new(tmp.path()));
+
+        // Seed one message so the cache is warm.
+        write_blob(&store, "u@test", "seed", b"seed").await.unwrap();
+        assert_eq!(
+            list_mailbox_messages(&store, "u@test", "INBOX")
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let store_w = store.clone();
+        let writer = tokio::spawn(async move {
+            for i in 0..20 {
+                write_blob(&store_w, "u@test", &format!("m{i}"), b"body")
+                    .await
+                    .unwrap();
+            }
+        });
+        let store_r = store.clone();
+        let reader = tokio::spawn(async move {
+            for _ in 0..40 {
+                let _ = list_mailbox_messages(&store_r, "u@test", "INBOX").await;
+                tokio::task::yield_now().await;
+            }
+        });
+        writer.await.unwrap();
+        reader.await.unwrap();
+
+        let final_list = list_mailbox_messages(&store, "u@test", "INBOX")
+            .await
+            .unwrap();
+        assert_eq!(
+            final_list.len(),
+            21,
+            "all delivered messages must be visible after concurrent list; got {:?}",
+            final_list
+                .iter()
+                .map(|m| m.base_id.as_str())
+                .collect::<Vec<_>>()
+        );
     }
 }

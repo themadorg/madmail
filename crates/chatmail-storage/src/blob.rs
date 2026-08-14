@@ -151,6 +151,28 @@ pub(crate) async fn link_into_inbox(
             tokio::fs::copy(canonical, &dest).await?;
             store.fsync().commit_directory(&new_dir).await?;
             store.invalidate_mailbox_listing(user, "INBOX");
+            // Match the hard_link success path: eager uidlist registration so IMAP does not
+            // depend solely on the next readdir to discover the copy (#115 visibility).
+            let internal_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let size = tokio::fs::metadata(&dest)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(0);
+            let _ = store
+                .uidlist()
+                .pre_register(
+                    user,
+                    "INBOX",
+                    &store.maildir_for_mailbox(user, "INBOX"),
+                    msg_id,
+                    size,
+                    internal_secs,
+                    store.policy().fsync_mode,
+                )
+                .await;
             Ok(dest)
         }
         Err(e) => Err(ChatmailError::from(e)),
@@ -318,6 +340,22 @@ async fn commit_mailbox_blob(
     tokio::fs::rename(&tmp_path, &new_path).await?;
     store.fsync().commit_directory(&paths.new).await?;
     store.invalidate_mailbox_listing(user, mailbox);
+    let internal_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = store
+        .uidlist()
+        .pre_register(
+            user,
+            mailbox,
+            &paths,
+            msg_id,
+            body.len() as u64,
+            internal_secs,
+            store.policy().fsync_mode,
+        )
+        .await;
     Ok(new_path)
 }
 
@@ -358,19 +396,21 @@ async fn finalize_from_tmp(
                 tokio::fs::rename(&tmp.path, &dest).await?;
             }
 
-            // Under Never (the benchmark path), submit the final "make visible"
-            // work to the per-mailbox batcher. This is the key "Dovecot LMTP" trick:
-            // instead of 15 independent tasks all doing uidlist + dir metadata at once,
-            // we funnel them so the work happens in fewer, batched steps.
+            // Under Never (the benchmark path), submit uidlist/dir work to the per-mailbox
+            // batcher so concurrent APPENDs do not all hammer metadata at once. The file is
+            // already in `new/` — we must still invalidate the listing cache immediately so
+            // IMAP cannot keep serving a same-second-mtime stale listing (#115).
+            let internal_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
             if store.policy().fsync_mode == FsyncMode::Never {
+                store.invalidate_mailbox_listing(user, mailbox);
                 let pending = PendingDelivery {
                     msg_id: msg_id.to_string(),
                     final_path: dest.clone(),
                     size: tmp.size,
-                    internal_secs: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0),
+                    internal_secs,
                 };
                 never_batcher()
                     .submit_for_never(user, mailbox, pending)
@@ -379,10 +419,6 @@ async fn finalize_from_tmp(
                 store.fsync().commit_directory(&paths.new).await?;
                 store.invalidate_mailbox_listing(user, mailbox);
 
-                let internal_secs = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
                 let _ = store
                     .uidlist()
                     .pre_register(
