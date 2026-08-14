@@ -1,3 +1,10 @@
+## [2.23.2](https://github.com/themadorg/madmail/compare/v2.23.1...v2.23.2) (2026-08-14)
+
+
+### Bug Fixes
+
+* **install:** prefer public IPv4 when auto-detecting public_ip ([#132](https://github.com/themadorg/madmail/issues/132)) ([af4359c](https://github.com/themadorg/madmail/commit/af4359cee848bedb5b132db1705e7ee66434cfb1))
+
 ## [2.23.1](https://github.com/themadorg/madmail/compare/v2.23.0...v2.23.1) (2026-08-14)
 
 
