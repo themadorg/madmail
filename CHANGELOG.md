@@ -1,3 +1,10 @@
+## [2.23.1](https://github.com/themadorg/madmail/compare/v2.23.0...v2.23.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* **storage:** prevent sticky incomplete maildir list after concurrent delivery ([9b384d1](https://github.com/themadorg/madmail/commit/9b384d19aeffba656736bbb0a0372868eb88e210)), closes [#115](https://github.com/themadorg/madmail/issues/115)
+
 # [2.23.0](https://github.com/themadorg/madmail/compare/v2.22.0...v2.23.0) (2026-08-07)
 
 
