@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use chatmail_db::{
     blocklist, get_bool_setting, is_federation_rcpt_blocked, passwords, settings_keys, DbPool,
 };
-use chatmail_types::{wrap_ip_domain, Result};
+use chatmail_types::{is_ipv4_literal, wrap_ip_domain, Result};
 use dashmap::DashMap;
 
 /// How long a successful password verification is trusted before bcrypt re-runs.
@@ -117,8 +117,11 @@ impl AuthCache {
 
     /// Whether inbound mail may be delivered locally (reserved rcpt + account exists).
     ///
-    /// Looks up both the raw address and the IP-literal-normalized form so that
-    /// `user@1.2.3.4` matches a registered `user@[1.2.3.4]` (and vice versa).
+    /// For IPv4-literal domains, looks up both the bracketed form (`user@[1.2.3.4]`)
+    /// and the bare form (`user@1.2.3.4`) so either registration spelling works.
+    /// Prefer canonical delivery under the key that actually exists in the cache
+    /// (callers that need a storage key should normalize via
+    /// [`chatmail_auth::normalize_username`] first, which wraps bare IPv4).
     pub fn local_recipient_allowed(&self, rcpt: &str) -> bool {
         if is_federation_rcpt_blocked(rcpt) {
             return false;
@@ -127,13 +130,23 @@ impl AuthCache {
             return true;
         }
         if let Some((local, domain)) = rcpt.rsplit_once('@') {
-            let norm = format!(
+            let local = local.to_ascii_lowercase();
+            let domain_l = domain.to_ascii_lowercase();
+            let wrapped = format!(
                 "{}@{}",
-                local.to_ascii_lowercase(),
-                wrap_ip_domain(domain).to_ascii_lowercase()
+                local,
+                wrap_ip_domain(&domain_l).to_ascii_lowercase()
             );
-            if norm != rcpt && self.user_exists(&norm) {
+            if wrapped != rcpt && self.user_exists(&wrapped) {
                 return true;
+            }
+            // Reverse: rcpt is bracketed but account was stored bare (rare).
+            let bare_dom = domain_l.trim_matches(|c| c == '[' || c == ']');
+            if is_ipv4_literal(bare_dom) {
+                let bare = format!("{local}@{bare_dom}");
+                if bare != rcpt && bare != wrapped && self.user_exists(&bare) {
+                    return true;
+                }
             }
         }
         false
@@ -229,6 +242,20 @@ mod tests {
         assert!(!cache.local_recipient_allowed("admin@test"));
         assert!(!cache.local_recipient_allowed("ghost@test"));
         assert!(cache.local_recipient_allowed("u@test"));
+    }
+
+    #[test]
+    fn local_recipient_matches_bare_and_bracketed_ipv4() {
+        let cache = AuthCache::new();
+        cache.insert("u@[1.2.3.4]", "h");
+        assert!(cache.local_recipient_allowed("u@[1.2.3.4]"));
+        assert!(cache.local_recipient_allowed("u@1.2.3.4"));
+        assert!(cache.local_recipient_allowed("U@1.2.3.4"));
+
+        let bare = AuthCache::new();
+        bare.insert("v@1.2.3.4", "h");
+        assert!(bare.local_recipient_allowed("v@1.2.3.4"));
+        assert!(bare.local_recipient_allowed("v@[1.2.3.4]"));
     }
 
     #[test]

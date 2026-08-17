@@ -21,27 +21,22 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
+use chatmail_auth::normalize_username;
 use chatmail_db::{is_federation_sender_blocked, DbPool};
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
 use chatmail_state::AppState;
 use chatmail_storage::deliver_local_messages;
-use chatmail_types::{wrap_ip_domain, ChatmailError};
+use chatmail_types::ChatmailError;
 
 use crate::security::recipient_matches_server;
 
-/// Case-fold localpart and wrap bare IPv4 domains in brackets so lookups match
-/// `passwords.username` / maildir paths created at registration.
+/// Normalize envelope addresses for /mxdeliv (same rules as SMTP login).
+///
+/// Uses [`chatmail_auth::normalize_username`] so bare IPv4 domains become
+/// `user@[1.2.3.4]` and match registration / maildir paths. Malformed values
+/// become `None` and are dropped by the caller.
 fn normalize_addr(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    let (local, domain) = trimmed.rsplit_once('@')?;
-    if local.is_empty() || domain.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "{}@{}",
-        local.to_ascii_lowercase(),
-        wrap_ip_domain(domain).to_ascii_lowercase()
-    ))
+    normalize_username(raw).ok()
 }
 
 #[derive(Clone)]
@@ -369,6 +364,61 @@ mod tests {
 
         handle_mxdeliv(&st, &headers, pgp).await.unwrap();
         assert_eq!(app.quota.used_bytes("user@example.org"), pgp.len() as u64);
+    }
+
+    /// Bare `X-Mail-To: alice@1.2.3.4` must deliver when the account is
+    /// registered as `alice@[1.2.3.4]` (IP-mode silent-drop regression).
+    #[tokio::test]
+    async fn p7_delivers_bare_ip_x_mail_to_bracketed_account() {
+        let pool = init_memory_db().await.unwrap();
+        chatmail_db::passwords::create_user(&pool, "alice@[1.2.3.4]", "hash")
+            .await
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        app.federation_policy.hydrate(&pool).await.unwrap();
+        app.auth.hydrate(&pool).await.unwrap();
+
+        let st = FedState {
+            pool,
+            app: Arc::clone(&app),
+            primary_domain: "[1.2.3.4]".into(),
+            local_domains: chatmail_types::build_local_domains("[1.2.3.4]", None),
+        };
+
+        let pgp = b"From: a@peer.test\r\nTo: alice@1.2.3.4\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        let mut headers = HeaderMap::new();
+        headers.insert("x-mail-from", "sender@peer.test".parse().unwrap());
+        headers.insert("x-mail-to", "alice@1.2.3.4".parse().unwrap());
+
+        handle_mxdeliv(&st, &headers, pgp).await.unwrap();
+        // Delivery is charged under the normalized bracketed key.
+        assert_eq!(app.quota.used_bytes("alice@[1.2.3.4]"), pgp.len() as u64);
+        assert_eq!(app.quota.used_bytes("alice@1.2.3.4"), 0);
+    }
+
+    #[tokio::test]
+    async fn p7_all_malformed_x_mail_to_is_protocol_error() {
+        let pool = init_memory_db().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        app.federation_policy.hydrate(&pool).await.unwrap();
+
+        let st = FedState {
+            pool,
+            app,
+            primary_domain: "example.org".into(),
+            local_domains: chatmail_types::build_local_domains("example.org", None),
+        };
+
+        let pgp = b"From: a@peer.test\r\nTo: x\r\nContent-Type: multipart/encrypted; boundary=b\r\n\r\n--b\r\nContent-Type: application/pgp-encrypted\r\n\r\nv\r\n--b--\r\n";
+        let mut headers = HeaderMap::new();
+        headers.insert("x-mail-from", "sender@peer.test".parse().unwrap());
+        headers.insert("x-mail-to", "not-an-email".parse().unwrap());
+
+        let err = handle_mxdeliv(&st, &headers, pgp).await.unwrap_err();
+        assert!(matches!(err, ChatmailError::Protocol(_)));
+        assert_eq!(mxdeliv_http_status(&err), StatusCode::BAD_REQUEST);
     }
 
     /// One POST with several X-Mail-To headers (TDD 07-federation.md) must

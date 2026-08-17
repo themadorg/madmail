@@ -844,6 +844,7 @@ name = "chatmail-fed"
 version = "2.23.3"
 dependencies = [
  "axum",
+ "chatmail-auth",
  "chatmail-config",
  "chatmail-db",
  "chatmail-pgp",

@@ -130,4 +130,6 @@ Setup: internal DNS chatmail (`delta.example`) ↔ external IP chatmail (`[203.0
 |------|--------|
 | `crates/chatmail-fed/src/mxdeliv.rs` | `normalize_addr` on envelope headers |
 | `crates/chatmail-state/src/auth.rs` | IP-normalized `local_recipient_allowed` |
-| `crates/chatmail-delivery/src/transport.rs` | `mxdeliv_host_for_url` host:port + tests |
+| `crates/chatmail-delivery/src/transport.rs` | `mxdeliv_host_for_url` host:port (IPv4, DNS, peel `[ipv4]:port`) + tests |
+| `crates/chatmail-fed/src/mxdeliv.rs` | reuse `normalize_username`; bare-IP delivery test |
+| `crates/chatmail-state/src/auth.rs` | bare↔bracketed IPv4 account lookup |
