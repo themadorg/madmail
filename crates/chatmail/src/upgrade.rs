@@ -637,6 +637,40 @@ const STAGING_EXEC_MODE: u32 = 0o700;
 #[cfg(unix)]
 const INSTALLED_EXEC_MODE: u32 = 0o755;
 
+/// Force `0755` so systemd `User=` can exec the file (GitHub #131 / #147).
+///
+/// Follows a symlink to the target. Best-effort: ignore errors so an
+/// unprivileged `version` still prints.
+pub(crate) fn ensure_installed_exec_permissions(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(INSTALLED_EXEC_MODE));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+}
+
+/// Undo a `0700` chmod on the running binary (old `maddy update` preflight).
+///
+/// Updaters through 2.20.0 set the *live* path to owner-only, then exec
+/// `version` as root. Healing here runs in the *new* binary before systemd
+/// start, so the first hop onto this release is 203/EXEC-safe.
+pub(crate) fn heal_current_exe_permissions() {
+    if let Ok(exe) = std::env::current_exe() {
+        ensure_installed_exec_permissions(&exe);
+    }
+}
+
+fn heal_live_exec_paths(paths: &[&Path]) {
+    for p in paths {
+        ensure_installed_exec_permissions(p);
+    }
+    heal_current_exe_permissions();
+}
+
 /// Ensure the binary can actually execute on this host (`madmail version`).
 ///
 /// Catches wrong-variant installs (default glibc build on older distros) **before**
@@ -1091,6 +1125,7 @@ fn activate_versioned_install(
             installed_bin.display()
         ))
     })?;
+    heal_live_exec_paths(&[installed_bin.as_path(), stable]);
 
     if let Err(e) = preflight_new_binary(&installed_bin, BinaryExecLocation::Installed) {
         let restore_note = restore_previous_active(vroot, prev.as_deref(), stable);
@@ -1191,6 +1226,7 @@ fn perform_upgrade_legacy_inplace(new_bin_path: &Path, vroot: &Path, args: &Args
         let _ = systemctl_succeeded(&["start", &service]);
         return Err(e);
     }
+    heal_live_exec_paths(&[real_bin_path.as_path()]);
 
     // Belt-and-suspenders: re-smoke the installed path (catches corrupt write).
     // Uses Installed mode so we do **not** chmod 0700 the live path.
@@ -1427,6 +1463,35 @@ mod tests {
             "installed mode must be 0755, got {mode:#o}"
         );
         assert_ne!(mode, STAGING_EXEC_MODE);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_installed_exec_permissions_repairs_0700() {
+        // #147: old update preflight left the live path 0700; heal must restore 0755.
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("maddy");
+        fs::write(&bin, b"#!/bin/sh\necho ok\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
+        ensure_installed_exec_permissions(&bin);
+        let mode = fs::metadata(&bin).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, INSTALLED_EXEC_MODE, "got {mode:#o}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_installed_exec_permissions_follows_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("madmail");
+        let link = dir.path().join("maddy");
+        fs::write(&target, b"#!/bin/sh\necho ok\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        ensure_installed_exec_permissions(&link);
+        let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, INSTALLED_EXEC_MODE, "symlink target got {mode:#o}");
     }
 
     #[cfg(unix)]
