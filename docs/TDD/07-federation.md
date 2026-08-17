@@ -21,6 +21,8 @@ Content-Type: application/octet-stream
 <complete RFC 5322 message>
 ```
 
+The RFC 5322 body is **DKIM-signed** (`rsa-sha256`, selector `default`, relaxed/relaxed, `d=` = From domain) immediately before POST / SMTP when `{state_dir}/dkim/default.private` exists (created on first outbound or at `madmail install` for DNS names). cmdeploy `filtermail` rejects unsigned mail (`554 5.7.1 No DKIM signature found`, HTTP 400 on `/mxdeliv`) and requires a signature that verifies against DNS with **strict From/`d=` alignment**. IP-literal From is left unsigned (filtermail treats that as a no-op). Publish `default._domainkey` TXT so peers can verify.
+
 *(Historically called “RFC 822”; use [RFC 5322](RFC/rfc5322.txt) — [datatracker](https://datatracker.ietf.org/doc/html/rfc5322).)*
 
 ### Receiving (Inbound)

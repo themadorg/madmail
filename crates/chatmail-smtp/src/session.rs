@@ -603,6 +603,7 @@ impl SmtpSession {
                 state: Arc::clone(&self.ctx),
                 primary_domain: self.cfg.primary_domain.clone(),
                 local_domains: self.cfg.local_domains.clone(),
+                dkim: None,
             };
             delivery
                 .submit_authenticated(&self.mail_from, &self.rcpt_to, data)
@@ -630,6 +631,7 @@ impl SmtpSession {
             state: Arc::clone(&self.ctx),
             primary_domain: self.cfg.primary_domain.clone(),
             local_domains: self.cfg.local_domains.clone(),
+            dkim: None,
         };
 
         let ingest_start = std::time::Instant::now();

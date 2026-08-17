@@ -1,0 +1,438 @@
+// Copyright (C) 2026 themadorg
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! Outbound DKIM (RFC 6376) for federation `/mxdeliv` and SMTP fallback.
+//!
+//! cmdeploy `filtermail` rejects unsigned mail with
+//! `554 5.7.1 No DKIM signature found` (HTTP 400 on `/mxdeliv`). Signatures
+//! are produced with **viadkim** — the same crate filtermail uses to verify —
+//! so a published `default._domainkey` TXT is enough for alignment + crypto.
+
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use rsa::pkcs1::EncodeRsaPublicKey;
+use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
+use rsa::RsaPrivateKey;
+use tracing::{debug, warn};
+use viadkim::signature::{Canonicalization, CanonicalizationAlgorithm};
+use viadkim::signer::{Expiration, SignRequest};
+use viadkim::{DomainName, HeaderFields, Selector, SigningAlgorithm, SigningKey};
+
+use chatmail_types::is_ipv4_literal;
+
+/// Install / runtime selector (matches `dkim … default` in generated madmail.conf).
+pub const DKIM_SELECTOR: &str = "default";
+
+/// RSA-SHA256 signer for one selector + domain (`d=`).
+#[derive(Clone)]
+pub struct DkimSigner {
+    key: Arc<SigningKey>,
+    pub domain: String,
+    pub selector: String,
+}
+
+impl DkimSigner {
+    /// Load `{state}/dkim/{selector}.private` or generate a 2048-bit key + TXT file.
+    pub fn load_or_create(
+        state_dir: &Path,
+        selector: &str,
+        primary_domain: &str,
+    ) -> Result<Self, String> {
+        let domain = signing_domain(primary_domain).ok_or_else(|| {
+            format!("DKIM d= cannot be an IP literal ({primary_domain}); publish a DNS name")
+        })?;
+        let dir = dkim_dir(state_dir);
+        fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+        let key_path = private_key_path(state_dir, selector);
+        let rsa_key = if key_path.is_file() {
+            let pem = fs::read_to_string(&key_path)
+                .map_err(|e| format!("read {}: {e}", key_path.display()))?;
+            RsaPrivateKey::from_pkcs8_pem(&pem)
+                .map_err(|e| format!("parse {}: {e}", key_path.display()))?
+        } else {
+            let mut rng = rand::thread_rng();
+            let generated = RsaPrivateKey::new(&mut rng, 2048)
+                .map_err(|e| format!("generate DKIM key: {e}"))?;
+            write_private_key(&key_path, &generated)?;
+            write_public_txt(state_dir, selector, &generated)?;
+            generated
+        };
+        // Refresh TXT so operators can copy it after upgrades.
+        let _ = write_public_txt(state_dir, selector, &rsa_key);
+        Ok(Self {
+            key: Arc::new(SigningKey::Rsa(rsa_key)),
+            domain,
+            selector: selector.to_string(),
+        })
+    }
+
+    /// Prepend `DKIM-Signature` unless the message is already signed, `From` is
+    /// an IP literal, or `From`/`MAIL FROM` is not this signer's domain
+    /// (filtermail requires `d=` == From domain).
+    pub async fn sign_message(&self, raw: &[u8], mail_from: &str) -> Vec<u8> {
+        if has_header(raw, "dkim-signature") {
+            return raw.to_vec();
+        }
+        let crlf = to_crlf(raw);
+        let Some(d) = aligned_signing_domain(&crlf, mail_from, &self.domain) else {
+            debug!("skip DKIM: no DNS From/MAIL FROM aligned with signing domain");
+            return raw.to_vec();
+        };
+        match sign_with_viadkim(&self.key, &d, &self.selector, &crlf).await {
+            Ok(signed) => signed,
+            Err(e) => {
+                warn!(error = %e, "DKIM sign failed; sending unsigned");
+                raw.to_vec()
+            }
+        }
+    }
+
+    pub fn public_txt(&self, state_dir: &Path) -> Result<String, String> {
+        fs::read_to_string(public_txt_path(state_dir, &self.selector))
+            .map(|s| s.trim().to_string())
+            .map_err(|e| e.to_string())
+    }
+}
+
+pub fn dkim_dir(state_dir: &Path) -> PathBuf {
+    state_dir.join("dkim")
+}
+
+pub fn private_key_path(state_dir: &Path, selector: &str) -> PathBuf {
+    dkim_dir(state_dir).join(format!("{selector}.private"))
+}
+
+pub fn public_txt_path(state_dir: &Path, selector: &str) -> PathBuf {
+    dkim_dir(state_dir).join(format!("{selector}.txt"))
+}
+
+/// DNS name for `d=`, or `None` for empty / IPv4 / IPv6 / bracketed IP.
+pub fn signing_domain(addr_or_domain: &str) -> Option<String> {
+    let s = addr_or_domain.trim();
+    let domain = s
+        .rsplit_once('@')
+        .map(|(_, d)| d)
+        .unwrap_or(s)
+        .trim()
+        .trim_matches(|c| c == '[' || c == ']');
+    if domain.is_empty() || is_ipv4_literal(domain) || domain.contains(':') {
+        return None;
+    }
+    if !domain.contains('.') {
+        return None;
+    }
+    Some(domain.to_ascii_lowercase())
+}
+
+fn aligned_signing_domain(raw: &[u8], mail_from: &str, signer_domain: &str) -> Option<String> {
+    let candidate = from_header_domain(raw).or_else(|| signing_domain(mail_from))?;
+    if candidate.eq_ignore_ascii_case(signer_domain) {
+        Some(signer_domain.to_ascii_lowercase())
+    } else {
+        None
+    }
+}
+
+fn extract_addr(from_value: &str) -> Option<&str> {
+    let v = from_value.trim();
+    if let Some(start) = v.rfind('<') {
+        let end = v.rfind('>')?;
+        if end > start {
+            return Some(v[start + 1..end].trim());
+        }
+    }
+    Some(v)
+}
+
+fn write_private_key(path: &Path, key: &RsaPrivateKey) -> Result<(), String> {
+    let pem = key
+        .to_pkcs8_pem(LineEnding::LF)
+        .map_err(|e| format!("serialize DKIM key: {e}"))?;
+    let mut f = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| format!("create {}: {e}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+    }
+    f.write_all(pem.as_bytes())
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(())
+}
+
+fn write_public_txt(state_dir: &Path, selector: &str, key: &RsaPrivateKey) -> Result<(), String> {
+    let path = public_txt_path(state_dir, selector);
+    let txt = public_txt_record(key)?;
+    fs::write(&path, format!("{txt}\n")).map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(())
+}
+
+fn public_txt_record(key: &RsaPrivateKey) -> Result<String, String> {
+    let der = key
+        .to_public_key()
+        .to_pkcs1_der()
+        .map_err(|e| format!("DKIM public key: {e}"))?;
+    let p = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, der.as_bytes());
+    Ok(format!("v=DKIM1; k=rsa; p={p}"))
+}
+
+async fn sign_with_viadkim(
+    key: &SigningKey,
+    domain: &str,
+    selector: &str,
+    crlf: &[u8],
+) -> Result<Vec<u8>, String> {
+    let (header_block, body) = split_message(crlf)?;
+    let header_str = std::str::from_utf8(header_block)
+        .map_err(|_| "message headers are not UTF-8".to_string())?;
+    let headers: HeaderFields = header_str
+        .parse()
+        .map_err(|e| format!("parse headers for DKIM: {e}"))?;
+    let domain = DomainName::new(domain).map_err(|e| format!("DKIM d=: {e}"))?;
+    let selector = Selector::new(selector).map_err(|e| format!("DKIM s=: {e}"))?;
+    let mut request = SignRequest::new(domain, selector, SigningAlgorithm::RsaSha256, key);
+    request.canonicalization = Canonicalization::from((
+        CanonicalizationAlgorithm::Relaxed,
+        CanonicalizationAlgorithm::Relaxed,
+    ));
+    // No x= — federation retries can sit in queue; clock skew must not expire the sig.
+    request.expiration = Expiration::Never;
+    let results = viadkim::sign(headers, body, [request])
+        .await
+        .map_err(|e| format!("DKIM sign request: {e}"))?;
+    let signature = results
+        .into_iter()
+        .next()
+        .ok_or_else(|| "DKIM sign produced no result".to_string())?
+        .map_err(|e| format!("DKIM sign: {e}"))?;
+    let mut hdr = signature.format_header().to_string();
+    if !hdr.ends_with("\r\n") {
+        hdr.push_str("\r\n");
+    }
+    let mut out = hdr.into_bytes();
+    out.extend_from_slice(crlf);
+    Ok(out)
+}
+
+fn has_header(raw: &[u8], name: &str) -> bool {
+    split_message(raw).ok().is_some_and(|(h, _)| {
+        parse_headers(h)
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case(name))
+    })
+}
+
+fn split_message(raw: &[u8]) -> Result<(&[u8], &[u8]), String> {
+    let sep = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|i| (i, 4))
+        .or_else(|| raw.windows(2).position(|w| w == b"\n\n").map(|i| (i, 2)))
+        .ok_or_else(|| "message has no header/body separator".to_string())?;
+    Ok((&raw[..sep.0], &raw[sep.0 + sep.1..]))
+}
+
+fn parse_headers(block: &[u8]) -> Vec<(String, String)> {
+    let text = String::from_utf8_lossy(block);
+    let mut out = Vec::new();
+    let mut cur_name = String::new();
+    let mut cur_val = String::new();
+    for line in text.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with(' ') || line.starts_with('\t') {
+            if !cur_name.is_empty() {
+                cur_val.push(' ');
+                cur_val.push_str(line.trim());
+            }
+            continue;
+        }
+        if !cur_name.is_empty() {
+            out.push((std::mem::take(&mut cur_name), std::mem::take(&mut cur_val)));
+        }
+        if let Some((n, v)) = line.split_once(':') {
+            cur_name = n.trim().to_string();
+            cur_val = v.trim().to_string();
+        }
+    }
+    if !cur_name.is_empty() {
+        out.push((cur_name, cur_val));
+    }
+    out
+}
+
+fn to_crlf(raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(raw.len() + 16);
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] == b'\r' && i + 1 < raw.len() && raw[i + 1] == b'\n' {
+            out.extend_from_slice(b"\r\n");
+            i += 2;
+        } else if raw[i] == b'\n' {
+            out.extend_from_slice(b"\r\n");
+            i += 1;
+        } else {
+            out.push(raw[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+fn from_header_domain(raw: &[u8]) -> Option<String> {
+    let (header_block, _) = split_message(raw).ok()?;
+    let headers = parse_headers(header_block);
+    let (_, val) = headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("from"))?;
+    let addr = extract_addr(val)?;
+    signing_domain(addr)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::future::Future;
+    use std::io;
+    use std::pin::Pin;
+    use viadkim::message_hash::BodyHasherStance;
+    use viadkim::verifier::LookupTxt;
+    use viadkim::{Config, VerificationStatus, Verifier};
+
+    fn sample_msg(from: &str) -> Vec<u8> {
+        format!(
+            "From: <{from}>\r\nTo: <bob@cm.example>\r\nSubject: hi\r\n\
+             Date: Sun, 16 Aug 2026 12:00:00 +0000\r\nMessage-ID: <a@b>\r\n\
+             Content-Type: multipart/encrypted; boundary=\"b\"\r\n\r\n\
+             --b\r\nContent-Type: application/pgp-encrypted\r\n\r\nVersion: 1\r\n\
+             --b\r\nContent-Type: application/octet-stream\r\n\r\nx\r\n--b--\r\n"
+        )
+        .into_bytes()
+    }
+
+    #[derive(Clone)]
+    struct MockTxt(String);
+
+    impl LookupTxt for MockTxt {
+        type Answer = std::vec::IntoIter<io::Result<Vec<u8>>>;
+        type Query<'a> = Pin<Box<dyn Future<Output = io::Result<Self::Answer>> + Send + 'a>>;
+
+        fn lookup_txt(&self, _domain: &str) -> Self::Query<'_> {
+            let txt = self.0.clone();
+            Box::pin(async move { Ok(vec![Ok(txt.into_bytes())].into_iter()) })
+        }
+    }
+
+    async fn viadkim_accepts(signed: &[u8], txt: &str, from_domain: &str) {
+        let text = std::str::from_utf8(signed).expect("utf8");
+        let (header, body) = text.split_once("\r\n\r\n").expect("separator");
+        let header: HeaderFields = header.parse().expect("headers");
+        let resolver = MockTxt(txt.to_string());
+        let config = Config::default();
+        let mut verifier = Verifier::verify_header(&resolver, &header, &config)
+            .await
+            .expect("viadkim found a DKIM-Signature (filtermail 554 No DKIM signature found)");
+        for chunk in body.as_bytes().chunks(8192) {
+            if verifier.process_body_chunk(chunk) == BodyHasherStance::Done {
+                break;
+            }
+        }
+        let mut aligned_ok = false;
+        for res in verifier.finish() {
+            if matches!(res.status, VerificationStatus::Failure(_)) {
+                panic!("viadkim verification failed: {:?}", res.status);
+            }
+            let Some(sig) = res.signature else {
+                continue;
+            };
+            assert!(
+                sig.domain.to_string().eq_ignore_ascii_case(from_domain),
+                "d={} from={from_domain}",
+                sig.domain
+            );
+            aligned_ok = true;
+        }
+        assert!(aligned_ok, "no aligned successful DKIM signature");
+    }
+
+    #[test]
+    fn signing_domain_rejects_ip() {
+        assert_eq!(signing_domain("user@1.2.3.4"), None);
+        assert_eq!(signing_domain("user@[1.2.3.4]"), None);
+        assert_eq!(signing_domain("1.2.3.4"), None);
+        assert_eq!(
+            signing_domain("alice@d111-mm.madmail.chat"),
+            Some("d111-mm.madmail.chat".into())
+        );
+    }
+
+    #[test]
+    fn load_or_create_writes_key_and_txt() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = DkimSigner::load_or_create(dir.path(), "default", "mail.example.org").unwrap();
+        assert_eq!(s.domain, "mail.example.org");
+        assert!(private_key_path(dir.path(), "default").is_file());
+        let txt = fs::read_to_string(public_txt_path(dir.path(), "default")).unwrap();
+        assert!(txt.starts_with("v=DKIM1; k=rsa; p="), "{txt}");
+        let s2 = DkimSigner::load_or_create(dir.path(), "default", "mail.example.org").unwrap();
+        assert_eq!(
+            s.public_txt(dir.path()).unwrap(),
+            s2.public_txt(dir.path()).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn sign_is_verifiable_by_viadkim() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = DkimSigner::load_or_create(dir.path(), "default", "mail.example.org").unwrap();
+        let raw = sample_msg("alice@mail.example.org");
+        let signed = s.sign_message(&raw, "alice@mail.example.org").await;
+        assert!(
+            signed.starts_with(b"DKIM-Signature:"),
+            "{}",
+            String::from_utf8_lossy(&signed[..80.min(signed.len())])
+        );
+        assert!(signed.windows(raw.len()).any(|w| w == raw) || signed.len() > raw.len());
+        let txt = s.public_txt(dir.path()).unwrap();
+        viadkim_accepts(&signed, &txt, "mail.example.org").await;
+    }
+
+    #[tokio::test]
+    async fn already_signed_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = DkimSigner::load_or_create(dir.path(), "default", "mail.example.org").unwrap();
+        let raw = sample_msg("alice@mail.example.org");
+        let once = s.sign_message(&raw, "alice@mail.example.org").await;
+        let twice = s.sign_message(&once, "alice@mail.example.org").await;
+        assert_eq!(once, twice);
+    }
+
+    #[tokio::test]
+    async fn ip_from_is_not_signed() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = DkimSigner::load_or_create(dir.path(), "default", "mail.example.org").unwrap();
+        // cmdeploy treats IP From as a no-op; signing with our DNS d= would fail alignment.
+        let raw = sample_msg("alice@1.2.3.4");
+        let signed = s.sign_message(&raw, "alice@1.2.3.4").await;
+        assert!(!signed.starts_with(b"DKIM-Signature:"));
+        assert_eq!(signed, raw);
+    }
+
+    #[tokio::test]
+    async fn foreign_from_is_not_signed() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = DkimSigner::load_or_create(dir.path(), "default", "mail.example.org").unwrap();
+        let raw = sample_msg("alice@other.example");
+        let signed = s.sign_message(&raw, "alice@other.example").await;
+        assert_eq!(signed, raw);
+    }
+}

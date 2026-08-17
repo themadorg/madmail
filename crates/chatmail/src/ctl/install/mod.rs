@@ -87,6 +87,7 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         system::create_service_user(&cfg, false)?;
     }
     create_directories(&cfg)?;
+    generate_dkim_keys(&cfg);
     if let Err(e) = setup_certificates(&cfg, args).await {
         return Err(cert_step_failed(e));
     }
@@ -404,6 +405,29 @@ async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<(
     Ok(())
 }
 
+fn generate_dkim_keys(cfg: &InstallConfig) {
+    match chatmail_delivery::dkim::DkimSigner::load_or_create(
+        &cfg.state_dir,
+        chatmail_delivery::dkim::DKIM_SELECTOR,
+        &cfg.primary_domain,
+    ) {
+        Ok(_) => {
+            let txt = chatmail_delivery::dkim::public_txt_path(
+                &cfg.state_dir,
+                chatmail_delivery::dkim::DKIM_SELECTOR,
+            );
+            println!(
+                "  DKIM:           selector '{}' — publish TXT default._domainkey ({})",
+                chatmail_delivery::dkim::DKIM_SELECTOR,
+                txt.display()
+            );
+        }
+        Err(e) => {
+            println!("  DKIM:           skipped ({e})");
+        }
+    }
+}
+
 fn create_directories(cfg: &InstallConfig) -> Result<()> {
     let config_dir = cfg
         .config_path
@@ -414,6 +438,7 @@ fn create_directories(cfg: &InstallConfig) -> Result<()> {
         cfg.state_dir.join("messages").as_path(),
         cfg.state_dir.join("remote_queue").as_path(),
         cfg.state_dir.join("autocert").as_path(),
+        cfg.state_dir.join("dkim").as_path(),
         config_dir,
         cfg.cert_path.parent().unwrap_or(config_dir),
     ] {

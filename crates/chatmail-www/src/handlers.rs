@@ -509,6 +509,7 @@ pub async fn websmtp_deliver(
         state: Arc::clone(&st.app),
         primary_domain: primary,
         local_domains: st.local_domains.clone(),
+        dkim: None,
     };
 
     // Same function path as SMTP submission after AUTH + DATA.
