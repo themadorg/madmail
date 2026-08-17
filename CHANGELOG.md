@@ -1,3 +1,10 @@
+## [2.23.3](https://github.com/themadorg/madmail/compare/v2.23.2...v2.23.3) (2026-08-17)
+
+
+### Bug Fixes
+
+* **upgrade:** restore 0755 when old update leaves the live binary 0700 ([5c724bd](https://github.com/themadorg/madmail/commit/5c724bdb86a2a9691abc512ed082059e863516c4)), closes [#147](https://github.com/themadorg/madmail/issues/147) [#147](https://github.com/themadorg/madmail/issues/147)
+
 ## [2.23.2](https://github.com/themadorg/madmail/compare/v2.23.1...v2.23.2) (2026-08-14)
 
 
