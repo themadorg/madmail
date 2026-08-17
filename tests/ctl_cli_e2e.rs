@@ -248,3 +248,71 @@ fn e2e_ctl_accounts_export_import() {
         assert!(passwords::user_exists(&pool, email).await.unwrap());
     });
 }
+
+/// Old `maddy update` (through 2.20.0) chmods the live path to 0700 then execs
+/// `version` as root. The new binary must restore 0755 (GitHub #147).
+#[cfg(unix)]
+#[test]
+fn e2e_version_repairs_0700_live_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().expect("tempdir");
+    let dest = dir.path().join("maddy");
+    std::fs::copy(chatmail_bin(), &dest).expect("copy madmail");
+    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(
+        std::fs::metadata(&dest).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+
+    let out = Command::new(&dest)
+        .arg("version")
+        .output()
+        .expect("run version");
+    assert!(
+        out.status.success(),
+        "version failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("madmail-v2"),
+        "expected version banner, got: {stdout}"
+    );
+
+    let mode = std::fs::metadata(&dest).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o755,
+        "version must restore 0755 after old-updater 0700 (#147), got {mode:#o}"
+    );
+}
+
+/// Same heal when the service PATH entry is a symlink into the version tree.
+#[cfg(unix)]
+#[test]
+fn e2e_version_repairs_0700_through_symlink() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().expect("tempdir");
+    let target = dir.path().join("madmail");
+    let link = dir.path().join("maddy");
+    std::fs::copy(chatmail_bin(), &target).expect("copy madmail");
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let out = Command::new(&link)
+        .arg("version")
+        .output()
+        .expect("run version via symlink");
+    assert!(
+        out.status.success(),
+        "version failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o755,
+        "version must chmod symlink target to 0755 (#147), got {mode:#o}"
+    );
+}

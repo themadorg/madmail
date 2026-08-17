@@ -25,6 +25,9 @@ pub const VERSION_PRODUCT: &str = "madmail-v2";
 
 /// Print package version (Madmail `maddy version`).
 pub fn print_version(args: &Args) -> Result<()> {
+    // Old `maddy update` (through 2.20.0) chmods the live path to 0700 then
+    // runs `version` as root. Restore 0755 so systemd User= can exec (#147).
+    crate::upgrade::heal_current_exe_permissions();
     let out = CtlOut::from_args(args, "version");
     let version = env!("CARGO_PKG_VERSION");
     if out.is_json() {

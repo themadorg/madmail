@@ -459,6 +459,12 @@ pub fn set_active(root: &Path, version_id: &str, stable_path: &Path) -> Result<(
         }
     }
     ensure_install_layout(root)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // systemd User= cannot exec a 0700 archive (GitHub #131 / #147).
+        let _ = fs::set_permissions(&bin, fs::Permissions::from_mode(0o755));
+    }
 
     // current -> versions/<id> (directory)
     let current = current_link_path(root);
@@ -1203,6 +1209,37 @@ mod tests {
         let root = TempDir::new().unwrap();
         let stable = root.path().join("s");
         assert!(set_active(root.path(), "../evil", &stable).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn set_active_repairs_0700_version_binary() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = TempDir::new().unwrap();
+        let stable = root.path().join("bin").join(binary_file_name());
+        let src = root.path().join("p");
+        write_fake_bin(&src);
+        install_candidate(
+            root.path(),
+            "2.23.2",
+            &src,
+            VersionMeta {
+                version: "2.23.2".into(),
+                installed_at: None,
+                source: Some("test".into()),
+                source_url: None,
+                sha256: None,
+                variant: None,
+                os: None,
+                signature_ok: Some(true),
+            },
+        )
+        .unwrap();
+        let bin = version_binary_path(root.path(), "2.23.2");
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
+        set_active(root.path(), "2.23.2", &stable).unwrap();
+        let mode = fs::metadata(&bin).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "set_active must leave 0755, got {mode:#o}");
     }
 
     #[test]
