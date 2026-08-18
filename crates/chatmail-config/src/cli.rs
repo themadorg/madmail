@@ -131,6 +131,12 @@ pub enum Command {
     /// Federation policy and rules management.
     #[command(subcommand)]
     Federation(FederationCommand),
+    /// Print outbound DKIM selector, signing domain, and the TXT to publish.
+    #[command(subcommand_required = false)]
+    Dkim {
+        #[command(subcommand)]
+        cmd: Option<DkimCommand>,
+    },
     /// Generate password hashes for pass_table.
     Hash,
     /// Export default HTML files to a directory.
@@ -337,6 +343,13 @@ pub enum CompletionShell {
     Zsh,
     /// Fish completion script for `/usr/share/fish/vendor_completions.d/<binary>.fish`.
     Fish,
+}
+
+/// `madmail dkim` — outbound federation DKIM (selector `default`).
+#[derive(Debug, Subcommand, Clone)]
+pub enum DkimCommand {
+    /// Print selector, `d=`, key paths, and the TXT to publish (default).
+    Show,
 }
 
 /// `madmail iroh` — Iroh relay + IMAP METADATA discovery (`__IROH_*__`).
@@ -1337,5 +1350,18 @@ mod tests {
             msg.contains("required") || msg.contains("VERSION") || msg.contains("version"),
             "got: {msg}"
         );
+    }
+
+    #[test]
+    fn dkim_defaults_to_show() {
+        let cli = Cli::try_parse_from(["madmail", "dkim"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Dkim { cmd: None })));
+        let cli = Cli::try_parse_from(["madmail", "dkim", "show"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Dkim {
+                cmd: Some(DkimCommand::Show)
+            })
+        ));
     }
 }

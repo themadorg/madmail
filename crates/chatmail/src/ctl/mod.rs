@@ -28,6 +28,7 @@ mod certificate;
 mod context;
 mod delete_cmd;
 mod dispatch;
+mod dkim;
 mod docs;
 mod endpoint_cache;
 mod federation;

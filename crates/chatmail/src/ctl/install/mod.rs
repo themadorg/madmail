@@ -417,7 +417,7 @@ fn generate_dkim_keys(cfg: &InstallConfig) {
                 chatmail_delivery::dkim::DKIM_SELECTOR,
             );
             println!(
-                "  DKIM:           selector '{}' — publish TXT default._domainkey ({})",
+                "  DKIM:           selector '{}' — publish TXT default._domainkey ({})\n                   madmail dkim show",
                 chatmail_delivery::dkim::DKIM_SELECTOR,
                 txt.display()
             );

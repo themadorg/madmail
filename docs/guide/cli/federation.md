@@ -43,6 +43,8 @@ madmail federation dismiss newsletter.example
 madmail federation status
 ```
 
+Outbound DKIM for `/mxdeliv` and SMTP fallback is [`dkim show`](dkim.md) (not this command).
+
 ## Subcommand pages
 
 - [`allow`](federation-allow.md) — `madmail federation allow`

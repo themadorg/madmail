@@ -86,6 +86,20 @@ imap tcp://0.0.0.0:143 {
     config
 }
 
+/// Minimal `maddy.conf` with a DNS `primary_domain` (for `dkim show`).
+pub fn write_dkim_test_config(dir: &Path) -> PathBuf {
+    let config = dir.join("test_dkim.conf");
+    std::fs::write(
+        &config,
+        r#"
+hostname mail.example.org
+$(primary_domain) = example.org
+"#,
+    )
+    .expect("write dkim test config");
+    config
+}
+
 /// Minimal `maddy.conf` without Iroh (for `iroh install`).
 pub fn write_plain_imap_test_config(dir: &Path) -> PathBuf {
     let config = dir.join("test_plain_imap.conf");

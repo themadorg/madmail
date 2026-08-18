@@ -18,9 +18,9 @@
 //! In-process tests for operator CLI commands.
 
 use chatmail_config::cli::{
-    EndpointCacheCommand, FederationCommand, IrohCommand, LanguageCommand, OpenrelayCommand,
-    PortCommand, PortServiceCommand, ProxyCommand, ProxySettingCommand, RegistrationCommand,
-    RegistrationTokensCommand, ServiceToggleCommand, SharingCommand,
+    DkimCommand, EndpointCacheCommand, FederationCommand, IrohCommand, LanguageCommand,
+    OpenrelayCommand, PortCommand, PortServiceCommand, ProxyCommand, ProxySettingCommand,
+    RegistrationCommand, RegistrationTokensCommand, ServiceToggleCommand, SharingCommand,
 };
 use chatmail_config::{Cli, Command};
 use chatmail_db::{
@@ -31,8 +31,8 @@ use clap::Parser;
 
 use super::dispatch;
 use super::test_harness::{
-    parse_cli, parse_cli_with_config, setup_ctl_env, write_iroh_test_config,
-    write_plain_imap_test_config, write_ss_test_config,
+    parse_cli, parse_cli_with_config, setup_ctl_env, write_dkim_test_config,
+    write_iroh_test_config, write_plain_imap_test_config, write_ss_test_config,
 };
 
 #[tokio::test]
@@ -480,6 +480,49 @@ async fn dispatch_iroh_install_writes_config_and_enables() {
 }
 
 #[tokio::test]
+async fn dispatch_dkim_show_creates_key_and_txt() {
+    let (dir, _args, _db, _pool) = setup_ctl_env().await;
+    let config = write_dkim_test_config(dir.path());
+    let private = dir.path().join("dkim").join("default.private");
+    let txt = dir.path().join("dkim").join("default.txt");
+    assert!(!private.is_file());
+
+    let cli = parse_cli_with_config(dir.path(), &config, &["dkim", "show"]);
+    dispatch(&cli).await.unwrap();
+
+    assert!(private.is_file(), "dkim show should create the private key");
+    let record = std::fs::read_to_string(&txt).unwrap();
+    assert!(
+        record.starts_with("v=DKIM1; k=rsa; p="),
+        "unexpected TXT: {record}"
+    );
+    assert!(
+        !record.trim().contains('\n'),
+        "TXT file must be a single DNS line"
+    );
+
+    let first = std::fs::read(&private).unwrap();
+    let cli = parse_cli_with_config(dir.path(), &config, &["dkim"]);
+    dispatch(&cli).await.unwrap();
+    assert_eq!(
+        first,
+        std::fs::read(&private).unwrap(),
+        "second show must reuse the existing key"
+    );
+}
+
+#[tokio::test]
+async fn dispatch_dkim_show_skips_ip_literal() {
+    let (dir, _args, _db, _pool) = setup_ctl_env().await;
+    let cli = parse_cli(dir.path(), &["dkim", "show"]);
+    dispatch(&cli).await.unwrap();
+    assert!(
+        !dir.path().join("dkim").join("default.private").is_file(),
+        "IP d= must not generate a signing key"
+    );
+}
+
+#[tokio::test]
 async fn dispatch_proxy_not_configured_status_and_enable_guard() {
     let (dir, _args, _db, pool) = setup_ctl_env().await;
 
@@ -770,6 +813,16 @@ fn cli_language_and_registration_parse() {
     assert!(matches!(
         cli.command,
         Some(Command::Reload { insecure: true, .. })
+    ));
+
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["dkim"]);
+    assert!(matches!(cli.command, Some(Command::Dkim { cmd: None })));
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["dkim", "show"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Dkim {
+            cmd: Some(DkimCommand::Show)
+        })
     ));
 
     let cli = parse_cli(std::path::Path::new("/tmp"), &["iroh", "status"]);

@@ -130,6 +130,12 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 
 ## Policy & delivery
 
+### [`dkim`](dkim.md)
+
+Outbound federation DKIM (selector `default`): print `d=`, key paths, and the TXT to publish.
+
+- [`show`](dkim-show.md)
+
 ### [`federation`](federation.md)
 
 - [`allow`](federation-allow.md)

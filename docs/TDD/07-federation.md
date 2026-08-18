@@ -2,7 +2,7 @@
 
 **Implementation:** inbound HTTP — `crates/chatmail-fed` (`mxdeliv`, `security`); outbound — `crates/chatmail-delivery`; stats — `chatmail-state::tracker` + `chatmail-db`.
 
-**Operator CLI:** [`../guide/cli/federation.md`](../guide/cli/federation.md) · [`endpoint-cache.md`](../guide/cli/endpoint-cache.md) · TDD [14-cli-tools.md](14-cli-tools.md).
+**Operator CLI:** [`../guide/cli/federation.md`](../guide/cli/federation.md) · [`dkim.md`](../guide/cli/dkim.md) · [`endpoint-cache.md`](../guide/cli/endpoint-cache.md) · TDD [14-cli-tools.md](14-cli-tools.md).
 
 ## Overview
 Chatmail uses **HTTP-based federation** as the primary delivery method between servers, with traditional SMTP as fallback. This enables reliable delivery even for IP-only deployments without DNS MX records.
@@ -21,7 +21,7 @@ Content-Type: application/octet-stream
 <complete RFC 5322 message>
 ```
 
-The RFC 5322 body is **DKIM-signed** (`rsa-sha256`, selector `default`, relaxed/relaxed, `d=` = From domain) immediately before POST / SMTP when `{state_dir}/dkim/default.private` exists (created on first outbound or at `madmail install` for DNS names). cmdeploy `filtermail` rejects unsigned mail (`554 5.7.1 No DKIM signature found`, HTTP 400 on `/mxdeliv`) and requires a signature that verifies against DNS with **strict From/`d=` alignment**. IP-literal From is left unsigned (filtermail treats that as a no-op). Publish `default._domainkey` TXT so peers can verify.
+The RFC 5322 body is **DKIM-signed** (`rsa-sha256`, selector `default`, relaxed/relaxed, `d=` = From domain) immediately before POST / SMTP when `{state_dir}/dkim/default.private` exists (created on first outbound, at `madmail install`, or by `madmail dkim show` for DNS names). cmdeploy `filtermail` rejects unsigned mail (`554 5.7.1 No DKIM signature found`, HTTP 400 on `/mxdeliv`) and requires a signature that verifies against DNS with **strict From/`d=` alignment**. IP-literal From is left unsigned (filtermail treats that as a no-op). Run **`madmail dkim show`** and publish the printed TXT at `default._domainkey` so peers can verify.
 
 *(Historically called “RFC 822”; use [RFC 5322](RFC/rfc5322.txt) — [datatracker](https://datatracker.ietf.org/doc/html/rfc5322).)*
 

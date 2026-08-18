@@ -60,10 +60,10 @@ Selector name: **`default`**. Keys live in your state directory (e.g. `/var/lib/
 
 To publish DKIM:
 
-1. Copy `{state_dir}/dkim/default.txt` (created at install or on first outbound send).
-2. Add a **`TXT`** record at `default._domainkey.example.org` with that single string (`v=DKIM1; k=rsa; p=…`, no line breaks).
+1. On the server, run **`madmail dkim show`**. That prints the selector, `d=`, file paths, and the single-line TXT. If the key is not there yet (upgraded 2.18.x host), this command creates it — you do not have to send mail first.
+2. Add a **`TXT`** record at `default._domainkey.example.org` with that string (`v=DKIM1; k=rsa; p=…`, no line breaks).
 
-Existing installs generate the key on first federated send (or restart after upgrade). Publish the TXT before expecting cmdeploy peers to accept mail.
+Scripts can use `madmail dkim show --json` and read `data.txt` / `data.dns_fqdn`.
 
 ## Federation vs SMTP authentication
 
@@ -104,6 +104,7 @@ On the server:
 ```bash
 madmail status
 madmail federation list
+madmail dkim show
 ```
 
 Use the admin web UI **Federation** section for per-peer success rate, latency, and queue depth.
