@@ -1,3 +1,11 @@
+## [2.23.4](https://github.com/themadorg/madmail/compare/v2.23.3...v2.23.4) (2026-08-18)
+
+
+### Bug Fixes
+
+* **federation:** address review on host:port, normalize reuse, tests ([5694357](https://github.com/themadorg/madmail/commit/569435702e7154b1fc248b7f519b37522a2feedb))
+* **federation:** normalize IP addresses on mxdeliv and preserve host:port in endpoint-cache ([ad39af7](https://github.com/themadorg/madmail/commit/ad39af74dc4b383b3de30127d1256112483634bc))
+
 ## [2.23.3](https://github.com/themadorg/madmail/compare/v2.23.2...v2.23.3) (2026-08-17)
 
 
