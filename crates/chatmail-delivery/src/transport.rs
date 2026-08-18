@@ -253,13 +253,65 @@ fn record_failure(ctx: &DeliveryContext, domain: &str, method: &str) {
     ctx.state.federation_tracker.decrement_queue(domain);
 }
 
-/// Host suitable for `https://HOST/mxdeliv` (bare IPv4, bracketed IPv6, DNS names unchanged).
+/// Host suitable for `https://HOST/mxdeliv` (bare IPv4, optional `:port`, bracketed IPv6, DNS).
+///
+/// Rules:
+/// - `host:digits` where `host` has no `:` → keep as-is (IPv4 or DNS name + port)
+/// - `[1.2.3.4]:port` → peel to `1.2.3.4:port`
+/// - bare IPv4 → bare IPv4
+/// - unbracketed IPv6 → `[ipv6]`
+/// - `[ipv6]:port` / already-bracketed IPv6 → keep as-is
 pub fn mxdeliv_host_for_url(host: &str) -> String {
-    let bare = host.trim().trim_matches(|c| c == '[' || c == ']');
+    let host = host.trim();
+    if host.is_empty() {
+        return String::new();
+    }
+
+    // `[addr]:port` — peel brackets only for IPv4; keep IPv6 bracketed form.
+    if host.starts_with('[') {
+        if let Some(end) = host.find(']') {
+            let inner = &host[1..end];
+            let rest = &host[end + 1..];
+            if let Some(port) = rest.strip_prefix(':') {
+                if !port.is_empty()
+                    && port.chars().all(|c| c.is_ascii_digit())
+                    && is_ipv4_literal(inner)
+                {
+                    return format!("{inner}:{port}");
+                }
+            }
+            // Bracketed IPv6 (± port) or bare bracketed IPv4 without port handling below.
+            if is_ipv4_literal(inner) && rest.is_empty() {
+                return inner.to_string();
+            }
+            return host.to_string();
+        }
+    }
+
+    // Unbracketed `left:port` where left has no colon → host (IPv4 or DNS) + numeric port.
+    if let Some((left, port)) = host.rsplit_once(':') {
+        if !left.is_empty()
+            && !left.contains(':')
+            && !port.is_empty()
+            && port.chars().all(|c| c.is_ascii_digit())
+        {
+            return format!("{left}:{port}");
+        }
+    }
+
+    if is_ipv4_literal(host) {
+        return host.to_string();
+    }
+
+    let bare = host.trim_matches(|c| c == '[' || c == ']');
     if is_ipv4_literal(bare) {
         return bare.to_string();
     }
     if bare.contains(':') {
+        // Unbracketed IPv6 (no port form handled above only for single-colon host:port).
+        if host.starts_with('[') {
+            return host.to_string();
+        }
         return format!("[{bare}]");
     }
     bare.to_string()
@@ -344,5 +396,27 @@ mod tests {
             normalize_rewrite_url("https://relay.example.com"),
             "https://relay.example.com/mxdeliv"
         );
+    }
+
+    #[test]
+    fn ipv4_with_port_not_wrapped_as_ipv6() {
+        assert_eq!(mxdeliv_host_for_url("127.0.0.1:19080"), "127.0.0.1:19080");
+        assert_eq!(mxdeliv_host_for_url("127.0.0.1"), "127.0.0.1");
+        assert_eq!(mxdeliv_host_for_url("2001:db8::1"), "[2001:db8::1]");
+    }
+
+    #[test]
+    fn host_port_forms_for_exchanger_and_dns() {
+        assert_eq!(mxdeliv_host_for_url("localhost:19080"), "localhost:19080");
+        assert_eq!(
+            mxdeliv_host_for_url("relay.example:19080"),
+            "relay.example:19080"
+        );
+        assert_eq!(mxdeliv_host_for_url("[127.0.0.1]:19080"), "127.0.0.1:19080");
+        assert_eq!(
+            mxdeliv_host_for_url("[2001:db8::1]:19080"),
+            "[2001:db8::1]:19080"
+        );
+        assert_eq!(mxdeliv_host_for_url("[127.0.0.1]"), "127.0.0.1");
     }
 }

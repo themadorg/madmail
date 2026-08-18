@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 axum = { workspace = true }
+chatmail-auth = { workspace = true }
 chatmail-db = { workspace = true }
 chatmail-pgp = { workspace = true }
 chatmail-state = { workspace = true }

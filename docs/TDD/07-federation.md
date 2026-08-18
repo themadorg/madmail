@@ -76,6 +76,16 @@ Used to:
 
 CLI: [`madmail endpoint-cache set`](../guide/cli/endpoint-cache-set.md) (alias `dns-cache`); federation policy: [`madmail federation`](../guide/cli/federation.md) including `dismiss` / `undismiss` for silent-dismiss cache (`chatmail-state::silent_dismiss`)
 
+### TARGET_HOST parsing (`chatmail-delivery::transport`)
+
+- Full URL (`http://…` / `https://…`) → `FederationTarget::MxdelivUrl` (optional path; defaults to `/mxdeliv`).
+- Hostname / bare IPv4 / `ipv4:port` → `FederationTarget::Host` → `https://{host}/mxdeliv` then HTTP.
+- **IPv4 with port** must stay as `a.b.c.d:port` (not wrapped as `[a.b.c.d:port]`). See [problems/federation-ip-normalize-and-endpoint-port.md](../problems/federation-ip-normalize-and-endpoint-port.md).
+
+### Inbound address normalize (`chatmail-fed::mxdeliv`)
+
+Envelope `X-Mail-From` / `X-Mail-To` are normalized (case-fold localpart + `wrap_ip_domain`) before policy, account lookup, and maildir delivery so `user@1.2.3.4` matches registered `user@[1.2.3.4]`.
+
 ## FederationTracker (In-Memory)
 Critical for diagnostics:
 - Per-domain queue depth
