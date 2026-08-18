@@ -402,10 +402,7 @@ mod tests {
     fn ipv4_with_port_not_wrapped_as_ipv6() {
         assert_eq!(mxdeliv_host_for_url("127.0.0.1:19080"), "127.0.0.1:19080");
         assert_eq!(mxdeliv_host_for_url("127.0.0.1"), "127.0.0.1");
-        assert_eq!(
-            mxdeliv_host_for_url("2001:db8::1"),
-            "[2001:db8::1]"
-        );
+        assert_eq!(mxdeliv_host_for_url("2001:db8::1"), "[2001:db8::1]");
     }
 
     #[test]
@@ -415,10 +412,7 @@ mod tests {
             mxdeliv_host_for_url("relay.example:19080"),
             "relay.example:19080"
         );
-        assert_eq!(
-            mxdeliv_host_for_url("[127.0.0.1]:19080"),
-            "127.0.0.1:19080"
-        );
+        assert_eq!(mxdeliv_host_for_url("[127.0.0.1]:19080"), "127.0.0.1:19080");
         assert_eq!(
             mxdeliv_host_for_url("[2001:db8::1]:19080"),
             "[2001:db8::1]:19080"
