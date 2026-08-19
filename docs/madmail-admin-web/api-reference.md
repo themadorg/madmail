@@ -14,6 +14,7 @@ From `src/lib/pageRefresh.ts` — used for prefetch and header **Refresh**:
 | `/accounts/blocked`, `/accounts/tokens` | `loadAccountsSection()` |
 | `/federation`, `/federation/traffic` | `loadFederationSection()` |
 | `/federation/endpoints` | `loadFederationSection()` + `loadEndpointOverrides()` |
+| `/federation/dkim` | `loadFederationSection()` + `loadDkim()` |
 | `/federation/exchangers` | `loadFederationSection()` + `loadExchangers()` |
 | `/notice` | `loadOverview({ force: true })` |
 
@@ -91,6 +92,9 @@ From `src/lib/pageRefresh.ts` — used for prefetch and header **Refresh**:
 | `/admin/federation/rules` | DELETE | `{ "domain" }` | Rules, traffic |
 | `/admin/federation/servers` | GET | — | Federation layout, traffic |
 | `/admin/dns` | GET | — | Endpoints |
+| `/admin/dkim` | GET | — | Federation DKIM (`api.dkim`) — selector, `d=`, TXT to publish |
+| `/admin/dkim/check` | GET | — | Federation DKIM (`api.dkimCheck`) — DNS vs local TXT |
+| `/admin/dkim/status` | GET | — | Federation DKIM (`api.dkimStatus`) — local key + DNS |
 | `/admin/dns` | POST | `{ "lookup_key", "target_host", "comment"? }` | Endpoints |
 | `/admin/dns` | DELETE | `{ "lookup_key" }` | Endpoints |
 | `/admin/exchangers` | GET | — | Exchangers |
@@ -135,4 +139,4 @@ These exist in `src/lib/api.ts` but have no page wired up yet:
 - `store.toggleTokenRequired` → `POST /admin/settings/registration_token_required`
 - `api.restart` → `POST /admin/restart`
 
-Madmail server may also implement resources not used by this SPA (e.g. `/admin/message-size`, `/admin/federation-size`, `/admin/federation/silent-dismiss`, `/admin/shares`). See [`docs/TDD/09-admin-api.md`](../TDD/09-admin-api.md).
+Madmail server may also implement resources not used by this SPA (e.g. `/admin/message-size`, `/admin/federation/silent-dismiss`, `/admin/shares`). See [`docs/TDD/09-admin-api.md`](../TDD/09-admin-api.md).

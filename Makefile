@@ -5,7 +5,7 @@
 
 .PHONY: all init build build-admin-web build-chatmail-embed build-chatmail-embed-release build-with-admin-web build-release build-profiling build-release-static build-workspace build-all build-landing preview-landing \
 	test test-unit test-integration test-e2e test-maintenance test-imap test-turn test-core-turn test-deltachat test-deltachat-cmlxc test-mini-cmlxc test-full-cmlxc test-cmlxc-fullrun test-cmlxc-fullrun-madmail _test-cmlxc-prereqs t1-bench t1-report-demo \
-	check vet lint fmt fmt-check cov run run-bg run-debug restart stop logs reset-db dev-certs clean help \
+	check vet lint fmt fmt-check cov run run-bg run-debug ensure-dev-config restart stop logs reset-db dev-certs clean help \
 	sign push push1 push2 log1 log2 push-signed publish init-publish build-publish \
 	build-windows build-windows-amd64 build-windows-arm64 build-windows-setup \
 	windows-vagrant-up windows-vagrant-e2e \
@@ -320,11 +320,19 @@ docker-down:
 
 test: test-unit
 
+# Seed ./data/chatmail.toml so `make run` does not bind production :25 (needs root).
+ensure-dev-config:
+	@mkdir -p $(STATE_DIR)
+	@if [ ! -f $(CONFIG) ]; then \
+		cp chatmail.toml.example $(CONFIG); \
+		echo "Wrote $(CONFIG) (unprivileged ports: SMTP 2525, IMAP 1143, submission 1025, HTTP 8080)"; \
+	fi
+
 # ── Run local server ─────────────────────────────────────────────────────────
-run: build
+run: build ensure-dev-config
 	$(BINARY_DEBUG) $(CHATMAIL_FLAGS)
 
-run-debug: build
+run-debug: build ensure-dev-config
 	$(BINARY_DEBUG) $(CHATMAIL_FLAGS) --debug
 
 # Self-signed cert for local IMAP/SMTP TLS (127.0.0.1)
@@ -342,8 +350,8 @@ dev-certs:
 		echo "Dev TLS certs already in $(STATE_DIR)/certs"; \
 	fi
 
-# Background dev server (HTTP 8080; mail 993/143/465/587 — Madmail defaults, see `make dev-certs`)
-run-bg: build
+# Background dev server (HTTP 8080; mail 2525/1143/1025 from chatmail.toml.example)
+run-bg: build ensure-dev-config
 	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
 		echo "madmail already running (pid $$(cat $(PID_FILE)))"; \
 	else \

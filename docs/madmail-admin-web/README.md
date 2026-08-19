@@ -18,6 +18,7 @@ The app is a **SvelteKit** single-page application embedded into the madmail bin
 | `/federation` | Federation → Rules | [08-federation-rules.md](08-federation-rules.md) |
 | `/federation/traffic` | Federation → Peers | [09-federation-traffic.md](09-federation-traffic.md) |
 | `/federation/endpoints` | Federation → DNS | [10-federation-endpoints.md](10-federation-endpoints.md) |
+| `/federation/dkim` | Federation → DKIM | [13-federation-dkim.md](13-federation-dkim.md) |
 | `/federation/exchangers` | Federation → Exchangers | [11-federation-exchangers.md](11-federation-exchangers.md) |
 | `/notice` | Notice | [12-notice.md](12-notice.md) |
 
@@ -82,7 +83,7 @@ Backend resource implementations: `crates/chatmail-admin/src/resources/`. TDD re
 
 ### Routes (complete)
 
-All **12 SvelteKit routes** under `src/routes/` are documented. There are no hidden or dynamic routes beyond the federation/accounts sub-paths listed above.
+All **13 SvelteKit routes** under `src/routes/` are documented. There are no hidden or dynamic routes beyond the federation/accounts sub-paths listed above.
 
 | Route file | Documented |
 |------------|------------|
@@ -99,6 +100,7 @@ All **12 SvelteKit routes** under `src/routes/` are documented. There are no hid
 | `federation/+page.svelte` | [08-federation-rules.md](08-federation-rules.md) |
 | `federation/traffic/+page.svelte` | [09-federation-traffic.md](09-federation-traffic.md) |
 | `federation/endpoints/+page.svelte` | [10-federation-endpoints.md](10-federation-endpoints.md) |
+| `federation/dkim/+page.svelte` | [13-federation-dkim.md](13-federation-dkim.md) |
 | `federation/exchangers/+page.svelte` | [11-federation-exchangers.md](11-federation-exchangers.md) |
 | `notice/+page.svelte` | [12-notice.md](12-notice.md) |
 
@@ -122,7 +124,6 @@ These are not separate routes but are part of the app:
 The server may expose endpoints the dashboard does not call yet, including:
 
 - `GET/PUT/DELETE /admin/message-size`
-- `GET/PUT/DELETE /admin/federation-size`
 - `/admin/federation/silent-dismiss`
 - `/admin/shares`
 - `GET /admin/notice` (SPA only POSTs)

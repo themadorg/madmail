@@ -61,6 +61,9 @@ Madmail-compatible JSON-RPC admin API. Full operator reference: [`context/madmai
 | `/admin/blocklist` | GET, POST, DELETE | Implemented |
 | `/admin/quota` | GET, PUT, DELETE | Implemented |
 | `/admin/dns` | GET, POST, DELETE | Implemented (`dns_overrides`) |
+| `/admin/dkim` | GET | Implemented — outbound federation DKIM (`default._domainkey`); same payload as `madmail dkim show`; creates key if missing |
+| `/admin/dkim/check` | GET | Implemented — DNS TXT vs local key (`madmail dkim check`) |
+| `/admin/dkim/status` | GET | Implemented — local key + DNS (`madmail dkim status`; does not create a key) |
 | `/admin/exchangers` | GET, POST, PUT, DELETE | Implemented |
 | `/admin/settings` | GET | Implemented (Madmail `AllSettingsResponse` shape) |
 | `/admin/settings/*` | GET, POST | Implemented (ports, paths, language, security, …) |
@@ -76,6 +79,41 @@ Madmail-compatible JSON-RPC admin API. Full operator reference: [`context/madmai
 | `/admin/message-size` | GET, PUT, DELETE | Implemented — effective cap (`appendlimit` ∧ `max_message_size`) |
 | `/admin/federation-size` | GET, PUT, DELETE | Implemented — `/mxdeliv` HTTP body cap (default **70M**); PUT/DELETE trigger HTTP routes reload |
 | `/admin/registration-token` | GET, POST, DELETE | Implemented — registration token CRUD |
+
+Toggle POST body: `{"action": "enable"}` or `{"action": "disable"}`.
+
+### `/admin/dkim`
+
+`GET` returns the publishable outbound federation DKIM record (selector `default`). Same object as `madmail dkim show --json` `data`. Creates `{state_dir}/dkim/default.private` when missing and the mail domain is a DNS name. IP-literal domains return `publishable: false`, `txt: null`, and `reason` (no key written).
+
+```json
+{
+  "selector": "default",
+  "domain": "example.org",
+  "dns_name": "default._domainkey",
+  "dns_fqdn": "default._domainkey.example.org",
+  "private_key_path": "/var/lib/madmail/dkim/default.private",
+  "txt_path": "/var/lib/madmail/dkim/default.txt",
+  "txt": "v=DKIM1; k=rsa; p=…",
+  "key_present": true,
+  "generated": false,
+  "publishable": true
+}
+```
+
+Other methods: HTTP 405.
+
+### `/admin/dkim/check`
+
+`GET` looks up `default._domainkey.<domain>` and compares it to the local TXT (`madmail dkim check`). Body includes `matched`, `checked`, `expected_txt`, `dns_txt`. IP-literal domains return `checked: false`.
+
+Other methods: HTTP 405.
+
+### `/admin/dkim/status`
+
+`GET` summarizes local key presence and DNS match (`madmail dkim status`). Does not create a key. Body includes `key_present`, `publishable`, `dns_checked`, `dns_matched`.
+
+Other methods: HTTP 405.
 
 Toggle POST body: `{"action": "enable"}` or `{"action": "disable"}`.
 
@@ -213,6 +251,9 @@ Push UI: overview card + services row — toggle (`auto`/`disable`), successful-
 | `/admin/federation/silent-dismiss` | `madmail federation dismiss` | [federation.md](../guide/cli/federation.md) |
 | `/admin/registration-token` | `madmail registration-tokens` | [registration-tokens.md](../guide/cli/registration-tokens.md) |
 | `/admin/dns` | `madmail endpoint-cache` | [endpoint-cache.md](../guide/cli/endpoint-cache.md) |
+| `/admin/dkim` | `madmail dkim show` | [dkim.md](../guide/cli/dkim.md) |
+| `/admin/dkim/check` | `madmail dkim check` | [dkim-check.md](../guide/cli/dkim-check.md) |
+| `/admin/dkim/status` | `madmail dkim status` | [dkim-status.md](../guide/cli/dkim-status.md) |
 | `/admin/blocklist` | `madmail blocklist` | [blocklist.md](../guide/cli/blocklist.md) |
 | `/admin/accounts` | `madmail accounts` | [accounts.md](../guide/cli/accounts.md) |
 | `/admin/services/push` | `madmail push` | [push.md](../guide/cli/push.md) |

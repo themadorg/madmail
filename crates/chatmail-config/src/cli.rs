@@ -131,7 +131,7 @@ pub enum Command {
     /// Federation policy and rules management.
     #[command(subcommand)]
     Federation(FederationCommand),
-    /// Print outbound DKIM selector, signing domain, and the TXT to publish.
+    /// Print, check, or summarize outbound DKIM (selector, `d=`, TXT, DNS).
     #[command(subcommand_required = false)]
     Dkim {
         #[command(subcommand)]
@@ -350,6 +350,10 @@ pub enum CompletionShell {
 pub enum DkimCommand {
     /// Print selector, `d=`, key paths, and the TXT to publish (default).
     Show,
+    /// Look up `default._domainkey` in DNS and compare it to the local TXT.
+    Check,
+    /// Summarize local key presence and whether DNS matches (no key is created).
+    Status,
 }
 
 /// `madmail iroh` — Iroh relay + IMAP METADATA discovery (`__IROH_*__`).
@@ -1361,6 +1365,20 @@ mod tests {
             cli.command,
             Some(Command::Dkim {
                 cmd: Some(DkimCommand::Show)
+            })
+        ));
+        let cli = Cli::try_parse_from(["madmail", "dkim", "check"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Dkim {
+                cmd: Some(DkimCommand::Check)
+            })
+        ));
+        let cli = Cli::try_parse_from(["madmail", "dkim", "status"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Dkim {
+                cmd: Some(DkimCommand::Status)
             })
         ));
     }

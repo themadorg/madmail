@@ -22,6 +22,8 @@ Common forms:
 
 *madmail* *admin-token* [*--raw*]
 
+*madmail* *dkim* [*show*|*check*|*status*]
+
 # DESCRIPTION
 
 *madmail* is a single executable that runs a Chatmail mail server (SMTP,
@@ -126,8 +128,9 @@ Extended documentation:
 
 *dkim*
 	Print outbound federation DKIM selector, signing domain, and the
-	TXT to publish at *default.\_domainkey* (*show*; default). Creates
-	the key if missing so existing hosts can publish before first send.
+	TXT to publish at *default.\_domainkey* (*show*; default). *check*
+	looks up that TXT in DNS and compares it to the local key. *status*
+	summarizes local key presence and DNS match without creating a key.
 
 *endpoint\-cache* (*dns\-cache*)
 	Outbound delivery DNS override cache.
@@ -340,9 +343,11 @@ Enable Iroh on an existing install:
 	madmail iroh status
 	madmail reload
 
-Print the DKIM TXT to publish at *default.\_domainkey*:
+Print the DKIM TXT to publish at *default.\_domainkey*, then verify DNS:
 
 	madmail dkim show
+	madmail dkim check
+	madmail dkim status
 
 # NOTES
 

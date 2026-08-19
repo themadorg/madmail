@@ -824,6 +824,20 @@ fn cli_language_and_registration_parse() {
             cmd: Some(DkimCommand::Show)
         })
     ));
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["dkim", "check"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Dkim {
+            cmd: Some(DkimCommand::Check)
+        })
+    ));
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["dkim", "status"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Dkim {
+            cmd: Some(DkimCommand::Status)
+        })
+    ));
 
     let cli = parse_cli(std::path::Path::new("/tmp"), &["iroh", "status"]);
     assert!(matches!(

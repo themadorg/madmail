@@ -371,3 +371,76 @@ fn e2e_ctl_dkim_show_json() {
     assert!(std::path::Path::new(private).is_file());
     assert!(std::path::Path::new(txt_path).is_file());
 }
+
+#[test]
+fn e2e_ctl_dkim_check_json_skips_ip() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path();
+    let config = state.join("madmail.conf");
+    std::fs::write(&config, "hostname 203.0.113.10\n$(primary_domain) = 203.0.113.10\n")
+        .expect("write dkim check config");
+
+    let out = chatmail()
+        .args([
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "check",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let envelope: Value = serde_json::from_slice(&out).expect("dkim check --json stdout");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "dkim check");
+    let data = &envelope["data"];
+    assert_eq!(data["checked"], false);
+    assert_eq!(data["matched"], false);
+    assert!(data["reason"].as_str().unwrap().contains("IP literal"));
+}
+
+#[test]
+fn e2e_ctl_dkim_status_json_missing_key() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path();
+    let config = state.join("madmail.conf");
+    std::fs::write(
+        &config,
+        "hostname mail.example.org\n$(primary_domain) = example.org\n",
+    )
+    .expect("write dkim status config");
+
+    let out = chatmail()
+        .args([
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "status",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let envelope: Value = serde_json::from_slice(&out).expect("dkim status --json stdout");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "dkim status");
+    let data = &envelope["data"];
+    assert_eq!(data["selector"], "default");
+    assert_eq!(data["domain"], "example.org");
+    assert_eq!(data["key_present"], false);
+    assert_eq!(data["publishable"], false);
+    assert_eq!(data["dns_checked"], false);
+    assert_eq!(data["generated"], false);
+    assert!(!state.join("dkim/default.private").is_file());
+}

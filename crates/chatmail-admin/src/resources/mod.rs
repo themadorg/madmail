@@ -17,6 +17,7 @@
 
 mod accounts;
 mod blocklist;
+mod dkim;
 mod dns;
 mod exchangers;
 mod federation;
@@ -116,6 +117,9 @@ pub async fn dispatch(st: &AdminState, method: &str, resource: &str, body: &Valu
         "/admin/quota" => quota::quota(st, method, body).await,
         "/admin/message-size" => message_size::message_size(st, method, body).await,
         "/admin/federation-size" => federation_size::federation_size(st, method, body).await,
+        "/admin/dkim" => dkim::dkim(st, method).await,
+        "/admin/dkim/check" => dkim::dkim_check(st, method).await,
+        "/admin/dkim/status" => dkim::dkim_status(st, method).await,
         "/admin/dns" => dns::dns(st, method, body).await,
         "/admin/exchangers" => exchangers::exchangers(st, method, body).await,
         "/admin/registration-token" => tokens::registration_token(st, method, body).await,
