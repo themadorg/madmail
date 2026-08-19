@@ -1,3 +1,15 @@
+# [2.24.0](https://github.com/themadorg/madmail/compare/v2.23.4...v2.24.0) (2026-08-19)
+
+
+### Bug Fixes
+
+* **federation:** DKIM-sign outbound /mxdeliv and SMTP fallback ([4c6e456](https://github.com/themadorg/madmail/commit/4c6e45600baf4ccf75eb4c5d887cb31af574281f)), closes [#146](https://github.com/themadorg/madmail/issues/146)
+
+
+### Features
+
+* **cli:** add madmail dkim show for the publishable TXT ([61e4015](https://github.com/themadorg/madmail/commit/61e40150e1711fe81f5773c88ee56cf4dbc12d68))
+
 ## [2.23.4](https://github.com/themadorg/madmail/compare/v2.23.3...v2.23.4) (2026-08-18)
 
 
