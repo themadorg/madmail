@@ -63,6 +63,13 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
 
     ctx.state.federation_tracker.increment_queue(&domain);
 
+    let signed = federated_rfc822(ctx, job).await;
+    let job = OutboundJob {
+        mail_from: job.mail_from.clone(),
+        rcpt_to: job.rcpt_to.clone(),
+        data: signed,
+    };
+
     let target = resolve_federation_target(ctx, &domain).await;
     let client = federation_http_client();
     // HELO/EHLO must identify *this* server, not the remote MX host.
@@ -71,7 +78,7 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
     let http_reason = match &target {
         FederationTarget::MxdelivUrl(url) => {
             debug!(%url, rcpt = %job.rcpt_to, "federation: endpoint rewrite URL");
-            match try_mxdeliv_url(client, url, job).await {
+            match try_mxdeliv_url(client, url, &job).await {
                 Ok(method) => {
                     record_success(ctx, &domain, method);
                     return DeliveryOutcome::Success;
@@ -94,7 +101,7 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
         }
         FederationTarget::Host(host) => {
             debug!(%host, rcpt = %job.rcpt_to, "federation: resolved host");
-            match try_mxdeliv_host(client, host, job).await {
+            match try_mxdeliv_host(client, host, &job).await {
                 Ok(method) => {
                     record_success(ctx, &domain, method);
                     return DeliveryOutcome::Success;
@@ -119,7 +126,7 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
             host_from_mxdeliv_url(url).unwrap_or_else(|| domain.clone())
         }
     };
-    match crate::federation_smtp::deliver(&smtp_host, job, &helo).await {
+    match crate::federation_smtp::deliver(&smtp_host, &job, &helo).await {
         Ok(()) => {
             record_success(ctx, &domain, "SMTP");
             DeliveryOutcome::Success
@@ -136,6 +143,14 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
                 reason: format!("federation failed (http: {http_reason}; smtp: {e})"),
             }
         }
+    }
+}
+
+/// Sign at send time so queued bytes stay unsigned and retries pick up a fresh `t=`.
+async fn federated_rfc822(ctx: &DeliveryContext, job: &OutboundJob) -> Vec<u8> {
+    match &ctx.dkim {
+        Some(signer) => signer.sign_message(&job.data, &job.mail_from).await,
+        None => job.data.clone(),
     }
 }
 

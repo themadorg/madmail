@@ -65,7 +65,7 @@ Set reasonable default quotas and consider enabling automatic deletion of old re
 - Port **25** blocked when delivery falls back to SMTP (many VPS providers block it).
 - The other server is temporarily unreachable or misconfigured.
 
-**Unlikely:** missing SPF, DKIM TXT, or DMARC records — chatmail-to-chatmail delivery uses HTTP `/mxdeliv` and PGP, not those DNS records. See [DNS and Mail Authentication](./12-dns-mail-auth.md).
+**cmdeploy / `554 5.7.1 No DKIM signature found`:** Madmail must sign outbound federation (fixed in #146). Run **`madmail dkim show`** and publish the printed TXT at `default._domainkey`. Same-stack Madmail↔Madmail does not require that TXT. See [DNS and Mail Authentication](./12-dns-mail-auth.md).
 
 In most cases messages will eventually go through via the SMTP fallback if HTTPS is blocked — but fixing **443** is the right first step between chatmail relays.
 

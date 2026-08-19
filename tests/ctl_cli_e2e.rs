@@ -316,3 +316,58 @@ fn e2e_version_repairs_0700_through_symlink() {
         "version must chmod symlink target to 0755 (#147), got {mode:#o}"
     );
 }
+
+#[test]
+fn e2e_ctl_dkim_show_json() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path();
+    let config = state.join("madmail.conf");
+    std::fs::write(
+        &config,
+        "hostname mail.example.org\n$(primary_domain) = example.org\n",
+    )
+    .expect("write dkim e2e config");
+
+    let out = chatmail()
+        .args([
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "show",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let envelope: Value = serde_json::from_slice(&out).expect("dkim show --json stdout");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "dkim show");
+    let data = &envelope["data"];
+    assert_eq!(data["selector"], "default");
+    assert_eq!(data["domain"], "example.org");
+    assert_eq!(data["dns_name"], "default._domainkey");
+    assert_eq!(data["dns_fqdn"], "default._domainkey.example.org");
+    assert_eq!(data["publishable"], true);
+    assert_eq!(data["key_present"], true);
+    assert_eq!(data["generated"], true);
+    let txt = data["txt"].as_str().expect("txt");
+    assert!(
+        txt.starts_with("v=DKIM1; k=rsa; p="),
+        "unexpected TXT: {txt}"
+    );
+    assert!(
+        !txt.contains('\n'),
+        "TXT must be a single line for DNS publish"
+    );
+    let private = data["private_key_path"].as_str().expect("private_key_path");
+    let txt_path = data["txt_path"].as_str().expect("txt_path");
+    assert!(private.ends_with("dkim/default.private"));
+    assert!(txt_path.ends_with("dkim/default.txt"));
+    assert!(std::path::Path::new(private).is_file());
+    assert!(std::path::Path::new(txt_path).is_file());
+}

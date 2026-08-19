@@ -21,10 +21,11 @@ use chatmail_types::{ChatmailError, Result};
 use chatmail_db::settings_keys;
 
 use super::{
-    accounts, admin_token, admin_web, blocklist_cmd, certificate, delete_cmd, docs, endpoint_cache,
-    federation, firewall_cmd, html, install, iroh, language, message_size, openrelay, port, proxy,
-    push, queue_cmd, registration, registration_tokens, reload, service_cmd, service_toggle,
-    sharing, status_cmd, tasks, uninstall, version, versions_cmd, webmail_cors,
+    accounts, admin_token, admin_web, blocklist_cmd, certificate, delete_cmd, dkim, docs,
+    endpoint_cache, federation, firewall_cmd, html, install, iroh, language, message_size,
+    openrelay, port, proxy, push, queue_cmd, registration, registration_tokens, reload,
+    service_cmd, service_toggle, sharing, status_cmd, tasks, uninstall, version, versions_cmd,
+    webmail_cors,
 };
 
 pub async fn dispatch(cli: &Cli) -> Result<()> {
@@ -105,6 +106,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::Proxy { cmd }) => proxy::proxy(&cli.args, cmd.as_ref()).await,
         Some(Command::Iroh { cmd }) => iroh::iroh(&cli.args, cmd.as_ref()).await,
         Some(Command::Federation(cmd)) => federation::federation(&cli.args, cmd).await,
+        Some(Command::Dkim { cmd }) => dkim::dkim(&cli.args, cmd.as_ref()).await,
         Some(Command::RegistrationTokens(cmd)) => {
             registration_tokens::registration_tokens(&cli.args, cmd).await
         }
@@ -136,7 +138,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, openrelay, language, \
          html-export, html-serve, html-migrate, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
-         status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, reload, message-size, tasks, queue, versions, completion"
+         status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, dkim, reload, message-size, tasks, queue, versions, completion"
     )))
 }
 
@@ -157,6 +159,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::EndpointCache(_) => "endpoint-cache",
         Command::Exchanger => "exchanger",
         Command::Federation { .. } => "federation",
+        Command::Dkim { .. } => "dkim",
         Command::Hash => "hash",
         Command::HtmlExport { .. } => "html-export",
         Command::HtmlServe { .. } => "html-serve",

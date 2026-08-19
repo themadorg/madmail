@@ -139,6 +139,7 @@ impl ServerSupervisor {
             state: Arc::clone(&app),
             primary_domain: primary_domain.clone(),
             local_domains: local_domains.clone(),
+            dkim: None,
         };
         let queue = start_outbound_queue(delivery, state_dir, &file_config.queue).await?;
         if file_config.debug {

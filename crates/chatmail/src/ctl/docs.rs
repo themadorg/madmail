@@ -311,6 +311,15 @@ mod tests {
     }
 
     #[test]
+    fn bash_completion_includes_dkim_subcommand() {
+        let script = bash_completion("madmail").unwrap();
+        assert!(
+            script.contains("dkim"),
+            "bash completion should list dkim subcommand"
+        );
+    }
+
+    #[test]
     fn bash_completion_prefix_pr_matches_proxy() {
         let script = bash_completion("madmail").unwrap();
         let dir = tempfile::tempdir().expect("tempdir");

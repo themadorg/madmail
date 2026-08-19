@@ -10,7 +10,7 @@ For TLS-only deployment choices (IP vs domain, autocert vs self-signed), see [De
 
 1. **Obtains a Let's Encrypt certificate** — HTTP-01 on port 80; needs an **`A` or `AAAA`** record for the hostname before install.
 2. **Writes server identity** — `primary_domain`, `hostname`, and `chatmail { … }` blocks in `madmail.conf`.
-3. **Generates DKIM signing keys** — stored under `/var/lib/madmail/` (or your `--state-dir`). Outbound submission is configured to sign with selector **`default`**.
+3. **Generates DKIM signing keys** — `{state_dir}/dkim/default.private` (0600) and `default.txt` (the TXT value). Selector **`default`**. The same key signs **federation** `/mxdeliv` and SMTP fallback, not only a theoretical SMTP modify pipeline.
 
 It does **not** create SPF, DKIM, or DMARC records in your DNS zone. You add those in your registrar or DNS panel if you want them.
 
@@ -60,10 +60,10 @@ Selector name: **`default`**. Keys live in your state directory (e.g. `/var/lib/
 
 To publish DKIM:
 
-1. Locate the public key file madmail created (under the state dir; exact path depends on the maddy-style DKIM module layout).
-2. Add a **`TXT`** record at `default._domainkey.example.org` with the standard `v=DKIM1; k=rsa; p=…` form (single string, no line breaks in DNS).
+1. On the server, run **`madmail dkim show`**. That prints the selector, `d=`, file paths, and the single-line TXT. If the key is not there yet (upgraded 2.18.x host), this command creates it — you do not have to send mail first.
+2. Add a **`TXT`** record at `default._domainkey.example.org` with that string (`v=DKIM1; k=rsa; p=…`, no line breaks).
 
-There is not yet a `madmail dkim show` command to print the ready-to-paste TXT line — that is on the roadmap. Until then, inspect the key material in the state directory or use your DNS provider's DKIM helper if it can import a PEM public key.
+Scripts can use `madmail dkim show --json` and read `data.txt` / `data.dns_fqdn`.
 
 ## Federation vs SMTP authentication
 
@@ -77,11 +77,12 @@ Fallback order: HTTPS → HTTP → SMTP (port 25).
 
 On the `/mxdeliv` path:
 
-- **PGP encryption** is enforced — not DKIM/SPF/DMARC.
+- **PGP encryption** is enforced on Madmail inbound.
+- **Outbound** Madmail adds a DKIM signature (selector `default`) so **cmdeploy** peers do not return `400` / `554 5.7.1 No DKIM signature found`.
 - **TLS certificate trust between relays is not required** (self-signed certs are normal).
-- Inbound checks for `dkim` / `spf` / `dmarc` in `madmail.conf` apply to mail arriving on **SMTP port 25**, not to `/mxdeliv`.
+- Inbound `dkim` / `spf` / `dmarc` checks in `madmail.conf` apply to mail arriving on **SMTP port 25**, not to Madmail `/mxdeliv`.
 
-So missing SPF, DKIM TXT, or DMARC records is **unlikely** to explain federation failures between chatmail servers. Look at DNS reachability, firewalls, and federation policy first.
+Missing **DKIM TXT** can still fail **cmdeploy verification** after a signature is present. Publish `default._domainkey`. SPF/DMARC remain optional for chatmail-to-chatmail HTTP.
 
 More detail: [Sending, Receiving, and Federation](./05-sending-receiving-and-federation.md) and [Troubleshooting](./10-troubleshooting.md).
 
@@ -103,6 +104,7 @@ On the server:
 ```bash
 madmail status
 madmail federation list
+madmail dkim show
 ```
 
 Use the admin web UI **Federation** section for per-peer success rate, latency, and queue depth.

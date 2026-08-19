@@ -272,7 +272,7 @@ Before going live, confirm:
 | Type | Name | Example |
 |------|------|---------|
 | `TXT` (SPF) | `@` | `v=spf1 mx a -all` |
-| `TXT` (DKIM) | `default._domainkey` | public key for selector `default` (keys generated under `/var/lib/madmail/`) |
+| `TXT` (DKIM) | `default._domainkey` | public key for selector `default` (`madmail dkim show`) |
 | `TXT` (DMARC) | `_dmarc` | `v=DMARC1; p=none; rua=mailto:admin@example.org` |
 
 `madmail install --domain` obtains TLS and creates DKIM signing keys; it does not publish these TXT records. Full operator guide (native and Docker): [DNS and Mail Authentication](../project/user-guide/12-dns-mail-auth.md).

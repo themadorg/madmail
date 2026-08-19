@@ -124,6 +124,11 @@ Extended documentation:
 *federation*
 	Federation policy, domain rules, and silent\-dismiss lists.
 
+*dkim*
+	Print outbound federation DKIM selector, signing domain, and the
+	TXT to publish at *default.\_domainkey* (*show*; default). Creates
+	the key if missing so existing hosts can publish before first send.
+
 *endpoint\-cache* (*dns\-cache*)
 	Outbound delivery DNS override cache.
 
@@ -165,7 +170,7 @@ Extended documentation:
 	Iroh relay and IMAP discovery (*status*, *install*, *enable*,
 	*disable*). *install* adds *iroh_relay_url* to the config when
 	missing (same idea as *install --enable-iroh*). Runtime toggle is
-	*__IROH_ENABLED__*. Port / local-only use *port iroh*.
+	*\_\_IROH\_ENABLED\_\_*. Port / local-only use *port iroh*.
 	Run *reload* after changes to apply to a running server.
 
 *webimap*, *websmtp*
@@ -334,6 +339,10 @@ Enable Iroh on an existing install:
 	madmail iroh install
 	madmail iroh status
 	madmail reload
+
+Print the DKIM TXT to publish at *default.\_domainkey*:
+
+	madmail dkim show
 
 # NOTES
 

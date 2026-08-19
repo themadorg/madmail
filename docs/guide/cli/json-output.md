@@ -547,6 +547,29 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
 }
 ```
 
+### `dkim show`
+
+```json
+{
+  "ok": true,
+  "command": "dkim show",
+  "data": {
+    "selector": "default",
+    "domain": "example.org",
+    "dns_name": "default._domainkey",
+    "dns_fqdn": "default._domainkey.example.org",
+    "private_key_path": "/var/lib/madmail/dkim/default.private",
+    "txt_path": "/var/lib/madmail/dkim/default.txt",
+    "txt": "v=DKIM1; k=rsa; p=MIIBIjANBgkqh…",
+    "key_present": true,
+    "generated": false,
+    "publishable": true
+  }
+}
+```
+
+`generated` is `true` when this invocation created the key. IP-literal mail domains return `publishable: false`, `txt: null`, and a `reason` string (no key is written).
+
 ### `federation list`
 
 ```json

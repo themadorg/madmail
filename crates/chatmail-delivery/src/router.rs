@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::dkim::{DkimSigner, DKIM_SELECTOR};
 use chatmail_auth::normalize_username;
 use chatmail_config::QueueSettings;
 use chatmail_db::DbPool;
@@ -41,6 +42,8 @@ pub struct DeliveryContext {
     pub primary_domain: String,
     /// All domains accepted for local delivery (`$(local_domains)` + forms).
     pub local_domains: Vec<String>,
+    /// Outbound federation DKIM (selector `default`). `None` if key setup failed.
+    pub dkim: Option<Arc<DkimSigner>>,
 }
 
 static OUTBOUND_QUEUE: OnceCell<Arc<OutboundQueue>> = OnceCell::const_new();
@@ -51,6 +54,22 @@ pub async fn start_outbound_queue(
     state_dir: &std::path::Path,
     queue_settings: &QueueSettings,
 ) -> Result<Arc<OutboundQueue>> {
+    let mut ctx = ctx;
+    if ctx.dkim.is_none() {
+        match DkimSigner::load_or_create(state_dir, DKIM_SELECTOR, &ctx.primary_domain) {
+            Ok(signer) => {
+                info!(
+                    domain = %signer.domain,
+                    selector = %signer.selector,
+                    "DKIM signer ready for federation outbound"
+                );
+                ctx.dkim = Some(Arc::new(signer));
+            }
+            Err(e) => {
+                warn!(error = %e, "DKIM signer unavailable; federation mail will be unsigned");
+            }
+        }
+    }
     let config = QueueConfig::from_settings(state_dir, queue_settings);
     let queue = OutboundQueue::start(ctx, config).await?;
     let _ = OUTBOUND_QUEUE.set(Arc::clone(&queue));
@@ -368,6 +387,7 @@ mod tests {
             state: Arc::clone(&app),
             primary_domain: "local.test".into(),
             local_domains: local_domains.clone(),
+            dkim: None,
         };
         start_outbound_queue(
             DeliveryContext {
@@ -375,6 +395,7 @@ mod tests {
                 state: Arc::clone(&app),
                 primary_domain: "local.test".into(),
                 local_domains: local_domains.clone(),
+                dkim: None,
             },
             dir.path(),
             &QueueSettings::default(),
@@ -409,6 +430,7 @@ mod tests {
                 state: Arc::clone(&app),
                 primary_domain: "local.test".into(),
                 local_domains,
+                dkim: None,
             },
             dir.path(),
             &QueueSettings::default(),
@@ -462,6 +484,7 @@ mod tests {
                 state: Arc::clone(&app),
                 primary_domain: "local.test".into(),
                 local_domains,
+                dkim: None,
             },
             dir.path(),
             &QueueSettings::default(),
@@ -491,6 +514,7 @@ mod tests {
                 state: Arc::clone(&app),
                 primary_domain: "local.test".into(),
                 local_domains,
+                dkim: None,
             },
             dir.path(),
             &QueueSettings::default(),
@@ -529,6 +553,7 @@ mod tests {
                 state: Arc::clone(&app),
                 primary_domain: "local.test".into(),
                 local_domains,
+                dkim: None,
             },
             dir.path(),
             &QueueSettings::default(),
@@ -586,6 +611,7 @@ mod tests {
             state: Arc::clone(&app),
             primary_domain: "local.test".into(),
             local_domains,
+            dkim: None,
         };
 
         let recipients: Vec<String> = (1..=60)

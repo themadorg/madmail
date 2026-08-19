@@ -12,4 +12,10 @@ ignore = [
     # bump available yet. plist path already updated to quick-xml >= 0.41.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
+
+    # idna 0.4 Punycode-mask (CVE-2024-12224). Only via viadkim 0.2
+    # (chatmail-delivery DKIM signer). No viadkim release on idna >= 1.0.
+    # We only pass our configured ASCII d=/s= through DomainName/Selector,
+    # not untrusted hostnames. Filtermail verifies with its own viadkim.
+    "RUSTSEC-2024-0421",
 ]

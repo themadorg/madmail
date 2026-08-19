@@ -126,6 +126,7 @@ pub async fn spawn_mail_servers_opts(dir: &std::path::Path, opts: MailServersOpt
         state: Arc::clone(&ctx),
         primary_domain: "test".into(),
         local_domains: local_domains.clone(),
+        dkim: None,
     };
     start_outbound_queue(delivery, dir, &app_config.queue)
         .await
