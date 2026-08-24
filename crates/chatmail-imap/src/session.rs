@@ -1661,7 +1661,10 @@ fn fetch_response_mode(args: &str) -> FetchResponseMode {
     {
         return FetchResponseMode::Headers;
     }
-    if args.split_whitespace().any(|w| w == "RFC822") {
+    if args
+        .split_whitespace()
+        .any(|w| w.trim_matches(['(', ')']) == "RFC822")
+    {
         return FetchResponseMode::FullBody;
     }
     FetchResponseMode::Metadata
@@ -1963,6 +1966,16 @@ mod tests {
             fetch_response_mode("1 (UID RFC822.SIZE BODY.PEEK[])"),
             FetchResponseMode::FullBody
         );
+    }
+
+    #[test]
+    fn test_fetch_rfc822_is_full_body() {
+        // Clients send the item parenthesized (`FETCH 1:* (RFC822)`).
+        assert_eq!(
+            fetch_response_mode("1:* (RFC822)"),
+            FetchResponseMode::FullBody
+        );
+        assert_eq!(fetch_response_mode("1 RFC822"), FetchResponseMode::FullBody);
     }
 
     #[test]
