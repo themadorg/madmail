@@ -264,6 +264,9 @@ pub(crate) async fn find_entry(entries: &[InboxEntry], uid: u32) -> Option<Inbox
     entries.iter().find(|e| e.uid == uid).cloned()
 }
 
+// The Err variant is the very response we hand back to the client,
+// so boxing it would only add a deref at every call site.
+#[allow(clippy::result_large_err)]
 pub(crate) async fn build_detail(
     st: &WwwState,
     user: &str,

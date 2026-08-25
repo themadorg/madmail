@@ -157,6 +157,25 @@ async fn imap_e2e_fetch_header_fields_and_body() {
 }
 
 #[tokio::test]
+async fn imap_e2e_fetch_rfc822_returns_full_message() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let srv = spawn_mail_servers(dir.path()).await;
+    create_user(&srv.ctx, &srv.pool, USER, PASS).await;
+    deliver_message(&srv.ctx, USER, "m1", PGP_MIME_BODY).await;
+
+    let mut c = ImapClient::connect(srv.imap_addr).await;
+    c.command(&format!("r001 LOGIN {USER} {PASS}")).await;
+    c.command("r002 SELECT INBOX").await;
+
+    // Legacy RFC822 item is mandatory in IMAP4rev1 and equivalent to BODY[].
+    let full = c.command("r003 FETCH 1:* (RFC822)").await;
+    assert!(
+        full.contains("application/pgp-encrypted") || full.contains("multipart/encrypted"),
+        "RFC822 fetch must return the full message: {full}"
+    );
+}
+
+#[tokio::test]
 async fn imap_e2e_fetch_sequence_set() {
     let dir = tempfile::tempdir().expect("tempdir");
     let srv = spawn_mail_servers(dir.path()).await;

@@ -516,6 +516,9 @@ pub async fn websmtp_deliver(
     delivery.submit_authenticated(user, to, raw).await
 }
 
+// The Err variant is the very response we hand back to the client,
+// so boxing it would only add a deref at every call site.
+#[allow(clippy::result_large_err)]
 pub(crate) async fn webimap_authenticate(
     app: &chatmail_state::AppState,
     pool: &chatmail_db::DbPool,
