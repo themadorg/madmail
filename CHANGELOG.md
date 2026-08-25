@@ -1,3 +1,17 @@
+# [2.25.0](https://github.com/themadorg/madmail/compare/v2.24.1...v2.25.0) (2026-08-25)
+
+
+### Bug Fixes
+
+* **dkim:** bump hickory-resolver and address PR review ([26ac68f](https://github.com/themadorg/madmail/commit/26ac68f0772639b6010f43e7e207a29245aac9f6))
+* **lint:** drop broken rustdoc link in AuthCache ([ece43a9](https://github.com/themadorg/madmail/commit/ece43a9927be779bafad48f989ef6fe448b221fd))
+* **test:** use per-dir mtimes in maildir listing cache tests ([4d5bf24](https://github.com/themadorg/madmail/commit/4d5bf24c67c76cd8a99abc963f15f8271f0b2eb4))
+
+
+### Features
+
+* **dkim:** enhance DKIM functionality with check and status commands ([f24c897](https://github.com/themadorg/madmail/commit/f24c897217af8fa0bf78495049d0e89b5fb98cf9))
+
 ## [2.24.1](https://github.com/themadorg/madmail/compare/v2.24.0...v2.24.1) (2026-08-25)
 
 
