@@ -72,7 +72,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `registration-tokens` | [registration-tokens.md](../guide/cli/registration-tokens.md) | `registration_tokens.rs` | **done** |
 | `openrelay` | [openrelay.md](../guide/cli/openrelay.md) | `openrelay.rs` | **done** (`status` / `enable` / `disable`; `__ALLOW_INBOUND_REMOTE_RCPT__`) |
 | `federation` | [federation.md](../guide/cli/federation.md) | `federation.rs` | **done** (+ `dismiss`, `undismiss`, `dismiss-list`, `dismiss-flush`) |
-| `dkim` | [dkim.md](../guide/cli/dkim.md) | `dkim.rs` | **done** (`show`; `{state}/dkim/default.{private,txt}`) |
+| `dkim` | [dkim.md](../guide/cli/dkim.md) | `dkim.rs` | **done** (`show` / `check` / `status`; `{state}/dkim/default.{private,txt}`) |
 | `endpoint-cache` / `dns-cache` | [endpoint-cache.md](../guide/cli/endpoint-cache.md) | `endpoint_cache.rs` | **done** |
 | `sharing` | [sharing.md](../guide/cli/sharing.md) | `sharing.rs` | **done** |
 | `port` | [port.md](../guide/cli/port.md) | `port.rs` | **done** |
@@ -134,7 +134,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 |---------|-------|----------------|-------------|
 | `openrelay` | [openrelay.md](../guide/cli/openrelay.md) | — (v2; inbound anti open-relay) | **done** — `__ALLOW_INBOUND_REMOTE_RCPT__` / `allow_inbound_remote_rcpt` |
 | `federation` | [federation.md](../guide/cli/federation.md) | `ctl/federation.go` | **done** — includes silent dismiss (`chatmail-state::silent_dismiss`) |
-| `dkim` | [dkim.md](../guide/cli/dkim.md) | — (v2; outbound federation DKIM) | **done** — `show` prints selector / `d=` / TXT; creates key if missing |
+| `dkim` | [dkim.md](../guide/cli/dkim.md) | — (v2; outbound federation DKIM) | **done** — `show` / `check` / `status` |
 | `endpoint-cache` | [endpoint-cache.md](../guide/cli/endpoint-cache.md) | `ctl/dnscache.go` | **done** |
 | `sharing` | [sharing.md](../guide/cli/sharing.md) | `ctl/sharing.go` | **done** |
 | `port` | [port.md](../guide/cli/port.md) | `ctl/port.go` | **done** |
@@ -226,7 +226,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 - **`upgrade` / `update`:** HTTP(S) download (100 MB cap); `.tar.gz` / `.tgz` URLs extract the binary first, then signed replace.
 - **`certificate autocert`:** writes `tls_mode autocert` + `acme_email` to config; optional immediate `get` ([`certificate-autocert-enable.md`](../guide/cli/certificate-autocert-enable.md)).
 - **`federation dismiss`:** silent-dismiss cache (`chatmail-state::silent_dismiss`) — extra vs base Madmail CLI surface.
-- **`dkim show`:** print / generate outbound federation DKIM (`default._domainkey`) — extra vs base Madmail CLI surface.
+- **`dkim show` / `dkim check` / `dkim status`:** print / generate outbound federation DKIM (`default._domainkey`), verify the published TXT, or summarize without creating a key — extra vs base Madmail CLI surface.
 
 ## Related RFCs
 

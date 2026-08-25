@@ -240,7 +240,8 @@ mod tests {
 
         let cache = MaildirListCache::default();
         let gen_before = cache.generation("u@test", "INBOX");
-        let m = MaildirListCache::dir_mtime(&new_dir).await;
+        let new_mtime = MaildirListCache::dir_mtime(&new_dir).await;
+        let cur_mtime = MaildirListCache::dir_mtime(&cur_dir).await;
 
         // Delivery lands and invalidates while a concurrent list still holds gen_before.
         cache.invalidate("u@test", "INBOX");
@@ -251,8 +252,8 @@ mod tests {
             "u@test",
             "INBOX",
             gen_before,
-            m,
-            m,
+            new_mtime,
+            cur_mtime,
             vec![sample_msg("stale-only")],
         );
         assert!(
@@ -269,8 +270,8 @@ mod tests {
             "u@test",
             "INBOX",
             gen_after,
-            m,
-            m,
+            new_mtime,
+            cur_mtime,
             vec![sample_msg("fresh")],
         );
         let hit = cache
@@ -292,8 +293,16 @@ mod tests {
 
         let cache = MaildirListCache::default();
         let gen = cache.generation("u@test", "INBOX");
-        let m = MaildirListCache::dir_mtime(&new_dir).await;
-        cache.store("u@test", "INBOX", gen, m, m, vec![sample_msg("a")]);
+        let new_mtime = MaildirListCache::dir_mtime(&new_dir).await;
+        let cur_mtime = MaildirListCache::dir_mtime(&cur_dir).await;
+        cache.store(
+            "u@test",
+            "INBOX",
+            gen,
+            new_mtime,
+            cur_mtime,
+            vec![sample_msg("a")],
+        );
         assert!(cache
             .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
             .await

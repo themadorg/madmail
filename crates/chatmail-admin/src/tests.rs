@@ -228,6 +228,122 @@ async fn p9_status_message_counters() {
 }
 
 #[tokio::test]
+async fn p9_dkim_get_creates_key_for_dns_domain() {
+    let (st, dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let (status, body) = resources::dispatch(&st, "GET", "/admin/dkim", &json!({}))
+        .await
+        .unwrap();
+    assert_eq!(status, 200);
+    let body = body.unwrap();
+    assert_eq!(body["selector"], "default");
+    assert_eq!(body["domain"], "example.org");
+    assert_eq!(body["dns_fqdn"], "default._domainkey.example.org");
+    assert_eq!(body["publishable"], true);
+    assert_eq!(body["generated"], true);
+    assert_eq!(body["key_present"], true);
+    let txt = body["txt"].as_str().expect("txt");
+    assert!(txt.starts_with("v=DKIM1; k=rsa; p="), "{txt}");
+    assert!(dir.path().join("dkim/default.private").is_file());
+
+    let (status, body) = resources::dispatch(&st, "GET", "/admin/dkim", &json!({}))
+        .await
+        .unwrap();
+    assert_eq!(status, 200);
+    assert_eq!(body.unwrap()["generated"], false);
+
+    let err = resources::dispatch(&st, "POST", "/admin/dkim", &json!({}))
+        .await
+        .unwrap_err();
+    assert_eq!(err.0, 405);
+}
+
+#[tokio::test]
+async fn p9_dkim_get_skips_ip_literal_domain() {
+    let pool = init_memory_db().await.unwrap();
+    seed_install_defaults(&pool).await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let file_config = AppConfig::default();
+    let app = Arc::new(AppState::with_quota_and_message_limit(
+        dir.path(),
+        chatmail_config::DEFAULT_QUOTA_BYTES,
+        &file_config,
+        pool.clone(),
+    ));
+    app.hydrate(&pool, &file_config).await.unwrap();
+    let st = AdminState::new(
+        pool,
+        app,
+        file_config,
+        dir.path().to_path_buf(),
+        "203.0.113.50".into(),
+        "secret-token-01234567890123456789012345678901".into(),
+        None,
+    );
+    let (status, body) = resources::dispatch(&st, "GET", "/admin/dkim", &json!({}))
+        .await
+        .unwrap();
+    assert_eq!(status, 200);
+    let body = body.unwrap();
+    assert_eq!(body["publishable"], false);
+    assert_eq!(body["generated"], false);
+    assert!(body["txt"].is_null());
+    assert!(body["reason"].as_str().unwrap().contains("IP literal"));
+    assert!(!dir.path().join("dkim/default.private").is_file());
+}
+
+#[tokio::test]
+async fn p9_dkim_check_skips_ip_literal() {
+    let pool = init_memory_db().await.unwrap();
+    seed_install_defaults(&pool).await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let file_config = AppConfig::default();
+    let app = Arc::new(AppState::with_quota_and_message_limit(
+        dir.path(),
+        chatmail_config::DEFAULT_QUOTA_BYTES,
+        &file_config,
+        pool.clone(),
+    ));
+    app.hydrate(&pool, &file_config).await.unwrap();
+    let st = AdminState::new(
+        pool,
+        app,
+        file_config,
+        dir.path().to_path_buf(),
+        "203.0.113.50".into(),
+        "secret-token-01234567890123456789012345678901".into(),
+        None,
+    );
+    let (status, body) = resources::dispatch(&st, "GET", "/admin/dkim/check", &json!({}))
+        .await
+        .unwrap();
+    assert_eq!(status, 200);
+    let body = body.unwrap();
+    assert_eq!(body["checked"], false);
+    assert_eq!(body["matched"], false);
+}
+
+#[tokio::test]
+async fn p9_dkim_status_does_not_create_key() {
+    let (st, dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let (status, body) = resources::dispatch(&st, "GET", "/admin/dkim/status", &json!({}))
+        .await
+        .unwrap();
+    assert_eq!(status, 200);
+    let body = body.unwrap();
+    assert_eq!(body["key_present"], false);
+    assert_eq!(body["dns_checked"], false);
+    assert!(!dir.path().join("dkim/default.private").is_file());
+}
+
+#[tokio::test]
 async fn p9_admin_status_get() {
     let (st, _dir) = test_state(
         "secret-token-01234567890123456789012345678901",

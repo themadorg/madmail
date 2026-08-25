@@ -1,0 +1,17 @@
+# Local unprivileged `make run` (copied to ./data/chatmail.toml if missing).
+# Ports are all >1024 so you do not need root. Bind loopback only.
+# Mail identity is a DNS-looking name so DKIM can sign (IP literals are unsigned).
+
+hostname = "mail.localdomain"
+primary_domain = "mail.localdomain"
+state_dir = "./data"
+debug = true
+auth_auto_create = true
+
+smtp_listen = "127.0.0.1:2525"
+submission_listen = "127.0.0.1:1025"
+imap_listen = "127.0.0.1:1143"
+http_listen = "127.0.0.1:8080"
+
+admin_path = "/api/admin"
+admin_web_path = "/admin"

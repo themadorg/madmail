@@ -62,8 +62,9 @@ To publish DKIM:
 
 1. On the server, run **`madmail dkim show`**. That prints the selector, `d=`, file paths, and the single-line TXT. If the key is not there yet (upgraded 2.18.x host), this command creates it — you do not have to send mail first.
 2. Add a **`TXT`** record at `default._domainkey.example.org` with that string (`v=DKIM1; k=rsa; p=…`, no line breaks).
+3. Run **`madmail dkim check`**. It queries public DNS and exits 0 only when the published TXT matches the local key (wait for TTL if it still fails).
 
-Scripts can use `madmail dkim show --json` and read `data.txt` / `data.dns_fqdn`.
+Scripts can use `madmail dkim show --json` and read `data.txt` / `data.dns_fqdn`. After the TXT is in DNS, `madmail dkim check` confirms it matches the local key.
 
 ## Federation vs SMTP authentication
 
@@ -105,6 +106,8 @@ On the server:
 madmail status
 madmail federation list
 madmail dkim show
+madmail dkim check
+madmail dkim status
 ```
 
 Use the admin web UI **Federation** section for per-peer success rate, latency, and queue depth.

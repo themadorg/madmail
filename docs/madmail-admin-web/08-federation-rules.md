@@ -64,6 +64,7 @@ Add button label changes with policy: **Block** under ACCEPT, **Allow** under RE
 | Rules | `/federation` | This page |
 | Peers / Traffic | `/federation/traffic` | [09-federation-traffic.md](09-federation-traffic.md) |
 | DNS overrides | `/federation/endpoints` | [10-federation-endpoints.md](10-federation-endpoints.md) |
+| DKIM | `/federation/dkim` | [13-federation-dkim.md](13-federation-dkim.md) |
 | Exchangers | `/federation/exchangers` | [11-federation-exchangers.md](11-federation-exchangers.md) |
 
 ## Typical usage

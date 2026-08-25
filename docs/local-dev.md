@@ -20,6 +20,8 @@ make run-debug
 # (set `debug true` / `log stderr` in that file to enable tracing)
 ```
 
+`make run` copies `chatmail.toml.example` → `./data/chatmail.toml` when that file is missing. That config uses mail domain **`mail.localdomain`** (so DKIM can sign) and binds **unprivileged** loopback ports (SMTP **2525**, IMAP **1143**, submission **1025**, HTTP **8080**). With no config, madmail defaults to production SMTP **:25**, which fails without root (`Permission denied`). For real `:25`/`:143` as a non-root user: `make dev-bind-cap`.
+
 Background instance (restart after code changes):
 
 ```bash

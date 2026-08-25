@@ -132,9 +132,11 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 
 ### [`dkim`](dkim.md)
 
-Outbound federation DKIM (selector `default`): print `d=`, key paths, and the TXT to publish.
+Outbound federation DKIM (selector `default`): print `d=`, key paths, and the TXT to publish; check DNS; status.
 
 - [`show`](dkim-show.md)
+- [`check`](dkim-check.md)
+- [`status`](dkim-status.md)
 
 ### [`federation`](federation.md)
 

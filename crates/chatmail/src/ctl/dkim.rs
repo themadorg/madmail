@@ -15,25 +15,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `madmail dkim` — print the outbound federation DKIM record to publish.
+//! `madmail dkim` — print or check the outbound federation DKIM record.
 
 use chatmail_config::cli::DkimCommand;
 use chatmail_config::Args;
-use chatmail_delivery::dkim::{
-    private_key_path, public_txt_path, signing_domain, DkimSigner, DKIM_SELECTOR,
-};
+use chatmail_delivery::dkim::{check_dns, publish_info, status_info};
 use chatmail_types::{ChatmailError, Result};
-use serde_json::json;
 
 use super::context::CtlContext;
 use super::output::CtlOut;
 
-const IP_REASON: &str =
-    "DKIM d= cannot be an IP literal; use a DNS mail domain, then publish default._domainkey";
-
 pub async fn dkim(args: &Args, cmd: Option<&DkimCommand>) -> Result<()> {
     match cmd {
         None | Some(DkimCommand::Show) => show(args),
+        Some(DkimCommand::Check) => check(args).await,
+        Some(DkimCommand::Status) => status(args).await,
     }
 }
 
@@ -42,85 +38,190 @@ fn show(args: &Args) -> Result<()> {
     let out = CtlOut::from_args(args, "dkim show");
 
     let registration = ctx.config.effective_registration_domain(None);
-    let selector = DKIM_SELECTOR;
-    let private_path = private_key_path(&ctx.state_dir, selector);
-    let txt_file = public_txt_path(&ctx.state_dir, selector);
-    let dns_name = format!("{selector}._domainkey");
-
-    let Some(domain) = signing_domain(&registration) else {
-        let data = json!({
-            "selector": selector,
-            "domain": registration,
-            "dns_name": dns_name,
-            "dns_fqdn": serde_json::Value::Null,
-            "private_key_path": private_path.display().to_string(),
-            "txt_path": txt_file.display().to_string(),
-            "txt": serde_json::Value::Null,
-            "key_present": private_path.is_file(),
-            "generated": false,
-            "publishable": false,
-            "reason": IP_REASON,
-        });
-        if out.is_json() {
-            return out.emit(data);
-        }
-        out.blank();
-        out.line("  DKIM (outbound federation)");
-        out.blank();
-        out.line(format!("  Selector:        {selector}"));
-        out.line(format!(
-            "  Signing domain:  {registration}  (not a DNS name — signing skipped)"
-        ));
-        out.line(format!("  Private key:     {}", private_path.display()));
-        out.line(format!("  Public TXT file: {}", txt_file.display()));
-        out.blank();
-        out.line(format!("  {IP_REASON}"));
-        out.blank();
-        return Ok(());
-    };
-
-    let existed = private_path.is_file();
-    let signer = DkimSigner::load_or_create(&ctx.state_dir, selector, &domain)
-        .map_err(ChatmailError::config)?;
-    let txt = signer
-        .public_txt(&ctx.state_dir)
-        .map_err(ChatmailError::config)?;
-    let dns_fqdn = format!("{dns_name}.{}", signer.domain);
-
-    let data = json!({
-        "selector": selector,
-        "domain": signer.domain,
-        "dns_name": dns_name,
-        "dns_fqdn": dns_fqdn,
-        "private_key_path": private_path.display().to_string(),
-        "txt_path": txt_file.display().to_string(),
-        "txt": txt,
-        "key_present": true,
-        "generated": !existed,
-        "publishable": true,
-    });
+    let data = publish_info(&ctx.state_dir, &registration).map_err(ChatmailError::config)?;
 
     if out.is_json() {
         return out.emit(data);
     }
 
+    let selector = data["selector"].as_str().unwrap_or("default");
+    let domain = data["domain"].as_str().unwrap_or(&registration);
+    let publishable = data["publishable"].as_bool().unwrap_or(false);
+    let generated = data["generated"].as_bool().unwrap_or(false);
+    let private_path = data["private_key_path"].as_str().unwrap_or("-");
+    let txt_file = data["txt_path"].as_str().unwrap_or("-");
+
     out.blank();
     out.line("  DKIM (outbound federation)");
     out.blank();
     out.line(format!("  Selector:        {selector}"));
-    out.line(format!("  Signing domain:  {}  (d=)", signer.domain));
-    out.line(format!("  DNS name:        {dns_fqdn}"));
-    out.line(format!("  Private key:     {}", private_path.display()));
-    out.line(format!("  Public TXT file: {}", txt_file.display()));
+    if publishable {
+        out.line(format!("  Signing domain:  {domain}  (d=)"));
+        if let Some(fqdn) = data["dns_fqdn"].as_str() {
+            out.line(format!("  DNS name:        {fqdn}"));
+        }
+    } else {
+        out.line(format!(
+            "  Signing domain:  {domain}  (not a DNS name — signing skipped)"
+        ));
+    }
+    out.line(format!("  Private key:     {private_path}"));
+    out.line(format!("  Public TXT file: {txt_file}"));
     out.blank();
-    out.line("  Publish this single-line TXT record:");
-    out.blank();
-    out.line(txt);
-    out.blank();
-    out.line("  cmdeploy filtermail still rejects signed mail until this record is live.");
-    if !existed {
-        out.line("  Key was created by this command (same as first outbound send).");
+    if publishable {
+        if let Some(txt) = data["txt"].as_str() {
+            out.line("  Publish this single-line TXT record:");
+            out.blank();
+            out.line(txt);
+            out.blank();
+        }
+        out.line("  cmdeploy filtermail still rejects signed mail until this record is live.");
+        out.line("  After publishing: madmail dkim check");
+        if generated {
+            out.line("  Key was created by this command (same as first outbound send).");
+        }
+    } else if let Some(reason) = data["reason"].as_str() {
+        out.line(format!("  {reason}"));
     }
     out.blank();
+    Ok(())
+}
+
+async fn check(args: &Args) -> Result<()> {
+    let ctx = CtlContext::from_args(args)?;
+    let out = CtlOut::from_args(args, "dkim check");
+    let registration = ctx.config.effective_registration_domain(None);
+    let data = check_dns(&ctx.state_dir, &registration)
+        .await
+        .map_err(ChatmailError::config)?;
+
+    let fqdn = data["dns_fqdn"].as_str().unwrap_or("-");
+    let matched = data["matched"].as_bool().unwrap_or(false);
+    let checked = data["checked"].as_bool().unwrap_or(false);
+    let lookup_failed = data.get("lookup_error").is_some();
+    let json_fail = checked && (!matched || lookup_failed);
+
+    if out.is_json() {
+        out.emit(&data)?;
+        if json_fail {
+            // Payload already on stdout; skip the ok:false stderr envelope.
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    out.blank();
+    out.line("  DKIM DNS check");
+    out.blank();
+    out.line(format!(
+        "  Selector:        {}",
+        data["selector"].as_str().unwrap_or("default")
+    ));
+    out.line(format!(
+        "  Signing domain:  {}",
+        data["domain"].as_str().unwrap_or(&registration)
+    ));
+    out.line(format!("  DNS name:        {fqdn}"));
+    out.blank();
+    if !checked {
+        if let Some(reason) = data["reason"].as_str() {
+            out.line(format!("  Skipped: {reason}"));
+        } else {
+            out.line("  Skipped: mail domain is not a DNS name.");
+        }
+        out.blank();
+        return Ok(());
+    }
+    if let Some(err) = data["lookup_error"].as_str() {
+        out.line(format!("  Lookup failed: {err}"));
+        out.blank();
+        return Err(ChatmailError::config(format!(
+            "DKIM DNS lookup failed: {err}"
+        )));
+    }
+    let found = data["dns_txt"].as_array().map(|a| a.len()).unwrap_or(0);
+    if matched {
+        out.line(format!(
+            "  Result:          OK — published TXT matches ({found} record(s))"
+        ));
+        out.blank();
+        return Ok(());
+    }
+    out.line("  Result:          FAIL — DNS TXT does not match the local key");
+    if found == 0 {
+        out.line("  No TXT at this name. Publish the value from: madmail dkim show");
+    } else {
+        out.line("  Found TXT:");
+        if let Some(arr) = data["dns_txt"].as_array() {
+            for v in arr {
+                if let Some(s) = v.as_str() {
+                    out.line(format!("    {s}"));
+                }
+            }
+        }
+        out.line("  Expected (madmail dkim show):");
+        if let Some(exp) = data["expected_txt"].as_str() {
+            out.line(format!("    {exp}"));
+        }
+    }
+    out.blank();
+    Err(ChatmailError::config(format!(
+        "DKIM TXT at {fqdn} does not match the local key"
+    )))
+}
+
+async fn status(args: &Args) -> Result<()> {
+    let ctx = CtlContext::from_args(args)?;
+    let out = CtlOut::from_args(args, "dkim status");
+    let registration = ctx.config.effective_registration_domain(None);
+    let data = status_info(&ctx.state_dir, &registration)
+        .await
+        .map_err(ChatmailError::config)?;
+
+    if out.is_json() {
+        return out.emit(data);
+    }
+
+    let domain = data["domain"].as_str().unwrap_or(&registration);
+    let key = data["key_present"].as_bool().unwrap_or(false);
+    let publishable = data["publishable"].as_bool().unwrap_or(false);
+    let dns_checked = data["dns_checked"].as_bool().unwrap_or(false);
+    let dns_matched = data["dns_matched"].as_bool().unwrap_or(false);
+
+    out.blank();
+    out.line("  DKIM status (outbound federation)");
+    out.blank();
+    out.line(format!(
+        "  Selector:        {}",
+        data["selector"].as_str().unwrap_or("default")
+    ));
+    out.line(format!("  Signing domain:  {domain}"));
+    if let Some(fqdn) = data["dns_fqdn"].as_str() {
+        out.line(format!("  DNS name:        {fqdn}"));
+    }
+    out.line(format!(
+        "  Local key:       {}",
+        if key { "present" } else { "missing" }
+    ));
+    let dns_line = if !dns_checked {
+        "skipped"
+    } else if dns_matched {
+        "OK (TXT matches)"
+    } else if data.get("lookup_error").is_some() {
+        "lookup failed"
+    } else {
+        "not published / mismatch"
+    };
+    out.line(format!("  DNS:             {dns_line}"));
+    out.blank();
+    if !publishable {
+        if let Some(reason) = data["reason"].as_str() {
+            out.line(format!("  {reason}"));
+        }
+        out.blank();
+    } else if !dns_matched {
+        out.line("  Publish with madmail dkim show, then madmail dkim check.");
+        out.blank();
+    }
     Ok(())
 }

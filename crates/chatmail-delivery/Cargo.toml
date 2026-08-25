@@ -26,6 +26,7 @@ rsa = { version = "0.9", features = ["pem"] }
 base64 = "0.22"
 rand = "0.8"
 viadkim = "0.2"
+hickory-resolver = { version = "0.26.1", default-features = false, features = ["tokio", "system-config"] }
 
 [dev-dependencies]
 chatmail-db = { workspace = true }

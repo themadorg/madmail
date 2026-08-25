@@ -570,6 +570,53 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
 
 `generated` is `true` when this invocation created the key. IP-literal mail domains return `publishable: false`, `txt: null`, and a `reason` string (no key is written).
 
+### `dkim check`
+
+```json
+{
+  "ok": true,
+  "command": "dkim check",
+  "data": {
+    "selector": "default",
+    "domain": "example.org",
+    "dns_name": "default._domainkey",
+    "dns_fqdn": "default._domainkey.example.org",
+    "expected_txt": "v=DKIM1; k=rsa; p=MIIBIjANBgkqh…",
+    "dns_txt": ["v=DKIM1; k=rsa; p=MIIBIjANBgkqh…"],
+    "matched": true,
+    "checked": true
+  }
+}
+```
+
+`checked` is `false` (no DNS query) for IP-literal domains or when no local key exists; then `reason` is set. Does not create a key. On mismatch `dns_txt` may be empty. Lookup failures add `lookup_error`. `--json` still prints this envelope (`ok: true`) and exits 1 when `checked && !matched` (or `lookup_error` is set).
+
+### `dkim status`
+
+```json
+{
+  "ok": true,
+  "command": "dkim status",
+  "data": {
+    "selector": "default",
+    "domain": "example.org",
+    "dns_name": "default._domainkey",
+    "dns_fqdn": "default._domainkey.example.org",
+    "private_key_path": "/var/lib/madmail/dkim/default.private",
+    "txt_path": "/var/lib/madmail/dkim/default.txt",
+    "txt": "v=DKIM1; k=rsa; p=MIIBIjANBgkqh…",
+    "key_present": true,
+    "generated": false,
+    "publishable": true,
+    "dns_checked": true,
+    "dns_matched": true,
+    "dns_txt": ["v=DKIM1; k=rsa; p=MIIBIjANBgkqh…"]
+  }
+}
+```
+
+Does not create a key (`generated` is always `false`). Missing key or IP-literal domain: `dns_checked: false` and a `reason` string. Always HTTP/CLI success; `dns_matched` reports the DNS result.
+
 ### `federation list`
 
 ```json

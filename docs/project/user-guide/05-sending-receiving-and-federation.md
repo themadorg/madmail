@@ -112,7 +112,7 @@ For reliable chatmail-to-chatmail delivery, outbound HTTPS (443) should work. Th
 
 **“Do I need DKIM, SPF, or DMARC DNS records for federation with other chatmail servers?”**
 
-**PGP is still required** on `/mxdeliv`. **cmdeploy** (and many Postfix/OpenDKIM stacks) also require a **DKIM signature on the RFC 5322 body**. Madmail signs outbound federation mail with selector `default` when a DNS `d=` is available. Run **`madmail dkim show`** and publish the printed TXT at `default._domainkey` so peers can verify; missing TXT can still fail after the signature is present.
+**PGP is still required** on `/mxdeliv`. **cmdeploy** (and many Postfix/OpenDKIM stacks) also require a **DKIM signature on the RFC 5322 body**. Madmail signs outbound federation mail with selector `default` when a DNS `d=` is available. Run **`madmail dkim show`**, publish the printed TXT at `default._domainkey`, then **`madmail dkim check`** so peers can verify; missing TXT can still fail after the signature is present.
 
 Madmail’s own inbound `/mxdeliv` does not require DKIM (PGP only). Same-stack Madmail↔Madmail works without DNS TXT; **Madmail → cmdeploy does not**. See [DNS and Mail Authentication](./12-dns-mail-auth.md).
 

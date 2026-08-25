@@ -27,6 +27,8 @@ Copy the printed TXT (single line, no quotes) into a `TXT` record at `default._d
 
 IP-only mail domains (`user@[1.2.3.4]`) are not publishable; the command exits 0 and explains that signing is skipped.
 
+After the TXT is live, run [`madmail dkim check`](dkim-check.md) to confirm DNS matches the local key.
+
 ## JSON output (`--json`)
 
 ```bash

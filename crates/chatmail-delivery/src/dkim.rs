@@ -9,6 +9,7 @@
 //! are produced with **viadkim** — the same crate filtermail uses to verify —
 //! so a published `default._domainkey` TXT is enough for alignment + crypto.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ use std::sync::Arc;
 use rsa::pkcs1::EncodeRsaPublicKey;
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
 use rsa::RsaPrivateKey;
+use serde_json::{json, Value};
 use tracing::{debug, warn};
 use viadkim::signature::{Canonicalization, CanonicalizationAlgorithm};
 use viadkim::signer::{Expiration, SignRequest};
@@ -26,6 +28,10 @@ use chatmail_types::is_ipv4_literal;
 
 /// Install / runtime selector (matches `dkim … default` in generated madmail.conf).
 pub const DKIM_SELECTOR: &str = "default";
+
+/// Why IP-literal mail domains are left unsigned (filtermail treats that as a no-op).
+pub const IP_SIGNING_REASON: &str =
+    "DKIM d= cannot be an IP literal; use a DNS mail domain, then publish default._domainkey";
 
 /// RSA-SHA256 signer for one selector + domain (`d=`).
 #[derive(Clone)]
@@ -108,6 +114,319 @@ pub fn private_key_path(state_dir: &Path, selector: &str) -> PathBuf {
 
 pub fn public_txt_path(state_dir: &Path, selector: &str) -> PathBuf {
     dkim_dir(state_dir).join(format!("{selector}.txt"))
+}
+
+/// Selector, `d=`, paths, and TXT — same payload as `madmail dkim show` / `GET /admin/dkim`.
+///
+/// Creates `{state}/dkim/{selector}.private` when missing and `primary_domain` is a DNS name.
+pub fn publish_info(state_dir: &Path, primary_domain: &str) -> Result<Value, String> {
+    let selector = DKIM_SELECTOR;
+    let private_path = private_key_path(state_dir, selector);
+    let txt_file = public_txt_path(state_dir, selector);
+    let dns_name = format!("{selector}._domainkey");
+    let Some(domain) = signing_domain(primary_domain) else {
+        return Ok(json!({
+            "selector": selector,
+            "domain": primary_domain,
+            "dns_name": dns_name,
+            "dns_fqdn": Value::Null,
+            "private_key_path": private_path.display().to_string(),
+            "txt_path": txt_file.display().to_string(),
+            "txt": Value::Null,
+            "key_present": private_path.is_file(),
+            "generated": false,
+            "publishable": false,
+            "reason": IP_SIGNING_REASON,
+        }));
+    };
+    let existed = private_path.is_file();
+    let signer = DkimSigner::load_or_create(state_dir, selector, &domain)?;
+    let txt = signer.public_txt(state_dir)?;
+    let dns_fqdn = format!("{dns_name}.{}", signer.domain);
+    Ok(json!({
+        "selector": selector,
+        "domain": signer.domain,
+        "dns_name": dns_name,
+        "dns_fqdn": dns_fqdn,
+        "private_key_path": private_path.display().to_string(),
+        "txt_path": txt_file.display().to_string(),
+        "txt": txt,
+        "key_present": true,
+        "generated": !existed,
+        "publishable": true,
+    }))
+}
+
+/// Like [`publish_info`] but never writes a key (for `madmail dkim status`).
+pub fn inspect_info(state_dir: &Path, primary_domain: &str) -> Result<Value, String> {
+    let selector = DKIM_SELECTOR;
+    let private_path = private_key_path(state_dir, selector);
+    let txt_file = public_txt_path(state_dir, selector);
+    let dns_name = format!("{selector}._domainkey");
+    let Some(domain) = signing_domain(primary_domain) else {
+        return Ok(json!({
+            "selector": selector,
+            "domain": primary_domain,
+            "dns_name": dns_name,
+            "dns_fqdn": Value::Null,
+            "private_key_path": private_path.display().to_string(),
+            "txt_path": txt_file.display().to_string(),
+            "txt": Value::Null,
+            "key_present": private_path.is_file(),
+            "generated": false,
+            "publishable": false,
+            "reason": IP_SIGNING_REASON,
+        }));
+    };
+    let dns_fqdn = format!("{dns_name}.{domain}");
+    if !private_path.is_file() {
+        return Ok(json!({
+            "selector": selector,
+            "domain": domain,
+            "dns_name": dns_name,
+            "dns_fqdn": dns_fqdn,
+            "private_key_path": private_path.display().to_string(),
+            "txt_path": txt_file.display().to_string(),
+            "txt": Value::Null,
+            "key_present": false,
+            "generated": false,
+            "publishable": false,
+            "reason": "no DKIM key yet; run madmail dkim show (or install / first outbound send)",
+        }));
+    }
+    let txt = fs::read_to_string(&txt_file)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    Ok(json!({
+        "selector": selector,
+        "domain": domain,
+        "dns_name": dns_name,
+        "dns_fqdn": dns_fqdn,
+        "private_key_path": private_path.display().to_string(),
+        "txt_path": txt_file.display().to_string(),
+        "txt": if txt.is_empty() { Value::Null } else { json!(txt) },
+        "key_present": true,
+        "generated": false,
+        "publishable": !txt.is_empty(),
+    }))
+}
+
+/// Local key + DNS match for `madmail dkim status` (does not create a key).
+pub async fn status_info(state_dir: &Path, primary_domain: &str) -> Result<Value, String> {
+    let mut data = inspect_info(state_dir, primary_domain)?;
+    let publishable = data["publishable"].as_bool().unwrap_or(false);
+    let txt = data["txt"].as_str().unwrap_or("").to_string();
+    let fqdn = data["dns_fqdn"].as_str().unwrap_or("").to_string();
+    if !publishable || txt.is_empty() || fqdn.is_empty() {
+        data["dns_checked"] = json!(false);
+        data["dns_matched"] = json!(false);
+        data["dns_txt"] = json!([]);
+        return Ok(data);
+    }
+    match lookup_txt(fqdn).await {
+        Ok(recs) => {
+            data["dns_checked"] = json!(true);
+            data["dns_matched"] = json!(dkim_txt_matches(&txt, &recs));
+            data["dns_txt"] = json!(recs);
+        }
+        Err(e) => {
+            data["dns_checked"] = json!(true);
+            data["dns_matched"] = json!(false);
+            data["dns_txt"] = json!([]);
+            data["lookup_error"] = json!(e);
+        }
+    }
+    Ok(data)
+}
+
+/// Collapse DNS quoting/whitespace; keep `p=` base64 case.
+pub fn normalize_dkim_txt(s: &str) -> String {
+    let compact: String = s
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '"')
+        .collect();
+    compact
+        .split(';')
+        .filter_map(|part| {
+            let part = part.trim();
+            if part.is_empty() {
+                return None;
+            }
+            let Some((k, v)) = part.split_once('=') else {
+                return Some(part.to_ascii_lowercase());
+            };
+            if k.eq_ignore_ascii_case("p") {
+                Some(format!("p={v}"))
+            } else {
+                Some(format!(
+                    "{}={}",
+                    k.to_ascii_lowercase(),
+                    v.to_ascii_lowercase()
+                ))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse DKIM TXT tags (`p=` case-sensitive; other tag names/values lowercased).
+fn dkim_tag_map(s: &str) -> BTreeMap<String, String> {
+    let compact: String = s
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '"')
+        .collect();
+    let mut map = BTreeMap::new();
+    for part in compact.split(';') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let Some((k, v)) = part.split_once('=') else {
+            continue;
+        };
+        let key = k.to_ascii_lowercase();
+        let val = if key == "p" {
+            v.to_string()
+        } else {
+            v.to_ascii_lowercase()
+        };
+        map.insert(key, val);
+    }
+    map
+}
+
+/// True when a published record has the same `p=` (and any other expected tags).
+/// Extra tags on the DNS side (`t=y`, reordered `k=`/`v=`) do not fail the check.
+pub fn dkim_txt_matches(expected: &str, found: &[String]) -> bool {
+    let want = dkim_tag_map(expected);
+    let Some(want_p) = want.get("p") else {
+        return false;
+    };
+    found.iter().any(|f| {
+        let got = dkim_tag_map(f);
+        if got.get("p") != Some(want_p) {
+            return false;
+        }
+        want.iter()
+            .all(|(k, v)| k == "p" || got.get(k).map(String::as_str) == Some(v.as_str()))
+    })
+}
+
+/// TXT lookup for `name` (FQDN). Empty vec = NXDOMAIN / no TXT.
+pub async fn lookup_txt(name: String) -> Result<Vec<String>, String> {
+    use hickory_resolver::proto::rr::RData;
+    use hickory_resolver::TokioResolver;
+
+    let resolver = match TokioResolver::builder_tokio().and_then(|b| b.build()) {
+        Ok(r) => r,
+        Err(_) => {
+            use hickory_resolver::config::{ResolverConfig, GOOGLE};
+            use hickory_resolver::net::runtime::TokioRuntimeProvider;
+            TokioResolver::builder_with_config(
+                ResolverConfig::udp_and_tcp(&GOOGLE),
+                TokioRuntimeProvider::default(),
+            )
+            .build()
+            .map_err(|e| e.to_string())?
+        }
+    };
+    let qname = name.trim_end_matches('.').to_string();
+    match resolver.txt_lookup(qname).await {
+        Ok(lookup) => Ok(lookup
+            .answers()
+            .iter()
+            .filter_map(|rec| match &rec.data {
+                RData::TXT(txt) => Some(txt_bytes(txt)),
+                _ => None,
+            })
+            .filter(|s| !s.is_empty())
+            .collect()),
+        Err(e) => {
+            let msg = e.to_string();
+            let empty = msg.to_ascii_lowercase().contains("nxdomain")
+                || msg.to_ascii_lowercase().contains("no records")
+                || msg.to_ascii_lowercase().contains("no record");
+            if empty {
+                Ok(Vec::new())
+            } else {
+                Err(msg)
+            }
+        }
+    }
+}
+
+fn txt_bytes(txt: &hickory_resolver::proto::rr::rdata::TXT) -> String {
+    txt.txt_data
+        .iter()
+        .map(|chunk| String::from_utf8_lossy(chunk).into_owned())
+        .collect()
+}
+
+/// Compare local DKIM TXT to the published `default._domainkey` record.
+pub async fn check_dns(state_dir: &Path, primary_domain: &str) -> Result<Value, String> {
+    check_dns_with(state_dir, primary_domain, lookup_txt).await
+}
+
+pub async fn check_dns_with<F, Fut>(
+    state_dir: &Path,
+    primary_domain: &str,
+    lookup: F,
+) -> Result<Value, String>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<String>, String>>,
+{
+    let info = inspect_info(state_dir, primary_domain)?;
+    let publishable = info["publishable"].as_bool().unwrap_or(false);
+    let selector = info["selector"].clone();
+    let domain = info["domain"].clone();
+    let dns_name = info["dns_name"].clone();
+    let dns_fqdn = info["dns_fqdn"].clone();
+    let expected = info["txt"].clone();
+    if !publishable {
+        return Ok(json!({
+            "selector": selector,
+            "domain": domain,
+            "dns_name": dns_name,
+            "dns_fqdn": dns_fqdn,
+            "expected_txt": expected,
+            "dns_txt": Value::Array(vec![]),
+            "matched": false,
+            "checked": false,
+            "reason": info.get("reason").cloned().unwrap_or(Value::Null),
+        }));
+    }
+    let fqdn = dns_fqdn
+        .as_str()
+        .ok_or_else(|| "missing dns_fqdn".to_string())?
+        .to_string();
+    match lookup(fqdn.clone()).await {
+        Ok(recs) => {
+            let expected_s = expected.as_str().unwrap_or("");
+            let matched = dkim_txt_matches(expected_s, &recs);
+            Ok(json!({
+                "selector": selector,
+                "domain": domain,
+                "dns_name": dns_name,
+                "dns_fqdn": fqdn,
+                "expected_txt": expected,
+                "dns_txt": recs,
+                "matched": matched,
+                "checked": true,
+            }))
+        }
+        Err(e) => Ok(json!({
+            "selector": selector,
+            "domain": domain,
+            "dns_name": dns_name,
+            "dns_fqdn": fqdn,
+            "expected_txt": expected,
+            "dns_txt": Value::Array(vec![]),
+            "matched": false,
+            "checked": true,
+            "lookup_error": e,
+        })),
+    }
 }
 
 /// DNS name for `d=`, or `None` for empty / IPv4 / IPv6 / bracketed IP.
@@ -362,6 +681,86 @@ mod tests {
             aligned_ok = true;
         }
         assert!(aligned_ok, "no aligned successful DKIM signature");
+    }
+
+    #[test]
+    fn publish_info_creates_key_and_skips_ip() {
+        let dir = tempfile::tempdir().unwrap();
+        let info = publish_info(dir.path(), "mail.example.org").unwrap();
+        assert_eq!(info["publishable"], true);
+        assert_eq!(info["generated"], true);
+        assert!(info["txt"].as_str().unwrap().starts_with("v=DKIM1;"));
+        let again = publish_info(dir.path(), "mail.example.org").unwrap();
+        assert_eq!(again["generated"], false);
+
+        let ip = tempfile::tempdir().unwrap();
+        let skip = publish_info(ip.path(), "203.0.113.10").unwrap();
+        assert_eq!(skip["publishable"], false);
+        assert!(skip["txt"].is_null());
+        assert!(!private_key_path(ip.path(), "default").is_file());
+    }
+
+    #[test]
+    fn inspect_info_does_not_create_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let info = inspect_info(dir.path(), "mail.example.org").unwrap();
+        assert_eq!(info["key_present"], false);
+        assert_eq!(info["publishable"], false);
+        assert!(!private_key_path(dir.path(), "default").is_file());
+        assert!(info["reason"].as_str().unwrap().contains("no DKIM key"));
+    }
+
+    #[test]
+    fn normalize_dkim_txt_ignores_quotes_and_whitespace() {
+        let a = "v=DKIM1; k=rsa; p=ABCdef";
+        let b = "\"v=DKIM1; \" \"k=rsa; p=ABCdef\"";
+        assert_eq!(normalize_dkim_txt(a), normalize_dkim_txt(b));
+        assert!(dkim_txt_matches(a, &[b.to_string()]));
+        assert!(!dkim_txt_matches(a, &["v=DKIM1; k=rsa; p=XXXX".into()]));
+        assert!(dkim_txt_matches(
+            a,
+            &["v=DKIM1; p=ABCdef; k=rsa; t=y".into()]
+        ));
+    }
+
+    #[tokio::test]
+    async fn check_dns_with_mock_match_and_ip_skip() {
+        let dir = tempfile::tempdir().unwrap();
+        let info = publish_info(dir.path(), "mail.example.org").unwrap();
+        let txt = info["txt"].as_str().unwrap().to_string();
+        let ok = check_dns_with(dir.path(), "mail.example.org", |_fqdn| {
+            let t = txt.clone();
+            async move { Ok(vec![t]) }
+        })
+        .await
+        .unwrap();
+        assert_eq!(ok["matched"], true);
+        assert_eq!(ok["checked"], true);
+
+        let miss = check_dns_with(dir.path(), "mail.example.org", |_fqdn| async {
+            Ok(vec!["v=DKIM1; k=rsa; p=nope".into()])
+        })
+        .await
+        .unwrap();
+        assert_eq!(miss["matched"], false);
+
+        let ip = tempfile::tempdir().unwrap();
+        let skip = check_dns_with(ip.path(), "127.0.0.1", |_fqdn| async {
+            panic!("must not query DNS for IP From")
+        })
+        .await
+        .unwrap();
+        assert_eq!(skip["checked"], false);
+        assert_eq!(skip["matched"], false);
+
+        let empty = tempfile::tempdir().unwrap();
+        let no_key = check_dns_with(empty.path(), "mail.example.org", |_fqdn| async {
+            panic!("must not query DNS without a local key")
+        })
+        .await
+        .unwrap();
+        assert_eq!(no_key["checked"], false);
+        assert!(!private_key_path(empty.path(), "default").is_file());
     }
 
     #[test]

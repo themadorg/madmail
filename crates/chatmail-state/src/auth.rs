@@ -120,8 +120,8 @@ impl AuthCache {
     /// For IPv4-literal domains, looks up both the bracketed form (`user@[1.2.3.4]`)
     /// and the bare form (`user@1.2.3.4`) so either registration spelling works.
     /// Prefer canonical delivery under the key that actually exists in the cache
-    /// (callers that need a storage key should normalize via
-    /// [`chatmail_auth::normalize_username`] first, which wraps bare IPv4).
+    /// (callers that need a storage key should wrap bare IPv4 domains first,
+    /// e.g. via `chatmail_auth::normalize_username`).
     pub fn local_recipient_allowed(&self, rcpt: &str) -> bool {
         if is_federation_rcpt_blocked(rcpt) {
             return false;

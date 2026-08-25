@@ -111,6 +111,7 @@ mod tests {
     fn allows_official_admin_panel() {
         assert!(is_allowed_origin(MADMAIL_ADMIN_PANEL_ORIGIN));
         assert!(!is_allowed_origin("https://evil.example"));
+        assert!(!is_allowed_origin("http://localhost:5173"));
     }
 
     #[test]
