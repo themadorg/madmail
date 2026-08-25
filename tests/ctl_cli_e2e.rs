@@ -377,8 +377,11 @@ fn e2e_ctl_dkim_check_json_skips_ip() {
     let dir = TempDir::new().expect("tempdir");
     let state = dir.path();
     let config = state.join("madmail.conf");
-    std::fs::write(&config, "hostname 203.0.113.10\n$(primary_domain) = 203.0.113.10\n")
-        .expect("write dkim check config");
+    std::fs::write(
+        &config,
+        "hostname 203.0.113.10\n$(primary_domain) = 203.0.113.10\n",
+    )
+    .expect("write dkim check config");
 
     let out = chatmail()
         .args([
