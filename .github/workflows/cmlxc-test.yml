@@ -1,0 +1,30 @@
+name: cmlxc
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'landing/**'
+      - 'packaging/windows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lxc-test:
+    name: cmlxc deploy and run tests
+    uses: chatmail/cmlxc/.github/workflows/lxc-test.yml@main
+    with:
+      # The reusable workflow checks this repo out into ./repo and runs each
+      # command from the workspace root, so --source ./repo deploys the commit
+      # under test. An @ref would resolve against the upstream URL, and thus
+      # not find the fork PR head.
+      cmlxc_commands: |
+        cmlxc init
+        cmlxc deploy-madmail --source ./repo mad0
+        cmlxc test-mini mad0
+        cmlxc deploy-cmdeploy --source @main relay0
+        cmlxc test-mini mad0 relay0
+        cmlxc test-mini relay0 mad0
+        cmlxc test-madmail mad0
