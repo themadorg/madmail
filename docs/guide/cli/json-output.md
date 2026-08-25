@@ -236,10 +236,18 @@ Dry-run / completed uninstall returns paths and flags in `data`. When nothing to
   "ok": true,
   "command": "certificate status",
   "data": {
-    "tls_mode": "autocert",
+    "tls_management": "autocert (Let's Encrypt, auto-managed)",
     "domain": "mail.example.org",
-    "valid": true,
-    "expires_at": "2026-09-01T12:00:00Z"
+    "cert_path": "/var/lib/madmail/certs/fullchain.pem",
+    "cert_type": "Let's Encrypt (auto-managed)",
+    "issuer": "C=US, O=Let's Encrypt, CN=R11",
+    "subject": "CN=mail.example.org",
+    "sans": ["mail.example.org"],
+    "not_before": "Aug  1 00:00:00 2026 GMT",
+    "not_after": "Oct 30 00:00:00 2026 GMT",
+    "days_remaining": 66,
+    "key_algorithm": "ecdsa-p256",
+    "status": "valid"
   }
 }
 ```

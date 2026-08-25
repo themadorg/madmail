@@ -339,7 +339,7 @@ run-debug: build ensure-dev-config
 dev-certs:
 	@mkdir -p $(STATE_DIR)/certs
 	@if [ ! -f $(STATE_DIR)/certs/fullchain.pem ]; then \
-		openssl req -x509 -newkey rsa:2048 -nodes \
+		openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
 			-keyout $(STATE_DIR)/certs/privkey.pem \
 			-out $(STATE_DIR)/certs/fullchain.pem \
 			-days 3650 \

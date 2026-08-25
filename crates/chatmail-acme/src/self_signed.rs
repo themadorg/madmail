@@ -20,9 +20,9 @@
 use std::path::Path;
 
 use chatmail_types::{ChatmailError, Result};
-use rcgen::generate_simple_self_signed;
+use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
 
-/// Generate and write a self-signed cert/key pair (~1 year via rcgen defaults).
+/// Generate and write a self-signed ECDSA P-256 cert/key pair.
 pub fn generate_self_signed(
     primary_domain: &str,
     hostname: &str,
@@ -39,14 +39,18 @@ pub fn generate_self_signed(
     names.sort();
     names.dedup();
 
-    let cert =
-        generate_simple_self_signed(names).map_err(|e| ChatmailError::config(e.to_string()))?;
+    let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
+        .map_err(|e| ChatmailError::config(format!("generate ECDSA P-256 key: {e}")))?;
+    let cert = CertificateParams::new(names)
+        .map_err(|e| ChatmailError::config(e.to_string()))?
+        .self_signed(&key_pair)
+        .map_err(|e| ChatmailError::config(e.to_string()))?;
 
     write_pem_pair(
         cert_path,
         key_path,
-        cert.cert.pem().as_bytes(),
-        cert.key_pair.serialize_pem().as_bytes(),
+        cert.pem().as_bytes(),
+        key_pair.serialize_pem().as_bytes(),
     )
 }
 

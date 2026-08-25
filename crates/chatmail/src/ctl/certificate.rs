@@ -299,6 +299,7 @@ async fn certificate_status(args: &Args) -> Result<()> {
             "not_before": info.not_before,
             "not_after": info.not_after,
             "days_remaining": info.days_remaining,
+            "key_algorithm": info.key_algorithm,
             "status": status,
         }));
     }
@@ -322,6 +323,7 @@ async fn certificate_status(args: &Args) -> Result<()> {
     out.line(format!("Certificate:     {}", cert_path.display()));
     out.line(format!("Private key:     {}", key_path.display()));
     out.line(format!("\nCertificate type: {cert_kind}"));
+    out.line(format!("Key algorithm:   {}", info.key_algorithm));
     out.line(format!("Issuer:          {}", info.issuer));
     if !info.subject.is_empty() {
         out.line(format!("Subject:         {}", info.subject));

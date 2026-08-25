@@ -40,6 +40,8 @@ pub struct CertificateInfo {
     pub days_remaining: i64,
     pub subject_alt_names: Vec<String>,
     pub issuer_kind: CertIssuerKind,
+    /// Public-key algorithm (`ecdsa-p256`, `rsa-2048`, …).
+    pub key_algorithm: String,
 }
 
 pub fn read_certificate_info(cert_path: &Path) -> Result<Option<CertificateInfo>> {
@@ -55,6 +57,7 @@ pub fn read_certificate_info(cert_path: &Path) -> Result<Option<CertificateInfo>
     let days_remaining = days_until(cert.not_after())?;
     let subject_alt_names = extract_subject_alt_names(&cert);
     let issuer_kind = classify_issuer(&issuer, &subject);
+    let key_algorithm = describe_key_algorithm(&cert);
     Ok(Some(CertificateInfo {
         issuer,
         subject,
@@ -63,6 +66,7 @@ pub fn read_certificate_info(cert_path: &Path) -> Result<Option<CertificateInfo>
         days_remaining,
         subject_alt_names,
         issuer_kind,
+        key_algorithm,
     }))
 }
 
@@ -101,6 +105,30 @@ fn ip_to_string(bytes: &[u8]) -> Option<String> {
             Some(std::net::IpAddr::from(octets).to_string())
         }
         _ => None,
+    }
+}
+
+fn describe_key_algorithm(cert: &X509) -> String {
+    let Ok(pkey) = cert.public_key() else {
+        return "unknown".into();
+    };
+    match pkey.id() {
+        openssl::pkey::Id::RSA => format!("rsa-{}", pkey.bits()),
+        openssl::pkey::Id::EC => match pkey.ec_key() {
+            Ok(ec) => match ec.group().curve_name() {
+                Some(openssl::nid::Nid::X9_62_PRIME256V1) => "ecdsa-p256".into(),
+                Some(openssl::nid::Nid::SECP384R1) => "ecdsa-p384".into(),
+                Some(openssl::nid::Nid::SECP521R1) => "ecdsa-p521".into(),
+                Some(nid) => format!(
+                    "ecdsa-{}",
+                    nid.short_name().unwrap_or("unknown").to_ascii_lowercase()
+                ),
+                None => format!("ecdsa-{}", pkey.bits()),
+            },
+            Err(_) => "ecdsa".into(),
+        },
+        openssl::pkey::Id::ED25519 => "ed25519".into(),
+        other => format!("id-{}", other.as_raw()),
     }
 }
 
@@ -144,6 +172,20 @@ mod tests {
         generate_self_signed("[1.2.3.4]", "1.2.3.4", "1.2.3.4", &cert, &key).unwrap();
         let info = read_certificate_info(&cert).unwrap().unwrap();
         assert_eq!(info.issuer_kind, CertIssuerKind::SelfSigned);
+        assert_eq!(info.key_algorithm, "ecdsa-p256");
         assert!(info.days_remaining > 0);
+        let key_pem = std::fs::read_to_string(&key).unwrap();
+        assert!(
+            key_pem.contains("-----BEGIN PRIVATE KEY-----"),
+            "self-signed key should be PKCS#8: {key_pem}"
+        );
+        assert!(
+            !key_pem.contains("BEGIN EC PRIVATE KEY"),
+            "self-signed key must not be SEC1 EC: {key_pem}"
+        );
+        assert!(
+            !key_pem.contains("BEGIN RSA PRIVATE KEY"),
+            "self-signed key must not be RSA PKCS#1"
+        );
     }
 }

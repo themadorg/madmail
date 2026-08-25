@@ -17,14 +17,16 @@ tls file /var/lib/madmail/certs/fullchain.pem /var/lib/madmail/certs/privkey.pem
 
 Let's Encrypt is obtained **out-of-band** via CLI (`madmail certificate get`) or during `madmail install --tls-mode autocert`. The server only loads PEM files.
 
+**Key algorithms:** install / self-signed / ACME `finalize` emit **ECDSA P-256** (PKCS#8 PEM). `tls file` / `--tls-mode file` also loads operator PEMs: PKCS#8 (RSA or EC), traditional PKCS#1 RSA (`BEGIN RSA PRIVATE KEY`), and SEC1 EC (`BEGIN EC PRIVATE KEY`). rustls-ring cannot generate RSA, so RSA remains bring-your-own. DKIM stays RSA-2048 (`k=rsa`) for cmdeploy `filtermail`.
+
 ## TLS modes (`install` / auto-detect)
 
 | Mode | CLI | Behaviour |
 |------|-----|-----------|
 | `autocert` | `--tls-mode autocert --acme-email admin@domain` | HTTP-01 via instant-acme (DNS name) → writes `certs/*.pem`, account in `autocert/le-account.json` |
 | `autocert` (IP) | `--simple --ip PUBLIC_IP --auto-ip-cert --acme-email user@domain` | HTTP-01 via instant-acme, Let's Encrypt **shortlived** profile (~6-day IP cert) — see [`../install-simple-ip-acme.md`](../install-simple-ip-acme.md) |
-| `file` | `--tls-mode file --cert-path … --key-path …` | Use existing PEMs (certbot, Caddy, etc.) |
-| `self_signed` | `--tls-mode self_signed` or `--simple --ip` (without `--auto-ip-cert`) | rcgen self-signed in `certs/` (IP SANs via DNS names for bracket domains) |
+| `file` | `--tls-mode file --cert-path … --key-path …` | Use existing PEMs (RSA or EC; PKCS#8 / PKCS#1 / SEC1) |
+| `self_signed` | `--tls-mode self_signed` or `--simple --ip` (without `--auto-ip-cert`) | rcgen self-signed **ECDSA P-256** in `certs/` (IP SANs via DNS names for bracket domains) |
 
 Auto-detect (no `--tls-mode`):
 

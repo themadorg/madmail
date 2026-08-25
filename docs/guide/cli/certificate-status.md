@@ -2,7 +2,7 @@
 
 Parent: [`certificate`](certificate.md)
 
-Show certificate management mode and validity
+Show certificate management mode, validity, and key algorithm (`ecdsa-p256`, `rsa-2048`, …).
 
 ## Synopsis
 

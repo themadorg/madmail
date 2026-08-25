@@ -2,6 +2,8 @@
 
 TLS certificate management: Let's Encrypt HTTP-01 issuance, status, and in-process autocert renewal.
 
+Self-signed and Let's Encrypt keys are **ECDSA P-256**. Operator-supplied PEMs (`tls-mode file`) may be RSA or EC (PKCS#8, PKCS#1 RSA, or SEC1 `BEGIN EC PRIVATE KEY`). `madmail certificate status` prints `key_algorithm` (`ecdsa-p256`, `rsa-2048`, …).
+
 
 ## Synopsis
 

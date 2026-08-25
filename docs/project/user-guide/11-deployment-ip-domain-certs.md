@@ -52,7 +52,7 @@ Just omit the `--auto-ip-cert` flag:
 madmail install --simple --ip 203.0.113.50
 ```
 
-The installer will generate a self-signed certificate for the IP address.
+The installer will generate a self-signed **ECDSA P-256** certificate for the IP address. You can also point `--tls-mode file` at an existing RSA or EC PEM pair (including OpenSSL `BEGIN EC PRIVATE KEY`).
 
 ### After install
 

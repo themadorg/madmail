@@ -17,7 +17,7 @@
 
 //! TLS certificate issuance for madmail-v2 (Madmail-compatible paths).
 //!
-//! - **self_signed** — local/IP testing (`/var/lib/<binary>/certs/`)
+//! - **self_signed** — local/IP testing (`/var/lib/<binary>/certs/`), ECDSA P-256
 //! - **autocert** — Let's Encrypt via HTTP-01 (`madmail certificate get|regenerate`)
 //! - **IP autocert** — Let's Encrypt short-lived profile (~6 days) for public IPs
 

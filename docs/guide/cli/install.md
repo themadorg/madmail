@@ -59,7 +59,7 @@ On **Windows**, default install paths are `%ProgramData%\Madmail\config` and `%P
 | `--install-service` | Register Windows service after install (no-op notice on Unix) |
 | `--start-service` | Start Windows service after install |
 | `--firewall` | Open Windows Firewall rules for mail/HTTP ports |
-| `--tls-mode` | `autocert`, `file`, or `self_signed` |
+| `--tls-mode` | `autocert`, `file`, or `self_signed` (self-signed and ACME keys are **ECDSA P-256**; `--tls-mode file` accepts RSA or EC PEMs, including `BEGIN EC PRIVATE KEY`) |
 | `--acme-email`, `--auto-ip-cert`, `--obtain-certificate`, `--no-obtain-certificate`, `--cert-only`, `--http-listen` | TLS issuance |
 | `--lang` | UI language: `en`, `fa`, `ru`, `es` |
 | `--skip-systemd`, `--skip-user` | Container / CI installs |
