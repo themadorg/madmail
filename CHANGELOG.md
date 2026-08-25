@@ -1,3 +1,10 @@
+# [2.26.0](https://github.com/themadorg/madmail/compare/v2.25.0...v2.26.0) (2026-08-25)
+
+
+### Features
+
+* **tls:** load SEC1 EC keys and report certificate algorithm ([488e9f6](https://github.com/themadorg/madmail/commit/488e9f6940b809212ec0538450688b9c0b6a0405)), closes [PKCS#8](https://github.com/PKCS/issues/8) [PKCS#1](https://github.com/PKCS/issues/1)
+
 # [2.25.0](https://github.com/themadorg/madmail/compare/v2.24.1...v2.25.0) (2026-08-25)
 
 
