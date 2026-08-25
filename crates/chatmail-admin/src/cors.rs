@@ -42,25 +42,7 @@ fn configured_origins() -> Vec<String> {
 }
 
 pub fn is_allowed_origin(origin: &str) -> bool {
-    if is_loopback_dev_origin(origin) {
-        return true;
-    }
     configured_origins().iter().any(|allowed| allowed == origin)
-}
-
-/// Vite / Electron on this machine (`http://localhost:5173`, `http://127.0.0.1:…`).
-/// LAN IPs are not included — use the Vite proxy so madmail stays loopback-only.
-fn is_loopback_dev_origin(origin: &str) -> bool {
-    let Some(rest) = origin
-        .strip_prefix("http://")
-        .or_else(|| origin.strip_prefix("https://"))
-    else {
-        return false;
-    };
-    let Some(host) = rest.split('/').next().and_then(|h| h.split(':').next()) else {
-        return false;
-    };
-    matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1")
 }
 
 fn allow_origin_value(origin: &str) -> Option<HeaderValue> {
@@ -129,9 +111,7 @@ mod tests {
     fn allows_official_admin_panel() {
         assert!(is_allowed_origin(MADMAIL_ADMIN_PANEL_ORIGIN));
         assert!(!is_allowed_origin("https://evil.example"));
-        assert!(is_allowed_origin("http://localhost:5173"));
-        assert!(is_allowed_origin("http://127.0.0.1:5173"));
-        assert!(!is_allowed_origin("http://10.0.0.196:5173"));
+        assert!(!is_allowed_origin("http://localhost:5173"));
     }
 
     #[test]

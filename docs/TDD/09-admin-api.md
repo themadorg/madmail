@@ -105,7 +105,7 @@ Other methods: HTTP 405.
 
 ### `/admin/dkim/check`
 
-`GET` looks up `default._domainkey.<domain>` and compares it to the local TXT (`madmail dkim check`). Body includes `matched`, `checked`, `expected_txt`, `dns_txt`. IP-literal domains return `checked: false`.
+`GET` looks up `default._domainkey.<domain>` and compares it to the local TXT (`madmail dkim check`). Body includes `matched`, `checked`, `expected_txt`, `dns_txt`. Does not create a key. IP-literal domains or a missing key return `checked: false`.
 
 Other methods: HTTP 405.
 
@@ -114,8 +114,6 @@ Other methods: HTTP 405.
 `GET` summarizes local key presence and DNS match (`madmail dkim status`). Does not create a key. Body includes `key_present`, `publishable`, `dns_checked`, `dns_matched`.
 
 Other methods: HTTP 405.
-
-Toggle POST body: `{"action": "enable"}` or `{"action": "disable"}`.
 
 Push POST body (`/admin/services/push`): `{"action": "auto"}` | `"enable"` / `"on"` | `"disable"` / `"off"` — see [23-push-notifications.md](23-push-notifications.md). Admin-web toggle uses `auto` (on) and `disable` (off).
 

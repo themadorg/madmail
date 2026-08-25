@@ -95,13 +95,20 @@ async fn check(args: &Args) -> Result<()> {
         .await
         .map_err(ChatmailError::config)?;
 
-    if out.is_json() {
-        return out.emit(data);
-    }
-
     let fqdn = data["dns_fqdn"].as_str().unwrap_or("-");
     let matched = data["matched"].as_bool().unwrap_or(false);
     let checked = data["checked"].as_bool().unwrap_or(false);
+    let lookup_failed = data.get("lookup_error").is_some();
+    let json_fail = checked && (!matched || lookup_failed);
+
+    if out.is_json() {
+        out.emit(&data)?;
+        if json_fail {
+            // Payload already on stdout; skip the ok:false stderr envelope.
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
 
     out.blank();
     out.line("  DKIM DNS check");

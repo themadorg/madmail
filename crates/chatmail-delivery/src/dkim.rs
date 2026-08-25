@@ -9,6 +9,7 @@
 //! are produced with **viadkim** — the same crate filtermail uses to verify —
 //! so a published `default._domainkey` TXT is enough for alignment + crypto.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -268,39 +269,83 @@ pub fn normalize_dkim_txt(s: &str) -> String {
         .join(";")
 }
 
+/// Parse DKIM TXT tags (`p=` case-sensitive; other tag names/values lowercased).
+fn dkim_tag_map(s: &str) -> BTreeMap<String, String> {
+    let compact: String = s
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '"')
+        .collect();
+    let mut map = BTreeMap::new();
+    for part in compact.split(';') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let Some((k, v)) = part.split_once('=') else {
+            continue;
+        };
+        let key = k.to_ascii_lowercase();
+        let val = if key == "p" {
+            v.to_string()
+        } else {
+            v.to_ascii_lowercase()
+        };
+        map.insert(key, val);
+    }
+    map
+}
+
+/// True when a published record has the same `p=` (and any other expected tags).
+/// Extra tags on the DNS side (`t=y`, reordered `k=`/`v=`) do not fail the check.
 pub fn dkim_txt_matches(expected: &str, found: &[String]) -> bool {
-    let want = normalize_dkim_txt(expected);
-    !want.is_empty() && found.iter().any(|f| normalize_dkim_txt(f) == want)
+    let want = dkim_tag_map(expected);
+    let Some(want_p) = want.get("p") else {
+        return false;
+    };
+    found.iter().any(|f| {
+        let got = dkim_tag_map(f);
+        if got.get("p") != Some(want_p) {
+            return false;
+        }
+        want.iter()
+            .all(|(k, v)| k == "p" || got.get(k).map(String::as_str) == Some(v.as_str()))
+    })
 }
 
 /// TXT lookup for `name` (FQDN). Empty vec = NXDOMAIN / no TXT.
 pub async fn lookup_txt(name: String) -> Result<Vec<String>, String> {
-    use hickory_resolver::config::{ResolverConfig, ResolverOpts};
-    use hickory_resolver::TokioAsyncResolver;
+    use hickory_resolver::proto::rr::RData;
+    use hickory_resolver::TokioResolver;
 
-    let resolver = match TokioAsyncResolver::tokio_from_system_conf() {
+    let resolver = match TokioResolver::builder_tokio().and_then(|b| b.build()) {
         Ok(r) => r,
-        Err(_) => TokioAsyncResolver::tokio(ResolverConfig::cloudflare(), ResolverOpts::default()),
+        Err(_) => {
+            use hickory_resolver::config::{ResolverConfig, GOOGLE};
+            use hickory_resolver::net::runtime::TokioRuntimeProvider;
+            TokioResolver::builder_with_config(
+                ResolverConfig::udp_and_tcp(&GOOGLE),
+                TokioRuntimeProvider::default(),
+            )
+            .build()
+            .map_err(|e| e.to_string())?
+        }
     };
     let qname = name.trim_end_matches('.').to_string();
     match resolver.txt_lookup(qname).await {
         Ok(lookup) => Ok(lookup
+            .answers()
             .iter()
-            .map(|txt| {
-                txt.txt_data()
-                    .iter()
-                    .map(|chunk| String::from_utf8_lossy(chunk).into_owned())
-                    .collect::<String>()
+            .filter_map(|rec| match &rec.data {
+                RData::TXT(txt) => Some(txt_bytes(txt)),
+                _ => None,
             })
             .filter(|s| !s.is_empty())
             .collect()),
         Err(e) => {
             let msg = e.to_string();
-            let empty = matches!(
-                e.kind(),
-                hickory_resolver::error::ResolveErrorKind::NoRecordsFound { .. }
-            ) || msg.to_ascii_lowercase().contains("nxdomain")
-                || msg.to_ascii_lowercase().contains("no records");
+            let empty = msg.to_ascii_lowercase().contains("nxdomain")
+                || msg.to_ascii_lowercase().contains("no records")
+                || msg.to_ascii_lowercase().contains("no record");
             if empty {
                 Ok(Vec::new())
             } else {
@@ -308,6 +353,13 @@ pub async fn lookup_txt(name: String) -> Result<Vec<String>, String> {
             }
         }
     }
+}
+
+fn txt_bytes(txt: &hickory_resolver::proto::rr::rdata::TXT) -> String {
+    txt.txt_data
+        .iter()
+        .map(|chunk| String::from_utf8_lossy(chunk).into_owned())
+        .collect()
 }
 
 /// Compare local DKIM TXT to the published `default._domainkey` record.
@@ -324,7 +376,7 @@ where
     F: FnOnce(String) -> Fut,
     Fut: std::future::Future<Output = Result<Vec<String>, String>>,
 {
-    let info = publish_info(state_dir, primary_domain)?;
+    let info = inspect_info(state_dir, primary_domain)?;
     let publishable = info["publishable"].as_bool().unwrap_or(false);
     let selector = info["selector"].clone();
     let domain = info["domain"].clone();
@@ -665,6 +717,10 @@ mod tests {
         assert_eq!(normalize_dkim_txt(a), normalize_dkim_txt(b));
         assert!(dkim_txt_matches(a, &[b.to_string()]));
         assert!(!dkim_txt_matches(a, &["v=DKIM1; k=rsa; p=XXXX".into()]));
+        assert!(dkim_txt_matches(
+            a,
+            &["v=DKIM1; p=ABCdef; k=rsa; t=y".into()]
+        ));
     }
 
     #[tokio::test]
@@ -696,6 +752,15 @@ mod tests {
         .unwrap();
         assert_eq!(skip["checked"], false);
         assert_eq!(skip["matched"], false);
+
+        let empty = tempfile::tempdir().unwrap();
+        let no_key = check_dns_with(empty.path(), "mail.example.org", |_fqdn| async {
+            panic!("must not query DNS without a local key")
+        })
+        .await
+        .unwrap();
+        assert_eq!(no_key["checked"], false);
+        assert!(!private_key_path(empty.path(), "default").is_file());
     }
 
     #[test]

@@ -34,7 +34,9 @@ Visiting this page calls `GET /admin/dkim`, which creates `{state_dir}/dkim/defa
 
 Copy buttons for FQDN, TXT, and a BIND-style zone line. **Check DNS** calls `GET /admin/dkim/check` (`madmail dkim check`) and shows whether the published TXT matches.
 
-No other mutations besides the GET side-effect that creates a missing key.
+Header refresh on this route reloads `GET /admin/dkim`. Global `store.refresh()` does not call `loadDkim()`, so visiting another page and refreshing will not mint `default.private`.
+
+No other mutations besides the GET side-effect that creates a missing key when this tab is opened.
 
 IP-literal mail domains show `publishable: false` and the server `reason` (no key is written).
 

@@ -589,7 +589,7 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
 }
 ```
 
-`checked` is `false` (no DNS query) for IP-literal domains; then `reason` is set. On mismatch `dns_txt` may be empty. Lookup failures add `lookup_error` and the CLI exits non-zero unless `checked` is false.
+`checked` is `false` (no DNS query) for IP-literal domains or when no local key exists; then `reason` is set. Does not create a key. On mismatch `dns_txt` may be empty. Lookup failures add `lookup_error`. `--json` still prints this envelope (`ok: true`) and exits 1 when `checked && !matched` (or `lookup_error` is set).
 
 ### `dkim status`
 

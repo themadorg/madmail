@@ -409,6 +409,90 @@ fn e2e_ctl_dkim_check_json_skips_ip() {
 }
 
 #[test]
+fn e2e_ctl_dkim_check_json_missing_key_does_not_mint() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path();
+    let config = state.join("madmail.conf");
+    std::fs::write(
+        &config,
+        "hostname mail.example.org\n$(primary_domain) = example.org\n",
+    )
+    .expect("write dkim check missing-key config");
+
+    let out = chatmail()
+        .args([
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "check",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let envelope: Value = serde_json::from_slice(&out).expect("dkim check --json stdout");
+    assert_eq!(envelope["ok"], true);
+    let data = &envelope["data"];
+    assert_eq!(data["checked"], false);
+    assert_eq!(data["matched"], false);
+    assert!(!state.join("dkim/default.private").is_file());
+}
+
+#[test]
+fn e2e_ctl_dkim_check_json_mismatch_exits_1() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path();
+    let config = state.join("madmail.conf");
+    std::fs::write(
+        &config,
+        "hostname mail.example.org\n$(primary_domain) = example.org\n",
+    )
+    .expect("write dkim check mismatch config");
+
+    chatmail()
+        .args([
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "show",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let asserted = chatmail()
+        .args([
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "check",
+            "--json",
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .clone();
+
+    let envelope: Value =
+        serde_json::from_slice(&asserted.stdout).expect("dkim check --json stdout");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "dkim check");
+    let data = &envelope["data"];
+    assert_eq!(data["checked"], true);
+    assert_eq!(data["matched"], false);
+    assert!(asserted.stderr.is_empty(), "no ok:false envelope on stderr");
+}
+
+#[test]
 fn e2e_ctl_dkim_status_json_missing_key() {
     let dir = TempDir::new().expect("tempdir");
     let state = dir.path();
