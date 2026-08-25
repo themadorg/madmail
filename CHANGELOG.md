@@ -1,3 +1,10 @@
+## [2.24.1](https://github.com/themadorg/madmail/compare/v2.24.0...v2.24.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* support fetching legacy RFC822 items ([5aa0638](https://github.com/themadorg/madmail/commit/5aa0638e68738994b421d32f472095531b15356d))
+
 # [2.24.0](https://github.com/themadorg/madmail/compare/v2.23.4...v2.24.0) (2026-08-19)
 
 
