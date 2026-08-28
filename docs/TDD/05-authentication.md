@@ -65,7 +65,7 @@ Madmail example config uses `min_username_length 3`; madmail-v2 defaults to **8*
 
 ## dclogin / IP registration
 
-Delta Chat `dclogin:` URLs must include explicit host and TLS hints:
+Delta Chat `dclogin:` URLs must include explicit host and TLS hints. `madmail accounts create` and `madmail accounts dclogin` print this URI (`create-user` / `POST /new` already did). A password-only `dclogin:user@host/?p=…` can IMAP-login while SMTP send / Saved Messages fail.
 
 ```
 dclogin:user@[IP]/?p=…&v=1&ih=IP&ip=993&is=ssl&sh=IP&sp=465&ss=ssl&ic=3
@@ -95,6 +95,8 @@ Built by `chatmail-config::build_dclogin_link`; www templates use `connectHostFo
 | `hydrate_loads_blocklist_and_jit_flag` | `chatmail-state` | Cache hydrate |
 | `build_dclogin_link_matches_www_shape` | `chatmail-config` | dclogin URI shape |
 | `new_account_returns_dclogin_url_with_ssl_hints` | `chatmail-www` | `POST /new` JSON |
+| `e2e_ctl_accounts_create_json_prints_full_dclogin` | `tests/ctl_cli_e2e.rs` | `accounts create` URI has `ih`/`sh`/`ss` |
+| `e2e_ctl_accounts_dclogin_json_matches_create` | `tests/ctl_cli_e2e.rs` | reprint URI; wrong password fails |
 
 ## Implementation references
 

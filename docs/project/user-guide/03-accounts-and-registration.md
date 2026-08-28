@@ -79,7 +79,7 @@ It does **not** store:
 
 **“Can I pre-create accounts for people?”**
 
-Yes. You can use the CLI (`madmail create-user ...`) or the admin web interface. The account will exist immediately and the user can log in with the password you set.
+Yes. Use `madmail accounts create <username>` (custom localpart) or `madmail create-user` (random). Both print a `dclogin:` URI that includes IMAP and SMTP host, port, and TLS. Give **that** URI to Delta Chat — do not hand-build a link from username and password only. Current Delta Chat can IMAP-login from a password-only URI and still fail to send (including Saved Messages). To reprint the URI later: `madmail accounts dclogin <username> --password …`. The admin web create-account modal also shows a one-time `dclogin:` link.
 
 **“What if someone creates a lot of throwaway accounts?”**
 

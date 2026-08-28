@@ -120,7 +120,8 @@ madmail admin-web path --reset
 ```bash
 madmail accounts list
 madmail accounts info alice@example.org
-madmail accounts create alice@example.org
+madmail accounts create alice@example.org --password 'secret'
+madmail accounts dclogin alice@example.org --password 'secret'
 madmail accounts delete alice@example.org --yes
 madmail accounts ban bob@example.org --reason "spam"
 madmail accounts unban bob@example.org --yes

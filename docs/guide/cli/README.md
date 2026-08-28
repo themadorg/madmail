@@ -90,6 +90,7 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 - [`ban-list`](accounts-ban-list.md)
 - [`create`](accounts-create.md)
 - [`create-random`](accounts-create-random.md)
+- [`dclogin`](accounts-dclogin.md)
 - [`delete`](accounts-delete.md)
 - [`delete-all`](accounts-delete-all.md)
 - [`export`](accounts-export.md)

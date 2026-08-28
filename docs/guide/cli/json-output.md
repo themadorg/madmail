@@ -330,10 +330,30 @@ Dry-run / completed uninstall returns paths and flags in `data`. When nothing to
   "command": "accounts create",
   "message": "Created account: alice@example.org",
   "data": {
-    "username": "alice@example.org"
+    "username": "alice@example.org",
+    "email": "alice@example.org",
+    "dclogin": "dclogin:alice@example.org/?p=…&v=1&ih=…&ip=993&is=ssl&sh=…&sp=465&ss=ssl&ic=3"
   }
 }
 ```
+
+`dclogin` is the same URI shape as `create-user` / `POST /new`. Paste it into Delta Chat; a username+password-only URI is not enough for SMTP.
+
+### `accounts dclogin`
+
+```json
+{
+  "ok": true,
+  "command": "accounts dclogin",
+  "data": {
+    "username": "alice@example.org",
+    "email": "alice@example.org",
+    "dclogin": "dclogin:alice@example.org/?p=…&v=1&ih=…&ip=993&is=ssl&sh=…&sp=465&ss=ssl&ic=3"
+  }
+}
+```
+
+Checks the password against the stored hash, then prints the URI. Does not create an account. Wrong password or missing user: non-zero exit.
 
 ### `accounts create-random` / `create-user`
 

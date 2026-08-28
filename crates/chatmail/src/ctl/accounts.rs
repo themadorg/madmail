@@ -20,7 +20,7 @@
 use std::fs;
 use std::path::Path;
 
-use chatmail_auth::{hash_password, is_importable_hash, normalize_username};
+use chatmail_auth::{hash_password, is_importable_hash, normalize_username, verify_password};
 use chatmail_config::cli::AccountsCommand;
 use chatmail_config::{build_dclogin_link, Args, DcloginMailSettings};
 use chatmail_db::{
@@ -73,7 +73,15 @@ pub async fn accounts(args: &Args, cmd: &AccountsCommand) -> Result<()> {
                 Some(p) => p.clone(),
                 None => read_password_stdin()?,
             };
-            accounts_create(args, &pool, &mailbox, &u, &pw).await
+            accounts_create(args, &ctx, &pool, &mailbox, &u, &pw).await
+        }
+        AccountsCommand::Dclogin { username, password } => {
+            let u = ensure_email(username, &domain)?;
+            let pw = match password {
+                Some(p) => p.clone(),
+                None => read_password_stdin()?,
+            };
+            accounts_dclogin(args, &ctx, &pool, &u, &pw).await
         }
         AccountsCommand::CreateRandom { json_only } => {
             create_random_account(args, &ctx, &pool, &mailbox, *json_only).await
@@ -281,6 +289,7 @@ async fn accounts_info(
 
 async fn accounts_create(
     args: &Args,
+    ctx: &CtlContext,
     pool: &DbPool,
     mailbox: &MailboxStore,
     username: &str,
@@ -299,11 +308,74 @@ async fn accounts_create(
     }
     let hash = hash_password(password)?;
     provision_account(pool, mailbox, username, &hash).await?;
-    out.done_msg(
-        format!("Created account: {username}"),
-        serde_json::json!({ "username": username }),
-        format!("Created account: {username}"),
+    let dclogin = dclogin_uri(ctx, pool, username, password).await?;
+    print_dclogin(
+        &out,
+        username,
+        &dclogin,
+        Some(format!("Created account: {username}")),
     )
+}
+
+async fn accounts_dclogin(
+    args: &Args,
+    ctx: &CtlContext,
+    pool: &DbPool,
+    username: &str,
+    password: &str,
+) -> Result<()> {
+    let out = CtlOut::from_args(args, "accounts dclogin");
+    let Some(hash) = passwords::get_user_hash(pool, username).await? else {
+        return Err(ChatmailError::config(format!(
+            "no such account: {username}"
+        )));
+    };
+    if !verify_password(password, &hash)? {
+        return Err(ChatmailError::config(
+            "password does not match this account",
+        ));
+    }
+    let dclogin = dclogin_uri(ctx, pool, username, password).await?;
+    print_dclogin(&out, username, &dclogin, None)
+}
+
+async fn dclogin_uri(
+    ctx: &CtlContext,
+    pool: &DbPool,
+    username: &str,
+    password: &str,
+) -> Result<String> {
+    let db_ports = load_mail_port_overrides(pool).await?;
+    let mail = DcloginMailSettings::from_config_with_db(&ctx.config, None, &db_ports);
+    Ok(build_dclogin_link(username, password, &mail))
+}
+
+fn print_dclogin(
+    out: &CtlOut,
+    username: &str,
+    dclogin: &str,
+    created: Option<String>,
+) -> Result<()> {
+    let data = serde_json::json!({
+        "username": username,
+        "email": username,
+        "dclogin": dclogin,
+    });
+    if out.is_json() {
+        return match created {
+            Some(msg) => out.done_msg("", data, msg),
+            None => out.emit(data),
+        };
+    }
+    if let Some(msg) = created {
+        out.line(msg);
+        out.blank();
+    }
+    out.line("Delta Chat login URI (IMAP + SMTP host/port/TLS). Paste this; do not hand-build from username and password alone:");
+    out.blank();
+    out.line(dclogin);
+    out.blank();
+    Ok(())
 }
 
 async fn create_random_account(

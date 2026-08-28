@@ -63,7 +63,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `admin-token` | [admin-token.md](../guide/cli/admin-token.md) | `admin_token.rs` | **done** |
 | `admin-web` | [admin-web.md](../guide/cli/admin-web.md) | `admin_web.rs` | **done** |
 | `certificate` | [certificate.md](../guide/cli/certificate.md) | `certificate.rs` | **done** (`get`, `regenerate`, `status`, `autocert`) |
-| `accounts` | [accounts.md](../guide/cli/accounts.md) | `accounts.rs` | **done** |
+| `accounts` | [accounts.md](../guide/cli/accounts.md) | `accounts.rs` | **done** (`create` / `dclogin` print full `dclogin:` URI) |
 | `ban-list` | [ban-list.md](../guide/cli/ban-list.md) | `accounts.rs` | **done** (alias) |
 | `blocklist` | [blocklist.md](../guide/cli/blocklist.md) | `blocklist_cmd.rs` | **done** |
 | `create-user` | [create-user.md](../guide/cli/create-user.md) | `accounts.rs` | **done** |
@@ -119,7 +119,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 | Command | Guide | Madmail source | madmail-v2 |
 |---------|-------|----------------|-------------|
-| `accounts` | [accounts.md](../guide/cli/accounts.md) | `ctl/accounts_*.go` | **done** |
+| `accounts` | [accounts.md](../guide/cli/accounts.md) | `ctl/accounts_*.go` | **done** (`create` / `dclogin` print full `dclogin:` URI) |
 | `ban-list` | [ban-list.md](../guide/cli/ban-list.md) | `ctl/accounts_direct.go` | **done** |
 | `blocklist` | [blocklist.md](../guide/cli/blocklist.md) | `ctl/blocklist.go` | **done** |
 | `create-user` | [create-user.md](../guide/cli/create-user.md) | `ctl/create_user.go` | **done** |

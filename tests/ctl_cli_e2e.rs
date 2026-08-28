@@ -53,6 +53,104 @@ fn e2e_ctl_accounts_status_json() {
     assert!(data["database"].is_string());
 }
 
+fn assert_full_dclogin(uri: &str, email: &str) {
+    assert!(
+        uri.starts_with(&format!("dclogin:{email}/?p=")),
+        "expected dclogin for {email}, got {uri}"
+    );
+    for needle in ["&v=1&", "&ih=", "&ip=", "&is=", "&sh=", "&sp=", "&ss=", "&ic="] {
+        assert!(uri.contains(needle), "dclogin missing {needle}: {uri}");
+    }
+}
+
+#[test]
+fn e2e_ctl_accounts_create_json_prints_full_dclogin() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let mut argv = state_argv(&state);
+    argv.push("--json".into());
+
+    let out = chatmail()
+        .args(argv)
+        .args([
+            "accounts",
+            "create",
+            "alice@example.org",
+            "--password",
+            "secret-pass-99",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let envelope: Value = serde_json::from_slice(&out).expect("accounts create --json");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "accounts create");
+    assert_eq!(envelope["data"]["username"], "alice@example.org");
+    assert_eq!(envelope["data"]["email"], "alice@example.org");
+    let dclogin = envelope["data"]["dclogin"].as_str().expect("dclogin");
+    assert_full_dclogin(dclogin, "alice@example.org");
+    assert!(dclogin.contains("secret-pass-99") || dclogin.contains("p=secret-pass-99"));
+}
+
+#[test]
+fn e2e_ctl_accounts_dclogin_json_matches_create() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let mut create_argv = state_argv(&state);
+    create_argv.push("--json".into());
+
+    let created = chatmail()
+        .args(&create_argv)
+        .args([
+            "accounts",
+            "create",
+            "bob@example.org",
+            "--password",
+            "bob-secret-99",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let created: Value = serde_json::from_slice(&created).expect("create json");
+    let want = created["data"]["dclogin"].as_str().expect("dclogin").to_string();
+
+    let reprinted = chatmail()
+        .args(&create_argv)
+        .args([
+            "accounts",
+            "dclogin",
+            "bob@example.org",
+            "--password",
+            "bob-secret-99",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let reprinted: Value = serde_json::from_slice(&reprinted).expect("dclogin json");
+    assert_eq!(reprinted["ok"], true);
+    assert_eq!(reprinted["command"], "accounts dclogin");
+    assert_eq!(reprinted["data"]["dclogin"], want);
+
+    chatmail()
+        .args(state_argv(&state))
+        .args([
+            "accounts",
+            "dclogin",
+            "bob@example.org",
+            "--password",
+            "wrong-password-99",
+        ])
+        .assert()
+        .failure();
+}
+
 #[test]
 fn e2e_ctl_accounts_create_random_delete_and_ban_list() {
     let dir = TempDir::new().expect("tempdir");

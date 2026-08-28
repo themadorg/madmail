@@ -37,6 +37,12 @@ async fn dispatch_accounts_create_delete_and_blocklist() {
     dispatch(&cli).await.expect("accounts create");
 
     assert!(passwords::user_exists(&pool, email).await.unwrap());
+
+    let cli = parse_cli(
+        dir.path(),
+        &["accounts", "dclogin", email, "--password", password],
+    );
+    dispatch(&cli).await.expect("accounts dclogin");
     let mailbox = MailboxStore::new(dir.path());
     assert!(mailbox.maildir_for_user(email).root.exists());
 

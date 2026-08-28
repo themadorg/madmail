@@ -851,6 +851,14 @@ pub enum AccountsCommand {
         #[arg(short, long)]
         password: Option<String>,
     },
+    /// Print a Delta Chat `dclogin:` URI for an existing account.
+    Dclogin {
+        /// Email address.
+        username: String,
+        /// Password (prompted on stdin if omitted).
+        #[arg(short, long)]
+        password: Option<String>,
+    },
     /// Random account; prints JSON credentials.
     #[command(name = "create-random")]
     CreateRandom {
@@ -1131,6 +1139,23 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(Command::Accounts(AccountsCommand::Create {
+                username,
+                password: Some(pw),
+            })) if username == "u@example.org" && pw == "secret"
+        ));
+
+        let cli = Cli::try_parse_from([
+            "chatmail",
+            "accounts",
+            "dclogin",
+            "u@example.org",
+            "--password",
+            "secret",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Accounts(AccountsCommand::Dclogin {
                 username,
                 password: Some(pw),
             })) if username == "u@example.org" && pw == "secret"

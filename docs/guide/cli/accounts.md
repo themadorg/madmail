@@ -23,7 +23,8 @@ madmail accounts <subcommand>
 |------------|-------------|
 | `status` | Summary of credentials and storage |
 | `info <username>` | One account: credentials, quota, blocklist status |
-| `create <username> [--password PASS]` | Create login + maildir + quota row (password prompted if omitted) |
+| `create <username> [--password PASS]` | Create login + maildir + quota row; prints a `dclogin:` URI |
+| `dclogin <username> [--password PASS]` | Reprint a `dclogin:` URI for an existing account |
 | `create-random [--json-only]` | Random username/password; prints JSON with `dclogin` link |
 | `delete <username> [-y]` | Remove credentials, mail, and blocklist entry |
 | `ban <username> [reason] [-y]` | Same as delete with moderation reason |
@@ -39,6 +40,7 @@ madmail accounts <subcommand>
 madmail accounts status
 madmail accounts info alice@example.org
 madmail accounts create bob@example.org --password 'secret'
+madmail accounts dclogin bob@example.org --password 'secret'
 madmail accounts ban spammer@example.org "spam" --yes
 madmail accounts export -o accounts-backup.json
 madmail accounts import accounts-backup.json
@@ -55,6 +57,7 @@ madmail accounts import accounts-backup.json
 - [`ban-list`](accounts-ban-list.md) — `madmail accounts ban-list`
 - [`create`](accounts-create.md) — `madmail accounts create`
 - [`create-random`](accounts-create-random.md) — `madmail accounts create-random`
+- [`dclogin`](accounts-dclogin.md) — `madmail accounts dclogin`
 - [`delete`](accounts-delete.md) — `madmail accounts delete`
 - [`delete-all`](accounts-delete-all.md) — `madmail accounts delete-all`
 - [`export`](accounts-export.md) — `madmail accounts export`
