@@ -9,6 +9,8 @@ There are two main ways to manage a server:
 
 Both talk to the same underlying system.
 
+The application database defaults to SQLite (`credentials.db` / `chatmail.db`). PostgreSQL is optional for a **new empty** database — [PostgreSQL operator guide](./18-postgres.md). Changing `driver` does not copy existing SQLite data.
+
 One particularly useful CLI command for production servers is `madmail upgrade` (see the Quick Start guide for how signed binary upgrades work).
 
 ## The Web Admin Dashboard

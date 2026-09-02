@@ -234,8 +234,8 @@ You can override this with `--state-dir` on the command line or the `state_dir` 
 ```
 state_dir/
 ├── admin_token                  # 64-character admin API token (file permissions 0600)
-├── chatmail.db                  # Main SQLite database (settings, accounts, quotas, federation stats, blocklist, etc.)
-├── credentials.db               # Legacy authentication database (used by some older paths)
+├── chatmail.db                  # Main SQLite database when using the default driver (settings, accounts, quotas, …)
+├── credentials.db               # Legacy / install default SQLite file (`auth.pass_table` `dsn`)
 ├── mail/                        # All user mailboxes in Maildir format
 │   ├── alice@example.com/
 │   │   └── Maildir/
@@ -268,7 +268,7 @@ state_dir/
 
 ### Backups
 
-The simplest reliable backup is a snapshot or copy of the entire `state_dir` (ideally while the service is stopped, or using proper tools that handle SQLite WAL files correctly).
+The simplest reliable backup is a snapshot or copy of the entire `state_dir` (ideally while the service is stopped, or using proper tools that handle SQLite WAL files correctly). If the application database is **PostgreSQL**, back that up separately — see [PostgreSQL as the application database](./18-postgres.md). `madmail install` always writes SQLite; Postgres is an optional backend for an **empty** database, not a conversion of an existing SQLite file. A SQLite → Postgres copy tool is in the works.
 
 ## Self-Serving Binary and Documentation
 

@@ -42,14 +42,14 @@ Environment substitution `{env:VAR}` in values is expanded when the variable is 
 |-----------|-------------------|
 | `auto_create yes` | `auth_auto_create` |
 | `jit_domain` | `jit_domain` (defaults to `primary_domain`) |
-| `table sql_table { driver; dsn }` | `credentials_driver`, `credentials_dsn` |
+| `table sql_table { driver; dsn }` | `credentials_driver`, `credentials_dsn` — **this is the application database v2 opens** (`sqlite3` file or `postgres` DSN) |
 | `dsn credentials.db` | `credentials_dsn` (legacy / flat form, relative to `state_dir` for SQLite) |
 
 ### `storage.imapsql`
 
 | Directive | `AppConfig` field |
 |-----------|-------------------|
-| `driver` / `dsn` | `imapsql_driver`, `imapsql_dsn` — `sqlite3` (default) or `postgres` (libpq DSN; Madmail schema import supported) |
+| `driver` / `dsn` | `imapsql_driver`, `imapsql_dsn` — `sqlite3` (default) or `postgres` (libpq or `postgres://` DSN). Set the **same** DSN as `auth.pass_table` so the file is not misleading; v2 does not open a second SQL database. Operator guide: [18-postgres.md](../project/user-guide/18-postgres.md) (empty database only — not a SQLite file conversion). |
 | `default_quota` | `default_quota` (e.g. `1G`) |
 | `retention` | `retention` (e.g. `24h`) — hourly maildir purge when server runs; see [`21-scheduled-maintenance.md`](21-scheduled-maintenance.md) |
 | `unused_account_retention` | `unused_account_retention` (e.g. `720h`) — delete never-logged-in accounts |

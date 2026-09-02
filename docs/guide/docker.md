@@ -612,7 +612,7 @@ After `madmail install`, hostname and domain are written into `/etc/madmail/madm
 
 ## Custom configuration
 
-To use your own config (domain, autocert, Postgres, Shadowsocks, etc.), place `madmail.conf` under `/etc/madmail` on the host and bind-mount the three paths. The default image entrypoint already points at `/etc/madmail/madmail.conf` and `/var/lib/madmail`:
+To use your own config (domain, autocert, Postgres, Shadowsocks, etc.), place `madmail.conf` under `/etc/madmail` on the host and bind-mount the three paths. The default image entrypoint already points at `/etc/madmail/madmail.conf` and `/var/lib/madmail`. Postgres is a **driver/DSN in that file**, not a Compose environment variable; use it for an empty database, not to convert SQLite — [PostgreSQL operator guide](../project/user-guide/18-postgres.md).
 
 ```bash
 cp assets/madmail.conf.docker /etc/madmail/madmail.conf
@@ -731,3 +731,4 @@ The Dockerfile uses three stages: admin-web (Bun), Rust compile (Alpine), and Al
 - [Install: public IP + Let's Encrypt](../install-simple-ip-acme.md)
 - [Configuration](../project/06-configuration-system.md)
 - [Admin UI and CLI](../project/user-guide/07-admin-and-cli.md)
+- [PostgreSQL](postgres.md) — optional application database (empty DB, not a SQLite conversion)

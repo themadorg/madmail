@@ -2,7 +2,7 @@
 
 madmail-v2 uses **one consolidated database** (`state_dir/chatmail.db` for SQLite, or Postgres DSN from `maddy.conf`) containing the Madmail **imapsql** extension tables. Madmail splits `credentials.db` (auth KV) and `imapsql.db` (everything else); madmail-v2 can still read Madmail `passwords` tables that use `key`/`value` columns.
 
-**Backends:** SQLite (default) and **Postgres** (`DbPool::Postgres`, `migrations/postgres/`). Postgres supports Madmail schema import plus extension migrations.
+**Backends:** SQLite (default) and **Postgres** (`DbPool::Postgres`, `migrations/postgres/`). Postgres supports Madmail schema import plus extension migrations. Switching `driver` to `postgres` does **not** copy an existing SQLite file; operator how-to (empty DB): [user-guide/18-postgres.md](../project/user-guide/18-postgres.md).
 
 Schema source of truth in code: `crates/chatmail-db/migrations/` (SQLite + Postgres variants).
 
