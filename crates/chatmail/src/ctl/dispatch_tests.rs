@@ -37,7 +37,9 @@ async fn dispatch_db_sqlite_to_postgres_dry_run() {
             "--dry-run",
         ],
     );
-    dispatch(&cli).await.expect("db sqlite-to-postgres --dry-run");
+    dispatch(&cli)
+        .await
+        .expect("db sqlite-to-postgres --dry-run");
 }
 
 #[tokio::test]

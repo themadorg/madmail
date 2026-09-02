@@ -229,11 +229,8 @@ async fn copy_one(src: &DbPool, dst: &PgPool, table: &str) -> Result<u64> {
 }
 
 async fn copy_settings(src: &DbPool, dst: &PgPool) -> Result<u64> {
-    let rows: Vec<(String, String)> = crate::db_fetch_all!(
-        src,
-        (String, String),
-        "SELECT key, value FROM settings"
-    )?;
+    let rows: Vec<(String, String)> =
+        crate::db_fetch_all!(src, (String, String), "SELECT key, value FROM settings")?;
     let n = rows.len() as u64;
     for (k, v) in rows {
         sqlx::query(
@@ -370,11 +367,8 @@ async fn copy_dns_overrides(src: &DbPool, dst: &PgPool) -> Result<u64> {
 async fn copy_passwords(src: &DbPool, dst: &PgPool) -> Result<u64> {
     match passwords_layout(src).await? {
         PasswordsLayout::MadmailKv => {
-            let rows: Vec<(String, String)> = crate::db_fetch_all!(
-                src,
-                (String, String),
-                "SELECT key, value FROM passwords"
-            )?;
+            let rows: Vec<(String, String)> =
+                crate::db_fetch_all!(src, (String, String), "SELECT key, value FROM passwords")?;
             let n = rows.len() as u64;
             let now = unix_now();
             for (user, hash) in rows {
@@ -473,14 +467,26 @@ async fn copy_federation_rules(src: &DbPool, dst: &PgPool) -> Result<u64> {
 
 #[allow(clippy::type_complexity)]
 async fn copy_federation_stats(src: &DbPool, dst: &PgPool) -> Result<u64> {
-    let rows: Vec<(String, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64)> =
-        crate::db_fetch_all!(
-            src,
-            (String, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64),
-            "SELECT domain, queued_messages, failed_http, failed_https, failed_smtp, \
+    let rows: Vec<(
+        String,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+    )> = crate::db_fetch_all!(
+        src,
+        (String, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64),
+        "SELECT domain, queued_messages, failed_http, failed_https, failed_smtp, \
              success_http, success_https, success_smtp, inbound_deliveries, \
              successful_deliveries, total_latency_ms, last_active FROM federation_server_stats"
-        )?;
+    )?;
     let n = rows.len() as u64;
     for r in rows {
         sqlx::query(
@@ -547,7 +553,15 @@ async fn copy_exchangers(src: &DbPool, dst: &PgPool) -> Result<u64> {
         Option<String>,
     )> = crate::db_fetch_all!(
         src,
-        (String, String, i64, i64, Option<String>, Option<String>, Option<String>),
+        (
+            String,
+            String,
+            i64,
+            i64,
+            Option<String>,
+            Option<String>,
+            Option<String>
+        ),
         "SELECT name, url, enabled, poll_interval, CAST(last_poll_at AS TEXT), \
          CAST(created_at AS TEXT), CAST(updated_at AS TEXT) FROM exchangers"
     )?;

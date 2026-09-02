@@ -76,12 +76,7 @@ async fn sqlite_to_postgres(
         return out.aborted();
     }
 
-    let report = copy_sqlite_to_postgres(
-        &sqlite_path,
-        dsn,
-        CopyOpts { dry_run, force },
-    )
-    .await?;
+    let report = copy_sqlite_to_postgres(&sqlite_path, dsn, CopyOpts { dry_run, force }).await?;
 
     let tables: Vec<_> = report
         .tables
