@@ -1,10 +1,10 @@
 import { visit } from 'unist-util-visit';
-import { resolveHref } from './docLinks.js';
+import { resolveHref, sourcePathFromFile } from './docLinks.js';
 
 /** @returns {import('unified').Plugin} */
 export function rehypeDocLinks() {
 	return (tree, file) => {
-		const sourcePath = file?.path ?? file?.history?.[0] ?? '';
+		const sourcePath = sourcePathFromFile(file);
 
 		visit(tree, 'element', (node) => {
 			if (node.tagName !== 'a' || !node.properties?.href) return;

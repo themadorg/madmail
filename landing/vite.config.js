@@ -5,7 +5,8 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { rehypeDocLinks } from './src/lib/rehypeDocLinks.js';
 import { rehypeDocToc } from './src/lib/rehypeDocToc.js';
 import { rehypeHeadingIds } from './src/lib/rehypeHeadingIds.js';
-import { remarkLandingLinks } from './src/lib/remarkLandingLinks.js';
+import { highlightMdsvex } from './src/lib/mdsvexHighlight.js';
+import { remarkLandingLinks, remarkPlainPowershell } from './src/lib/remarkLandingLinks.js';
 import { defineConfig } from 'vite';
 
 function generateDocumentationTree() {
@@ -52,7 +53,8 @@ export default defineConfig({
 			preprocess: [
 				mdsvex({
 					extensions: ['.svx', '.md'],
-					remarkPlugins: [remarkLandingLinks],
+					highlight: { highlighter: highlightMdsvex },
+					remarkPlugins: [remarkPlainPowershell, remarkLandingLinks],
 					rehypePlugins: [rehypeHeadingIds, rehypeDocToc, rehypeDocLinks]
 				})
 			],

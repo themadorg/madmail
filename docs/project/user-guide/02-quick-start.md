@@ -168,7 +168,7 @@ This path installs a full production setup (systemd service, user, directories, 
 
 See the dedicated short guide:
 
-**[Install on a Public IP with Let’s Encrypt](../install-simple-ip-acme.md)**
+**[Install on a Public IP with Let’s Encrypt](../../install-simple-ip-acme.md)**
 
 It boils down to (run as root):
 
