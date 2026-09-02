@@ -1102,6 +1102,7 @@ mod tests {
         ));
     }
 
+    #[test]
     fn html_migrate_accepts_yes_flag() {
         let cli = Cli::try_parse_from(["madmail", "html-migrate"]).unwrap();
         assert!(matches!(
