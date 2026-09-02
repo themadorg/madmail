@@ -1,6 +1,7 @@
 <script>
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import arrowRight from '$lib/icons/arrow-right.svg?raw';
+	import { repo } from '$lib/nav.js';
 
 	const installCode = `ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
@@ -23,6 +24,17 @@ sudo systemctl enable --now madmail`;
 		Also works with a public IP and no domain.
 		<a href="/docs/deployment" class="hint-link">
 			See deployment options
+			<span class="icon" aria-hidden="true">{@html arrowRight}</span>
+		</a>
+	</p>
+	<p class="hint">
+		On Windows, use
+		<code>madmail-windows-amd64-setup.exe</code>
+		from
+		<a href="{repo}/releases">Releases</a>,
+		or the CLI in
+		<a href="/docs/project/user-guide/02-quick-start#windows" class="hint-link">
+			Quick Start — Windows
 			<span class="icon" aria-hidden="true">{@html arrowRight}</span>
 		</a>
 	</p>
@@ -76,6 +88,11 @@ sudo systemctl enable --now madmail`;
 
 	.hint-link:hover {
 		text-decoration: underline;
+	}
+
+	.hint code {
+		font-family: var(--font-mono);
+		font-size: 0.85em;
 	}
 
 	.icon :global(svg) {

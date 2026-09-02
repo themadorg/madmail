@@ -6,6 +6,7 @@
 	"scripts": {
 		"docs:tree": "node scripts/generate-documentation-tree.mjs",
 		"fonts:sync": "node scripts/sync-fonts.mjs",
+		"test": "node --test src/lib/docLinks.test.js src/lib/mdsvexHighlight.test.js",
 		"dev": "node scripts/generate-documentation-tree.mjs && vite dev",
 		"build": "node scripts/generate-documentation-tree.mjs && vite build",
 		"preview": "vite preview",
