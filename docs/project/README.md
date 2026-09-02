@@ -65,7 +65,7 @@ This `docs/project/` area now contains both the deep code-understanding series a
 - **PGP-only by design** for Delta Chat users (enforced in SMTP DATA, APPEND, /mxdeliv).
 - **Just-In-Time (JIT) registration** — accounts created on first login or `/new`.
 - **Hybrid federation** — preferred HTTP POST /mxdeliv, fallback to SMTP.
-- **Hot in-memory state** (`AppState`) + write-through to SQLite + Maildir.
+- **Hot in-memory state** (`AppState`) + write-through to SQLite or PostgreSQL + Maildir. Postgres is an optional empty-database backend, not a SQLite conversion ([user-guide/18-postgres.md](./user-guide/18-postgres.md)).
 - **Dynamic config** via DB `settings` table (most things reloadable without restart).
 - **Self-contained deploys** — admin web SPA can be compiled into the binary.
 - **Privacy / No-Log** and strong defaults.

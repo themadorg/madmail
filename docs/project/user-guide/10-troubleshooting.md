@@ -137,8 +137,10 @@ When something is really not working, these commands are your friends:
 ```bash
 madmail status                 # basic health
 madmail logs                   # if your system uses journalctl or similar
-sqlite3 /var/lib/madmail/chatmail.db "SELECT * FROM settings;"   # Linux default path
+sqlite3 /var/lib/madmail/chatmail.db "SELECT * FROM settings;"   # Linux default path (SQLite backend)
 ```
+
+On PostgreSQL, inspect `settings` with `psql` against the DSN in `auth.pass_table`. See [PostgreSQL as the application database](./18-postgres.md) (empty database, not a SQLite copy).
 
 Windows:
 

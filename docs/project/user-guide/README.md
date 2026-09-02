@@ -28,6 +28,7 @@ It is written in the same spirit as the original Madmail "chatmail" documentatio
 | DNS, SPF, DKIM, DMARC, federation reachability | [12-dns-mail-auth.md](./12-dns-mail-auth.md) | Operators (very common question) |
 | Advanced / stealth deployment options | [12-advanced-deployment.md](./12-advanced-deployment.md) | Experienced operators |
 | Customizing the HTML pages and web UI | [17-customizing-html-pages.md](./17-customizing-html-pages.md) | Operators who want to brand or modify the public site |
+| PostgreSQL instead of SQLite | [18-postgres.md](./18-postgres.md) | Operators (new empty database only — not a SQLite conversion) |
 | Endpoint Rewrite (push-push / domain redirection) | [15-endpoint-rewrite.md](./15-endpoint-rewrite.md) | Advanced operators |
 | Exchangers (push-pull, pull-pull intermediaries) | [16-exchangers.md](./16-exchangers.md) | Advanced operators |
 

@@ -1,6 +1,6 @@
 # Native install guide (`madmail install`)
 
-`madmail install` bootstraps a mail server: writes `madmail.conf`, TLS material, SQLite state, optional systemd unit, and (on system installs) a service user and binary under `/usr/local/bin/`.
+`madmail install` bootstraps a mail server: writes `madmail.conf`, TLS material, SQLite state, optional systemd unit, and (on system installs) a service user and binary under `/usr/local/bin/`. PostgreSQL is an optional application-database backend for a **new empty** database after install — [operator guide](../project/user-guide/18-postgres.md). Changing `driver` does not copy an existing SQLite file.
 
 The command is **Madmail-compatible**. The binary name (`madmail`, `chatmail`, …) is taken from `argv[0]` and drives config filenames, systemd unit name, and service user name.
 
@@ -408,3 +408,4 @@ For IP/self-signed relays, Delta Chat clients may need to accept self-signed cer
 - [CLI JSON output](cli/json-output.md) — `--json` schemas for scripting
 - [CLI tools (TDD)](../TDD/14-cli-tools.md) — global flags and ctl overview
 - [Configuration (TDD)](../TDD/13-configuration.md) — runtime config after install
+- [PostgreSQL](postgres.md) — optional application database (empty DB, not a SQLite conversion)

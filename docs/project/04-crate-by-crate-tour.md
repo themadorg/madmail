@@ -61,7 +61,7 @@ Modules:
 
 **Critical tables** (from migrations): `settings`, `passwords`, `quotas`, `blocked_users`, `registration_tokens`, `federation_stats`, `dns_overrides`.
 
-Also has Postgres migrations (for future or alternate deploys).
+Also has Postgres migrations (alternate application-database backend; operator guide: [user-guide/18-postgres.md](./user-guide/18-postgres.md)).
 
 ### `chatmail-state`
 
