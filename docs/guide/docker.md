@@ -29,6 +29,7 @@ Madmail publishes official container images to **GitHub Container Registry (GHCR
   - [TLS quick reference](#tls-quick-reference)
 - [Ports](#ports)
 - [TURN (calls)](#turn-calls)
+- [Iroh (WebXDC realtime)](#iroh-webxdc-realtime)
 - [Volumes and layout](#volumes-and-layout)
 - [Environment variables](#environment-variables-bundled-config-only)
 - [Custom configuration](#custom-configuration)
@@ -224,7 +225,7 @@ services:
       - /run/madmail:/run/madmail
 ```
 
-Run `madmail install …` once on the host (or in a one-off container) before `docker compose up -d`.
+Run `madmail install …` once on the host (or in a one-off container) before `docker compose up -d`. Iroh stays off unless you passed `--enable-iroh`; then map TCP **3340** as in [Iroh (WebXDC realtime)](#iroh-webxdc-realtime).
 
 ## Domain and hostname
 
@@ -510,13 +511,14 @@ Set `tls_mode file` in the config and ensure `tls file` points at those paths (t
 | `80` / `443` | HTTP / HTTPS — Delta Chat registration page, chatmail API, Admin API |
 | `3478` / **udp** | TURN/STUN control (Delta Chat voice/video calls) |
 | `49152–65535` / **udp** | TURN relay media (default range; configurable in admin/config) |
+| `3340` / **tcp** | Iroh relay (WebXDC) — optional; off unless `install --enable-iroh` or `madmail iroh install` |
 
 The **admin web dashboard** is optional and disabled until `admin-web enable`. When enabled it is mounted at `/admin` (or a custom path). The **Admin API** is always available at `/api/admin` when `admin_token` is not set to `disabled`.
 
-Production configs often also expose `80` / `443` (HTTPS registration) and `8388` (Shadowsocks). Map whatever your config file listens on, for example:
+Production configs often also expose `80` / `443` (HTTPS registration), `8388` (Shadowsocks), and `3340` (Iroh). Map whatever your config file listens on, for example:
 
 ```bash
--p 80:80 -p 443:443 -p 8388:8388 -p 3478:3478/udp -p 49152-65535:49152-65535/udp
+-p 80:80 -p 443:443 -p 8388:8388 -p 3340:3340 -p 3478:3478/udp -p 49152-65535:49152-65535/udp
 ```
 
 ## TURN (calls)
@@ -579,6 +581,80 @@ Enable TURN in the admin UI or ensure `turn_enable yes` and `__TURN_ENABLED__` a
 3. Optional live allocate probe (not run by default): `tests/docker_turn_e2e.rs` — set `DOCKER_TURN_*` env vars and run with `cargo test -p chatmail-integration --test docker_turn_e2e -- --ignored`.
 4. Optional SMTP/IMAP connectivity from outside this tree: [themadorg/relay-ping](https://github.com/themadorg/relay-ping) (`-test connectivity -domain …`).
 
+## Iroh (WebXDC realtime)
+
+The image already ships `/bin/iroh-relay`. Madmail supervises it for Delta Chat WebXDC and blob transfer. **`madmail install` leaves Iroh off** unless you pass `--enable-iroh`. There is no Compose environment variable for this — same config and admin toggle as a native install (`iroh_relay_url` plus `__IROH_ENABLED__`).
+
+CLI reference: [`madmail iroh`](cli/iroh.md). Protocol detail: [Iroh relay (TDD)](../TDD/11-proxy-services.md#iroh-relay-webxdc-realtime).
+
+### Enable at bootstrap
+
+Add `--enable-iroh` to the one-off `install` container (same flags as [Quick start](#quick-start-domain-name)):
+
+```bash
+docker run --rm \
+  --cap-add NET_BIND_SERVICE \
+  -p 80:80 \
+  -v /var/lib/madmail:/var/lib/madmail \
+  -v /etc/madmail:/etc/madmail \
+  ghcr.io/themadorg/madmail:latest \
+  install --simple --domain example.org \
+    --hostname example.org \
+    --ip 203.0.113.50 \
+    --enable-iroh \
+    --skip-systemd --skip-user
+```
+
+That writes `iroh_relay_url http://$(public_ip):3340` into the IMAP block and turns the admin toggle on.
+
+### Enable on an existing container
+
+Long-running Compose often mounts `/etc/madmail` **read-only**, so `docker exec … iroh install` cannot rewrite the config. Use a one-off container with a writable config mount (same pattern as bootstrap), then **restart** the running server so it re-reads `madmail.conf`:
+
+```bash
+docker run --rm \
+  -v /var/lib/madmail:/var/lib/madmail \
+  -v /etc/madmail:/etc/madmail \
+  ghcr.io/themadorg/madmail:latest \
+  iroh install
+
+docker restart madmail
+```
+
+`madmail reload` applies admin/DB toggles against the config already in memory. It does **not** pick up a newly written `iroh_relay_url`. After `iroh install`, restart (or recreate) the container.
+
+If the config already has `iroh_relay_url`, `docker exec madmail madmail iroh enable` plus `madmail reload` is enough (that only flips `__IROH_ENABLED__`). On self-signed IP relays, `reload` needs `--insecure` because it calls the HTTPS admin API. Admin **Services → Iroh** is the same toggle.
+
+### Publish TCP 3340
+
+Clients use the URL advertised in IMAP METADATA (`/shared/vendor/deltachat/irohrelay`), typically `http://<public-ip>:3340`. Map **TCP** 3340 (not UDP):
+
+```bash
+-p 3340:3340
+```
+
+Compose (bridged network), in addition to the mail/TURN ports:
+
+```yaml
+services:
+  madmail:
+    image: ghcr.io/themadorg/madmail:latest
+    ports:
+      - "3340:3340"
+```
+
+`network_mode: host` already exposes 3340; still open the host and cloud firewall:
+
+```bash
+ufw allow 3340/tcp comment 'madmail Iroh relay'
+```
+
+Confirm from inside the container:
+
+```bash
+docker exec madmail madmail iroh status
+```
+
 ## Volumes and layout
 
 The image uses the same paths as a native systemd install so you can bind-mount host directories directly:
@@ -620,7 +696,7 @@ cp assets/madmail.conf.docker /etc/madmail/madmail.conf
 docker run -d --name madmail --restart unless-stopped \
   --cap-add NET_BIND_SERVICE \
   -p 25:25 -p 80:80 -p 443:443 -p 143:143 -p 465:465 -p 587:587 -p 993:993 -p 8388:8388 \
-  -p 3478:3478/udp -p 49152-65535:49152-65535/udp \
+  -p 3340:3340 -p 3478:3478/udp -p 49152-65535:49152-65535/udp \
   -v /var/lib/madmail:/var/lib/madmail \
   -v /etc/madmail:/etc/madmail:ro \
   -v /run/madmail:/run/madmail \
@@ -681,7 +757,7 @@ services:
       - /run/madmail:/run/madmail
 ```
 
-Run `madmail install …` once before `docker compose up -d` (same as [Quick start (domain name)](#quick-start-domain-name)). For TURN-only details see [TURN (calls)](#turn-calls).
+Run `madmail install …` once before `docker compose up -d` (same as [Quick start (domain name)](#quick-start-domain-name)). For TURN-only details see [TURN (calls)](#turn-calls). Iroh is off unless you passed `--enable-iroh` (or ran `iroh install` later); then also map TCP **3340** — see [Iroh (WebXDC realtime)](#iroh-webxdc-realtime).
 
 ## Offline install (save / load)
 
@@ -709,6 +785,8 @@ docker run ... ghcr.io/themadorg/madmail:latest
 | Shell | `docker exec -it madmail sh` |
 | Admin token | `docker exec madmail madmail admin-token` |
 | Admin web on/off | `docker exec madmail madmail admin-web enable` then `docker restart madmail` |
+| Iroh status | `docker exec madmail madmail iroh status` |
+| Enable Iroh (existing box) | one-off `iroh install` with a writable `/etc/madmail`, then `docker restart madmail` — [Iroh](#iroh-webxdc-realtime) |
 | Upgrade image | `docker pull ghcr.io/themadorg/madmail:latest && docker stop madmail && docker rm madmail` then `docker run` again with the same volumes |
 
 ## Build from source
@@ -726,6 +804,8 @@ The Dockerfile uses three stages: admin-web (Bun), Rust compile (Alpine), and Al
 ## Related docs
 
 - [Delta Chat calls — TURN ports, firewall, Docker](../TDD/20-deltachat-calls.md)
+- [Iroh relay — IMAP METADATA, port 3340](../TDD/11-proxy-services.md#iroh-relay-webxdc-realtime)
+- [`madmail iroh` CLI](cli/iroh.md)
 - [Deployment scenarios (IP, domain, certs)](../project/user-guide/11-deployment-ip-domain-certs.md)
 - [TLS certificates (TDD)](../TDD/19-certificates.md)
 - [Install: public IP + Let's Encrypt](../install-simple-ip-acme.md)
