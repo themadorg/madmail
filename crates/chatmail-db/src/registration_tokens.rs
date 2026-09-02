@@ -65,7 +65,7 @@ pub async fn validate_registration_token(pool: &DbPool, token: &str) -> Result<(
         let exists: Option<(Option<String>,)> = db_fetch_optional!(
             pool,
             (Option<String>,),
-            "SELECT expires_at FROM registration_tokens WHERE token = ?",
+            "SELECT CAST(expires_at AS TEXT) FROM registration_tokens WHERE token = ?",
             token
         )?;
         return Err(if exists.is_some() {
