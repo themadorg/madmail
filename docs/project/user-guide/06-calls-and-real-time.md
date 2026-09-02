@@ -75,6 +75,8 @@ Iroh is a modern peer-to-peer library used by Delta Chat for things like:
 
 The same automatic discovery mechanism that tells clients about the TURN server also tells them about the Iroh relay.
 
+Iroh is **off** at install unless you pass `--enable-iroh` (or run `madmail iroh install` later). On Docker you also need TCP **3340** published — see [Docker deployment guide — Iroh](../../guide/docker.md#iroh-webxdc-realtime).
+
 Again, the goal is “it just works” for users while keeping everything under the control of the same operator who runs the mail server.
 
 ## What Users See

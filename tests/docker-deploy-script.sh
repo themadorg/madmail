@@ -113,6 +113,7 @@ docker run -d --name "$CONTAINER" \
 	--cap-add NET_BIND_SERVICE \
 	-p 25:25 -p 80:80 -p 443:443 \
 	-p 143:143 -p 465:465 -p 587:587 -p 993:993 \
+	-p 3340:3340 \
 	-p 3478:3478/udp -p 49152-65535:49152-65535/udp \
 	-v "$LIB_DIR:/var/lib/madmail" \
 	-v "$ETC_DIR:/etc/madmail:ro" \
