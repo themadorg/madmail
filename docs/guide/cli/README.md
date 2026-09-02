@@ -61,6 +61,11 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 
 ### [`status`](status.md)
 
+
+### [`db`](db.md)
+
+- [`sqlite-to-postgres`](db-sqlite-to-postgres.md)
+
 ## Admin & access
 
 ### [`admin-token`](admin-token.md)

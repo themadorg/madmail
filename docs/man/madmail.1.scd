@@ -24,6 +24,8 @@ Common forms:
 
 *madmail* *dkim* [*show*|*check*|*status*]
 
+*madmail* *db* *sqlite-to-postgres* *--dsn* _dsn_ [*options*...]
+
 # DESCRIPTION
 
 *madmail* is a single executable that runs a Chatmail mail server (SMTP,
@@ -131,6 +133,11 @@ Extended documentation:
 	TXT to publish at *default.\_domainkey* (*show*; default). *check*
 	looks up that TXT in DNS and compares it to the local key. *status*
 	summarizes local key presence and DNS match without creating a key.
+
+*db*
+	Copy the application SQLite database into PostgreSQL
+	(*sqlite-to-postgres*). Does not move Maildir or *sharing.db*.
+	Point *driver* at Postgres and restart after a copy.
 
 *endpoint\-cache* (*dns\-cache*)
 	Outbound delivery DNS override cache.

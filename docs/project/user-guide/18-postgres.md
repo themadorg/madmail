@@ -2,7 +2,7 @@
 
 Madmail v2 can store accounts, settings, quotas, tokens, and federation state in **PostgreSQL** instead of SQLite. Mail bodies stay on disk (Maildir). Contact-sharing pages stay in a separate SQLite file (`sharing.db`).
 
-**This is a backend choice for an empty database.** It is not a conversion of an existing SQLite install. Changing `driver` does not copy `credentials.db` / `chatmail.db` into Postgres. There is no `madmail` command that does that copy.
+**Pointing `driver` at Postgres does not by itself copy an existing SQLite file.** For a **new empty** database, edit the config and restart (below). To **copy** an existing SQLite application database into Postgres, stop the server and run `madmail db sqlite-to-postgres` (see [Copying SQLite → Postgres](#copying-sqlite--postgres)).
 
 `madmail install` always writes SQLite. Point the config at Postgres after install (or on a custom config), then **restart** the process so it opens the new driver. `madmail reload` does not re-read `driver` / `dsn`.
 
@@ -74,20 +74,33 @@ There is no Compose environment variable that selects Postgres. `MADDY_HOSTNAME`
 
 See [Docker deployment](../../guide/docker.md#custom-configuration).
 
+## Copying SQLite → Postgres
+
+Stop Madmail first so SQLite is idle.
+
+```bash
+sudo systemctl stop madmail
+madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' --dry-run
+madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' -y
+```
+
+`--dry-run` only counts SQLite rows. A real copy applies v2 Postgres migrations, then inserts application tables. It refuses if Postgres already has password rows unless you pass `--force`. CLI flags: [`db sqlite-to-postgres`](../../guide/cli/db-sqlite-to-postgres.md).
+
+Then set `driver postgres` and the same DSN in **both** config blocks (as in [Fresh Postgres](#fresh-postgres-recommended-path)) and start the server.
+
 ## What this does not do
 
-- Copy rows from an existing SQLite file into Postgres.
 - Move Maildir, the retry queue, TLS material, or `admin_token`.
 - Move `sharing.db`.
+- Rewrite `madmail.conf` for you (you still set `driver` / `dsn` and restart).
 - Upgrade a live server in place by flipping `driver` while it is running.
-
-If you already have users on SQLite and want them on Postgres, that is a **data copy**, not this backend switch. Keep using SQLite for now, or stand up a **new** Postgres server and recreate accounts. A SQLite → Postgres migration guide (and copy tool) is **in the works**.
 
 A server that was **already** on Postgres under Go Madmail is a different case: v2 can open that schema and fill missing tables. That is not an SQLite conversion.
 
 ## Related
 
 - [Quick start — where data lives](./02-quick-start.md#where-the-server-stores-its-data-default-locations)
+- [`madmail db sqlite-to-postgres`](../../guide/cli/db-sqlite-to-postgres.md)
 - [Configuration (TDD)](../../TDD/13-configuration.md)
 - [Data models](../../TDD/17-data-models.md)
 - [Native install](../../guide/install.md)

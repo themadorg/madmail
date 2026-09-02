@@ -6,7 +6,7 @@ This document explains where mail lives, how quota is enforced, and how the fast
 
 ### 1. Structured / Small / Hot Data → SQLite or PostgreSQL
 
-`chatmail.db` / `credentials.db` (SQLite) or a Postgres DSN via `chatmail-db`. Operator guide for a **new empty** Postgres database: [user-guide/18-postgres.md](./user-guide/18-postgres.md). That is not a conversion of an existing SQLite file.
+`chatmail.db` / `credentials.db` (SQLite) or a Postgres DSN via `chatmail-db`. Operator guide: [user-guide/18-postgres.md](./user-guide/18-postgres.md). SQLite → Postgres copy: [`madmail db sqlite-to-postgres`](../guide/cli/db-sqlite-to-postgres.md).
 
 Tables for:
 - Settings (dynamic config)

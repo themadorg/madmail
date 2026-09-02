@@ -34,6 +34,7 @@ pub mod schema;
 pub mod settings;
 pub mod settings_keys;
 pub mod sharing;
+pub mod sqlite_to_postgres;
 
 use std::path::Path;
 
@@ -84,6 +85,9 @@ pub use sharing::{
     create_sharing_contact, get_sharing_contact, init_sharing_db, list_sharing_contacts,
     normalize_sharing_url, remove_sharing_contact, sharing_slug_exists, update_sharing_contact,
     validate_slug, SharingContact,
+};
+pub use sqlite_to_postgres::{
+    copy_sqlite_to_postgres, inspect_sqlite_tables, CopyOpts, CopyReport, TableCopy, COPY_TABLES,
 };
 
 /// Open (or create) the application database and run embedded migrations.

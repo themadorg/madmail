@@ -81,6 +81,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `push` | [push.md](../guide/cli/push.md) | `push.rs` | **done** |
 | `proxy` / `pr` | [proxy.md](../guide/cli/proxy.md) | `proxy.rs` | **done** |
 | `iroh` | [iroh.md](../guide/cli/iroh.md) | `iroh.rs` | **done** (`status` / `install` / `enable` / `disable`; `__IROH_ENABLED__`) |
+| `db` | [db.md](../guide/cli/db.md) | `db.rs` | **done** (`sqlite-to-postgres` — copy application SQLite tables into Postgres) |
 | `webimap` | [webimap.md](../guide/cli/webimap.md) | `service_toggle.rs` | **done** |
 | `websmtp` | [websmtp.md](../guide/cli/websmtp.md) | `service_toggle.rs` | **done** |
 | `tasks` | [tasks.md](../guide/cli/tasks.md) | `tasks.rs` | **done** |
@@ -114,6 +115,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `reload` | [reload.md](../guide/cli/reload.md) | `ctl/reload_config.go` | **done** |
 | `status` | [status.md](../guide/cli/status.md) | `ctl/online.go` | **done** (`--details`) |
 | `certificate` | [certificate.md](../guide/cli/certificate.md) | — (instant-acme) | **done** — `get`, `regenerate`, `status`, [`autocert`](../guide/cli/certificate-autocert.md) |
+| `db` | [db.md](../guide/cli/db.md) | — | **done** — `sqlite-to-postgres` |
 
 ### Accounts & credentials
 

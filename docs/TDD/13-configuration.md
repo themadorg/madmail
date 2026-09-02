@@ -49,7 +49,7 @@ Environment substitution `{env:VAR}` in values is expanded when the variable is 
 
 | Directive | `AppConfig` field |
 |-----------|-------------------|
-| `driver` / `dsn` | `imapsql_driver`, `imapsql_dsn` — `sqlite3` (default) or `postgres` (libpq or `postgres://` DSN). Set the **same** DSN as `auth.pass_table` so the file is not misleading; v2 does not open a second SQL database. Operator guide: [18-postgres.md](../project/user-guide/18-postgres.md) (empty database only — not a SQLite file conversion). |
+| `driver` / `dsn` | `imapsql_driver`, `imapsql_dsn` — `sqlite3` (default) or `postgres` (libpq or `postgres://` DSN). Set the **same** DSN as `auth.pass_table` so the file is not misleading; v2 does not open a second SQL database. Operator guide: [18-postgres.md](../project/user-guide/18-postgres.md). Copy an existing SQLite file with [`madmail db sqlite-to-postgres`](../guide/cli/db-sqlite-to-postgres.md). |
 | `default_quota` | `default_quota` (e.g. `1G`) |
 | `retention` | `retention` (e.g. `24h`) — hourly maildir purge when server runs; see [`21-scheduled-maintenance.md`](21-scheduled-maintenance.md) |
 | `unused_account_retention` | `unused_account_retention` (e.g. `720h`) — delete never-logged-in accounts |

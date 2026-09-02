@@ -20,7 +20,7 @@ Delta Chat uses this protocol. Instead of building yet another closed messenger,
 | **Shadowsocks**         | Stealth deployment in restricted networks                       |
 | **ACME / TLS**          | Automatic certificate management                                |
 | **Quota & blocklist**   | Per-account limits and federation policy (ACCEPT/REJECT)        |
-| **SQLite + PostgreSQL** | Both backends supported; live config reload without restart. Postgres is a **new empty database**, not a SQLite conversion — [operator guide](./18-postgres.md). |
+| **SQLite + PostgreSQL** | Both backends supported; live config reload without restart. Empty Postgres: [operator guide](./18-postgres.md). Existing SQLite: `madmail db sqlite-to-postgres`. |
 
 
 

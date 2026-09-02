@@ -311,6 +311,15 @@ mod tests {
     }
 
     #[test]
+    fn bash_completion_includes_db_subcommand() {
+        let script = bash_completion("madmail").unwrap();
+        assert!(
+            script.contains("db"),
+            "bash completion should list db subcommand"
+        );
+    }
+
+    #[test]
     fn bash_completion_includes_dkim_subcommand() {
         let script = bash_completion("madmail").unwrap();
         assert!(
