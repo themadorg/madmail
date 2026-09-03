@@ -836,3 +836,29 @@ async fn new_account_cors_reflects_origin_when_browser_access_enabled() {
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(v.get("email").and_then(|e| e.as_str()).is_some());
 }
+
+#[test]
+fn database_docs_are_v2_sqlite_or_postgres() {
+    for src in [
+        include_str!("../www-src/docs/en/database.html"),
+        include_str!("../www-src/docs/es/database.html"),
+        include_str!("../www-src/docs/fa/database.html"),
+        include_str!("../www-src/docs/ru/database.html"),
+        include_str!("../www-src/database_docs.html"),
+    ] {
+        assert!(
+            src.contains("sqlite-to-postgres"),
+            "in-server database docs must mention the copy CLI"
+        );
+        assert!(
+            !src.contains("now supports <strong>GORM</strong>"),
+            "GORM is Go-era copy, not v2"
+        );
+        assert!(
+            !src.contains("tcp(localhost:3306)"),
+            "MySQL DSN must not be documented as a backend"
+        );
+    }
+    let translations = include_str!("../www-src/translations.js");
+    assert!(!translations.contains("PostgreSQL and MySQL"));
+}
