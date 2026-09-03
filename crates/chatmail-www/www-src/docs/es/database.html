@@ -42,49 +42,57 @@
 
     <div class="card card--wide">
         <h1>Configuración de la base de datos</h1>
-        <p><strong>Madmail</strong> admite <strong>GORM</strong>, lo que permite
-            usar distintos motores de base de datos y migración automática.</p>
+        <p><strong>Madmail</strong> guarda cuentas, ajustes, cuotas, tokens y el estado de federación en <strong>una</strong> base SQL de aplicación: <strong>SQLite</strong> (predeterminada) o <strong>PostgreSQL</strong>. Los cuerpos de los mensajes siguen en disco (Maildir). Las páginas de compartir contactos usan otro SQLite (<code>sharing.db</code>).</p>
 
         <div class="alert alert--warning">
-            <p><strong>Importante:</strong> SQLite es el valor por defecto, pero para mayor escalabilidad
-                se recomienda PostgreSQL.</p>
+            <p><strong>MySQL no está soportado.</strong> Cambiar <code>driver</code> no copia un SQLite existente. Después de editar <code>driver</code> / <code>dsn</code>, <strong>reinicie</strong> el proceso: <code>madmail reload</code> no vuelve a abrir la base.</p>
         </div>
 
         <h2>SQLite (predeterminado)</h2>
-        <p>La opción más simple para despliegues rápidos. El archivo de base de datos se guarda en la ruta indicada.</p>
-        <pre><code>storage.imapsql local_mail {
-    driver sqlite3
-    dsn ./madmail.db
+        <p><code>madmail install</code> siempre escribe <code>driver sqlite3</code>. La ruta sigue su <code>state_dir</code>.</p>
+        <pre><code>auth.pass_table local_authdb {
+    table sql_table {
+        driver sqlite3
+        dsn /var/lib/madmail/credentials.db
+        table_name passwords
+    }
 }</code></pre>
 
-        <h2>PostgreSQL</h2>
-        <p>Para usar PostgreSQL, cree primero una base en su servidor (puede usar el
-            <code>docker-compose.yml</code> incluido en el proyecto).</p>
+        <h2>PostgreSQL (base vacía)</h2>
+        <p>Cree una base vacía y un rol que pueda crear tablas. Ponga el mismo <code>driver postgres</code> y DSN en <strong>ambos</strong> bloques <code>auth.pass_table</code> y <code>storage.imapsql</code> (v2 abre el DSN de auth; mantenerlos iguales evita una config engañosa).</p>
+        <pre><code>CREATE USER madmail WITH PASSWORD 'choose-a-secret';
+CREATE DATABASE madmail OWNER madmail;</code></pre>
         <p>Ejemplo en <code>madmail.conf</code>:</p>
-        <pre><code>storage.imapsql local_mail {
-    driver postgres
-    dsn "host=localhost user=test password=test dbname=test port=5432 sslmode=disable"
-}</code></pre>
-        <p>Credenciales por defecto en Docker:</p>
-        <ul>
-            <li>Usuario: <code>test</code></li>
-            <li>Contraseña: <code>test</code></li>
-            <li>Base de datos: <code>test</code></li>
-        </ul>
+        <pre><code>auth.pass_table local_authdb {
+    auto_create yes
+    jit_domain $(primary_domain)
+    table sql_table {
+        driver postgres
+        dsn host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable
+        table_name passwords
+    }
+}
 
-        <h2>MySQL</h2>
-        <p>El formato DSN para MySQL es el siguiente:</p>
-        <pre><code>storage.imapsql local_mail {
-    dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+storage.imapsql local_mailboxes {
+    auto_create yes
+    driver postgres
+    dsn host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable
+    retention 24h
+    default_quota 1G
+    appendlimit 100M
 }</code></pre>
+        <p>También vale la forma URL: <code>postgres://madmail:choose-a-secret@127.0.0.1:5432/madmail?sslmode=disable</code>.</p>
+        <p>Luego <strong>reinicie</strong> Madmail. El primer arranque contra Postgres vacío aplica migraciones sqlx. No use GORM ni cree a mano las tablas <code>quotas</code> / <code>contacts</code>.</p>
+
+        <h2>Copiar SQLite → PostgreSQL</h2>
+        <p>Pare el servidor para que SQLite esté quieto y luego:</p>
+        <pre><code>madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' --dry-run
+madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' -y</code></pre>
+        <p>Después de copiar, ponga <code>driver postgres</code> como arriba y arranque el servidor. Solo copia <strong>tablas de aplicación</strong>. No mueve Maildir, la cola de reintentos, <code>admin_token</code> ni <code>sharing.db</code>, y no reescribe <code>madmail.conf</code>. Si Postgres ya tiene filas de contraseñas, use <code>--force</code>.</p>
 
         <h2>Cachés en memoria frente al estado en disco</h2>
-        <p>Por rendimiento, el servidor en ejecución puede mantener en RAM una copia de las filas de credenciales (<code>auth.pass_table</code>) y los totales de cuota por usuario (<code>storage.imapsql</code>). Los datos autoritativos siguen estando en los archivos de la base.</p>
+        <p>Por rendimiento, el servidor en ejecución puede mantener en RAM una copia de las filas de credenciales (<code>auth.pass_table</code>) y los totales de cuota por usuario (<code>storage.imapsql</code>). Los datos autoritativos siguen en la base.</p>
         <p>Si modifica esas bases con la CLI (por ejemplo <code>madmail creds</code>, <code>madmail accounts</code> o <code>madmail imap-acct</code>) mientras el demonio sigue en marcha, invoque una vez el recurso de la API de administración <code>POST /admin/cache/reload</code> para que el proceso vuelva a leer las tablas. También puede reiniciar el servicio.</p>
-
-        <h2>Migración</h2>
-        <p>El servicio crea o actualiza las tablas necesarias en el primer arranque. No hace falta ejecutar SQL
-            manual para crear las tablas <code>quotas</code> o <code>contacts</code>.</p>
     </div>
 </body>
 

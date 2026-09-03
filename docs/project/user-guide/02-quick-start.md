@@ -268,7 +268,7 @@ state_dir/
 
 ### Backups
 
-The simplest reliable backup is a snapshot or copy of the entire `state_dir` (ideally while the service is stopped, or using proper tools that handle SQLite WAL files correctly). If the application database is **PostgreSQL**, back that up separately — see [PostgreSQL as the application database](./18-postgres.md). `madmail install` always writes SQLite; Postgres is an optional backend for an **empty** database, not a conversion of an existing SQLite file. A SQLite → Postgres copy tool is in the works.
+The simplest reliable backup is a snapshot or copy of the entire `state_dir` (ideally while the service is stopped, or using proper tools that handle SQLite WAL files correctly). If the application database is **PostgreSQL**, back that up separately — see [PostgreSQL as the application database](./18-postgres.md). `madmail install` always writes SQLite. To copy an existing SQLite application database into Postgres, use `madmail db sqlite-to-postgres` (same guide).
 
 ## Self-Serving Binary and Documentation
 

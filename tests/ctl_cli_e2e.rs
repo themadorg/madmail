@@ -23,6 +23,39 @@ fn state_argv(state_dir: &str) -> Vec<String> {
 }
 
 #[test]
+fn e2e_ctl_db_sqlite_to_postgres_dry_run_json() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let mut warmup = state_argv(&state);
+    chatmail()
+        .args(&warmup)
+        .args(["accounts", "status"])
+        .assert()
+        .success();
+
+    warmup.push("--json".into());
+    let out = chatmail()
+        .args(&warmup)
+        .args([
+            "db",
+            "sqlite-to-postgres",
+            "--dsn",
+            "postgres://unused",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("db sqlite-to-postgres --json");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "db sqlite-to-postgres");
+    assert_eq!(envelope["data"]["dry_run"], true);
+    assert!(envelope["data"]["tables"].as_array().unwrap().len() >= 5);
+}
+
+#[test]
 fn e2e_ctl_accounts_status_json() {
     let dir = TempDir::new().expect("tempdir");
     let state = dir.path().to_string_lossy().to_string();

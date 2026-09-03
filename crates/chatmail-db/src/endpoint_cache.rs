@@ -39,10 +39,12 @@ pub struct EndpointOverrideRow {
     pub updated_at: Option<String>,
 }
 
-const SELECT_ALL: &str = "SELECT lookup_key, target_host, comment, created_at, updated_at
+const SELECT_ALL: &str =
+    "SELECT lookup_key, target_host, comment, CAST(created_at AS TEXT), CAST(updated_at AS TEXT)
          FROM dns_overrides ORDER BY created_at DESC";
 
-const SELECT_ONE: &str = "SELECT lookup_key, target_host, comment, created_at, updated_at
+const SELECT_ONE: &str =
+    "SELECT lookup_key, target_host, comment, CAST(created_at AS TEXT), CAST(updated_at AS TEXT)
          FROM dns_overrides WHERE lookup_key = ?";
 
 fn map_row(

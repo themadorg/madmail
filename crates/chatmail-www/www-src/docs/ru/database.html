@@ -18,7 +18,7 @@
 -->
 
 <!DOCTYPE html>
-<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+<html lang="ru" dir="ltr">
 
 <head>
     <meta charset="UTF-8">
@@ -35,61 +35,65 @@
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/" data-i18n="nav_home">Главная</a></li>
-            <li><a href="/docs" data-i18n="nav_docs">Документация</a></li>
+            <li><a href="/">Главная</a></li>
+            <li><a href="/docs">Документация</a></li>
         </ul>
     </header>
 
     <div class="card card--wide">
         <h1>Настройка базы данных</h1>
-        <p><strong>Madmail</strong> теперь поддерживает <strong>GORM</strong>, что позволяет
-            использовать различные базы данных и автоматическую миграцию (Auto Migration).</p>
+        <p><strong>Madmail</strong> хранит учётные записи, настройки, квоты, токены и состояние федерации в <strong>одной</strong> прикладной SQL-базе: <strong>SQLite</strong> (по умолчанию) или <strong>PostgreSQL</strong>. Тела писем остаются на диске (Maildir). Страницы обмена контактами используют отдельный SQLite-файл (<code>sharing.db</code>).</p>
 
         <div class="alert alert--warning">
-            <p><strong>Важно:</strong> SQLite используется по умолчанию, но для высокой масштабируемости
-                рекомендуется использовать PostgreSQL.</p>
+            <p><strong>MySQL не поддерживается.</strong> Смена <code>driver</code> сама по себе не копирует существующий SQLite. После правки <code>driver</code> / <code>dsn</code> процесс нужно <strong>перезапустить</strong> — <code>madmail reload</code> базу заново не открывает.</p>
         </div>
 
         <h2>SQLite (по умолчанию)</h2>
-        <p>Самая простая настройка для быстрого развертывания. Файл базы данных хранится по указанному пути.</p>
-        <pre><code>storage.imapsql local_mail {
-    driver sqlite3
-    dsn ./madmail.db
+        <p><code>madmail install</code> всегда пишет <code>driver sqlite3</code>. Путь к файлу следует за вашим <code>state_dir</code>.</p>
+        <pre><code>auth.pass_table local_authdb {
+    table sql_table {
+        driver sqlite3
+        dsn /var/lib/madmail/credentials.db
+        table_name passwords
+    }
 }</code></pre>
 
-        <h2>PostgreSQL</h2>
-        <p>Чтобы использовать PostgreSQL, сначала создайте базу данных на вашем сервере (вы можете использовать
-            <code>docker-compose.yml</code> из этого проекта).</p>
-        <p>Пример конфигурации в <code>madmail.conf</code>:</p>
-        <pre><code>storage.imapsql local_mail {
+        <h2>PostgreSQL (пустая база)</h2>
+        <p>Создайте пустую базу и роль, которая может создавать таблицы. Укажите один и тот же <code>driver postgres</code> и DSN в <strong>обоих</strong> блоках <code>auth.pass_table</code> и <code>storage.imapsql</code> (v2 открывает DSN из auth; расхождение только путает конфиг).</p>
+        <pre><code>CREATE USER madmail WITH PASSWORD 'choose-a-secret';
+CREATE DATABASE madmail OWNER madmail;</code></pre>
+        <p>Пример в <code>madmail.conf</code>:</p>
+        <pre><code>auth.pass_table local_authdb {
+    auto_create yes
+    jit_domain $(primary_domain)
+    table sql_table {
+        driver postgres
+        dsn host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable
+        table_name passwords
+    }
+}
+
+storage.imapsql local_mailboxes {
+    auto_create yes
     driver postgres
-    dsn "host=localhost user=test password=test dbname=test port=5432 sslmode=disable"
+    dsn host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable
+    retention 24h
+    default_quota 1G
+    appendlimit 100M
 }</code></pre>
-        <p>Учетные данные по умолчанию в Docker:</p>
-        <ul>
-            <li>Пользователь: <code>test</code></li>
-            <li>Пароль: <code>test</code></li>
-            <li>База данных: <code>test</code></li>
-        </ul>
+        <p>URL тоже принимается: <code>postgres://madmail:choose-a-secret@127.0.0.1:5432/madmail?sslmode=disable</code>.</p>
+        <p>Затем <strong>перезапустите</strong> Madmail. Первый старт на пустом Postgres применяет миграции sqlx. GORM не используется; таблицы <code>quotas</code> / <code>contacts</code> вручную создавать не нужно.</p>
 
-        <h2>MySQL</h2>
-        <p>Чтобы использовать MySQL, используйте следующий формат DSN:</p>
-        <pre><code>storage.imapsql local_mail {
-    dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
-}</code></pre>
+        <h2>Копирование SQLite → PostgreSQL</h2>
+        <p>Остановите сервер, чтобы SQLite был свободен, затем:</p>
+        <pre><code>madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' --dry-run
+madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' -y</code></pre>
+        <p>После копирования задайте <code>driver postgres</code> как выше и запустите сервер. Копируются только <strong>прикладные таблицы</strong>. Maildir, очередь повторов, <code>admin_token</code> и <code>sharing.db</code> не переносятся, <code>madmail.conf</code> не переписывается. Если в Postgres уже есть строки паролей, нужен <code>--force</code>.</p>
 
         <h2>Кэши в памяти и данные на диске</h2>
-        <p>Для производительности сервер может хранить в RAM копию строк учётных данных (<code>auth.pass_table</code>) и агрегаты квот (<code>storage.imapsql</code>). Источник истины — файлы базы данных.</p>
+        <p>Для производительности сервер может хранить в RAM копию строк учётных данных (<code>auth.pass_table</code>) и агрегаты квот (<code>storage.imapsql</code>). Источник истины — база данных.</p>
         <p>Если вы меняете БД через CLI (<code>madmail creds</code>, <code>madmail accounts</code>, <code>madmail imap-acct</code> и т.д.) при работающем демоне, один раз вызовите Admin API <code>POST /admin/cache/reload</code>, чтобы процесс перечитал таблицы, либо перезапустите сервис.</p>
-
-        <h2>Миграция</h2>
-        <p>Сервис автоматически создает или обновляет необходимые таблицы при первом запуске. Нет необходимости выполнять SQL-команды вручную для создания таблиц <code>quotas</code> или <code>contacts</code>.</p>
     </div>
-    <script>
-        window.onload = function() {
-            applyTranslations("{{.Language}}");
-        };
-    </script>
 </body>
 
 </html>

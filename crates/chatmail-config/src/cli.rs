@@ -235,6 +235,9 @@ pub enum Command {
     /// DeltaChat contact sharing management.
     #[command(subcommand)]
     Sharing(SharingCommand),
+    /// Application database tools (SQLite → Postgres copy).
+    #[command(subcommand)]
+    Db(DbCommand),
     /// Manage SMTP submission access scope.
     #[command(name = "submission-access")]
     SubmissionAccess,
@@ -343,6 +346,30 @@ pub enum CompletionShell {
     Zsh,
     /// Fish completion script for `/usr/share/fish/vendor_completions.d/<binary>.fish`.
     Fish,
+}
+
+/// `madmail db` — application database tools.
+#[derive(Debug, Subcommand, Clone)]
+pub enum DbCommand {
+    /// Copy SQLite application tables into an empty (or `--force`) Postgres database.
+    #[command(name = "sqlite-to-postgres")]
+    SqliteToPostgres {
+        /// Postgres DSN (`postgres://…` or libpq `host=… dbname=…`).
+        #[arg(long)]
+        dsn: String,
+        /// SQLite file (default: application DB from config / state-dir).
+        #[arg(long)]
+        sqlite: Option<PathBuf>,
+        /// Count SQLite rows only; do not connect to Postgres.
+        #[arg(long)]
+        dry_run: bool,
+        /// Replace existing Postgres application rows.
+        #[arg(long)]
+        force: bool,
+        /// Skip confirmation.
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 /// `madmail dkim` — outbound federation DKIM (selector `default`).
@@ -1050,6 +1077,28 @@ mod tests {
                 accept_unsafe_https: true,
                 path_or_url,
             }) if path_or_url == "https://relay.example/a.tar.gz"
+        ));
+    }
+
+    #[test]
+    fn db_sqlite_to_postgres_parses() {
+        let cli = Cli::try_parse_from([
+            "madmail",
+            "db",
+            "sqlite-to-postgres",
+            "--dsn",
+            "postgres://madmail@127.0.0.1/madmail",
+            "--dry-run",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Db(DbCommand::SqliteToPostgres {
+                dry_run: true,
+                force: false,
+                yes: false,
+                ..
+            }))
         ));
     }
 

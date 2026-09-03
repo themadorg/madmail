@@ -74,7 +74,7 @@ async fn list_tokens(st: &AdminState) -> AdminResult {
     let rows: Vec<TokenRow> = db_fetch_all!(
         &st.pool,
         TokenRow,
-        "SELECT token, max_uses, used_count, comment, expires_at, created_at
+        "SELECT token, max_uses, used_count, comment, CAST(expires_at AS TEXT), CAST(created_at AS TEXT)
          FROM registration_tokens ORDER BY created_at DESC"
     )
     .map_err(db_err)?;
@@ -193,7 +193,7 @@ async fn create_or_update_token(st: &AdminState, body: &Value) -> AdminResult {
     let existing: Option<TokenRow> = db_fetch_optional!(
         &st.pool,
         TokenRow,
-        "SELECT token, max_uses, used_count, comment, expires_at, created_at
+        "SELECT token, max_uses, used_count, comment, CAST(expires_at AS TEXT), CAST(created_at AS TEXT)
          FROM registration_tokens WHERE token = ?",
         token.as_str()
     )
@@ -238,7 +238,7 @@ async fn create_or_update_token(st: &AdminState, body: &Value) -> AdminResult {
     let created_at: Option<String> = db_fetch_scalar!(
         &st.pool,
         String,
-        "SELECT created_at FROM registration_tokens WHERE token = ?",
+        "SELECT CAST(created_at AS TEXT) FROM registration_tokens WHERE token = ?",
         token.as_str()
     )
     .ok();

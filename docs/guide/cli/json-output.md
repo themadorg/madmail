@@ -689,6 +689,26 @@ Does not create a key (`generated` is always `false`). Missing key or IP-literal
 }
 ```
 
+### `db sqlite-to-postgres`
+
+```json
+{
+  "ok": true,
+  "command": "db sqlite-to-postgres",
+  "data": {
+    "sqlite_path": "/var/lib/madmail/credentials.db",
+    "dry_run": true,
+    "force": false,
+    "tables": [
+      { "table": "settings", "sqlite_rows": 12, "copied": 0, "skipped": false },
+      { "table": "passwords", "sqlite_rows": 3, "copied": 0, "skipped": false }
+    ]
+  }
+}
+```
+
+After a real copy, `dry_run` is false and `copied` matches `sqlite_rows` for tables that existed.
+
 ### `queue status`
 
 ```json

@@ -18,12 +18,12 @@
 -->
 
 <!DOCTYPE html>
-<html lang="{{.Language}}" dir="{{if eq .Language "fa"}}rtl{{else}}ltr{{end}}">
+<html lang="fa" dir="rtl">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Database Configuration - {{.WebDomain | cleanDomain}}</title>
+    <title>پیکربندی پایگاه داده - {{.WebDomain | cleanDomain}}</title>
     <link rel="stylesheet" href="/main.css">
     <script src="/translations.js"></script>
     <script src="/main.js"></script>
@@ -31,120 +31,69 @@
 
 <body>
     <header class="navbar">
-        <button class="navbar__toggle" onclick="toggleNav()" aria-label="Menu">
+        <button class="navbar__toggle" onclick="toggleNav()" aria-label="منو">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <ul class="navbar__menu" id="nav-menu">
-            <li><a href="/" data-i18n="nav_home">Home</a></li>
-            <li><a href="/docs" data-i18n="nav_docs">Docs</a></li>
+            <li><a href="/">خانه</a></li>
+            <li><a href="/docs">مستندات</a></li>
         </ul>
     </header>
 
-    <!-- English content (default) -->
-    <div class="card card--wide" id="doc-content-en">
-        <h1>Database Configuration</h1>
-        <p><strong>Madmail</strong> now supports <strong>GORM</strong>, which enables
-            the use of various databases and automatic migration (Auto Migration).</p>
+    <div class="card card--wide">
+        <h1>پیکربندی پایگاه داده</h1>
+        <p><strong>Madmail</strong> حساب‌ها، تنظیمات، سهمیه، توکن‌ها و وضعیت فدراسیون را در <strong>یک</strong> پایگاه SQL برنامه نگه می‌دارد: <strong>SQLite</strong> (پیش‌فرض) یا <strong>PostgreSQL</strong>. متن نامه‌ها روی دیسک می‌ماند (Maildir). صفحات اشتراک مخاطب فایل SQLite جداگانه‌ای دارند (<code>sharing.db</code>).</p>
 
         <div class="alert alert--warning">
-            <p><strong>Important:</strong> SQLite is used by default, but for high scalability,
-                PostgreSQL is recommended.</p>
-        </div>
-
-        <h2>SQLite (Default)</h2>
-        <p>The simplest setup for quick deployment. The database file is stored at the specified path.</p>
-        <pre><code>storage.imapsql local_mail {
-    driver sqlite3
-    dsn ./madmail.db
-}</code></pre>
-
-        <h2>PostgreSQL</h2>
-        <p>To use PostgreSQL, first create a database on your server (you can use the
-            <code>docker-compose.yml</code> included in the project).</p>
-        <p>Example configuration in <code>madmail.conf</code>:</p>
-        <pre><code>storage.imapsql local_mail {
-    driver postgres
-    dsn "host=localhost user=test password=test dbname=test port=5432 sslmode=disable"
-}</code></pre>
-        <p>Default credentials in Docker:</p>
-        <ul>
-            <li>Username: <code>test</code></li>
-            <li>Password: <code>test</code></li>
-            <li>Database: <code>test</code></li>
-        </ul>
-
-        <h2>MySQL</h2>
-        <p>To use MySQL, the DSN format is as follows:</p>
-        <pre><code>storage.imapsql local_mail {
-    dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
-}</code></pre>
-
-        <h2>In-memory caches vs on-disk state</h2>
-        <p>For performance, the running server may keep a copy of credential rows (<code>auth.pass_table</code>) and per-user quota totals (<code>storage.imapsql</code>) in RAM. The authoritative data remains in the database files.</p>
-        <p>If you change those databases with the CLI (for example <code>madmail creds</code>, <code>madmail accounts</code>, or <code>madmail imap-acct</code>) while the daemon stays up, call the Admin API resource <code>POST /admin/cache/reload</code> once so the process re-reads the tables. Alternatively, restart the service.</p>
-
-        <h2>Migration</h2>
-        <p>The service automatically creates or updates required tables on first run. There is no need to run manual SQL
-            commands to create the <code>quotas</code> or <code>contacts</code> tables.</p>
-    </div>
-
-    <!-- Farsi content (hidden by default) -->
-    <div class="card card--wide" id="doc-content-fa" style="display:none;">
-        <h1>پیکربندی پایگاه داده (Database Configuration)</h1>
-        <p>سرویس <strong>Madmail</strong> اکنون از <strong>GORM</strong> پشتیبانی می‌کند که
-            امکان استفاده از پایگاه داده‌های مختلف و مهاجرت خودکار (Auto Migration) را فراهم می‌سازد.</p>
-
-        <div class="alert alert--warning">
-            <p><strong>نکته مهم:</strong> به طور پیش‌فرض از SQLite استفاده می‌شود، اما برای مقیاس‌پذیری بالا، استفاده از
-                PostgreSQL توصیه می‌گردد.</p>
+            <p><strong>MySQL پشتیبانی نمی‌شود.</strong> عوض کردن <code>driver</code> به‌تنهایی فایل SQLite موجود را کپی نمی‌کند. بعد از ویرایش <code>driver</code> / <code>dsn</code> باید فرآیند را <strong>ری‌استارت</strong> کنید — <code>madmail reload</code> پایگاه را دوباره باز نمی‌کند.</p>
         </div>
 
         <h2>SQLite (پیش‌فرض)</h2>
-        <p>ساده‌ترین حالت برای راه‌اندازی سریع. فایل پایگاه داده در مسیر مشخص شده ذخیره می‌شود.</p>
-        <pre><code>storage.imapsql local_mail {
-    driver sqlite3
-    dsn ./madmail.db
+        <p><code>madmail install</code> همیشه <code>driver sqlite3</code> می‌نویسد. مسیر فایل از <code>state_dir</code> شما پیروی می‌کند.</p>
+        <pre><code>auth.pass_table local_authdb {
+    table sql_table {
+        driver sqlite3
+        dsn /var/lib/madmail/credentials.db
+        table_name passwords
+    }
 }</code></pre>
 
-        <h2>PostgreSQL</h2>
-        <p>برای استفاده از PostgreSQL، ابتدا یک دیتابیس در سرور خود ایجاد کنید (می‌توانید از
-            <code>docker-compose.yml</code> موجود در پروژه استفاده کنید).</p>
-        <p>نمونه تنظیمات در فایل <code>madmail.conf</code>:</p>
-        <pre><code>storage.imapsql local_mail {
+        <h2>PostgreSQL (پایگاه خالی)</h2>
+        <p>یک پایگاه خالی و نقشی با مجوز ساخت جدول بسازید. <strong>هر دو</strong> بلوک <code>auth.pass_table</code> و <code>storage.imapsql</code> را روی همان <code>driver postgres</code> و همان DSN بگذارید (v2 همان DSN احراز هویت را باز می‌کند؛ یکی نبودن آن‌ها پیکربندی را گمراه‌کننده می‌کند).</p>
+        <pre><code>CREATE USER madmail WITH PASSWORD 'choose-a-secret';
+CREATE DATABASE madmail OWNER madmail;</code></pre>
+        <p>نمونه در <code>madmail.conf</code>:</p>
+        <pre><code>auth.pass_table local_authdb {
+    auto_create yes
+    jit_domain $(primary_domain)
+    table sql_table {
+        driver postgres
+        dsn host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable
+        table_name passwords
+    }
+}
+
+storage.imapsql local_mailboxes {
+    auto_create yes
     driver postgres
-    dsn "host=localhost user=test password=test dbname=test port=5432 sslmode=disable"
+    dsn host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable
+    retention 24h
+    default_quota 1G
+    appendlimit 100M
 }</code></pre>
-        <p>اطلاعات پیش‌فرض در Docker:</p>
-        <ul>
-            <li>نام کاربری: <code>test</code></li>
-            <li>رمز عبور: <code>test</code></li>
-            <li>نام دیتابیس: <code>test</code></li>
-        </ul>
+        <p>فرم URL هم پذیرفته می‌شود: <code>postgres://madmail:choose-a-secret@127.0.0.1:5432/madmail?sslmode=disable</code>.</p>
+        <p>سپس Madmail را <strong>ری‌استارت</strong> کنید. اولین اجرا روی Postgres خالی مهاجرت‌های sqlx را اعمال می‌کند. GORM در کار نیست و لازم نیست جداول <code>quotas</code> / <code>contacts</code> را دستی بسازید.</p>
 
-        <h2>MySQL</h2>
-        <p>برای استفاده از MySQL، فرمت DSN به صورت زیر است:</p>
-        <pre><code>storage.imapsql local_mail {
-    dsn "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
-}</code></pre>
+        <h2>کپی SQLite به PostgreSQL</h2>
+        <p>اول سرویس را متوقف کنید تا SQLite بیکار باشد، بعد:</p>
+        <pre><code>madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' --dry-run
+madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' -y</code></pre>
+        <p>پس از کپی، <code>driver postgres</code> را مثل بالا تنظیم کنید و سرویس را روشن کنید. فقط <strong>جداول برنامه</strong> کپی می‌شوند. Maildir، صف ارسال مجدد، <code>admin_token</code> و <code>sharing.db</code> جابه‌جا نمی‌شوند و <code>madmail.conf</code> بازنویسی نمی‌شود. اگر Postgres از قبل ردیف رمز عبور داشته باشد، <code>--force</code> لازم است.</p>
 
         <h2>کش حافظه در برابر دیتابیس روی دیسک</h2>
-        <p>برای سرعت، سرور در حال اجرا ممکن است ردیف‌های اعتبارنامه (<code>auth.pass_table</code>) و مجموع سهمیه هر کاربر (<code>storage.imapsql</code>) را در RAM نگه دارد. منبع حقیقی همچنان فایل‌های دیتابیس است.</p>
+        <p>برای سرعت، سرور در حال اجرا ممکن است ردیف‌های اعتبارنامه (<code>auth.pass_table</code>) و مجموع سهمیه هر کاربر (<code>storage.imapsql</code>) را در RAM نگه دارد. منبع حقیقی همچنان پایگاه داده است.</p>
         <p>اگر با CLI (مثلاً <code>madmail creds</code>، <code>madmail accounts</code> یا <code>madmail imap-acct</code>) در حالی که سرویس روشن است دیتابیس را عوض کردید، یک بار Admin API را با <code>POST /admin/cache/reload</code> صدا بزنید تا فرآیند دوباره جداول را بخواند؛ یا سرویس را ری‌استارت کنید.</p>
-
-        <h2>مهاجرت (Migration)</h2>
-        <p>سرویس به صورت خودکار جداول مورد نیاز را در اولین اجرا ایجاد یا به‌روزرسانی می‌کند. نیازی به اجرای دستورات SQL
-            دستی برای ساخت جداول <code>quotas</code> یا <code>contacts</code> نیست.</p>
     </div>
-
-    <script>
-        window.onload = function() {
-            applyTranslations("{{.Language}}");
-            if ("{{.Language}}" === "fa") {
-                document.getElementById('doc-content-en').style.display = 'none';
-                document.getElementById('doc-content-fa').style.display = '';
-            }
-        };
-    </script>
 </body>
 
 </html>

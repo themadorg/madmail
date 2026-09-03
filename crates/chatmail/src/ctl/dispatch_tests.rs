@@ -25,6 +25,24 @@ use super::dispatch;
 use super::test_harness::{parse_cli, setup_ctl_env};
 
 #[tokio::test]
+async fn dispatch_db_sqlite_to_postgres_dry_run() {
+    let (dir, _args, _db_path, _pool) = setup_ctl_env().await;
+    let cli = parse_cli(
+        dir.path(),
+        &[
+            "db",
+            "sqlite-to-postgres",
+            "--dsn",
+            "postgres://unused",
+            "--dry-run",
+        ],
+    );
+    dispatch(&cli)
+        .await
+        .expect("db sqlite-to-postgres --dry-run");
+}
+
+#[tokio::test]
 async fn dispatch_accounts_create_delete_and_blocklist() {
     let (dir, _args, _db_path, pool) = setup_ctl_env().await;
     let email = "ctluser@example.org";

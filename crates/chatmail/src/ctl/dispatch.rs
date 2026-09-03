@@ -21,7 +21,7 @@ use chatmail_types::{ChatmailError, Result};
 use chatmail_db::settings_keys;
 
 use super::{
-    accounts, admin_token, admin_web, blocklist_cmd, certificate, delete_cmd, dkim, docs,
+    accounts, admin_token, admin_web, blocklist_cmd, certificate, db, delete_cmd, dkim, docs,
     endpoint_cache, federation, firewall_cmd, html, install, iroh, language, message_size,
     openrelay, port, proxy, push, queue_cmd, registration, registration_tokens, reload,
     service_cmd, service_toggle, sharing, status_cmd, tasks, uninstall, version, versions_cmd,
@@ -111,6 +111,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
             registration_tokens::registration_tokens(&cli.args, cmd).await
         }
         Some(Command::Sharing(cmd)) => sharing::sharing(&cli.args, cmd).await,
+        Some(Command::Db(cmd)) => db::db(&cli.args, cmd).await,
         Some(Command::Status { details }) => status_cmd::status(&cli.args, *details).await,
         Some(Command::Uninstall(flags)) => uninstall::uninstall(&cli.args, flags).await,
         Some(Command::Service(cmd)) => service_cmd::service(&cli.args, cmd).await,
@@ -138,7 +139,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, openrelay, language, \
          html-export, html-serve, html-migrate, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
-         status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, dkim, reload, message-size, tasks, queue, versions, completion"
+         status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, dkim, db, reload, message-size, tasks, queue, versions, completion"
     )))
 }
 
@@ -179,6 +180,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::RegistrationTokens { .. } => "registration-tokens",
         Command::Reload { .. } => "reload",
         Command::Sharing { .. } => "sharing",
+        Command::Db(_) => "db",
         Command::SubmissionAccess => "submission-access",
         Command::Uninstall { .. } => "uninstall",
         Command::Service { .. } => "service",

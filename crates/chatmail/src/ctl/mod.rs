@@ -26,6 +26,7 @@ mod admin_web;
 mod blocklist_cmd;
 mod certificate;
 mod context;
+mod db;
 mod delete_cmd;
 mod dispatch;
 mod dkim;
