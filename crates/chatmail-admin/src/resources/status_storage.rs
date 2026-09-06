@@ -543,9 +543,17 @@ fn disk_usage(path: &Path) -> Option<serde_json::Value> {
         return None;
     }
     let stat = unsafe { stat.assume_init() };
-    let bsize = stat.f_frsize;
-    let total_bytes = stat.f_blocks * bsize;
-    let avail_bytes = stat.f_bavail * bsize;
+    // `statvfs` field widths are target-dependent: on macOS `f_blocks` / `f_bavail`
+    // are u32 while `f_frsize` is u64; on Linux all three are u64. Widen everything
+    // so this compiles on both (the casts are no-ops where the field is already u64).
+    #[allow(clippy::unnecessary_cast)]
+    let (blocks, avail, bsize) = (
+        stat.f_blocks as u64,
+        stat.f_bavail as u64,
+        stat.f_frsize as u64,
+    );
+    let total_bytes = blocks.saturating_mul(bsize);
+    let avail_bytes = avail.saturating_mul(bsize);
     let used_bytes = total_bytes.saturating_sub(avail_bytes);
     let percent_used = if total_bytes > 0 {
         used_bytes as f64 / total_bytes as f64 * 100.0
