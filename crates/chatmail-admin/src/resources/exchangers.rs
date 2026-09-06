@@ -38,7 +38,8 @@ pub async fn exchangers(st: &AdminState, method: &str, body: &Value) -> AdminRes
             let rows: Vec<(String, String, i64, i64, Option<String>)> = chatmail_db::db_fetch_all!(
                 &st.pool,
                 (String, String, i64, i64, Option<String>),
-                "SELECT name, url, enabled, poll_interval, last_poll_at FROM exchangers ORDER BY name"
+                // CAST to TEXT: Postgres stores last_poll_at as TIMESTAMP; SQLx cannot decode that as String.
+                "SELECT name, url, enabled, poll_interval, CAST(last_poll_at AS TEXT) FROM exchangers ORDER BY name"
             )
             .map_err(db_err)?;
             let list: Vec<_> = rows

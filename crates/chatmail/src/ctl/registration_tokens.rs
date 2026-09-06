@@ -85,10 +85,14 @@ async fn create_token(
         .transpose()?
         .map(format_sqlite_expires);
 
+    let sql = format!(
+        "INSERT INTO registration_tokens (token, max_uses, used_count, comment, expires_at)
+         VALUES (?, ?, 0, ?, {})",
+        pool.timestamp_param()
+    );
     db_execute!(
         pool,
-        "INSERT INTO registration_tokens (token, max_uses, used_count, comment, expires_at)
-         VALUES (?, ?, 0, ?, ?)",
+        &sql,
         token.as_str(),
         max_uses,
         comment,

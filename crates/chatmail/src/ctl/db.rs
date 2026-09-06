@@ -64,15 +64,20 @@ async fn sqlite_to_postgres(
         }
     };
 
-    if !dry_run
-        && !confirm(
-            &format!(
-                "Copy {} into Postgres and (unless --force) refuse if passwords already exist?",
-                sqlite_path.display()
-            ),
-            yes,
-        )?
-    {
+    let prompt = if force {
+        format!(
+            "--force: DELETE every row from all {} application tables in Postgres, \
+             then copy {} over them?",
+            chatmail_db::COPY_TABLES.len(),
+            sqlite_path.display()
+        )
+    } else {
+        format!(
+            "Copy {} into Postgres? (refused if any application table already has rows)",
+            sqlite_path.display()
+        )
+    };
+    if !dry_run && !confirm(&prompt, yes)? {
         return out.aborted();
     }
 
@@ -84,6 +89,7 @@ async fn sqlite_to_postgres(
         .map(|t| {
             json!({
                 "table": t.table,
+                "source_table": t.source_table,
                 "sqlite_rows": t.sqlite_rows,
                 "copied": t.copied,
                 "skipped": t.skipped,
@@ -109,11 +115,12 @@ async fn sqlite_to_postgres(
     }
     out.blank();
     out.line(format!("  SQLite:  {}", report.sqlite_path));
-    out.line("  TABLE\tSQLITE\tCOPIED\tSKIPPED");
+    out.line("  TABLE\tSOURCE\tSQLITE\tCOPIED\tSKIPPED");
     for t in &report.tables {
         out.line(format!(
-            "  {}\t{}\t{}\t{}",
+            "  {}\t{}\t{}\t{}\t{}",
             t.table,
+            t.source_table,
             t.sqlite_rows,
             t.copied,
             if t.skipped { "yes" } else { "no" }

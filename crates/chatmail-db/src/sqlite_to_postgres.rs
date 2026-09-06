@@ -25,10 +25,12 @@ use std::path::Path;
 use chatmail_config::{DatabaseConfig, DbDriver};
 use chatmail_types::{ChatmailError, Result};
 use sqlx::postgres::PgPool;
-use sqlx::Row;
+use sqlx::{PgConnection, Row};
 
 use crate::pool::{connect_database, run_migrations, DbPool};
-use crate::schema::{passwords_layout, table_exists, PasswordsLayout};
+use crate::schema::{
+    federation_stats_columns, passwords_layout, quota_table, table_exists, PasswordsLayout,
+};
 
 /// Tables copied in this order (no cross-table FKs).
 pub const COPY_TABLES: &[&str] = &[
@@ -57,6 +59,8 @@ pub struct CopyOpts {
 #[derive(Debug, Clone)]
 pub struct TableCopy {
     pub table: String,
+    /// SQLite table actually read (differs from `table` for legacy `quota`).
+    pub source_table: String,
     pub sqlite_rows: u64,
     pub copied: u64,
     pub skipped: bool,
@@ -72,22 +76,41 @@ pub struct CopyReport {
 
 pub async fn inspect_sqlite_tables(sqlite_path: &Path) -> Result<Vec<TableCopy>> {
     let src = open_sqlite(sqlite_path).await?;
+    inspect_tables(&src).await
+}
+
+async fn inspect_tables(src: &DbPool) -> Result<Vec<TableCopy>> {
     let mut tables = Vec::new();
     for name in COPY_TABLES {
-        let exists = table_exists(&src, name).await?;
+        let source = source_table(src, name).await?;
+        let exists = table_exists(src, &source).await?;
         let n = if exists {
-            count_rows(&src, name).await?
+            count_rows(src, &source).await?
         } else {
             0
         };
         tables.push(TableCopy {
             table: (*name).to_string(),
+            source_table: source,
             sqlite_rows: n,
             copied: 0,
             skipped: !exists,
         });
     }
     Ok(tables)
+}
+
+/// SQLite table backing a destination table.
+///
+/// Go Madmail stores account records in singular `quota`; v2 uses `quotas` and
+/// [`apply_legacy_schema_tables`](crate::pool) creates an *empty* `quotas` next to
+/// it, so reading `quotas` blindly reports `0` rows and looks like success while
+/// every account's quota and login timestamps are dropped.
+async fn source_table(src: &DbPool, dest: &str) -> Result<String> {
+    if dest == "quotas" {
+        return Ok(quota_table(src).await?.to_string());
+    }
+    Ok(dest.to_string())
 }
 
 pub async fn copy_sqlite_to_postgres(
@@ -99,12 +122,11 @@ pub async fn copy_sqlite_to_postgres(
     let src = open_sqlite(sqlite_path).await?;
 
     if opts.dry_run {
-        let tables = inspect_sqlite_tables(sqlite_path).await?;
         return Ok(CopyReport {
             sqlite_path: sqlite_path_s,
             dry_run: true,
             force: opts.force,
-            tables,
+            tables: inspect_tables(&src).await?,
         });
     }
 
@@ -114,20 +136,43 @@ pub async fn copy_sqlite_to_postgres(
     })
     .await?;
     run_migrations(&dst_pool).await?;
-    let dst = pg_pool(&dst_pool)?;
+    let pg = pg_pool(&dst_pool)?;
 
-    let pw_count = count_pg(dst, "passwords").await?;
-    if pw_count > 0 && !opts.force {
-        return Err(ChatmailError::config(format!(
-            "Postgres passwords table already has {pw_count} row(s). \
-             Refusing to overwrite (pass --force to replace)."
-        )));
+    // `run_migrations` deliberately skips the v2 schema on a Go-era database, so the
+    // destination may still carry the Madmail key/value `passwords` table. Every INSERT
+    // below writes `username`/`hash`, which would fail *after* --force had already
+    // emptied the table. Refuse before touching anything.
+    if passwords_layout(&dst_pool).await? == PasswordsLayout::MadmailKv {
+        return Err(ChatmailError::config(
+            "Postgres passwords table uses the legacy Madmail key/value layout. \
+             Copy into a database with the madmail-v2 schema instead.",
+        ));
+    }
+
+    // Everything from here runs in one transaction: on any error the destination is
+    // left exactly as it was, including the --force deletes.
+    let mut tx = pg.begin().await.map_err(ChatmailError::from)?;
+
+    if !opts.force {
+        let mut non_empty = Vec::new();
+        for name in COPY_TABLES {
+            if count_pg(&mut tx, name).await? > 0 {
+                non_empty.push(*name);
+            }
+        }
+        if !non_empty.is_empty() {
+            return Err(ChatmailError::config(format!(
+                "Postgres already has rows in: {}. \
+                 Refusing to overwrite (pass --force to replace).",
+                non_empty.join(", ")
+            )));
+        }
     }
 
     if opts.force {
         for name in COPY_TABLES.iter().rev() {
             sqlx::query(&format!("DELETE FROM {name}"))
-                .execute(dst)
+                .execute(&mut *tx)
                 .await
                 .map_err(ChatmailError::from)?;
         }
@@ -135,25 +180,29 @@ pub async fn copy_sqlite_to_postgres(
 
     let mut tables = Vec::new();
     for name in COPY_TABLES {
-        let exists = table_exists(&src, name).await?;
-        if !exists {
+        let source = source_table(&src, name).await?;
+        if !table_exists(&src, &source).await? {
             tables.push(TableCopy {
                 table: (*name).to_string(),
+                source_table: source,
                 sqlite_rows: 0,
                 copied: 0,
                 skipped: true,
             });
             continue;
         }
-        let sqlite_rows = count_rows(&src, name).await?;
-        let copied = copy_one(&src, dst, name).await?;
+        let sqlite_rows = count_rows(&src, &source).await?;
+        let copied = copy_one(&src, &mut tx, name, &source).await?;
         tables.push(TableCopy {
             table: (*name).to_string(),
+            source_table: source,
             sqlite_rows,
             copied,
             skipped: false,
         });
     }
+
+    tx.commit().await.map_err(ChatmailError::from)?;
 
     Ok(CopyReport {
         sqlite_path: sqlite_path_s,
@@ -201,18 +250,18 @@ async fn count_rows(pool: &DbPool, table: &str) -> Result<u64> {
     Ok(n.max(0) as u64)
 }
 
-async fn count_pg(pool: &PgPool, table: &str) -> Result<u64> {
+async fn count_pg(conn: &mut PgConnection, table: &str) -> Result<u64> {
     let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(ChatmailError::from)?;
     Ok(n.max(0) as u64)
 }
 
-async fn copy_one(src: &DbPool, dst: &PgPool, table: &str) -> Result<u64> {
+async fn copy_one(src: &DbPool, dst: &mut PgConnection, table: &str, source: &str) -> Result<u64> {
     match table {
         "settings" => copy_settings(src, dst).await,
-        "quotas" => copy_quotas(src, dst).await,
+        "quotas" => copy_quotas(src, dst, source).await,
         "blocked_users" => copy_blocked_users(src, dst).await,
         "registration_tokens" => copy_registration_tokens(src, dst).await,
         "dns_overrides" => copy_dns_overrides(src, dst).await,
@@ -228,7 +277,7 @@ async fn copy_one(src: &DbPool, dst: &PgPool, table: &str) -> Result<u64> {
     }
 }
 
-async fn copy_settings(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_settings(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(String, String)> =
         crate::db_fetch_all!(src, (String, String), "SELECT key, value FROM settings")?;
     let n = rows.len() as u64;
@@ -239,19 +288,20 @@ async fn copy_settings(src: &DbPool, dst: &PgPool) -> Result<u64> {
         )
         .bind(k)
         .bind(v)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
     Ok(n)
 }
 
-async fn copy_quotas(src: &DbPool, dst: &PgPool) -> Result<u64> {
-    let rows: Vec<(String, i64, i64, i64, i64, Option<String>)> = crate::db_fetch_all!(
-        src,
-        (String, i64, i64, i64, i64, Option<String>),
-        "SELECT username, max_storage, created_at, first_login_at, last_login_at, used_token FROM quotas"
-    )?;
+async fn copy_quotas(src: &DbPool, dst: &mut PgConnection, source: &str) -> Result<u64> {
+    let sql = format!(
+        "SELECT username, max_storage, created_at, first_login_at, last_login_at, used_token \
+         FROM {source}"
+    );
+    let rows: Vec<(String, i64, i64, i64, i64, Option<String>)> =
+        crate::db_fetch_all!(src, (String, i64, i64, i64, i64, Option<String>), &sql)?;
     let n = rows.len() as u64;
     for (u, max, c, f, l, tok) in rows {
         sqlx::query(
@@ -270,14 +320,14 @@ async fn copy_quotas(src: &DbPool, dst: &PgPool) -> Result<u64> {
         .bind(f)
         .bind(l)
         .bind(tok)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
     Ok(n)
 }
 
-async fn copy_blocked_users(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_blocked_users(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(String, String, Option<String>)> = crate::db_fetch_all!(
         src,
         (String, String, Option<String>),
@@ -292,7 +342,7 @@ async fn copy_blocked_users(src: &DbPool, dst: &PgPool) -> Result<u64> {
         .bind(u)
         .bind(reason)
         .bind(at)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
@@ -300,7 +350,7 @@ async fn copy_blocked_users(src: &DbPool, dst: &PgPool) -> Result<u64> {
 }
 
 #[allow(clippy::type_complexity)]
-async fn copy_registration_tokens(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_registration_tokens(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(
         String,
         i64,
@@ -328,7 +378,7 @@ async fn copy_registration_tokens(src: &DbPool, dst: &PgPool) -> Result<u64> {
         .bind(comment)
         .bind(exp)
         .bind(created)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
@@ -336,7 +386,7 @@ async fn copy_registration_tokens(src: &DbPool, dst: &PgPool) -> Result<u64> {
 }
 
 #[allow(clippy::type_complexity)]
-async fn copy_dns_overrides(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_dns_overrides(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(String, String, Option<String>, Option<String>, Option<String>)> =
         crate::db_fetch_all!(
             src,
@@ -357,14 +407,14 @@ async fn copy_dns_overrides(src: &DbPool, dst: &PgPool) -> Result<u64> {
         .bind(comment)
         .bind(c)
         .bind(u)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
     Ok(n)
 }
 
-async fn copy_passwords(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_passwords(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     match passwords_layout(src).await? {
         PasswordsLayout::MadmailKv => {
             let rows: Vec<(String, String)> =
@@ -379,7 +429,7 @@ async fn copy_passwords(src: &DbPool, dst: &PgPool) -> Result<u64> {
                 .bind(user)
                 .bind(hash)
                 .bind(now)
-                .execute(dst)
+                .execute(&mut *dst)
                 .await
                 .map_err(ChatmailError::from)?;
             }
@@ -400,7 +450,7 @@ async fn copy_passwords(src: &DbPool, dst: &PgPool) -> Result<u64> {
                 .bind(user)
                 .bind(hash)
                 .bind(created)
-                .execute(dst)
+                .execute(&mut *dst)
                 .await
                 .map_err(ChatmailError::from)?;
             }
@@ -410,7 +460,7 @@ async fn copy_passwords(src: &DbPool, dst: &PgPool) -> Result<u64> {
     }
 }
 
-async fn copy_push_tokens(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_push_tokens(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(String, String, Option<String>)> = crate::db_fetch_all!(
         src,
         (String, String, Option<String>),
@@ -425,14 +475,14 @@ async fn copy_push_tokens(src: &DbPool, dst: &PgPool) -> Result<u64> {
         .bind(u)
         .bind(tok)
         .bind(at)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
     Ok(n)
 }
 
-async fn copy_federation_rules(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_federation_rules(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let DbPool::Sqlite(sp) = src else {
         return Ok(0);
     };
@@ -458,7 +508,7 @@ async fn copy_federation_rules(src: &DbPool, dst: &PgPool) -> Result<u64> {
         )
         .bind(domain)
         .bind(created)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
@@ -466,7 +516,7 @@ async fn copy_federation_rules(src: &DbPool, dst: &PgPool) -> Result<u64> {
 }
 
 #[allow(clippy::type_complexity)]
-async fn copy_federation_stats(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_federation_stats(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(
         String,
         i64,
@@ -480,13 +530,24 @@ async fn copy_federation_stats(src: &DbPool, dst: &PgPool) -> Result<u64> {
         i64,
         i64,
         i64,
-    )> = crate::db_fetch_all!(
-        src,
-        (String, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64),
-        "SELECT domain, queued_messages, failed_http, failed_https, failed_smtp, \
-             success_http, success_https, success_smtp, inbound_deliveries, \
-             successful_deliveries, total_latency_ms, last_active FROM federation_server_stats"
-    )?;
+    )> = {
+        // Go Madmail names these failed_http_s / success_http_s (see
+        // `schema::federation_stats_columns`); reading the v2 names blows up the
+        // whole copy with "no such column" on a legacy database.
+        let cols = federation_stats_columns(src).await?;
+        let sql = format!(
+            "SELECT domain, queued_messages, failed_http, {failed_https}, failed_smtp, \
+                 success_http, {success_https}, success_smtp, inbound_deliveries, \
+                 successful_deliveries, total_latency_ms, last_active FROM federation_server_stats",
+            failed_https = cols.failed_https,
+            success_https = cols.success_https,
+        );
+        crate::db_fetch_all!(
+            src,
+            (String, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64),
+            &sql
+        )?
+    };
     let n = rows.len() as u64;
     for r in rows {
         sqlx::query(
@@ -516,14 +577,14 @@ async fn copy_federation_stats(src: &DbPool, dst: &PgPool) -> Result<u64> {
         .bind(r.9)
         .bind(r.10)
         .bind(r.11)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
     Ok(n)
 }
 
-async fn copy_message_stats(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_message_stats(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(String, i64)> =
         crate::db_fetch_all!(src, (String, i64), "SELECT name, count FROM message_stats")?;
     let n = rows.len() as u64;
@@ -534,7 +595,7 @@ async fn copy_message_stats(src: &DbPool, dst: &PgPool) -> Result<u64> {
         )
         .bind(name)
         .bind(count)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
@@ -542,7 +603,7 @@ async fn copy_message_stats(src: &DbPool, dst: &PgPool) -> Result<u64> {
 }
 
 #[allow(clippy::type_complexity)]
-async fn copy_exchangers(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_exchangers(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(
         String,
         String,
@@ -581,14 +642,14 @@ async fn copy_exchangers(src: &DbPool, dst: &PgPool) -> Result<u64> {
         .bind(last)
         .bind(c)
         .bind(u)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
     Ok(n)
 }
 
-async fn copy_silent_dismiss(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_silent_dismiss(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(String, i64)> = crate::db_fetch_all!(
         src,
         (String, i64),
@@ -602,14 +663,14 @@ async fn copy_silent_dismiss(src: &DbPool, dst: &PgPool) -> Result<u64> {
         )
         .bind(domain)
         .bind(created)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
     Ok(n)
 }
 
-async fn copy_mailbox_modseq(src: &DbPool, dst: &PgPool) -> Result<u64> {
+async fn copy_mailbox_modseq(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
     let rows: Vec<(String, i64)> = crate::db_fetch_all!(
         src,
         (String, i64),
@@ -623,7 +684,7 @@ async fn copy_mailbox_modseq(src: &DbPool, dst: &PgPool) -> Result<u64> {
         )
         .bind(u)
         .bind(m)
-        .execute(dst)
+        .execute(&mut *dst)
         .await
         .map_err(ChatmailError::from)?;
     }
@@ -660,6 +721,34 @@ mod tests {
         let pw = tables.iter().find(|t| t.table == "passwords").unwrap();
         assert_eq!(pw.sqlite_rows, 1);
         assert!(!pw.skipped);
+    }
+
+    /// Go-era databases keep account rows in singular `quota`; v2 leaves an empty
+    /// `quotas` next to it, so reading `quotas` would report 0 rows and look like success.
+    #[tokio::test]
+    async fn inspect_prefers_legacy_quota_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("chatmail.db");
+        let pool = init_db(&path).await.unwrap();
+        crate::db_execute!(
+            &pool,
+            "CREATE TABLE quota (username TEXT PRIMARY KEY NOT NULL, max_storage BIGINT NOT NULL \
+             DEFAULT 0, created_at BIGINT NOT NULL, first_login_at BIGINT NOT NULL, \
+             last_login_at BIGINT NOT NULL, used_token TEXT)"
+        )
+        .unwrap();
+        crate::db_execute!(
+            &pool,
+            "INSERT INTO quota (username, max_storage, created_at, first_login_at, last_login_at) \
+             VALUES ('alice@test', 1, 2, 3, 4)"
+        )
+        .unwrap();
+
+        let tables = inspect_sqlite_tables(&path).await.unwrap();
+        let q = tables.iter().find(|t| t.table == "quotas").unwrap();
+        assert_eq!(q.source_table, "quota");
+        assert_eq!(q.sqlite_rows, 1);
+        assert!(!q.skipped);
     }
 
     #[tokio::test]

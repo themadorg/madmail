@@ -200,9 +200,13 @@ async fn create_or_update_token(st: &AdminState, body: &Value) -> AdminResult {
     .map_err(db_err)?;
 
     if let Some((_, _, used_count, _, _, created_at)) = existing {
+        let sql = format!(
+            "UPDATE registration_tokens SET max_uses = ?, comment = ?, expires_at = {} WHERE token = ?",
+            st.pool.timestamp_param()
+        );
         db_execute!(
             &st.pool,
-            "UPDATE registration_tokens SET max_uses = ?, comment = ?, expires_at = ? WHERE token = ?",
+            &sql,
             max_uses,
             req.comment.as_str(),
             expires_at.as_deref(),
@@ -224,10 +228,14 @@ async fn create_or_update_token(st: &AdminState, body: &Value) -> AdminResult {
         return Ok((200, Some(body)));
     }
 
+    let sql = format!(
+        "INSERT INTO registration_tokens (token, max_uses, used_count, comment, expires_at)
+         VALUES (?, ?, 0, ?, {})",
+        st.pool.timestamp_param()
+    );
     db_execute!(
         &st.pool,
-        "INSERT INTO registration_tokens (token, max_uses, used_count, comment, expires_at)
-         VALUES (?, ?, 0, ?, ?)",
+        &sql,
         token.as_str(),
         max_uses,
         req.comment.as_str(),

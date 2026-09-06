@@ -700,14 +700,19 @@ Does not create a key (`generated` is always `false`). Missing key or IP-literal
     "dry_run": true,
     "force": false,
     "tables": [
-      { "table": "settings", "sqlite_rows": 12, "copied": 0, "skipped": false },
-      { "table": "passwords", "sqlite_rows": 3, "copied": 0, "skipped": false }
+      { "table": "settings", "source_table": "settings", "sqlite_rows": 12, "copied": 0, "skipped": false },
+      { "table": "quotas", "source_table": "quota", "sqlite_rows": 3, "copied": 0, "skipped": false },
+      { "table": "passwords", "source_table": "passwords", "sqlite_rows": 3, "copied": 0, "skipped": false }
     ]
   }
 }
 ```
 
 After a real copy, `dry_run` is false and `copied` matches `sqlite_rows` for tables that existed.
+
+`source_table` is the SQLite table actually read. It differs from `table` only for
+legacy Madmail (Go) databases, which keep account records in singular `quota` while
+madmail-v2 writes `quotas`.
 
 ### `queue status`
 

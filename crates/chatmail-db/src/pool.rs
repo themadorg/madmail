@@ -49,6 +49,20 @@ impl DbPool {
     pub fn is_postgres(&self) -> bool {
         matches!(self.backend(), DbBackend::Postgres)
     }
+
+    /// Placeholder for a value bound into a `TIMESTAMP` column.
+    ///
+    /// Timestamps are carried around as strings, and SQLx sends them as TEXT.
+    /// Postgres then rejects the statement with `column ... is of type timestamp
+    /// without time zone but expression is of type text`, so it needs an explicit
+    /// cast; SQLite stores the string as-is.
+    pub fn timestamp_param(&self) -> &'static str {
+        if self.is_postgres() {
+            "CAST(? AS TIMESTAMP)"
+        } else {
+            "?"
+        }
+    }
 }
 
 /// Fetch zero or one row (`?` placeholders; adapted for PostgreSQL).
