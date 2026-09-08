@@ -192,6 +192,21 @@ pub enum Command {
     /// Migrate submission PGP policy in config.
     #[command(name = "migrate-pgp-config")]
     MigratePgpConfig,
+    /// Live server metrics (connections and message throughput).
+    ///
+    /// Polls the `openmetrics` endpoint, so that endpoint has to be enabled in
+    /// the config (`openmetrics tcp://127.0.0.1:9749 { }`).
+    Monitor {
+        /// Seconds between samples.
+        #[arg(long, short = 'n', default_value_t = 2)]
+        interval: u64,
+        /// Stop after this many samples (default: run until interrupted).
+        #[arg(long, short = 'c')]
+        count: Option<u64>,
+        /// Override the scrape address (default: `openmetrics` from the config).
+        #[arg(long, value_name = "HOST:PORT")]
+        addr: Option<String>,
+    },
     /// Show server status (connections, users, uptime).
     Status {
         /// Per-port breakdown.

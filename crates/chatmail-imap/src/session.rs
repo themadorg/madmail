@@ -36,7 +36,6 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWrite
 use tokio::net::TcpStream;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
-use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, warn};
 
@@ -142,7 +141,14 @@ impl ImapSession {
         }
     }
 
-    pub async fn handle_tls_connection(&mut self, stream: TlsStream<TcpStream>) -> Result<()> {
+    /// Serve one already-TLS-terminated connection.
+    ///
+    /// Generic over the stream so the shared-port demux can pass a reader that has
+    /// already buffered the client's first bytes while identifying the protocol.
+    pub async fn handle_tls_connection<S>(&mut self, stream: S) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
         // RFC 8314: implicit TLS (:993) must emit `* OK`; after STARTTLS the client already
         // saw the cleartext greeting and must not get a duplicate.
         let greeted = self.cfg.starttls_config.is_some();

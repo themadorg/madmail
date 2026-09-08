@@ -68,6 +68,9 @@ pub struct RuntimeListeners {
     pub smtp_addr: Option<String>,
     pub http_plain_addr: Option<String>,
     pub http_tls_addr: Option<String>,
+    /// The HTTPS port also serves IMAP / submission, selected by ALPN.
+    pub alpn_imap_on_https: bool,
+    pub alpn_smtp_on_https: bool,
 }
 
 /// Ports and socket modes exposed to Delta Chat via the registration page.
@@ -628,6 +631,8 @@ mod tests {
             smtp_addr: Some("0.0.0.0:25".into()),
             http_plain_addr: Some("0.0.0.0:8080".into()),
             http_tls_addr: None,
+            alpn_imap_on_https: false,
+            alpn_smtp_on_https: false,
         };
         assert!(listeners_need_tls_cert(&starttls_only));
 
@@ -639,6 +644,8 @@ mod tests {
             smtp_addr: Some("0.0.0.0:25".into()),
             http_plain_addr: Some("0.0.0.0:8080".into()),
             http_tls_addr: None,
+            alpn_imap_on_https: false,
+            alpn_smtp_on_https: false,
         };
         assert!(listeners_need_tls_cert(&smtp_only));
     }
@@ -688,6 +695,8 @@ mod tests {
             smtp_addr: Some("0.0.0.0:25".into()),
             http_plain_addr: None,
             http_tls_addr: None,
+            alpn_imap_on_https: false,
+            alpn_smtp_on_https: false,
         };
         let s = DcloginMailSettings::from_config_with_db_and_runtime(
             &cfg,
@@ -717,6 +726,8 @@ mod tests {
             smtp_addr: Some("0.0.0.0:25".into()),
             http_plain_addr: Some("0.0.0.0:8080".into()),
             http_tls_addr: None,
+            alpn_imap_on_https: false,
+            alpn_smtp_on_https: false,
         };
         let s = DcloginMailSettings::from_config_with_db_and_runtime(
             &cfg,

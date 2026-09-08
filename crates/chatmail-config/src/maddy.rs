@@ -384,6 +384,10 @@ fn apply_directive(name: &str, args: &[String], block_path: &[&str], cfg: &mut A
                     cfg.password_min_length = Some(n);
                 }
             }
+            "alpn_imap" if has_value => cfg.alpn_imap = Some(strip_quotes(&value)),
+            "sni_imap" if has_value => cfg.sni_imap = Some(strip_quotes(&value)),
+            "sni_smtp" if has_value => cfg.sni_smtp = Some(strip_quotes(&value)),
+            "alpn_smtp" if has_value => cfg.alpn_smtp = Some(strip_quotes(&value)),
             "ss_addr" if has_value => cfg.ss_addr = Some(strip_quotes(&value)),
             "ss_password" if has_value => cfg.ss_password = Some(strip_quotes(&value)),
             "ss_cipher" if has_value => cfg.ss_cipher = Some(strip_quotes(&value)),
@@ -811,5 +815,49 @@ turn {
         .unwrap();
         assert_eq!(cfg.mail_fsync.as_deref(), Some("optimized"));
         assert_eq!(cfg.blob_dedup.as_deref(), Some("on"));
+    }
+
+    /// P12-UT01: `alpn_imap` / `alpn_smtp` in the chatmail block parse into AppConfig.
+    ///
+    /// The installer has emitted these directives since day one but the parser
+    /// dropped them, so port-443 ALPN demux was dead config.
+    #[test]
+    fn p12_ut01_parses_alpn_directives() {
+        let cfg = parse_maddy_config(
+            "chatmail tls://0.0.0.0:443 {\n    alpn_imap imap\n    alpn_smtp smtp\n}\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.alpn_imap.as_deref(), Some("imap"));
+        assert_eq!(cfg.alpn_smtp.as_deref(), Some("smtp"));
+    }
+
+    /// P12-UT02: absent `alpn_*` directives leave the demux off.
+    #[test]
+    fn p12_ut02_alpn_absent_by_default() {
+        let cfg = parse_maddy_config("chatmail tls://0.0.0.0:443 {\n    debug false\n}\n").unwrap();
+        assert!(cfg.alpn_imap.is_none());
+        assert!(cfg.alpn_smtp.is_none());
+    }
+
+    /// P12-UT24: `sni_imap` / `sni_smtp` override the hostname that routes mail on
+    /// the shared TLS port.
+    #[test]
+    fn p12_ut24_parses_sni_overrides() {
+        let cfg = parse_maddy_config(
+            "chatmail tls://0.0.0.0:443 {\n    alpn_imap imap\n    sni_imap mail.example.org\n    sni_smtp send.example.org\n}\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.sni_imap.as_deref(), Some("mail.example.org"));
+        assert_eq!(cfg.sni_smtp.as_deref(), Some("send.example.org"));
+    }
+
+    /// P12-UT25: without them the conventional `imap.` / `smtp.` prefixes apply, so
+    /// the parsed value stays empty.
+    #[test]
+    fn p12_ut25_sni_overrides_absent_by_default() {
+        let cfg =
+            parse_maddy_config("chatmail tls://0.0.0.0:443 {\n    alpn_imap imap\n}\n").unwrap();
+        assert!(cfg.sni_imap.is_none());
+        assert!(cfg.sni_smtp.is_none());
     }
 }

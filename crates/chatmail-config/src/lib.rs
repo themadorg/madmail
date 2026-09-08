@@ -164,6 +164,19 @@ pub struct AppConfig {
     pub http_listen: Option<String>,
     pub http_tls_listen: Option<String>,
 
+    /// `chatmail { alpn_imap imap  alpn_smtp smtp }` — serve IMAP / submission on
+    /// the HTTPS TLS port, selected by the client's ALPN token. `None` disables
+    /// that protocol on the shared port; the value is the token to match.
+    pub alpn_imap: Option<String>,
+    pub alpn_smtp: Option<String>,
+
+    /// `chatmail { sni_imap mail.example.org  sni_smtp send.example.org }` —
+    /// hostnames that select mail on the shared TLS port for clients that send no
+    /// ALPN. Unset keeps the conventional `imap.` / `smtp.` prefixes; setting one
+    /// replaces the prefix for that protocol.
+    pub sni_imap: Option<String>,
+    pub sni_smtp: Option<String>,
+
     /// `openmetrics tcp://…` — Prometheus scrape bind (`/metrics`).
     pub openmetrics_listen: Option<String>,
 

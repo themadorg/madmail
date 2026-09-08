@@ -110,7 +110,7 @@ Integration tests enable both toggles in `tests/support/mod.rs::spawn_mail_serve
 | Test | Validates |
 |------|-----------|
 | `new_account_returns_dclogin_url_with_ssl_hints` | `POST /new` returns server-built `dclogin_url` with `ih`/`sh`/`is=ssl`/`ss=ssl` |
-| `mail_autoconfig_omits_https_alpn_entry` | Autoconfig route does not emit fake port-443 IMAP entry |
+| `mail_autoconfig_omits_https_alpn_when_not_configured` | Autoconfig route emits no port-443 entry unless `alpn_imap`/`alpn_smtp` are set |
 | `connect_host_for_dclogin_prefers_fallback_over_localhost` | Embedded `main.js` skips localhost for dclogin host |
 
 Blocklist checks on WebIMAP auth use `AuthCache::is_blocked` (no DB round-trip).

@@ -27,9 +27,8 @@ use chatmail_state::AppState;
 use chatmail_storage::deliver_local_messages;
 use chatmail_types::{ChatmailError, Result};
 use rustls::ServerConfig;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
 
 use crate::data_limit::{parse_smtp_size_parameter, read_smtp_data_limited};
@@ -85,7 +84,14 @@ impl SmtpSession {
         }
     }
 
-    pub async fn handle_tls_connection(&mut self, stream: TlsStream<TcpStream>) -> Result<()> {
+    /// Serve one already-TLS-terminated connection.
+    ///
+    /// Generic over the stream so the shared-port demux can pass a reader that has
+    /// already buffered the client's first bytes while identifying the protocol.
+    pub async fn handle_tls_connection<S>(&mut self, stream: S) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
         let (reader, writer) = tokio::io::split(stream);
         self.serve(reader, writer, true).await
     }

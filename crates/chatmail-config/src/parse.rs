@@ -49,6 +49,12 @@ pub struct TomlConfig {
     pub imap_tls_listen: Option<String>,
     pub http_listen: Option<String>,
     pub http_tls_listen: Option<String>,
+    /// ALPN tokens that route the HTTPS TLS port to IMAP / submission.
+    pub alpn_imap: Option<String>,
+    pub alpn_smtp: Option<String>,
+    /// Hostnames selecting mail on the shared TLS port when no ALPN is offered.
+    pub sni_imap: Option<String>,
+    pub sni_smtp: Option<String>,
     pub openmetrics_listen: Option<String>,
     #[serde(
         default,
@@ -146,6 +152,10 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
         imap_tls_listen: parsed.imap_tls_listen,
         http_listen: parsed.http_listen,
         http_tls_listen: parsed.http_tls_listen,
+        alpn_imap: parsed.alpn_imap,
+        alpn_smtp: parsed.alpn_smtp,
+        sni_imap: parsed.sni_imap,
+        sni_smtp: parsed.sni_smtp,
         openmetrics_listen: parsed.openmetrics_listen,
         queue: crate::QueueSettings::default(),
         turn_enable: parsed.turn_enable.unwrap_or(false),

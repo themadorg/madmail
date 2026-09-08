@@ -28,12 +28,27 @@ use rustls::ServerConfig;
 use rustls_pemfile::{certs, private_key};
 
 pub fn load_server_config(cert_path: &Path, key_path: &Path) -> Result<Arc<ServerConfig>> {
+    load_server_config_with_alpn(cert_path, key_path, &[])
+}
+
+/// Same, but advertising `alpn` so one port can carry several protocols.
+///
+/// rustls answers a client whose ALPN offers do not intersect `alpn` with a fatal
+/// `no_application_protocol` alert, which is the ALPACA countermeasure required by
+/// RFC 9325 §3.8. An empty `alpn` disables the extension entirely — a client that
+/// sends no ALPN still connects in both cases, and is routed by static policy.
+pub fn load_server_config_with_alpn(
+    cert_path: &Path,
+    key_path: &Path,
+    alpn: &[&[u8]],
+) -> Result<Arc<ServerConfig>> {
     let certs = load_certs(cert_path)?;
     let key = load_private_key(key_path)?;
-    let config = ServerConfig::builder()
+    let mut config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|e| ChatmailError::config(format!("TLS server config: {e}")))?;
+    config.alpn_protocols = alpn.iter().map(|p| p.to_vec()).collect();
     Ok(Arc::new(config))
 }
 
@@ -182,5 +197,32 @@ BCsnj4xR6GA3R0A=\n\
         let msg = err.to_string();
         assert!(msg.contains("no private key"), "{msg}");
         assert!(msg.contains("SEC1"), "{msg}");
+    }
+
+    /// P12-UT03: ALPN tokens land in the built ServerConfig, in the given order.
+    #[test]
+    fn p12_ut03_alpn_tokens_reach_server_config() {
+        init_crypto();
+        let (cert, key) = write_pair(EC_CERT, EC_SEC1_KEY);
+        let cfg = load_server_config_with_alpn(
+            cert.path(),
+            key.path(),
+            &[b"imap".as_slice(), b"http/1.1".as_slice()],
+        )
+        .expect("ALPN config must load");
+        assert_eq!(
+            cfg.alpn_protocols,
+            vec![b"imap".to_vec(), b"http/1.1".to_vec()]
+        );
+    }
+
+    /// P12-UT04: the plain loader stays ALPN-free — 993/465/587/143 share that Arc
+    /// and must keep negotiating with no ALPN extension.
+    #[test]
+    fn p12_ut04_plain_loader_advertises_no_alpn() {
+        init_crypto();
+        let (cert, key) = write_pair(EC_CERT, EC_SEC1_KEY);
+        let cfg = load_server_config(cert.path(), key.path()).expect("plain config must load");
+        assert!(cfg.alpn_protocols.is_empty());
     }
 }

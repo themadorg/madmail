@@ -18,8 +18,11 @@ pub struct AutoconfigParams {
     pub has_imap_plain: bool,
     pub has_submission_tls: bool,
     pub has_submission_plain: bool,
-    /// `chatmail tls://443 { alpn_imap imap }` — IMAP over HTTPS ALPN.
+    /// `chatmail tls://443 { alpn_imap imap  alpn_smtp smtp }` — mail over the
+    /// HTTPS port, selected by ALPN. Advertised after the dedicated ports so
+    /// clients only fall back to 443 where 993/465 are blocked.
     pub has_imap_alpn_https: bool,
+    pub has_smtp_alpn_https: bool,
     pub https_port: Option<String>,
 }
 
@@ -56,8 +59,8 @@ impl AutoconfigParams {
             has_imap_plain,
             has_submission_tls,
             has_submission_plain,
-            // chatmail-fed does not implement IMAP-over-HTTPS ALPN on 443 yet.
-            has_imap_alpn_https: false,
+            has_imap_alpn_https: runtime.is_some_and(|r| r.alpn_imap_on_https),
+            has_smtp_alpn_https: runtime.is_some_and(|r| r.alpn_smtp_on_https),
             https_port,
         }
     }
@@ -138,6 +141,11 @@ pub fn build_autoconfig_xml(params: &AutoconfigParams) -> String {
             "STARTTLS",
         ));
     }
+    if params.has_smtp_alpn_https {
+        if let Some(ref port) = params.https_port {
+            outgoing.push_str(&outgoing_server(&host, port, "SSL"));
+        }
+    }
 
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -180,6 +188,8 @@ mod tests {
             smtp_addr: Some("0.0.0.0:25".into()),
             http_plain_addr: None,
             http_tls_addr: None,
+            alpn_imap_on_https: false,
+            alpn_smtp_on_https: false,
         };
         let params = AutoconfigParams::from_mail_settings("example.org", &mail, Some(&rt));
         let xml = build_autoconfig_xml(&params);
@@ -211,6 +221,8 @@ mod tests {
             smtp_addr: None,
             http_plain_addr: None,
             http_tls_addr: None,
+            alpn_imap_on_https: false,
+            alpn_smtp_on_https: false,
         };
         let params = AutoconfigParams::from_mail_settings("[192.0.2.1]", &mail, Some(&rt));
         let xml = build_autoconfig_xml(&params);
@@ -219,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn autoconfig_omits_https_alpn_even_when_http_tls_bound() {
+    fn autoconfig_omits_https_alpn_when_not_configured() {
         let mail = DcloginMailSettings {
             client_host: "example.org".into(),
             imap_port_tls: "993".into(),
@@ -237,11 +249,84 @@ mod tests {
             smtp_addr: None,
             http_plain_addr: None,
             http_tls_addr: Some("0.0.0.0:443".into()),
+            alpn_imap_on_https: false,
+            alpn_smtp_on_https: false,
         };
         let params = AutoconfigParams::from_mail_settings("example.org", &mail, Some(&rt));
         assert!(!params.has_imap_alpn_https);
         let xml = build_autoconfig_xml(&params);
         assert!(!xml.contains("<port>443</port>"));
         assert_eq!(xml.matches("<incomingServer").count(), 2);
+    }
+
+    /// P12-UT12: with ALPN mail configured on the HTTPS port, autoconfig advertises
+    /// 443 for IMAP and submission — after the dedicated ports, so clients still
+    /// prefer 993/465 and only fall back to 443 on networks that block them.
+    #[test]
+    fn p12_ut12_autoconfig_advertises_alpn_https_when_enabled() {
+        let mail = DcloginMailSettings {
+            client_host: "example.org".into(),
+            imap_port_tls: "993".into(),
+            imap_port_starttls: "143".into(),
+            smtp_port_tls: "465".into(),
+            smtp_port_starttls: "587".into(),
+            dclogin_imap_security: "ssl".into(),
+            dclogin_smtp_security: "ssl".into(),
+        };
+        let rt = RuntimeListeners {
+            imap_plain_addr: Some("0.0.0.0:143".into()),
+            imap_tls_addr: Some("0.0.0.0:993".into()),
+            submission_plain_addr: Some("0.0.0.0:587".into()),
+            submission_tls_addr: Some("0.0.0.0:465".into()),
+            smtp_addr: None,
+            http_plain_addr: None,
+            http_tls_addr: Some("0.0.0.0:443".into()),
+            alpn_imap_on_https: true,
+            alpn_smtp_on_https: true,
+        };
+        let params = AutoconfigParams::from_mail_settings("example.org", &mail, Some(&rt));
+        assert!(params.has_imap_alpn_https);
+        assert!(params.has_smtp_alpn_https);
+
+        let xml = build_autoconfig_xml(&params);
+        assert_eq!(xml.matches("<incomingServer").count(), 3);
+        assert_eq!(xml.matches("<outgoingServer").count(), 3);
+        let imap_443 = xml.split("</incomingServer>").next().unwrap();
+        assert!(
+            !imap_443.contains("<port>443</port>"),
+            "443 must not be the first IMAP entry"
+        );
+        assert_eq!(xml.matches("<port>443</port>").count(), 2);
+    }
+
+    /// P12-UT13: an operator who enables only IMAP on 443 does not get submission
+    /// advertised there.
+    #[test]
+    fn p12_ut13_autoconfig_alpn_protocols_are_independent() {
+        let mail = DcloginMailSettings {
+            client_host: "example.org".into(),
+            imap_port_tls: "993".into(),
+            imap_port_starttls: "143".into(),
+            smtp_port_tls: "465".into(),
+            smtp_port_starttls: "587".into(),
+            dclogin_imap_security: "ssl".into(),
+            dclogin_smtp_security: "ssl".into(),
+        };
+        let rt = RuntimeListeners {
+            imap_tls_addr: Some("0.0.0.0:993".into()),
+            submission_tls_addr: Some("0.0.0.0:465".into()),
+            http_tls_addr: Some("0.0.0.0:443".into()),
+            alpn_imap_on_https: true,
+            ..Default::default()
+        };
+        let params = AutoconfigParams::from_mail_settings("example.org", &mail, Some(&rt));
+        assert!(params.has_imap_alpn_https);
+        assert!(!params.has_smtp_alpn_https);
+        assert_eq!(
+            build_autoconfig_xml(&params)
+                .matches("<port>443</port>")
+                .count(),
+            1
+        );
     }
 }

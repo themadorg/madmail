@@ -67,6 +67,7 @@ pub async fn run_smtp_listener(
                 let cfg = cfg.clone();
                 let acceptor = tls_acceptor.clone();
                 tokio::spawn(async move {
+                    let _conn_guard = chatmail_metrics::conn_guard(cfg.module);
                     let mut session = SmtpSession::new(ctx, pool, cfg);
                     let result = if let Some(acceptor) = acceptor {
                         match acceptor.accept(stream).await {

@@ -185,8 +185,8 @@ chatmail tls://0.0.0.0:443 {{
     tls file {cert} {key}
     public_ip $(public_ip)
     turn_off_tls {turn_off}
-    alpn_smtp submission
-    alpn_imap imap
+    alpn_smtp {alpn_smtp}
+    alpn_imap {alpn_imap}
     enable_contact_sharing {contact}
     language {lang}
 {ss_block}}}
@@ -197,6 +197,8 @@ chatmail tls://0.0.0.0:443 {{
             cert = c.cert_path.display(),
             key = c.key_path.display(),
             ss_block = ss_block,
+            alpn_imap = crate::shared_listener::ALPN_IMAP,
+            alpn_smtp = crate::shared_listener::ALPN_SMTP,
         )
     } else {
         String::new()

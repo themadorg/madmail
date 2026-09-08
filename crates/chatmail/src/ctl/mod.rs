@@ -38,6 +38,7 @@ mod install;
 mod iroh;
 mod language;
 mod message_size;
+mod monitor;
 mod openrelay;
 mod output;
 mod port;
