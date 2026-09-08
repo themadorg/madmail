@@ -34,6 +34,49 @@ use tracing::info;
 
 use crate::mxdeliv::{mxdeliv_handler, FedState};
 
+/// Federation routes plus the admin/www routes, as served on the HTTP(S) port.
+///
+/// Shared with the ALPN demux so both listeners serve exactly the same surface.
+pub fn build_router(
+    pool: DbPool,
+    app: Arc<AppState>,
+    primary_domain: String,
+    local_domains: Vec<String>,
+    extra: Option<Router>,
+) -> Router {
+    let mut router = federation_router(FedState {
+        pool,
+        app,
+        primary_domain,
+        local_domains,
+    });
+    if let Some(more) = extra {
+        router = router.merge(more);
+    }
+    router
+}
+
+/// Serve one already-TLS-terminated connection as HTTP.
+///
+/// Split out of the accept loop so the shared-port ALPN demux can route a
+/// connection here after deciding it is not IMAP or submission.
+pub async fn serve_tls_conn(
+    tls_stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+    router: Router,
+    peer: std::net::SocketAddr,
+) {
+    let io = TokioIo::new(tls_stream);
+    let hyper_svc = TowerToHyperService::new(router);
+    // WebSocket upgrades (WebIMAP /webimap/ws) require the upgrade-aware
+    // connection driver; plain serve_connection closes right after 101.
+    if let Err(e) = Builder::new(TokioExecutor::new())
+        .serve_connection_with_upgrades(io, hyper_svc)
+        .await
+    {
+        tracing::debug!(%peer, error = %e, "HTTP connection ended");
+    }
+}
+
 pub fn federation_router(state: FedState) -> Router {
     // Axum defaults to 2 MiB; federated post-messages exceed that (cap: max_federation_size).
     let max_body = state.app.federation_size.effective().max(1) as usize;
@@ -54,16 +97,7 @@ pub async fn run_http_listener(
     local_domains: Vec<String>,
     extra: Option<Router>,
 ) -> Result<()> {
-    let state = FedState {
-        pool,
-        app,
-        primary_domain,
-        local_domains,
-    };
-    let mut router = federation_router(state);
-    if let Some(more) = extra {
-        router = router.merge(more);
-    }
+    let router = build_router(pool, app, primary_domain, local_domains, extra);
 
     let listener = TcpListener::bind(addr).await?;
     let tls_acceptor = tls.map(TlsAcceptor::from);
@@ -94,16 +128,7 @@ pub async fn run_http_listener(
                             return;
                         }
                     };
-                    let io = TokioIo::new(tls_stream);
-                    let hyper_svc = TowerToHyperService::new(app);
-                    // WebSocket upgrades (WebIMAP /webimap/ws) require the upgrade-aware
-                    // connection driver; plain serve_connection closes right after 101.
-                    if let Err(e) = Builder::new(TokioExecutor::new())
-                        .serve_connection_with_upgrades(io, hyper_svc)
-                        .await
-                    {
-                        tracing::debug!(%peer, error = %e, "HTTP connection ended");
-                    }
+                    serve_tls_conn(tls_stream, app, peer).await;
                 });
             }
         }

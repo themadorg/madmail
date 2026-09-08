@@ -19,4 +19,4 @@ pub mod mxdeliv;
 pub mod security;
 pub mod server;
 
-pub use server::run_http_listener;
+pub use server::{build_router, run_http_listener, serve_tls_conn};

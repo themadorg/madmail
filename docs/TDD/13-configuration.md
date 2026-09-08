@@ -323,7 +323,49 @@ Implementation: `chatmail-config::autoconfig`, served by `chatmail-www` at `GET 
 | Behaviour | Notes |
 |-----------|--------|
 | Advertises SSL + STARTTLS IMAP/SMTP entries when both listener types are bound | Ports from runtime listeners + DB overrides |
-| **Does not** advertise IMAP-over-HTTPS ALPN on port 443 | `has_imap_alpn_https` is always false until `chatmail-fed` implements ALPN IMAP |
+| Advertises IMAP and submission on the HTTPS port when `alpn_imap` / `alpn_smtp` are set | `has_imap_alpn_https` / `has_smtp_alpn_https`, sourced from the supervisor via `ListenerPortsStore`. Entries come **after** 993/465 and STARTTLS, so clients only fall back to 443 where those are blocked |
 | TLS certificate required when plain IMAP/submission bound | Supervisor calls `listeners_need_tls_cert` — PEM loaded for STARTTLS upgrade on 143/587 |
 
-Unit tests: `autoconfig_includes_ssl_and_starttls_when_both_listeners`, `autoconfig_omits_https_alpn_even_when_http_tls_bound`, `mail_autoconfig_omits_https_alpn_entry` (www integration).
+Unit tests: `autoconfig_includes_ssl_and_starttls_when_both_listeners`,
+`autoconfig_omits_https_alpn_when_not_configured`,
+`p12_ut12_autoconfig_advertises_alpn_https_when_enabled`,
+`p12_ut13_autoconfig_alpn_protocols_are_independent`,
+`mail_autoconfig_omits_https_alpn_when_not_configured` and
+`p12_it03_mail_autoconfig_advertises_https_alpn_when_configured` (www integration).
+
+### Shared HTTPS port (`alpn_imap` / `alpn_smtp`)
+
+```
+chatmail tls://0.0.0.0:443 {
+    alpn_imap imap
+    alpn_smtp smtp
+}
+```
+
+Either directive makes the HTTPS listener also serve mail, demultiplexed by the
+ALPN token the client offered (`crates/chatmail/src/shared_listener.rs`). The
+listener takes over the existing `http_tls` slot rather than binding 443 twice.
+
+- **ALPN only.** Never SNI: SNI names a host, not a protocol, and a browser sets
+  it from the URL bar, so SNI routing would send `https://imap.example.org/` into
+  the IMAP parser with no attacker involved.
+- **No ALPN means HTTPS.** There is no byte-sniffing fallback — IMAP and SMTP are
+  server-speaks-first while HTTP is client-speaks-first, so no first byte tells
+  them apart without hanging one side.
+- **Strict ALPN.** A client whose offers do not intersect ours gets a fatal
+  `no_application_protocol`. This is the ALPACA countermeasure of RFC 9325 §3.8,
+  and it is only available because Madmail terminates TLS itself; upstream
+  chatmail's nginx `ssl_preread` passthrough cannot enforce it.
+- **`h2` is not advertised**, so the HTTPS surface keeps negotiating HTTP/1.1
+  exactly as it does today.
+- **The directive value is ignored.** It was a maddy module-instance name in the
+  Go implementation (hence `alpn_smtp submission` in older configs). The wire
+  tokens are fixed by the client — `imap` and `smtp`, per `chatmail/core` — so
+  they live in `ALPN_IMAP` / `ALPN_SMTP` and a non-matching value only logs a
+  warning. There is no IANA-registered ALPN identifier for SMTP or submission;
+  `smtp` is an unregistered token shared with upstream chatmail.
+- **Only implicit TLS can ride 443.** STARTTLS on 143/587 cannot: its first bytes
+  are a plaintext server greeting, not a ClientHello. Inbound MX on 25 cannot move
+  either — MX records name a host, not a port.
+- **Not compatible with a TLS-terminating CDN** in front of 443; that needs L4
+  passthrough.

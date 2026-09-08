@@ -354,20 +354,27 @@ fn walk_node(node: &Node, ports: &mut Vec<ServicePort>) {
         }
         "chatmail" | "http" => {
             let mut alpn_imap = false;
+            let mut alpn_smtp = false;
             let mut ss_addr = None;
             if let Some(children) = &node.children {
                 for child in children {
                     if child.name == "alpn_imap" {
                         alpn_imap = true;
                     }
+                    if child.name == "alpn_smtp" {
+                        alpn_smtp = true;
+                    }
                     if child.name == "ss_addr" && !child.args.is_empty() {
                         ss_addr = Some(child.args[0].trim_matches('"').to_string());
                     }
                 }
             }
-            if alpn_imap {
-                for (_, port) in endpoint_scheme_ports(&node.args) {
+            for (_, port) in endpoint_scheme_ports(&node.args) {
+                if alpn_imap {
                     push_port(ports, &port, "ALPN (chatmail)", "IMAP", "tcp");
+                }
+                if alpn_smtp {
+                    push_port(ports, &port, "ALPN (chatmail)", "Submission", "tcp");
                 }
             }
             if let Some(addr) = ss_addr {
@@ -601,5 +608,38 @@ mod tests {
         let out = parse_ss_output("0 0 0.0.0.0:143 1.2.3.4:999\n");
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].remote_addr, "1.2.3.4:999");
+    }
+
+    /// P12-UT15: `chatmail status` lists submission-over-443, not only IMAP.
+    ///
+    /// The block declares both ALPN protocols, so both must appear on the port.
+    #[test]
+    fn p12_ut15_status_lists_both_alpn_services() {
+        let node = Node {
+            name: "chatmail".into(),
+            args: vec!["tls://0.0.0.0:443".into()],
+            children: Some(vec![
+                Node {
+                    name: "alpn_imap".into(),
+                    args: vec!["imap".into()],
+                    children: None,
+                    line: 2,
+                },
+                Node {
+                    name: "alpn_smtp".into(),
+                    args: vec!["smtp".into()],
+                    children: None,
+                    line: 3,
+                },
+            ]),
+            line: 1,
+        };
+        let mut ports = Vec::new();
+        walk_node(&node, &mut ports);
+
+        let services: Vec<_> = ports.iter().map(|p| p.service).collect();
+        assert!(services.contains(&"IMAP"), "{services:?}");
+        assert!(services.contains(&"Submission"), "{services:?}");
+        assert!(ports.iter().all(|p| p.port == "443"), "{ports:?}");
     }
 }

@@ -64,6 +64,44 @@ Use `rustls` + `rustls-acme` or `instant-acme` crates.
 Checked on every delivery and IMAP quota command.
 In-memory cache with write-through updates.
 
+## Cross-Protocol Attacks (ALPACA)
+
+Every TLS listener presents the same certificate, because there is one hostname.
+That removes the certificate-separation defence against [ALPACA](https://alpaca-attack.com/)
+(USENIX Security 2021): an attacker redirects a victim's HTTPS connection to a
+different TLS service that presents an acceptable certificate for the same name,
+then abuses that service's parser. TLS does not bind a connection to an intended
+port, so a lax mail listener stays a valid substitute server for the web origin
+however strict the HTTPS port is.
+
+Strict ALPN is therefore the only TLS-layer defence available, and RFC 9325
+(BCP 195) §3.8 makes it the recommendation. Each listener advertises exactly the
+protocols it will speak, so rustls answers a client whose offers do not overlap
+with a fatal `no_application_protocol`:
+
+| Listener | Advertised ALPN |
+|----------|-----------------|
+| IMAP implicit TLS (993) | `imap` |
+| Submission implicit TLS (465) | `smtp` |
+| HTTPS sharing mail (443, `alpn_imap` / `alpn_smtp`) | enabled mail tokens + `http/1.1` |
+| HTTPS alone (443) | none |
+| STARTTLS upgrades (143 / 587), inbound SMTP (25) | none |
+
+Built by `load_mail_tls_configs` in `crates/chatmail/src/shared_listener.rs`.
+
+Two limits are deliberate. STARTTLS ports advertise nothing because the client
+negotiates TLS after a plaintext greeting and has no ClientHello to offer ALPN in.
+And a client that sends no ALPN extension is never rejected — rustls only fails
+when the client offered ALPN and nothing overlapped — which is what keeps
+Thunderbird, Apple Mail and Delta Chat on the standard ports working. That also
+means an ALPN-less client remains unattributable, so on the shared HTTPS port such
+a connection is served as HTTPS rather than guessed into a mail parser.
+
+Tests: `p12_it04_alpn_less_client_still_reaches_imap`,
+`p12_it05_browser_alpn_refused_on_imap_port`,
+`p12_it02_unoffered_alpn_is_refused`,
+`p12_ut17_dedicated_mail_ports_get_their_own_alpn`.
+
 ## Threat Model Considerations
 - User enumeration prevention (silent drop on non-existent users during federation)
 - Timing attack prevention (constant-time token compare)
@@ -103,4 +141,6 @@ PGP policy, MIME, TLS, and certificate automation. Index: [`RFC/README.md`](RFC/
 | [5321](https://datatracker.ietf.org/doc/html/rfc5321) | SMTP error semantics (`523`, `554`) | [rfc5321.txt](RFC/rfc5321.txt) |
 | [5322](https://datatracker.ietf.org/doc/html/rfc5322) | Header / envelope matching | [rfc5322.txt](RFC/rfc5322.txt) |
 | [8446](https://datatracker.ietf.org/doc/html/rfc8446) | TLS 1.3 | [rfc8446.txt](RFC/rfc8446.txt) |
+| [7301](https://datatracker.ietf.org/doc/html/rfc7301) | TLS ALPN extension | — |
+| [9325](https://datatracker.ietf.org/doc/html/rfc9325) | TLS BCP 195 — strict ALPN/SNI vs ALPACA | — |
 | [8555](https://datatracker.ietf.org/doc/html/rfc8555) | ACME (Let's Encrypt / DNS-01) | [rfc8555.txt](RFC/rfc8555.txt) |
