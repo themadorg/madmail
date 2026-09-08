@@ -84,10 +84,9 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
                     return DeliveryOutcome::Success;
                 }
                 Err(e) => {
-                    // Always fall through to SMTP after HTTP failure.
-                    // Peers like nine.testrun.org often only accept real SMTP on :443;
-                    // treating 4xx from missing /mxdeliv as permanent skipped SMTP entirely
-                    // and broke WebSMTP/SMTP federation equally once HTTP returned 404.
+                    // Always fall through to SMTP after HTTP failure: treating 4xx from
+                    // a missing /mxdeliv as permanent skipped SMTP entirely, which broke
+                    // federation with any peer that only speaks SMTP once HTTP 404'd.
                     warn!(
                         %url,
                         rcpt = %job.rcpt_to,

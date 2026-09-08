@@ -68,6 +68,13 @@ Each queued message: `{id}.meta` (JSON, includes `queued_at_unix`) + `{id}.body`
 2. **HTTP**  `POST http://domain/mxdeliv` (fallback)
 3. **SMTP**  Direct delivery to recipient host port 25 (last resort after HTTP failures)
 
+Port 25 is the only SMTP port tried. MX records name a host, not a port, so inbound
+mail cannot live anywhere else, and the relay-to-relay alternative is `/mxdeliv`
+above. An implicit-TLS retry on `:443` existed until it was removed: relays demux
+`:443` to a submission service requiring SASL auth, so it could never deliver, and
+against a peer serving plain HTTPS there it blocked for the full 30s connect timeout
+on every federation failure (`p7_ut07_no_implicit_tls_retry_on_443`).
+
 ## Endpoint Override System
 Database table `dns_overrides` + in-memory cache.
 

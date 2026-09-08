@@ -110,10 +110,11 @@ impl SmtpTransport {
     }
 }
 
-/// Deliver one message over SMTP.
+/// Deliver one message over SMTP on port 25, upgrading with STARTTLS when offered.
 ///
-/// Tries port 25 (optional STARTTLS) first, then port 443 implicit TLS — required for
-/// classic Chatmail relays (`nine.testrun.org`, etc.) that expose SMTP only on :443.
+/// Port 25 is the only SMTP port tried. MX records name a host, not a port, so
+/// inbound mail cannot be anywhere else; the relay-to-relay alternative is the
+/// HTTPS `/mxdeliv` route in [`crate::transport`], which runs first.
 ///
 /// `helo_name` is this server's identity for EHLO (primary_domain / public IP), not the remote host.
 pub async fn deliver(host: &str, job: &OutboundJob, helo_name: &str) -> Result<(), String> {
@@ -133,22 +134,18 @@ pub async fn deliver(host: &str, job: &OutboundJob, helo_name: &str) -> Result<(
     match deliver_plain_starttls(&endpoint25, connect_host, rcpt_domain, helo, job).await {
         Ok(()) => {
             info!(endpoint = %endpoint25, rcpt = %job.rcpt_to, "federation: SMTP delivery ok (port 25)");
-            return Ok(());
+            Ok(())
         }
         Err(e25) => {
             warn!(
                 endpoint = %endpoint25,
                 rcpt = %job.rcpt_to,
                 error = %e25,
-                "federation: SMTP :25 failed, trying implicit TLS :443"
+                "federation: SMTP :25 failed"
             );
+            Err(e25)
         }
     }
-
-    let endpoint443 = format!("{connect_host}:443");
-    deliver_implicit_tls(&endpoint443, connect_host, rcpt_domain, helo, job)
-        .await
-        .map_err(|e443| format!("smtp :25 failed; smtp :443 tls: {e443}"))
 }
 
 /// Plain SMTP on :25 with optional STARTTLS (RFC 3207).
@@ -195,40 +192,6 @@ async fn deliver_plain_starttls(
     }
 
     run_smtp_transaction(&mut transport, job).await
-}
-
-/// Implicit TLS on :443 (Chatmail / Delta Chat relay SMTP submission style).
-async fn deliver_implicit_tls(
-    endpoint: &str,
-    connect_host: &str,
-    rcpt_domain: &str,
-    helo_name: &str,
-    job: &OutboundJob,
-) -> Result<(), String> {
-    info!(endpoint, rcpt = %job.rcpt_to, "federation: SMTP implicit TLS connect");
-
-    let stream = tokio::time::timeout(Duration::from_secs(30), TcpStream::connect(endpoint))
-        .await
-        .map_err(|_| "smtp tls connect timeout".to_string())?
-        .map_err(|e| format!("smtp tls connect: {e}"))?;
-
-    let server_name = smtp_tls_server_name(connect_host, rcpt_domain)?;
-    let tls_stream = tokio::time::timeout(
-        Duration::from_secs(30),
-        federation_smtp_tls_connector().connect(server_name, stream),
-    )
-    .await
-    .map_err(|_| "smtp tls handshake timeout".to_string())?
-    .map_err(|e| format!("smtp tls handshake: {e}"))?;
-
-    let mut transport = SmtpTransport::Tls(Box::new(tls_stream));
-    read_smtp_reply(&mut transport, 220).await?;
-    transport.write_all(format!("EHLO {helo_name}\r\n")).await?;
-    read_smtp_reply(&mut transport, 250).await?;
-
-    run_smtp_transaction(&mut transport, job).await?;
-    info!(endpoint, rcpt = %job.rcpt_to, "federation: SMTP delivery ok (port 443 TLS)");
-    Ok(())
 }
 
 async fn run_smtp_transaction(
@@ -438,5 +401,31 @@ mod tests {
         deliver_to_endpoint(&addr.to_string(), "mx.test", "test", &job)
             .await
             .expect("STARTTLS SMTP federation delivery");
+    }
+
+    /// P7-UT07: a peer with no reachable SMTP on :25 fails there and nowhere else.
+    ///
+    /// There used to be an implicit-TLS retry on :443. It could never deliver mail:
+    /// relays demux :443 to a submission service that requires SASL auth, and a
+    /// peer running plain HTTPS there never sends the server-first banner this
+    /// client waits for — so the retry blocked for the full 30s connect timeout on
+    /// every federation failure. Relay-to-relay delivery goes over HTTPS /mxdeliv
+    /// or port 25, never :443.
+    ///
+    /// `.invalid` is reserved by RFC 2606 and never resolves, so this exercises the
+    /// failure path without touching the network.
+    #[tokio::test]
+    async fn p7_ut07_no_implicit_tls_retry_on_443() {
+        let job = OutboundJob {
+            mail_from: "sender@test".into(),
+            rcpt_to: "rcpt@peer.invalid".into(),
+            data: b"test".to_vec(),
+        };
+
+        let err = deliver("peer.invalid", &job, "mx.test")
+            .await
+            .expect_err("unresolvable peer must fail");
+
+        assert!(!err.contains("443"), "must not retry on :443, got: {err}");
     }
 }

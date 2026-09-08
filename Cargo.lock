@@ -877,6 +877,7 @@ dependencies = [
  "chatmail-config",
  "chatmail-db",
  "chatmail-iroh",
+ "chatmail-metrics",
  "chatmail-pgp",
  "chatmail-push",
  "chatmail-state",

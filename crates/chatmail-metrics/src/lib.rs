@@ -21,7 +21,8 @@ mod metrics;
 mod server;
 
 pub use metrics::{
-    exposition_text, init_metrics, record_smtp_aborted, record_smtp_completed,
-    record_smtp_failed_command, record_smtp_failed_login, record_smtp_started, set_queue_length,
+    conn_guard, exposition_text, init_metrics, record_smtp_aborted, record_smtp_completed,
+    record_smtp_failed_command, record_smtp_failed_login, record_smtp_started, sample_value,
+    samples, set_queue_length, ConnGuard,
 };
 pub use server::run_openmetrics_listener;
