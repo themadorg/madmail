@@ -41,6 +41,8 @@ async fn www_index_renders() {
         smtp_addr: None,
         http_plain_addr: Some("0.0.0.0:8080".into()),
         http_tls_addr: None,
+        alpn_imap_on_https: false,
+        alpn_smtp_on_https: false,
     };
     let dir = tempfile::tempdir().unwrap();
     let cache = WwwContextCache::new();
@@ -560,7 +562,7 @@ async fn new_account_returns_dclogin_url_with_ssl_hints() {
 }
 
 #[tokio::test]
-async fn mail_autoconfig_omits_https_alpn_entry() {
+async fn mail_autoconfig_omits_https_alpn_when_not_configured() {
     use axum::body::to_bytes;
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
@@ -602,6 +604,57 @@ async fn mail_autoconfig_omits_https_alpn_entry() {
     assert!(xml.contains("<port>993</port>"));
     assert!(xml.contains("<port>143</port>"));
     assert!(!xml.contains("<port>443</port>"));
+}
+
+/// P12-IT03: end to end — with `alpn_imap` / `alpn_smtp` configured, the served
+/// autoconfig XML offers 443 for both IMAP and submission, after the dedicated
+/// ports.
+#[tokio::test]
+async fn p12_it03_mail_autoconfig_advertises_https_alpn_when_configured() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = AppConfig::default();
+    cfg.mail_domain = Some("example.org".into());
+    cfg.imap_tls_listen = Some("0.0.0.0:993".into());
+    cfg.submission_tls_listen = Some("0.0.0.0:465".into());
+    cfg.http_tls_listen = Some("0.0.0.0:443".into());
+    cfg.alpn_imap = Some("imap".into());
+    cfg.alpn_smtp = Some("smtp".into());
+
+    let app_state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    app_state.listener_ports.set_shared_alpn(true, true);
+    app_state.listener_ports.set_runtime(
+        "0.0.0.0:25",
+        None,
+        Some("0.0.0.0:993".into()),
+        None,
+        Some("0.0.0.0:465".into()),
+        None,
+        Some("0.0.0.0:443".into()),
+    );
+
+    let app = crate::www_router(crate::WwwState::new(pool, app_state, cfg, dir.path()));
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/.well-known/autoconfig/mail/config-v1.1.xml")
+                .header("host", "example.org")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let xml = String::from_utf8_lossy(&bytes);
+    assert!(xml.contains("<port>993</port>"));
+    assert!(xml.contains("<port>465</port>"));
+    assert_eq!(xml.matches("<port>443</port>").count(), 2);
 }
 
 /// Contact sharing: POST /share persists to sharing.db; GET /{slug} renders contact page.

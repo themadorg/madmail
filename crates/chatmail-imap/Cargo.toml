@@ -10,6 +10,7 @@ chatmail-config = { workspace = true }
 chatmail-db = { workspace = true }
 chatmail-turn = { workspace = true }
 chatmail-iroh = { workspace = true }
+chatmail-metrics = { workspace = true }
 chatmail-push = { workspace = true }
 chatmail-pgp = { workspace = true }
 chatmail-state = { workspace = true }

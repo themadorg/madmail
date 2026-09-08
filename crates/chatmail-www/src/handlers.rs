@@ -645,6 +645,8 @@ pub async fn mail_autoconfig(State(st): State<WwwState>, headers: HeaderMap) -> 
         smtp_addr: snap.smtp_addr,
         http_plain_addr: snap.http_plain_addr,
         http_tls_addr: snap.http_tls_addr,
+        alpn_imap_on_https: snap.alpn_imap_on_https,
+        alpn_smtp_on_https: snap.alpn_smtp_on_https,
     };
     let params = AutoconfigParams::from_mail_settings(&st.mail_domain, &mail, Some(&runtime));
     let xml = build_autoconfig_xml(&params);
@@ -759,6 +761,8 @@ async fn dclogin_mail_settings(st: &WwwState, headers: &HeaderMap) -> DcloginMai
         smtp_addr: snap.smtp_addr,
         http_plain_addr: snap.http_plain_addr,
         http_tls_addr: snap.http_tls_addr,
+        alpn_imap_on_https: snap.alpn_imap_on_https,
+        alpn_smtp_on_https: snap.alpn_smtp_on_https,
     };
 
     let db_ports = if st
@@ -799,6 +803,8 @@ async fn render_template(
         smtp_addr: snap.smtp_addr,
         http_plain_addr: snap.http_plain_addr,
         http_tls_addr: snap.http_tls_addr,
+        alpn_imap_on_https: snap.alpn_imap_on_https,
+        alpn_smtp_on_https: snap.alpn_smtp_on_https,
     };
     let ctx = match build_context(
         &st.pool,

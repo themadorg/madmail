@@ -66,6 +66,7 @@ pub async fn run_imap_listener(
                 let cfg = cfg.clone();
                 let acceptor = tls_acceptor.clone();
                 tokio::spawn(async move {
+                    let _conn_guard = chatmail_metrics::conn_guard("imap");
                     connection_stats::on_open(&peer_ip);
                     let mut session = ImapSession::new(ctx, pool, cfg);
                     let result = if let Some(acceptor) = acceptor {

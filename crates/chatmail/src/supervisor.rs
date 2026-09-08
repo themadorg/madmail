@@ -31,7 +31,7 @@ use chatmail_imap::run_imap_listener;
 use chatmail_smtp::run_smtp_listener;
 use chatmail_state::{AppState, ReloadRequest, ReloadScope};
 use chatmail_tasks::MaintenanceHandle;
-use chatmail_tls::load_server_config;
+use chatmail_tls::{load_server_config, load_server_config_with_alpn};
 use chatmail_types::Result;
 use rustls::ServerConfig;
 use tokio::net::TcpListener;
@@ -43,6 +43,7 @@ use tracing::{error, info};
 
 use crate::logging::boot_error;
 use crate::servers::{build_http_extra, extend_dev_local_aliases};
+use crate::shared_listener::{alpn_tokens, run_shared_listener, SharedMail, ALPN_IMAP, ALPN_SMTP};
 
 use chatmail_imap::ImapSessionConfig;
 use chatmail_iroh::IrohRelayHandle;
@@ -308,6 +309,8 @@ impl SupervisorInner {
             smtp_addr: Some(addrs.smtp.clone()),
             http_plain_addr: addrs.http_plain.clone(),
             http_tls_addr: addrs.http_tls.clone(),
+            alpn_imap_on_https: self.file_config.alpn_imap.is_some(),
+            alpn_smtp_on_https: self.file_config.alpn_smtp.is_some(),
         };
         if !listeners_need_tls_cert(&runtime) {
             return Ok(None);
@@ -317,11 +320,59 @@ impl SupervisorInner {
         Ok(Some(load_server_config(&cert, &key)?))
     }
 
+    /// ALPN-advertising TLS config for the HTTPS port, when it also carries mail.
+    ///
+    /// A separate `ServerConfig` on purpose: 993/465/587/143 clone the one from
+    /// [`Self::load_tls_config`] and must keep negotiating with no ALPN extension.
+    fn load_shared_tls_config(&self, addrs: &ResolvedAddrs) -> Result<Option<Arc<ServerConfig>>> {
+        let tokens = alpn_tokens(
+            self.file_config.alpn_imap.is_some(),
+            self.file_config.alpn_smtp.is_some(),
+        );
+        if tokens.is_empty() || addrs.http_tls.is_none() {
+            return Ok(None);
+        }
+        // Configs written by older installers carry `alpn_smtp submission`, which was
+        // a maddy module-instance name rather than an ALPN token. The directive only
+        // enables the protocol; the token clients actually offer is fixed.
+        for (directive, configured, wire_token) in [
+            (
+                "alpn_imap",
+                self.file_config.alpn_imap.as_deref(),
+                ALPN_IMAP,
+            ),
+            (
+                "alpn_smtp",
+                self.file_config.alpn_smtp.as_deref(),
+                ALPN_SMTP,
+            ),
+        ] {
+            if let Some(value) = configured.filter(|v| *v != wire_token) {
+                tracing::warn!(
+                    directive,
+                    value,
+                    wire_token,
+                    "shared-port ALPN: directive value is a legacy module name and is \
+                     ignored; clients negotiate the wire token"
+                );
+            }
+        }
+        let (cert, key) =
+            crate::tls_boot::ensure_tls_pem_files(&self.file_config, &self.state_dir)?;
+        let refs: Vec<&[u8]> = tokens.iter().map(|t| t.as_slice()).collect();
+        Ok(Some(load_server_config_with_alpn(&cert, &key, &refs)?))
+    }
+
     async fn start_listeners(&self) -> Result<()> {
         let addrs = self.resolve_addrs().await?;
         let tls_config = self.load_tls_config(&addrs)?;
+        let shared_tls = self.load_shared_tls_config(&addrs)?;
         let imap_cfg = self.imap_cfg.lock().await.clone();
 
+        self.app.listener_ports.set_shared_alpn(
+            self.file_config.alpn_imap.is_some(),
+            self.file_config.alpn_smtp.is_some(),
+        );
         self.app.listener_ports.set_runtime(
             &addrs.smtp,
             addrs.imap_plain.clone(),
@@ -456,6 +507,8 @@ impl SupervisorInner {
             addrs.http_plain.clone(),
             addrs.http_tls.clone(),
             tls_config.as_ref(),
+            shared_tls.as_ref(),
+            imap_cfg.clone(),
             http_extra,
         );
 
@@ -564,11 +617,14 @@ impl SupervisorInner {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_http_listener_slots(
         &self,
         http_plain: Option<String>,
         http_tls: Option<String>,
         tls_config: Option<&Arc<ServerConfig>>,
+        shared_tls: Option<&Arc<ServerConfig>>,
+        imap_cfg: ImapSessionConfig,
         http_extra: Option<Router>,
     ) -> (Option<ListenerSlot>, Option<ListenerSlot>) {
         let http_plain_slot = http_plain.map(|addr| {
@@ -588,19 +644,45 @@ impl SupervisorInner {
 
         let http_tls_slot = http_tls.map(|addr| {
             let cancel = CancellationToken::new();
-            let tls = tls_config
-                .cloned()
-                .expect("tls config when http tls listen set");
-            let join = spawn_http(
-                addr,
-                cancel.clone(),
-                Some(tls),
-                self.pool.clone(),
-                Arc::clone(&self.app),
-                self.primary_domain.clone(),
-                self.local_domains.clone(),
-                http_extra.clone(),
-            );
+            // With ALPN configured this port carries IMAP and submission too, so the
+            // demux takes the slot rather than running as a fourth listener on 443 —
+            // preflight would otherwise bind the same address twice and fail boot.
+            let join = match shared_tls.cloned() {
+                Some(tls) => spawn_shared(
+                    addr,
+                    cancel.clone(),
+                    tls,
+                    chatmail_fed::build_router(
+                        self.pool.clone(),
+                        Arc::clone(&self.app),
+                        self.primary_domain.clone(),
+                        self.local_domains.clone(),
+                        http_extra.clone(),
+                    ),
+                    SharedMail {
+                        ctx: Arc::clone(&self.app),
+                        pool: self.pool.clone(),
+                        imap: imap_cfg.clone(),
+                        submission: self.submission_cfg.clone(),
+                        alpn_imap: self.file_config.alpn_imap.is_some(),
+                        alpn_smtp: self.file_config.alpn_smtp.is_some(),
+                    },
+                ),
+                None => spawn_http(
+                    addr,
+                    cancel.clone(),
+                    Some(
+                        tls_config
+                            .cloned()
+                            .expect("tls config when http tls listen set"),
+                    ),
+                    self.pool.clone(),
+                    Arc::clone(&self.app),
+                    self.primary_domain.clone(),
+                    self.local_domains.clone(),
+                    http_extra.clone(),
+                ),
+            };
             ListenerSlot { cancel, join }
         });
 
@@ -610,6 +692,8 @@ impl SupervisorInner {
     async fn restart_http_listeners(&self) -> Result<()> {
         let addrs = self.resolve_addrs().await?;
         let tls_config = self.load_tls_config(&addrs)?;
+        let shared_tls = self.load_shared_tls_config(&addrs)?;
+        let imap_cfg = self.imap_cfg.lock().await.clone();
         let http_extra = self.http_extra.lock().await.clone();
 
         let mut guard = self.listeners.lock().await;
@@ -631,6 +715,8 @@ impl SupervisorInner {
             addrs.http_plain.clone(),
             addrs.http_tls.clone(),
             tls_config.as_ref(),
+            shared_tls.as_ref(),
+            imap_cfg,
             http_extra,
         );
         active.http_plain = http_plain_slot;
@@ -773,6 +859,18 @@ fn spawn_imap(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let _ = run_imap_listener(&addr, cancel, tls, starttls, app, pool, cfg).await;
+    })
+}
+
+fn spawn_shared(
+    addr: String,
+    cancel: CancellationToken,
+    tls: Arc<ServerConfig>,
+    router: Router,
+    mail: SharedMail,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let _ = run_shared_listener(&addr, cancel, tls, router, mail).await;
     })
 }
 

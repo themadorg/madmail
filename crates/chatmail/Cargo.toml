@@ -32,6 +32,7 @@ chatmail-fed = { workspace = true }
 chatmail-imap = { workspace = true }
 chatmail-tls = { workspace = true }
 rustls = { workspace = true }
+tokio-rustls = { workspace = true }
 chatmail-smtp = { workspace = true }
 chatmail-state = { workspace = true }
 chatmail-storage = { workspace = true }
@@ -72,6 +73,7 @@ windows-service = "0.7"
 
 [dev-dependencies]
 assert_cmd = "2"
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
 chatmail-config = { workspace = true }
 chatmail-storage = { workspace = true }
 tempfile = "3"

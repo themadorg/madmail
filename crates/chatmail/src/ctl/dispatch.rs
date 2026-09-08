@@ -22,7 +22,7 @@ use chatmail_db::settings_keys;
 
 use super::{
     accounts, admin_token, admin_web, blocklist_cmd, certificate, delete_cmd, dkim, docs,
-    endpoint_cache, federation, firewall_cmd, html, install, iroh, language, message_size,
+    endpoint_cache, federation, firewall_cmd, html, install, iroh, language, message_size, monitor,
     openrelay, port, proxy, push, queue_cmd, registration, registration_tokens, reload,
     service_cmd, service_toggle, sharing, status_cmd, tasks, uninstall, version, versions_cmd,
     webmail_cors,
@@ -111,6 +111,11 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
             registration_tokens::registration_tokens(&cli.args, cmd).await
         }
         Some(Command::Sharing(cmd)) => sharing::sharing(&cli.args, cmd).await,
+        Some(Command::Monitor {
+            interval,
+            count,
+            addr,
+        }) => monitor::monitor(&cli.args, *interval, *count, addr.as_deref()).await,
         Some(Command::Status { details }) => status_cmd::status(&cli.args, *details).await,
         Some(Command::Uninstall(flags)) => uninstall::uninstall(&cli.args, flags).await,
         Some(Command::Service(cmd)) => service_cmd::service(&cli.args, cmd).await,
@@ -173,6 +178,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Registration { .. } => "registration",
         Command::Openrelay { .. } => "openrelay",
         Command::MigratePgpConfig => "migrate-pgp-config",
+        Command::Monitor { .. } => "monitor",
         Command::Status { .. } => "status",
         Command::Port(_) => "port",
         Command::Queue { .. } => "queue",

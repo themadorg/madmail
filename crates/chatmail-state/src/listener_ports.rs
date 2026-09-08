@@ -35,6 +35,11 @@ pub struct ListenerPorts {
     pub http_tls_addr: Option<String>,
     pub http_plain_port: String,
     pub http_tls_port: String,
+    /// The HTTPS port also carries IMAP / submission via ALPN. Set once at boot
+    /// from config, and deliberately not touched by `set_runtime` — an address
+    /// refresh must not clear what the operator configured.
+    pub alpn_imap_on_https: bool,
+    pub alpn_smtp_on_https: bool,
 }
 
 #[derive(Debug, Default)]
@@ -91,6 +96,14 @@ impl ListenerPortsStore {
                 }
             })
             .unwrap_or_default()
+    }
+
+    /// Record that the HTTPS port multiplexes mail by ALPN.
+    pub fn set_shared_alpn(&self, imap: bool, smtp: bool) {
+        if let Ok(mut g) = self.0.write() {
+            g.alpn_imap_on_https = imap;
+            g.alpn_smtp_on_https = smtp;
+        }
     }
 
     pub fn snapshot(&self) -> ListenerPorts {
@@ -150,5 +163,22 @@ mod tests {
         assert!(snap.smtp_addr.is_none());
         assert!(snap.imap_plain_port.is_empty());
         assert_eq!(store.imap_port(), "");
+    }
+
+    /// P12-UT14: the shared-port ALPN flags reach the snapshot the www autoconfig
+    /// handler reads, independently of the address plumbing.
+    #[test]
+    fn p12_ut14_shared_alpn_flags_reach_snapshot() {
+        let store = ListenerPortsStore::new();
+        assert!(!store.snapshot().alpn_imap_on_https);
+
+        store.set_shared_alpn(true, false);
+        let snap = store.snapshot();
+        assert!(snap.alpn_imap_on_https);
+        assert!(!snap.alpn_smtp_on_https);
+
+        // A later address refresh must not clear them.
+        store.set_runtime("0.0.0.0:25", None, None, None, None, None, None);
+        assert!(store.snapshot().alpn_imap_on_https);
     }
 }
