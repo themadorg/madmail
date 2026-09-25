@@ -109,12 +109,6 @@ async fn verify_cached(
 pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> Result<()> {
     let user = normalize_username(username)?;
 
-    if let Some(ref jit) = ctx.jit_domain {
-        if !jit.is_empty() {
-            validate_login_domain(&user, jit).map_err(ChatmailError::config)?;
-        }
-    }
-
     if ctx.state.auth.is_blocked(&user) {
         return Err(ChatmailError::UserBlocked(user));
     }
@@ -142,6 +136,14 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
 
     if !ctx.state.auth.jit_registration_enabled() {
         return Err(ChatmailError::AuthFailed);
+    }
+
+    // Only JIT creation is restricted to `jit_domain`; existing accounts on other
+    // `local_domains` (e.g. a previous server IP) keep logging in (Madmail pass_table).
+    if let Some(ref jit) = ctx.jit_domain {
+        if !jit.is_empty() {
+            validate_login_domain(&user, jit).map_err(ChatmailError::config)?;
+        }
     }
 
     validate_localpart_and_password(&ctx.credential_policy, &user, password)?;
@@ -288,6 +290,59 @@ mod tests {
             .unwrap();
         ctx.state.auth.insert("legacy@example.org", &hash);
         authenticate(&ctx, "legacy@example.org", "x").await.unwrap();
+    }
+
+    /// Accounts on a secondary `local_domains` entry (e.g. an old server IP)
+    /// must still log in after `primary_domain` / `jit_domain` moved.
+    #[tokio::test]
+    async fn existing_user_on_other_local_domain_can_login() {
+        let (ctx, _dir) = ctx_with_jit(true).await;
+        let hash = crate::hash_password("longpassword1").unwrap();
+        passwords::create_user(&ctx.pool, "olduser1@[1.2.3.4]", &hash)
+            .await
+            .unwrap();
+        ctx.state.auth.insert("olduser1@[1.2.3.4]", &hash);
+        authenticate(&ctx, "olduser1@[1.2.3.4]", "longpassword1")
+            .await
+            .unwrap();
+        authenticate(&ctx, "olduser1@1.2.3.4", "longpassword1")
+            .await
+            .unwrap();
+        assert!(matches!(
+            authenticate(&ctx, "olduser1@[1.2.3.4]", "wrongpassword").await,
+            Err(ChatmailError::AuthFailed)
+        ));
+    }
+
+    /// Same as above for a DNS name: `primary_domain` moved from `old-domain.com`.
+    #[tokio::test]
+    async fn existing_user_on_other_dns_domain_can_login() {
+        let (ctx, _dir) = ctx_with_jit(true).await;
+        let hash = crate::hash_password("longpassword1").unwrap();
+        passwords::create_user(&ctx.pool, "olduser2@old-domain.com", &hash)
+            .await
+            .unwrap();
+        ctx.state.auth.insert("olduser2@old-domain.com", &hash);
+        authenticate(&ctx, "olduser2@old-domain.com", "longpassword1")
+            .await
+            .unwrap();
+        authenticate(&ctx, "OLDUSER2@OLD-DOMAIN.COM", "longpassword1")
+            .await
+            .unwrap();
+        assert!(matches!(
+            authenticate(&ctx, "olduser2@old-domain.com", "wrongpassword").await,
+            Err(ChatmailError::AuthFailed)
+        ));
+    }
+
+    #[tokio::test]
+    async fn jit_rejects_new_user_outside_jit_domain() {
+        let (ctx, _dir) = ctx_with_jit(true).await;
+        let err = authenticate(&ctx, "newuser1@[1.2.3.4]", "longpassword1")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ChatmailError::Config(msg) if msg.contains("invalid login domain")));
+        assert!(!ctx.state.auth.user_exists("newuser1@[1.2.3.4]"));
     }
 
     #[tokio::test]
