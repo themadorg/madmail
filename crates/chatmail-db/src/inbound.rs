@@ -32,13 +32,19 @@ const BLOCKED_RCPT_LOCAL_PARTS: &[&str] = &[
     "webmaster",
 ];
 
-/// Federation must not deliver to reserved local parts (`admin@`, `postmaster@`, …).
-pub fn is_federation_rcpt_blocked(rcpt: &str) -> bool {
-    let Some((local, _)) = rcpt.rsplit_once('@') else {
+/// Reserved local parts (`admin@`, `postmaster@`, …) that must never be login accounts:
+/// delivery to them is always dropped, so account creation rejects them up front (#156).
+pub fn is_reserved_address(addr: &str) -> bool {
+    let Some((local, _)) = addr.rsplit_once('@') else {
         return true;
     };
     let local = local.to_ascii_lowercase();
     BLOCKED_RCPT_LOCAL_PARTS.contains(&local.as_str())
+}
+
+/// Federation must not deliver to reserved local parts (`admin@`, `postmaster@`, …).
+pub fn is_federation_rcpt_blocked(rcpt: &str) -> bool {
+    is_reserved_address(rcpt)
 }
 
 /// Inbound SMTP / `/mxdeliv`: drop mail from `admin@…` (admin notices use a separate API).

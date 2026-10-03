@@ -116,13 +116,20 @@ async fn handle_mxdeliv(
         return Ok(());
     }
 
-    rcpts.retain(|rcpt| {
-        let keep = st.app.auth.local_recipient_allowed(rcpt);
-        if !keep {
+    let mut allowed = Vec::with_capacity(rcpts.len());
+    for rcpt in rcpts {
+        if st
+            .app
+            .auth
+            .local_recipient_allowed_or_db(&st.pool, &rcpt)
+            .await
+        {
+            allowed.push(rcpt);
+        } else {
             tracing::debug!(rcpt = %rcpt, "mxdeliv: silently dropped (no account or reserved rcpt)");
         }
-        keep
-    });
+    }
+    let rcpts = allowed;
     if rcpts.is_empty() {
         return Ok(());
     }

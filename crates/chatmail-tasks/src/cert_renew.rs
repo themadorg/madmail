@@ -47,6 +47,8 @@ impl CertRenewOutcome {
 }
 
 /// Implemented by the running server supervisor (stops port 80, renews, reloads TLS).
+// `#[async_trait]` expansion trips `double_must_use` on newer clippy.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait CertificateRenewer: Send + Sync {
     async fn renew_if_needed(&self) -> Result<CertRenewOutcome>;

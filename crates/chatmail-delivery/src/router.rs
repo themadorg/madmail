@@ -273,7 +273,12 @@ impl DeliveryContext {
                     .any(|f| f.eq_ignore_ascii_case(&domain))
             }) {
                 for rcpt in rcpts {
-                    if !self.state.auth.local_recipient_allowed(&rcpt) {
+                    if !self
+                        .state
+                        .auth
+                        .local_recipient_allowed_or_db(&self.pool, &rcpt)
+                        .await
+                    {
                         debug!(rcpt = %rcpt, "silently dropped inbound local delivery");
                         continue;
                     }

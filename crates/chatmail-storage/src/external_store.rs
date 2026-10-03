@@ -63,6 +63,8 @@ impl ExternalKey {
 }
 
 /// A keyed, durable body store with cheap linking for multi-recipient fan-out.
+// `#[async_trait]` expansion trips `double_must_use` on newer clippy.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait ExternalStore: Send + Sync {
     /// Durably write `body` at `key` (content fsync + directory fsync via the backend).
