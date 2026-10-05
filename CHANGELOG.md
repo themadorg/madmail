@@ -1,3 +1,11 @@
+## [2.30.2](https://github.com/themadorg/madmail/compare/v2.30.1...v2.30.2) (2026-10-05)
+
+
+### Bug Fixes
+
+* **accounts:** make CLI-created accounts usable from Delta Chat ([#156](https://github.com/themadorg/madmail/issues/156)) ([bc3016c](https://github.com/themadorg/madmail/commit/bc3016c3c900d6bf8e6967e710357640051bc694))
+* **upgrade:** retry binary preflight on ETXTBSY ([6e450e3](https://github.com/themadorg/madmail/commit/6e450e39d9683a70c34e564a5a8545d04ad27af3))
+
 ## [2.30.1](https://github.com/themadorg/madmail/compare/v2.30.0...v2.30.1) (2026-09-28)
 
 
