@@ -19,8 +19,8 @@
 
 use chatmail_auth::{hash_password, is_importable_hash, normalize_username};
 use chatmail_db::{
-    account_info, blocklist, passwords, registration_tokens, AccountQuotaInfo, ADMIN_DELETE_REASON,
-    BULK_DELETE_REASON,
+    account_info, blocklist, is_reserved_address, passwords, registration_tokens, AccountQuotaInfo,
+    ADMIN_DELETE_REASON, BULK_DELETE_REASON,
 };
 use getrandom::getrandom;
 use serde::Deserialize;
@@ -286,6 +286,12 @@ async fn import_accounts(st: &AdminState, users: Vec<ImportUser>) -> AdminResult
 
         if st.app.auth.user_exists(&username) {
             skipped += 1;
+            continue;
+        }
+
+        if is_reserved_address(&username) {
+            skipped += 1;
+            errors.push(format!("{username}: reserved username"));
             continue;
         }
 

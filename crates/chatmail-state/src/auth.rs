@@ -152,6 +152,38 @@ impl AuthCache {
         false
     }
 
+    /// Stored hash for `username`, falling back to the DB on a cache miss. Accounts written
+    /// by another process (`madmail accounts create/import`) are not in the cache until the
+    /// next hydrate; a hit here is written through so later lookups stay O(1) (#156).
+    pub async fn get_hash_or_db(&self, pool: &DbPool, username: &str) -> Result<Option<String>> {
+        if let Some(hash) = self.get_hash(username) {
+            return Ok(Some(hash));
+        }
+        let hash = passwords::get_user_hash(pool, username).await?;
+        if let Some(ref h) = hash {
+            self.entries.insert(username.to_string(), h.clone());
+        }
+        Ok(hash)
+    }
+
+    /// [`Self::local_recipient_allowed`] with a DB fallback for accounts the cache has not
+    /// seen yet (created out-of-process). Reserved and blocked addresses stay rejected.
+    pub async fn local_recipient_allowed_or_db(&self, pool: &DbPool, rcpt: &str) -> bool {
+        if self.local_recipient_allowed(rcpt) {
+            return true;
+        }
+        if is_federation_rcpt_blocked(rcpt) || self.is_blocked(rcpt) {
+            return false;
+        }
+        match self.get_hash_or_db(pool, rcpt).await {
+            Ok(found) => found.is_some(),
+            Err(e) => {
+                tracing::warn!(%rcpt, error = %e, "recipient DB lookup failed");
+                false
+            }
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -256,6 +288,41 @@ mod tests {
         bare.insert("v@1.2.3.4", "h");
         assert!(bare.local_recipient_allowed("v@1.2.3.4"));
         assert!(bare.local_recipient_allowed("v@[1.2.3.4]"));
+    }
+
+    /// #156: account written to the DB by another process (CLI) is not in the cache yet.
+    #[tokio::test]
+    async fn local_recipient_falls_back_to_db_for_uncached_account() {
+        let pool = init_memory_db().await.unwrap();
+        let cache = AuthCache::new();
+        cache.hydrate(&pool).await.unwrap();
+        passwords::create_user(&pool, "custom@test", "bcrypt:x")
+            .await
+            .unwrap();
+        passwords::create_user(&pool, "admin@test", "bcrypt:x")
+            .await
+            .unwrap();
+
+        assert!(!cache.local_recipient_allowed("custom@test"));
+        assert!(
+            cache
+                .local_recipient_allowed_or_db(&pool, "custom@test")
+                .await
+        );
+        assert!(
+            cache.user_exists("custom@test"),
+            "DB hit is written through"
+        );
+        assert!(
+            !cache
+                .local_recipient_allowed_or_db(&pool, "admin@test")
+                .await
+        );
+        assert!(
+            !cache
+                .local_recipient_allowed_or_db(&pool, "ghost@test")
+                .await
+        );
     }
 
     #[test]

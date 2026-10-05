@@ -57,6 +57,7 @@ pub use federation_policy::{
 };
 pub use inbound::{
     inbound_local_recipient_allowed, is_federation_rcpt_blocked, is_federation_sender_blocked,
+    is_reserved_address,
 };
 pub use mail_ports::{db_ports_from_settings, load_mail_port_overrides};
 pub use maintenance::{list_dormant_accounts, remove_account_without_blocklist};

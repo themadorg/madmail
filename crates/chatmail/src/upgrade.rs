@@ -719,6 +719,23 @@ fn chrono_like_now() -> String {
     format!("{secs}")
 }
 
+/// ETXTBSY (`Text file busy`): a concurrently forked child can still hold an inherited
+/// write fd on a just-written binary until it execs. Transient — retry briefly.
+const ETXTBSY: i32 = 26;
+
+fn run_version_retrying_etxtbsy(bin: &Path) -> io::Result<std::process::Output> {
+    let mut attempt = 0;
+    loop {
+        match Command::new(bin).arg("version").output() {
+            Err(e) if e.raw_os_error() == Some(ETXTBSY) && attempt < 5 => {
+                attempt += 1;
+                thread::sleep(Duration::from_millis(50 * attempt));
+            }
+            other => return other,
+        }
+    }
+}
+
 fn preflight_new_binary(new_bin: &Path, location: BinaryExecLocation) -> Result<()> {
     #[cfg(unix)]
     {
@@ -742,7 +759,7 @@ fn preflight_new_binary(new_bin: &Path, location: BinaryExecLocation) -> Result<
     };
     eprintln!("🧪 {label}: running binary (`version`) on this host...");
 
-    let output = match Command::new(new_bin).arg("version").output() {
+    let output = match run_version_retrying_etxtbsy(new_bin) {
         Ok(o) => o,
         Err(e) => {
             let not_replaced = matches!(location, BinaryExecLocation::Staging);

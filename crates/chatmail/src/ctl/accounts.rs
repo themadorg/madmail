@@ -24,8 +24,9 @@ use chatmail_auth::{hash_password, is_importable_hash, normalize_username};
 use chatmail_config::cli::AccountsCommand;
 use chatmail_config::{build_dclogin_link, Args, DcloginMailSettings};
 use chatmail_db::{
-    account_info, blocklist, delete_quota_row, get_bool_setting, load_mail_port_overrides,
-    passwords, settings_keys, DbPool, BULK_DELETE_REASON, CLI_BAN_REASON, CLI_DELETE_REASON,
+    account_info, blocklist, delete_quota_row, get_bool_setting, is_reserved_address,
+    load_mail_port_overrides, passwords, settings_keys, DbPool, BULK_DELETE_REASON, CLI_BAN_REASON,
+    CLI_DELETE_REASON,
 };
 use chatmail_storage::MailboxStore;
 use chatmail_types::{ChatmailError, Result};
@@ -73,7 +74,7 @@ pub async fn accounts(args: &Args, cmd: &AccountsCommand) -> Result<()> {
                 Some(p) => p.clone(),
                 None => read_password_stdin()?,
             };
-            accounts_create(args, &pool, &mailbox, &u, &pw).await
+            accounts_create(args, &ctx, &pool, &mailbox, &u, &pw).await
         }
         AccountsCommand::CreateRandom { json_only } => {
             create_random_account(args, &ctx, &pool, &mailbox, *json_only).await
@@ -281,12 +282,18 @@ async fn accounts_info(
 
 async fn accounts_create(
     args: &Args,
+    ctx: &CtlContext,
     pool: &DbPool,
     mailbox: &MailboxStore,
     username: &str,
     password: &str,
 ) -> Result<()> {
     let out = CtlOut::from_args(args, "accounts create");
+    if is_reserved_address(username) {
+        return Err(ChatmailError::config(format!(
+            "username is reserved and cannot receive mail: {username}"
+        )));
+    }
     if passwords::user_exists(pool, username).await? {
         return Err(ChatmailError::config(format!(
             "account already exists: {username}"
@@ -299,9 +306,14 @@ async fn accounts_create(
     }
     let hash = hash_password(password)?;
     provision_account(pool, mailbox, username, &hash).await?;
+    // Print the full dclogin link: a hand-built one without the SMTP params (`sh`/`sp`/`ss`)
+    // leaves Delta Chat guessing the submission settings, so IMAP works but sending fails (#156).
+    let db_ports = load_mail_port_overrides(pool).await?;
+    let mail = DcloginMailSettings::from_config_with_db(&ctx.config, None, &db_ports);
+    let dclogin = build_dclogin_link(username, password, &mail);
     out.done_msg(
-        format!("Created account: {username}"),
-        serde_json::json!({ "username": username }),
+        format!("Created account: {username}\nDelta Chat login: {dclogin}"),
+        serde_json::json!({ "username": username, "dclogin": dclogin }),
         format!("Created account: {username}"),
     )
 }
@@ -472,6 +484,11 @@ async fn accounts_import(
 
         if passwords::user_exists(pool, &username).await? {
             skipped += 1;
+            continue;
+        }
+        if is_reserved_address(&username) {
+            skipped += 1;
+            errors.push(format!("{username}: reserved username"));
             continue;
         }
         if blocklist::is_blocked(pool, &username).await? {

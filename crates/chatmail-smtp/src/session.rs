@@ -649,7 +649,12 @@ impl SmtpSession {
             let rcpt = normalize_username(rcpt)?;
             self.ctx.quota.check_quota(&rcpt, data.len() as u64)?;
             if delivery.is_local(&rcpt) {
-                if !self.ctx.auth.local_recipient_allowed(&rcpt) {
+                if !self
+                    .ctx
+                    .auth
+                    .local_recipient_allowed_or_db(&self.pool, &rcpt)
+                    .await
+                {
                     tracing::debug!(rcpt = %rcpt, "silently dropped inbound local delivery");
                     continue;
                 }

@@ -127,7 +127,10 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
         return Err(ChatmailError::UserBlocked(user));
     }
 
-    if let Some(hash) = ctx.state.auth.get_hash(&user) {
+    // DB fallback: accounts created out-of-process (`madmail accounts create`) are not in
+    // the cache until the next hydrate. Without this they would hit the JIT path below and
+    // get their stored hash overwritten (or be rejected by the JIT policy) (#156).
+    if let Some(hash) = ctx.state.auth.get_hash_or_db(&ctx.pool, &user).await? {
         if verify_cached(ctx, &user, password, hash).await? {
             return finish_successful_login(ctx, &user).await;
         }
@@ -135,6 +138,10 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
     }
 
     if !ctx.state.auth.jit_registration_enabled() {
+        return Err(ChatmailError::AuthFailed);
+    }
+
+    if chatmail_db::is_reserved_address(&user) {
         return Err(ChatmailError::AuthFailed);
     }
 
@@ -252,6 +259,46 @@ mod tests {
             authenticate(&ctx, "missing@example.org", "pw").await,
             Err(ChatmailError::AuthFailed)
         ));
+    }
+
+    /// #156: account created out-of-process (CLI) logs in without restart, keeps its hash,
+    /// and is not subject to the JIT username policy.
+    #[tokio::test]
+    async fn uncached_db_account_authenticates_without_jit() {
+        let (ctx, _dir) = ctx_with_jit(false).await;
+        let hash = hash_password("longpassword1").unwrap();
+        passwords::create_user(&ctx.pool, "ab@example.org", &hash)
+            .await
+            .unwrap();
+        assert!(ctx.state.auth.get_hash("ab@example.org").is_none());
+
+        authenticate(&ctx, "ab@example.org", "longpassword1")
+            .await
+            .unwrap();
+        assert_eq!(
+            passwords::get_user_hash(&ctx.pool, "ab@example.org")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(hash.as_str())
+        );
+        assert!(matches!(
+            authenticate(&ctx, "ab@example.org", "wrongpassword").await,
+            Err(ChatmailError::AuthFailed)
+        ));
+    }
+
+    /// #156: JIT never creates reserved addresses (delivery to them is always dropped).
+    #[tokio::test]
+    async fn jit_rejects_reserved_localpart() {
+        let (ctx, _dir) = ctx_with_jit(true).await;
+        assert!(matches!(
+            authenticate(&ctx, "postmaster@example.org", "longpassword1").await,
+            Err(ChatmailError::AuthFailed)
+        ));
+        assert!(!passwords::user_exists(&ctx.pool, "postmaster@example.org")
+            .await
+            .unwrap());
     }
 
     /// P3-UT05: JIT create enforces min username/password from credential policy.
