@@ -1,3 +1,10 @@
+## [2.30.5](https://github.com/themadorg/madmail/compare/v2.30.4...v2.30.5) (2026-10-06)
+
+
+### Bug Fixes
+
+* **deps:** declare Hickory resolver 0.26.2 in delivery ([f60ea11](https://github.com/themadorg/madmail/commit/f60ea11b8e89cad635af0f172be3ee7d9e37aa9f))
+
 ## [2.30.4](https://github.com/themadorg/madmail/compare/v2.30.3...v2.30.4) (2026-10-06)
 
 
