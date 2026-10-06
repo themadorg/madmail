@@ -133,6 +133,7 @@ We always welcome criticism, bug reports, and discussion, please use **[GitHub D
 - [Delta Chat](https://delta.chat)
 - [Download Delta Chat Apps](https://delta.chat/en/download)
 
+
 ---
 
 ## License
