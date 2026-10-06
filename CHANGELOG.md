@@ -1,3 +1,10 @@
+## [2.30.3](https://github.com/themadorg/madmail/compare/v2.30.2...v2.30.3) (2026-10-06)
+
+
+### Bug Fixes
+
+* tidy README spacing ([51e7204](https://github.com/themadorg/madmail/commit/51e72049851c9655fd7d34b9917895ea1a12bc68))
+
 ## [2.30.2](https://github.com/themadorg/madmail/compare/v2.30.1...v2.30.2) (2026-10-05)
 
 
