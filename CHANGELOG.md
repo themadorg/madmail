@@ -1,3 +1,11 @@
+## [2.30.4](https://github.com/themadorg/madmail/compare/v2.30.3...v2.30.4) (2026-10-06)
+
+
+### Bug Fixes
+
+* **deps:** align Hickory companion crates with resolver 0.26.2 ([3d3daf6](https://github.com/themadorg/madmail/commit/3d3daf6c4dbd5b78103018731c3b684f2026ae72))
+* **deps:** update Hickory resolver and companion crates ([#179](https://github.com/themadorg/madmail/issues/179)) ([606dae9](https://github.com/themadorg/madmail/commit/606dae925f689ebcbf6c3786aaf0bb0fc25088b4))
+
 ## [2.30.3](https://github.com/themadorg/madmail/compare/v2.30.2...v2.30.3) (2026-10-06)
 
 
