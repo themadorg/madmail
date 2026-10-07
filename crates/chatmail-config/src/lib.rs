@@ -21,6 +21,7 @@ pub mod cli;
 pub mod client_mail;
 pub mod config_autocert;
 pub mod config_iroh;
+pub mod config_monitor;
 pub mod config_www;
 pub mod credential_policy;
 pub mod data_size;
@@ -179,6 +180,8 @@ pub struct AppConfig {
 
     /// `openmetrics tcp://…` — Prometheus scrape bind (`/metrics`).
     pub openmetrics_listen: Option<String>,
+    pub openmetrics_username: Option<String>,
+    pub openmetrics_password: Option<String>,
 
     /// `target.queue remote_queue` — outbound retry queue (Madmail defaults).
     pub queue: QueueSettings,

@@ -21,6 +21,8 @@ madmail install [OPTIONS]
 
 `install` writes configuration, certificates, and initial database state. It is **Madmail-compatible**.
 
+Metrics are disabled by default. To opt in after installation, use `madmail monitor enable` and restart the server, or add the listener manually. See [monitoring setup](monitor.md#enable-or-disable-monitoring).
+
 **Full reference:** [Native install guide](../install.md)
 
 ## Quick examples

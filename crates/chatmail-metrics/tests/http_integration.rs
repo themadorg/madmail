@@ -146,3 +146,71 @@ async fn openmetrics_serves_prometheus_text_on_metrics_path() {
         .expect("server join timeout")
         .expect("server task");
 }
+
+#[tokio::test]
+async fn protected_metrics_require_the_configured_basic_credentials() {
+    let listen = reserve_listen_addr();
+    let url = format!("http://{listen}/metrics");
+    let cancel = CancellationToken::new();
+    let child_cancel = cancel.clone();
+    let child_listen = listen.clone();
+    let server = tokio::spawn(async move {
+        chatmail_metrics::run_openmetrics_listener_with_auth(
+            &child_listen,
+            Some(("metrics-user", "test-password")),
+            child_cancel,
+        )
+        .await
+        .unwrap();
+    });
+    let client = reqwest::Client::new();
+    for _ in 0..100 {
+        if client.get(&url).send().await.is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    for credentials in [
+        None,
+        Some(("metrics-user", "wrong")),
+        Some(("wrong", "test-password")),
+    ] {
+        let request = client.get(&url);
+        let request = if let Some((user, password)) = credentials {
+            request.basic_auth(user, Some(password))
+        } else {
+            request
+        };
+        let response = request.send().await.unwrap();
+        assert_eq!(response.status(), 401);
+        assert_eq!(
+            response.headers()["www-authenticate"],
+            "Basic realm=\"metrics\""
+        );
+        assert!(!response.text().await.unwrap().contains("maddy_"));
+    }
+    let response = client
+        .get(&url)
+        .header("Authorization", "Basic malformed")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 401);
+    let response = client
+        .get(&url)
+        .basic_auth("metrics-user", Some("test-password"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert!(response
+        .text()
+        .await
+        .unwrap()
+        .contains("maddy_conns_active"));
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(3), server)
+        .await
+        .unwrap()
+        .unwrap();
+}

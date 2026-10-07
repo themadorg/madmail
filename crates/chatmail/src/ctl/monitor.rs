@@ -96,7 +96,7 @@ fn scrape_addr(config: &AppConfig, addr: Option<&str>) -> Result<String> {
         Some(listen) => Ok(dialable(listen)),
         None => Err(ChatmailError::config(
             "openmetrics endpoint is not enabled; add `openmetrics tcp://127.0.0.1:9749 { }` \
-             to the config (bind it to loopback - it has no authentication), \
+             to the config or run `madmail monitor enable` and restart the server, \
              or pass --addr",
         )),
     }
@@ -111,11 +111,77 @@ fn dialable(listen: &str) -> String {
     }
 }
 
+/// Report or persist metrics configuration. Static listeners require a restart.
+pub fn configure(args: &Args, cmd: &chatmail_config::cli::MonitorCommand) -> Result<()> {
+    use chatmail_config::cli::MonitorCommand;
+    let out = CtlOut::from_args(args, "monitor");
+    let changed = match cmd {
+        MonitorCommand::Status => false,
+        MonitorCommand::Enable {
+            ip,
+            port,
+            username,
+            password,
+            clear_password,
+        } => chatmail_config::config_monitor::update_config_monitor_options(
+            &args.config,
+            true,
+            &chatmail_config::config_monitor::MonitorOptions {
+                ip: *ip,
+                port: *port,
+                username: username.as_deref(),
+                password: password.as_deref(),
+                clear_password: *clear_password,
+            },
+        )?,
+        MonitorCommand::Disable => {
+            chatmail_config::config_monitor::update_config_monitor(&args.config, false)?
+        }
+    };
+    let config = load_config(&args.config)?;
+    let enabled = config.openmetrics_listen.is_some();
+    if out.is_json() {
+        return out.emit(serde_json::json!({
+            "enabled": enabled,
+            "listen": config.openmetrics_listen,
+            "authentication_required": config.openmetrics_password.is_some(),
+            "username": config.openmetrics_username.as_deref().unwrap_or("metrics"),
+            "changed": changed,
+            "restart_required": changed,
+        }));
+    }
+    out.line(format!(
+        "Metrics endpoint configured: {}",
+        if enabled { "enabled" } else { "disabled" }
+    ));
+    if let Some(listen) = config.openmetrics_listen {
+        out.line(format!("Listen address: {listen}"));
+    }
+    out.line(format!(
+        "HTTP password protection: {}",
+        if config.openmetrics_password.is_some() {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    ));
+    if changed {
+        out.line("Configuration saved. Restart the server to apply the change.");
+    } else {
+        out.line(
+            "Status reflects saved configuration; a running server uses its startup configuration.",
+        );
+    }
+    Ok(())
+}
+
 pub async fn monitor(
     args: &Args,
     interval: u64,
     count: Option<u64>,
     addr: Option<&str>,
+    username: Option<&str>,
+    password: Option<&str>,
 ) -> Result<()> {
     let out = CtlOut::from_args(args, "monitor");
     let config = if args.config.is_file() {
@@ -124,6 +190,10 @@ pub async fn monitor(
         AppConfig::default()
     };
     let url = format!("http://{}/metrics", scrape_addr(&config, addr)?);
+    let username = username
+        .or(config.openmetrics_username.as_deref())
+        .unwrap_or("metrics");
+    let password = password.or(config.openmetrics_password.as_deref());
     let interval = Duration::from_secs(interval.max(1));
 
     let client = reqwest::Client::builder()
@@ -143,7 +213,7 @@ pub async fn monitor(
             tokio::time::sleep(interval).await;
         }
 
-        let body = scrape(&client, &url).await?;
+        let body = scrape(&client, &url, username, password).await?;
         let now = Instant::now();
         let sample = Sample::parse(&body);
 
@@ -174,9 +244,19 @@ pub async fn monitor(
     }
 }
 
-async fn scrape(client: &reqwest::Client, url: &str) -> Result<String> {
-    let resp = client
-        .get(url)
+async fn scrape(
+    client: &reqwest::Client,
+    url: &str,
+    username: &str,
+    password: Option<&str>,
+) -> Result<String> {
+    let request = client.get(url);
+    let request = if let Some(password) = password {
+        request.basic_auth(username, Some(password))
+    } else {
+        request
+    };
+    let resp = request
         .send()
         .await
         .map_err(|e| ChatmailError::config(format!("monitor: GET {url}: {e}")))?;

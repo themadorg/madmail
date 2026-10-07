@@ -64,6 +64,12 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 
 ### [`monitor`](monitor.md)
 
+Live connection and throughput stats; metrics are disabled by default in new installations.
+
+- [`status`](monitor-status.md) — inspect saved configuration.
+- [`enable`](monitor-enable.md) — enable the endpoint, then restart the server.
+- [`disable`](monitor-disable.md) — disable the endpoint, then restart the server.
+
 
 ### [`db`](db.md)
 

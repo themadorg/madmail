@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+base64 = "0.22"
+subtle = "2.6"
 axum = { workspace = true }
 chatmail-types = { workspace = true }
 once_cell = { workspace = true }

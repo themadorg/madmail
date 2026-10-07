@@ -16,18 +16,39 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use axum::{
-    http::{header, StatusCode},
+    extract::State,
+    http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Router,
 };
+use base64::Engine;
+use subtle::ConstantTimeEq;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::metrics::{gather_bytes, init_metrics};
 
-async fn metrics_handler() -> impl IntoResponse {
+async fn metrics_handler(
+    State(auth): State<Option<String>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Some(expected) = auth {
+        let supplied = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+        if !bool::from(supplied.as_bytes().ct_eq(expected.as_bytes())) {
+            return (
+                StatusCode::UNAUTHORIZED,
+                [(header::WWW_AUTHENTICATE, "Basic realm=\"metrics\"")],
+                "Authentication required",
+            )
+                .into_response();
+        }
+    }
+
     match gather_bytes() {
         Ok(body) => {
             let text = String::from_utf8(body)
@@ -55,11 +76,28 @@ pub async fn run_openmetrics_listener(
     addr: &str,
     cancel: CancellationToken,
 ) -> chatmail_types::Result<()> {
+    run_openmetrics_listener_with_auth(addr, None, cancel).await
+}
+
+/// Serve metrics with optional HTTP Basic credentials (username, password).
+pub async fn run_openmetrics_listener_with_auth(
+    addr: &str,
+    credentials: Option<(&str, &str)>,
+    cancel: CancellationToken,
+) -> chatmail_types::Result<()> {
+    let auth = credentials.map(|(username, password)| {
+        format!(
+            "Basic {}",
+            base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"))
+        )
+    });
     init_metrics();
     let listener = TcpListener::bind(addr).await.map_err(|e| {
         chatmail_types::ChatmailError::config(format!("openmetrics bind {addr}: {e}"))
     })?;
-    let app = Router::new().route("/metrics", get(metrics_handler));
+    let app = Router::new()
+        .route("/metrics", get(metrics_handler))
+        .with_state(auth);
     info!(%addr, "openmetrics listening");
 
     let serve = axum::serve(listener, app).with_graceful_shutdown(async move {
@@ -84,7 +122,9 @@ mod tests {
     async fn metrics_handler_returns_prometheus_text() {
         init_metrics();
         crate::metrics::record_smtp_started("handler_test");
-        let app = Router::new().route("/metrics", get(metrics_handler));
+        let app = Router::new()
+            .route("/metrics", get(metrics_handler))
+            .with_state(None::<String>);
         let resp = app
             .oneshot(
                 Request::builder()

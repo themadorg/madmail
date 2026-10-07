@@ -159,6 +159,15 @@ fn apply_endpoint_block(node: &Node, cfg: &mut AppConfig) {
             }
         }
         "openmetrics" => {
+            if let Some(children) = &node.children {
+                for child in children {
+                    match child.name.as_str() {
+                        "username" => cfg.openmetrics_username = child.args.first().cloned(),
+                        "password" => cfg.openmetrics_password = child.args.first().cloned(),
+                        _ => {}
+                    }
+                }
+            }
             for addr in endpoint_addrs(&node.args) {
                 if cfg.openmetrics_listen.is_none() {
                     cfg.openmetrics_listen = Some(addr);

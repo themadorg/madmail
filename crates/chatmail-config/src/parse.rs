@@ -56,6 +56,8 @@ pub struct TomlConfig {
     pub sni_imap: Option<String>,
     pub sni_smtp: Option<String>,
     pub openmetrics_listen: Option<String>,
+    pub openmetrics_username: Option<String>,
+    pub openmetrics_password: Option<String>,
     #[serde(
         default,
         deserialize_with = "crate::bool_str::deserialize_option_bool_flexible"
@@ -157,6 +159,8 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
         sni_imap: parsed.sni_imap,
         sni_smtp: parsed.sni_smtp,
         openmetrics_listen: parsed.openmetrics_listen,
+        openmetrics_username: parsed.openmetrics_username,
+        openmetrics_password: parsed.openmetrics_password,
         queue: crate::QueueSettings::default(),
         turn_enable: parsed.turn_enable.unwrap_or(false),
         turn_server: parsed.turn_server,
