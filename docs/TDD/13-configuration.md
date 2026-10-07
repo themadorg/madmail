@@ -178,6 +178,12 @@ Admin: `GET /admin/settings` (bulk) or `GET|POST /admin/settings/{name}` (`set` 
 | `__PUSH_ENABLED__` | `false` | settings bundle `push_enabled` | Legacy mirror of push on/off |
 | `__FEDERATION_ENABLED__` | `false` | `/admin/settings/federation` | Outbound federation master toggle |
 
+**Operator webhooks:** `__OPERATOR_WEBHOOKS__` stores private JSON settings,
+including the signing secret. Master switch defaults off; both event switches
+default on, timeout is 5 seconds, and additional retries are 2. Configure only
+through authenticated `/admin/services/webhooks`, not generic settings or static
+config. Updates activate immediately; see [25-operator-webhooks.md](25-operator-webhooks.md).
+
 **Push mode** (separate from boolean toggles): `__PUSH_MODE__` = `auto` \| `on` \| `off` (default **`off`**). Admin `/admin/services/push`, CLI `madmail push` — see [23-push-notifications.md](23-push-notifications.md).
 
 **Federation policy** (string, not bool): `__FEDERATION_POLICY__` = `ACCEPT` \| `REJECT`. Admin `/admin/settings/federation`.

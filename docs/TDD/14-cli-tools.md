@@ -242,3 +242,11 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | [3501](https://datatracker.ietf.org/doc/html/rfc3501) | IMAP ctl | [rfc3501.txt](RFC/rfc3501.txt) |
 
 See also: [02-smtp-server.md](02-smtp-server.md), [03-imap-server.md](03-imap-server.md), [19-certificates.md](19-certificates.md).
+## Operator webhook configuration
+
+Operator webhooks are configured through the Services dashboard or authenticated
+`/admin/services/webhooks` RPC, rather than a dedicated CLI command.
+`madmail admin-web --help` describes dashboard access; `madmail admin-token`
+supplies API credentials. See [the operator guide](../guide/operator-webhooks.md)
+for the complete API and delivery contract. The maintained man page source also
+documents this workflow.

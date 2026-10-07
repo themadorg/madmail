@@ -31,6 +31,17 @@ madmail admin-token
 madmail admin-token --raw
 ```
 
+## Operator webhooks
+
+Configure account registration and quota metadata notifications in the dashboard's
+**Services → Operator webhooks** form or through authenticated admin RPC at
+`/admin/services/webhooks`. `admin-web` controls dashboard availability;
+`admin-token` supplies API credentials. Webhook settings activate immediately.
+There is no dedicated webhook CLI command.
+
+See [Operator webhooks](../operator-webhooks.md) for request envelopes, test
+requests, payloads, signing, counters and delivery limits.
+
 ## Notes
 
 - Requires read access to `{state_dir}/admin_token`.

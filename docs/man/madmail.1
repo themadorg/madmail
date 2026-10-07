@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "madmail" "1" "2026-09-02" "2.26.0" "User Commands"
+.TH "madmail" "1" "2026-10-07" "2.31.3" "User Commands"
 .PP
 .SH NAME
 .PP
@@ -495,6 +495,45 @@ madmail dkim check
 madmail dkim status
 .PP
 .RE
+.SH OPERATOR WEBHOOKS
+.PP
+Enable the embedded dashboard with \fBmadmail admin-web enable\fR and apply
+HTTP route changes with \fBmadmail reload\fR.\& In Services, configure Operator
+webhooks, save, and send a test.\& The service is disabled by default.\&
+Use \fBmadmail admin-token --no-qr\fR for admin API credentials.\&
+.PP
+The authenticated RPC resource \fB/admin/services/webhooks\fR supports GET
+(redacted settings/counters), PUT (partial updates), and POST with
+\fB{"action":"test"}\fR.\& Send the envelope to the configured admin API path,
+placing the Bearer token inside its \fBheaders.\&Authorization\fR field.\&
+There is no dedicated webhooks CLI command.\&
+.PP
+Registration events report successfully created JIT, web, and admin API
+accounts; host-side CLI account creation does not emit an event.\& Quota
+alerts report username, usage, limit, incoming size, and rejection path,
+with one alert per username per hour.\& Passwords, message bodies, and
+invitation identifiers are excluded.\&
+.PP
+Receivers use HTTPS (HTTP only for loopback testing).\& Optional signing
+uses \fBX-Madmail-Signature: sha256=<hex>\fR over the raw JSON body with
+HMAC-SHA256.\& A secret omitted from PUT is preserved; an empty string clears
+it.\& Secrets are never returned.\& Receiver automation must handle retries
+and enforce its own replay protection.\&
+.PP
+Settings persist and apply immediately.\& Default timeout is 5 seconds
+(range 1-30); default additional retries are 2 (range 0-5).\& Transport
+errors, HTTP 429 and 5xx retry with bounded exponential backoff.\& Other
+statuses fail without retry; redirects are disabled.\&
+.PP
+Delivery is asynchronous and best-effort.\& Queue capacity is 256 events;
+quota deduplication retains up to 4096 usernames.\& Pending notifications,
+deduplication state and delivery counters reset on process restart.\&
+Failures never alter the mail/authentication result.\& Logs exclude receiver
+URLs, secrets, usernames and payloads and follow the No-Log policy.\&
+.PP
+Full API envelopes, payloads, counters and receiver guidance are in
+docs/guide/operator-webhooks.\&md (also linked from the online CLI reference).\&
+.PP
 .SH NOTES
 .PP
 \fBinstall\fR requires root for system installs (service user, binary copy,

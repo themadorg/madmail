@@ -41,13 +41,15 @@ Crate: `crates/chatmail-admin`
 
 Single JSON-RPC-style endpoint:
 
-```
-POST /api/admin          (or the path configured via admin_path)
-Authorization: Bearer <token>
+```http
+POST /api/admin
 Content-Type: application/json
 
-{ "method": "accounts.list", "params": {...} }
+{"method":"GET","resource":"/admin/accounts","headers":{"Authorization":"Bearer <token>"},"body":{}}
 ```
+
+Use the path configured by `admin_path`. Authentication belongs inside the JSON
+`headers` object; the resource and method select the operation.
 
 Every admin operation (list accounts, ban, set quota, toggle registration, view queue, federation stats, etc.) goes through this one endpoint.
 
@@ -60,10 +62,11 @@ See `resources/` directory — one file per domain:
 - `quota.rs`
 - `settings.rs`
 - `tokens.rs` (registration tokens)
+- `webhooks.rs` — `/admin/services/webhooks` settings and actual test delivery
 - `toggles.rs`
 - `queue.rs`, `message_size.rs`, `port.rs`, etc.
 
-The handler dispatches on the `method` string.
+The handler dispatches on the resource path and method string.
 
 ### Auth
 
@@ -71,7 +74,8 @@ The handler dispatches on the `method` string.
 - Token can come from the `admin_token` file or be overridden in static config (or set to the literal string "disabled").
 - Rate limiting is applied.
 
-All successful responses are HTTP 200 with a JSON body containing `ok` or `error`.
+RPC responses use HTTP 200 and contain `status`, `resource`, `body`, `error`,
+and `version`. Check the envelope status/error for operation failures.
 
 ### Admin Web SPA
 
@@ -90,6 +94,23 @@ If the SPA is not embedded, the server returns a friendly placeholder page telli
 
 Self-contained deployment. One `scp` of the `madmail` binary + one restart gives you the full operator UI. No separate nginx + static hosting step.
 
+### Operator webhooks
+
+Services → Operator webhooks manages the private receiver URL, optional signing
+secret, event switches, timeout/retries and test delivery. The authenticated
+`/admin/services/webhooks` resource supports GET, PUT and POST; it never returns
+the signing secret. Settings persist and activate immediately.
+
+`AppState.webhooks` delivers registration and quota metadata through a bounded
+in-memory worker. Mail/auth paths only enqueue; receiver failure cannot change
+the protocol result. Concurrent JIT and admin provisioning share the per-user
+creation lock, and quota rejections coalesce hourly per username. The dispatcher
+lives in `chatmail-state`; no new external process is required.
+
+See [the operator guide](../guide/operator-webhooks.md) for exact envelopes,
+payloads, signing and delivery limits, and [TDD 25](../TDD/25-operator-webhooks.md)
+for the design. `make build-with-admin-web` embeds the Services form.
+
 ## Relationship to the Old Madmail Admin
 
 The original Go Madmail had an `internal/adminweb` that was also a built Svelte app embedded via Go `//go:embed`.
@@ -105,6 +126,9 @@ The Rust version deliberately reuses the same (or very similar) Svelte source fr
 ## Testing the Web Layers
 
 - `cargo test -p chatmail-www`
+- `cargo test -p chatmail-state webhooks`
+- `cargo test -p chatmail-integration --test operator_webhooks_e2e`
+- `make test-docker` — workspace, landing and shipping-image checks
 - E2E tests that hit `/new`, do WebIMAP operations, etc.
 - The admin API is exercised heavily by the ctl commands and the Svelte SPA itself during manual testing.
 

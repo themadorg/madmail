@@ -353,11 +353,6 @@ https://your-server/admin-panel-abc987/
 
 Using non-default paths makes automated attacks and casual discovery much harder.
 
-## Next
-
-- Common problems and how to diagnose them: [Troubleshooting](./10-troubleshooting.md)
-- Understanding the privacy implications of being an admin: [Privacy & Security](./04-privacy-and-security.md)
-
 ## Operator webhooks
 
 In **Services → Operator webhooks**, configure an HTTPS receiver, optionally set
@@ -368,7 +363,8 @@ is never shown back to the browser. **Send test webhook** uses saved settings an
 shows delivery counters, including failed attempts and capacity drops.
 
 Registrations from JIT login, `/new`, or the admin account API report username,
-time, and source. Quota alerts report username, usage, limit, incoming size, and
+time, and source. Host-side CLI account creation does not emit these runtime
+events. Quota alerts report username, usage, limit, incoming size, and
 rejection path; repeated rejections for one user coalesce for one hour. Neither
 payload contains a password or message body. The URL and settings are operator
 only, never displayed on public registration pages.
@@ -405,3 +401,11 @@ notification service: pending events and dedup state do not survive a process
 restart, and overload can drop alerts. Counters are runtime state. See the
 [design and delivery contract](../../TDD/25-operator-webhooks.md) for retry,
 payload and security details.
+
+For complete API examples and troubleshooting, see the
+[operator webhook guide](../../guide/operator-webhooks.md).
+
+## Next
+
+- Common problems and how to diagnose them: [Troubleshooting](./10-troubleshooting.md)
+- Understanding the privacy implications of being an admin: [Privacy & Security](./04-privacy-and-security.md)
