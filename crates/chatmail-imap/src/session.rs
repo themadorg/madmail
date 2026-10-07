@@ -1129,7 +1129,7 @@ impl ImapSession {
                     tokio::fs::remove_file(&tmp_path).await.ok();
                     return Err(e);
                 }
-                if let Err(e) = self.ctx.quota.check_quota(user, written) {
+                if let Err(e) = self.ctx.check_quota(user, written, "imap.append") {
                     tokio::fs::remove_file(&tmp_path).await.ok();
                     return Err(e);
                 }
@@ -1202,7 +1202,8 @@ impl ImapSession {
                 recipients: vec![user.to_string()],
             },
         )?;
-        self.ctx.quota.check_quota(user, written_len as u64)?;
+        self.ctx
+            .check_quota(user, written_len as u64, "imap.append")?;
         let msg_id = uuid::Uuid::new_v4().to_string();
         write_blob_mailbox(&self.ctx.mailbox_store, user, &mailbox, &msg_id, &literal).await?;
         self.ctx.quota.record_write(user, written_len as u64);

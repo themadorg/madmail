@@ -28,7 +28,8 @@ use crate::install_cli::{CertificateCommand, InstallArgs};
     about = "Chatmail mail server (Madmail-compatible CLI)",
     long_about = "Composable Chatmail server. Use `run` to start SMTP/IMAP/HTTP.\n\
                   Operator tools mirror `madmail` / `maddy` (accounts, federation, admin-token, …).\n\
-                  See context/madmail/docs/chatmail/commands.md for full reference."
+                  Operator webhooks: Admin dashboard > Services, or /admin/services/webhooks via admin RPC.\n\
+                  See docs/guide/cli/ and docs/guide/operator-webhooks.md for operator reference."
 )]
 #[command(subcommand_required = false)]
 pub struct Cli {
@@ -88,7 +89,11 @@ pub enum Command {
         #[arg(long)]
         no_qr: bool,
     },
-    /// Serve the embedded admin-web SPA.
+    /// Configure the embedded admin web dashboard.
+    ///
+    /// Account/quota webhooks are configured in Services > Operator webhooks,
+    /// or through authenticated admin RPC at /admin/services/webhooks.
+    /// Use admin-token for API credentials; see docs/guide/operator-webhooks.md.
     #[command(name = "admin-web")]
     AdminWeb {
         #[command(subcommand)]

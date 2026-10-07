@@ -54,6 +54,9 @@ Accessed via:
 - `__REGISTRATION_OPEN__`, `__JIT_REGISTRATION_ENABLED__`
 - `__TURN_ENABLED__`, `__IROH_ENABLED__`, `__SS_ENABLED__`
 - `__PUSH_MODE__` (`auto` / `on` / `off`, default `off`)
+- `__OPERATOR_WEBHOOKS__` — private JSON receiver settings, disabled by default;
+  managed only by `/admin/services/webhooks`, excluded from generic settings.
+  Changes activate immediately; see [operator webhooks](../guide/operator-webhooks.md).
 - `__APPENDLIMIT__`, `__MAX_MESSAGE_SIZE__` (effective message cap)
 - `__FEDERATION_POLICY__`, `__FEDERATION_ENABLED__`
 - Port overrides (`__SMTP_PORT__`, `__IMAP_TLS_PORT__`, …) and `__*_LOCAL_ONLY__` access flags

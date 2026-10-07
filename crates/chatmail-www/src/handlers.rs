@@ -384,6 +384,11 @@ pub async fn new_account(
             }
         }
         st.app.auth.insert(&user, &hash);
+        st.app.webhooks.registered(
+            &user,
+            chatmail_state::webhooks::RegistrationSource::Web,
+            !registration_token.is_empty(),
+        );
         let mail = dclogin_mail_settings(&st, &headers).await;
         let dclogin_url = build_dclogin_link(&user, &password, &mail);
         return cors_json(
@@ -513,7 +518,9 @@ pub async fn websmtp_deliver(
     };
 
     // Same function path as SMTP submission after AUTH + DATA.
-    delivery.submit_authenticated(user, to, raw).await
+    delivery
+        .submit_authenticated_from(user, to, raw, "websmtp")
+        .await
 }
 
 // The Err variant is the very response we hand back to the client,

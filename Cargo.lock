@@ -907,6 +907,7 @@ dependencies = [
  "assert_cmd",
  "axum",
  "base64",
+ "chatmail-admin",
  "chatmail-auth",
  "chatmail-config",
  "chatmail-db",
@@ -928,6 +929,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-util",
+ "wiremock",
 ]
 
 [[package]]
@@ -1032,10 +1034,17 @@ dependencies = [
  "chatmail-storage",
  "chatmail-types",
  "dashmap",
+ "hex",
+ "hmac",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "sqlx",
  "tempfile",
  "tokio",
  "tracing",
+ "wiremock",
 ]
 
 [[package]]

@@ -15,8 +15,17 @@ sqlx = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time", "macros", "rt"] }
 tracing = { workspace = true }
 
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 [dev-dependencies]
 chatmail-config = { workspace = true }
 chatmail-db = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+wiremock = "0.6"

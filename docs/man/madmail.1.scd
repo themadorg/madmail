@@ -356,6 +356,45 @@ Print the DKIM TXT to publish at *default.\_domainkey*, then verify DNS:
 	madmail dkim check
 	madmail dkim status
 
+# OPERATOR WEBHOOKS
+
+Enable the embedded dashboard with *madmail admin-web enable* and apply
+HTTP route changes with *madmail reload*. In Services, configure Operator
+webhooks, save, and send a test. The service is disabled by default.
+Use *madmail admin-token --no-qr* for admin API credentials.
+
+The authenticated RPC resource */admin/services/webhooks* supports GET
+(redacted settings/counters), PUT (partial updates), and POST with
+*{"action":"test"}*. Send the envelope to the configured admin API path,
+placing the Bearer token inside its *headers.Authorization* field.
+There is no dedicated webhooks CLI command.
+
+Registration events report successfully created JIT, web, and admin API
+accounts; host-side CLI account creation does not emit an event. Quota
+alerts report username, usage, limit, incoming size, and rejection path,
+with one alert per username per hour. Passwords, message bodies, and
+invitation identifiers are excluded.
+
+Receivers use HTTPS (HTTP only for loopback testing). Optional signing
+uses *X-Madmail-Signature: sha256=<hex>* over the raw JSON body with
+HMAC-SHA256. A secret omitted from PUT is preserved; an empty string clears
+it. Secrets are never returned. Receiver automation must handle retries
+and enforce its own replay protection.
+
+Settings persist and apply immediately. Default timeout is 5 seconds
+(range 1-30); default additional retries are 2 (range 0-5). Transport
+errors, HTTP 429 and 5xx retry with bounded exponential backoff. Other
+statuses fail without retry; redirects are disabled.
+
+Delivery is asynchronous and best-effort. Queue capacity is 256 events;
+quota deduplication retains up to 4096 usernames. Pending notifications,
+deduplication state and delivery counters reset on process restart.
+Failures never alter the mail/authentication result. Logs exclude receiver
+URLs, secrets, usernames and payloads and follow the No-Log policy.
+
+Full API envelopes, payloads, counters and receiver guidance are in
+docs/guide/operator-webhooks.md (also linked from the online CLI reference).
+
 # NOTES
 
 *install* requires root for system installs (service user, binary copy,

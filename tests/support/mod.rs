@@ -437,13 +437,16 @@ async fn read_smtp(stream: &mut TcpStream, buf: &mut [u8]) -> String {
                 break;
             }
             acc.push_str(&String::from_utf8_lossy(&buf[..n]));
-            if acc.contains("250 ")
-                || acc.contains("235 ")
-                || acc.contains("354 ")
-                || acc.contains("523 ")
-                || acc.contains("554 ")
-                || acc.contains("221 ")
-            {
+            // A final SMTP reply has a three-digit code followed by a space.
+            // Include negative replies such as quota's 552, rather than timing
+            // out and losing the response that the test needs to assert.
+            if acc.split_inclusive('\n').any(|line| {
+                let bytes = line.as_bytes();
+                line.ends_with('\n')
+                    && bytes.len() >= 4
+                    && bytes[..3].iter().all(u8::is_ascii_digit)
+                    && bytes[3] == b' '
+            }) {
                 break;
             }
         }

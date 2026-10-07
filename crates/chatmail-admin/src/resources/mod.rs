@@ -32,6 +32,7 @@ mod settings;
 mod status_storage;
 mod toggles;
 mod tokens;
+mod webhooks;
 mod webmail_dev;
 
 use serde_json::Value;
@@ -56,6 +57,7 @@ pub async fn dispatch(st: &AdminState, method: &str, resource: &str, body: &Valu
             toggles::service_bool(st, method, body, chatmail_db::settings_keys::IROH_ENABLED).await
         }
         "/admin/services/push" => push::service(st, method, body).await,
+        "/admin/services/webhooks" => webhooks::service(st, method, body).await,
         "/admin/services/admin_web" => {
             toggles::service_bool(
                 st,

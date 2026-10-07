@@ -164,7 +164,13 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
     ctx.state.mailbox_store.init_user_dir(&user).await?;
     registration_tokens::ensure_new_account_quota(&ctx.pool, &user).await?;
 
-    finish_successful_login(ctx, &user).await
+    finish_successful_login(ctx, &user).await?;
+    ctx.state.webhooks.registered(
+        &user,
+        chatmail_state::webhooks::RegistrationSource::Jit,
+        false,
+    );
+    Ok(())
 }
 
 async fn finish_successful_login(ctx: &AuthContext, user: &str) -> Result<()> {

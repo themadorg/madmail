@@ -90,8 +90,7 @@ fn build_notice_message(from: &str, to: &str, subject: &str, body: &str, domain:
 
 async fn deliver_notice(st: &AdminState, to: &str, raw: &[u8]) -> Result<(), String> {
     st.app
-        .quota
-        .check_quota(to, raw.len() as u64)
+        .check_quota(to, raw.len() as u64, "admin.notice")
         .map_err(|e| e.to_string())?;
     let msg_id = uuid::Uuid::new_v4().to_string();
     write_blob(&st.app.mailbox_store, to, &msg_id, raw)

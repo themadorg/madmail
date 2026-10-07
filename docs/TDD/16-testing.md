@@ -209,3 +209,13 @@ E2E and integration tests assert behaviour defined by these specs. Offline copie
 | Security (PGP) | [9580](RFC/rfc9580.txt), [3156](RFC/rfc3156.txt) | [9580](https://datatracker.ietf.org/doc/html/rfc9580), [3156](https://datatracker.ietf.org/doc/html/rfc3156) |
 | TURN / calls | [8656](RFC/rfc8656.txt), [8489](RFC/rfc8489.txt), [8445](RFC/rfc8445.txt) | [8656](https://datatracker.ietf.org/doc/html/rfc8656), [8489](https://datatracker.ietf.org/doc/html/rfc8489), [8445](https://datatracker.ietf.org/doc/html/rfc8445) |
 | Admin API | [9110](RFC/rfc9110.txt), [8259](RFC/rfc8259.txt) | [9110](https://datatracker.ietf.org/doc/html/rfc9110), [8259](https://datatracker.ietf.org/doc/html/rfc8259) |
+
+## Operator webhook coverage
+
+`cargo test -p chatmail-state webhooks` tests signatures, policy/gating, secret
+redaction, bounded delivery/dedup, timeouts/retries, redirect rejection and reload.
+`cargo test -p chatmail-integration --test operator_webhooks_e2e` triggers actual
+admin, web and JIT registrations and IMAP/SMTP quota rejections through a mock
+receiver, verifies concurrent admin imports emit one event, verifies authorization
+and checks that public pages expose no webhook
+settings. See [the design](25-operator-webhooks.md) for the complete contract.
