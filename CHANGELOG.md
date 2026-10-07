@@ -1,3 +1,15 @@
+# [2.32.0](https://github.com/themadorg/madmail/compare/v2.31.3...v2.32.0) (2026-10-07)
+
+
+### Bug Fixes
+
+* **admin:** coalesce registration webhooks during concurrent imports ([5a404fe](https://github.com/themadorg/madmail/commit/5a404fead0db14bf94dd48669c39add4b2c41d56))
+
+
+### Features
+
+* **admin:** notify operators of registration and quota events ([bde37ae](https://github.com/themadorg/madmail/commit/bde37ae9afebd9e372e668c23c9bffe94d32473e))
+
 ## [2.31.3](https://github.com/themadorg/madmail/compare/v2.31.2...v2.31.3) (2026-10-07)
 
 
