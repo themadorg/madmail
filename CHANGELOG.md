@@ -1,3 +1,10 @@
+## [2.31.1](https://github.com/themadorg/madmail/compare/v2.31.0...v2.31.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **landing:** remove focus button from page actions ([b79ef7a](https://github.com/themadorg/madmail/commit/b79ef7a7692afbe57736a0a421050bdf5b36c948))
+
 # [2.31.0](https://github.com/themadorg/madmail/compare/v2.30.5...v2.31.0) (2026-10-07)
 
 
