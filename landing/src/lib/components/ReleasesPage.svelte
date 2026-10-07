@@ -57,7 +57,7 @@
 
 <DocHeader section="Releases" />
 
-<div class="release-content">
+<div class="release-page">
 <main>
 	<div class="page-heading">
 		<h1>{selectedRelease ? selectedRelease.tag_name : 'Releases'}</h1>
@@ -105,6 +105,8 @@
 									{#if asset.digest}<code class="asset-digest" title={asset.digest}>{asset.digest}</code>{/if}
 								</div>
 								<span class="asset-size">{asset.size >= 1048576 ? `${(asset.size / 1048576).toFixed(1)} MB` : `${(asset.size / 1024).toFixed(1)} KB`}</span>
+								<a class="asset-download" href={asset.browser_download_url} aria-label={`Download ${asset.name}`} title={`Download ${asset.name}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M3 15v4.5A1.5 1.5 0 0 0 4.5 21h15a1.5 1.5 0 0 0 1.5-1.5V15" /></svg></a>
+								{#if asset.digest}<details class="asset-checksum"><summary>SHA256 checksum</summary><code>{asset.digest}</code></details>{/if}
 							</li>
 						{/each}
 					</ul>
@@ -140,7 +142,8 @@
 	.notes :global(h1), .notes :global(h2), .notes :global(h3), .notes :global(h4) { color: var(--docs-heading, var(--color-text)); }
 	.notes :global(code) { color: var(--color-code-text); }
 
-	.release-content { position: relative; z-index: 1; background: var(--color-bg); padding-bottom: 3rem; }
+	.release-page { position: relative; z-index: 1; background: var(--color-bg); padding-bottom: 3rem; }
+	.release-content, aside { min-width: 0; }
 	main { max-width: 72rem; margin: 0 auto; padding: 6rem 2rem 0; }
 	.page-heading { margin-bottom: 3rem; }
 	h1 { font-size: clamp(2.5rem, 5vw, 3.5rem); letter-spacing: -0.04em; margin: 0.5rem 0 1rem; }
@@ -187,15 +190,34 @@
 	.asset-digest { display: block; margin-top: 0.35rem; font-size: 0.65rem; color: var(--color-text-muted); overflow-wrap: anywhere; user-select: all; line-height: 1.5; }
 	.asset-size { margin-left: auto; flex-shrink: 0; color: var(--color-text-muted); font-size: 0.75rem; }
 	ul { padding-left: 1.25rem; line-height: 1.8; overflow-wrap: anywhere; }
+	.asset-download, .asset-checksum { display: none; }
 	@media (max-width: 700px) {
 		.header-inner { padding: 0.65rem 1rem; }
 		.header-inner nav { gap: 1rem; font-size: 0.8rem; }
 		main { padding: 5rem 1rem 0; }
-		.release-layout { grid-template-columns: 1fr; gap: 2rem; }
-		aside { position: sticky; top: 3.25rem; z-index: 1; background: var(--color-bg); border-bottom: 1px solid var(--color-border); padding: 0.75rem 0; }
-		.versions { position: static; display: flex; overflow-x: auto; max-height: none; }
+		.release-layout { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+		aside { display: none; }
+		.versions { position: static; display: flex; gap: 0.25rem; width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; max-height: none; overscroll-behavior-x: contain; padding-bottom: 0.25rem; }
 		.versions h2 { display: none; }
 		.versions a { flex-shrink: 0; }
-		article { scroll-margin-top: 8rem; }
+		article { scroll-margin-top: 4rem; }
+		.page-heading { margin-bottom: 2rem; }
+		.notes :global(pre) { max-width: 100%; }
+		.notes :global(ol), .notes :global(ul) { padding-left: 1.25rem; }
+		.assets { border: 0; overflow: visible; }
+		.assets > summary { border: 1px solid var(--color-border); border-radius: 0.5rem; }
+		.assets ul { display: grid; gap: 0.5rem; padding-top: 0.5rem; }
+		.assets li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.2rem 0.5rem; align-items: start; padding: 0.6rem; border: 1px solid var(--color-border); border-radius: 0.75rem; background: var(--color-surface); }
+		.asset-info { grid-column: 1; grid-row: 1; min-width: 0; }
+		.asset-info a { font-weight: 600; font-size: 0.8rem; line-height: 1.35; }
+		.asset-info .asset-digest { display: none; }
+		.asset-size { grid-column: 1; grid-row: 2; margin: 0; font-size: 0.65rem; }
+		.assets li > svg { display: none; }
+		.assets li .asset-download { display: flex; grid-column: 2; grid-row: 1 / 3; align-self: center; justify-content: center; align-items: center; gap: 0.25rem; min-height: 2rem; padding: 0 0.5rem; font-size: 0.65rem; margin: 0; border: 1px solid var(--color-border-input); border-radius: 0.5rem; background: var(--color-surface-raised); }
+		.asset-download:hover { background: var(--color-hover); }
+		.asset-checksum { display: block; grid-column: 1 / -1; min-width: 0; }
+		.assets .asset-checksum summary { padding: 0.25rem 0; background: transparent; color: var(--color-text-muted); font-size: 0.65rem; font-weight: 400; }
+		.asset-checksum code { display: block; margin-top: 0.5rem; font-size: 0.7rem; overflow-wrap: anywhere; user-select: all; color: var(--color-code-text); }
+		.github-release { max-width: 100%; overflow-wrap: anywhere; }
 	}
 </style>
