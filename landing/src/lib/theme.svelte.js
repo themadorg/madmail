@@ -1,31 +1,38 @@
 import { browser } from '$app/environment';
 
-const STORAGE_KEY = 'madmail-light';
-
-/** @returns {boolean} */
-function readStoredLight() {
-	if (!browser) return false;
+function readMode() {
+	if (!browser) return 'system';
 	try {
-		return localStorage.getItem(STORAGE_KEY) === 'true';
-	} catch {
-		return false;
-	}
+		const saved = localStorage.getItem('madmail-theme');
+		if (['light', 'dark', 'system'].includes(saved)) return saved;
+		return localStorage.getItem('madmail-light') === 'true' ? 'light' : 'system';
+	} catch { return 'system'; }
 }
 
-/** @param {boolean} light */
-function persistLight(light) {
-	if (!browser) return;
-	try {
-		if (light) localStorage.setItem(STORAGE_KEY, 'true');
-		else localStorage.removeItem(STORAGE_KEY);
-	} catch {
-		// ignore storage errors
-	}
+function resolveLight(mode) {
+	return mode === 'light' || (mode === 'system' && browser && window.matchMedia('(prefers-color-scheme: light)').matches);
 }
 
-export const theme = $state({ light: readStoredLight() });
+const initialMode = readMode();
+export const theme = $state({ mode: initialMode, light: resolveLight(initialMode) });
+
+export function setTheme(mode) {
+	if (!['light', 'dark', 'system'].includes(mode)) return;
+	theme.mode = mode;
+	theme.light = resolveLight(mode);
+	if (browser) {
+		try { localStorage.setItem('madmail-theme', mode); } catch { /* Storage may be unavailable. */ }
+	}
+}
 
 export function toggleLightMode() {
-	theme.light = !theme.light;
-	persistLight(theme.light);
+	setTheme(theme.light ? 'dark' : 'light');
+}
+
+export function watchSystemTheme() {
+	const preference = window.matchMedia('(prefers-color-scheme: light)');
+	const update = () => { if (theme.mode === 'system') theme.light = preference.matches; };
+	preference.addEventListener('change', update);
+	update();
+	return () => preference.removeEventListener('change', update);
 }

@@ -6,10 +6,12 @@
 		<meta name="text-scale" content="scale" />
 		<script>
 			try {
-				if (localStorage.getItem('madmail-light') === 'true') {
+				const mode = localStorage.getItem('madmail-theme') || (localStorage.getItem('madmail-light') === 'true' ? 'light' : 'system');
+				if (mode === 'light' || (mode === 'system' && matchMedia('(prefers-color-scheme: light)').matches)) {
 					document.documentElement.dataset.light = '';
 				}
 			} catch (_) {}
+			document.documentElement.classList.toggle('docs-theme', location.pathname === '/docs' || location.pathname.startsWith('/docs/') || location.pathname === '/releases' || location.pathname.startsWith('/releases/'));
 		</script>
 		%sveltekit.head%
 	</head>

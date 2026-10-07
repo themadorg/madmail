@@ -201,6 +201,12 @@ function resolveHeuristicHref(path, sourcePath) {
 
 /** @param {string} href @param {string} [sourcePath] */
 export function resolveHref(href, sourcePath = '') {
+	if (href?.startsWith(`${REPO_BLOB}/docs/`)) {
+		return stripDocExt(href.slice(REPO_BLOB.length));
+	}
+	if (href?.startsWith(`${REPO_BLOB}/external/README.md`)) {
+		return href.replace(`${REPO_BLOB}/external/README.md`, '/docs/external/README');
+	}
 	if (!href || href.startsWith('http') || href.startsWith('mailto:') || href.startsWith('#')) {
 		return null;
 	}
@@ -225,5 +231,7 @@ export function resolveHref(href, sourcePath = '') {
 	const heuristic = resolveHeuristicHref(path, sourcePath);
 	if (heuristic) return withHash(heuristic, hash);
 
-	return withHash(resolveRepoBlobHref(path, sourcePath), hash);
+	const repositoryHref = resolveRepoBlobHref(path, sourcePath);
+	if (repositoryHref === `${REPO_BLOB}/external/README.md`) return withHash('/docs/external/README', hash);
+	return withHash(repositoryHref, hash);
 }

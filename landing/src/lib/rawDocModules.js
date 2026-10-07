@@ -1,10 +1,10 @@
 import { isTxtRoute } from './docs.js';
 
 /** @type {Record<string, () => Promise<string>>} */
-export const rawDocLoaders = import.meta.glob('/src/lib/content/docs/**/*.md', {
-	query: '?raw',
-	import: 'default'
-});
+export const rawDocLoaders = {
+	...import.meta.glob('/src/lib/content/docs/**/*.md', { query: '?raw', import: 'default' }),
+	'/src/lib/content/docs/external/README.md': () => import('../../../external/README.md?raw').then((module) => module.default)
+};
 
 /** @type {Record<string, () => Promise<string>>} */
 export const rawTxtLoaders = import.meta.glob('/src/lib/content/docs/**/*.txt', {

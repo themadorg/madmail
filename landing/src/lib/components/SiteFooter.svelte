@@ -1,9 +1,18 @@
 <script>
+	import MadmailLogo from '$lib/components/MadmailLogo.svelte';
+	import MadGlitchText from '$lib/components/MadGlitchText.svelte';
+	let { spacious = false } = $props();
 	import { resources } from '$lib/data.js';
 	import { repo } from '$lib/nav.js';
 </script>
 
-<footer>
+<footer class:spacious data-doc-footer={spacious || undefined}>
+	{#if spacious}
+		<div class="footer-logo">
+			<MadmailLogo href="/" size="8rem" />
+			<div class="footer-name"><MadGlitchText text="madmail" /></div>
+		</div>
+	{/if}
 	<nav aria-label="Resources">
 		{#each resources as link}
 			<a href={link.href}>{link.label}</a>
@@ -23,6 +32,11 @@
 		text-align: center;
 		color: var(--color-text);
 	}
+
+	footer.spacious { max-width: none; margin-top: 0; padding: 5rem 1.5rem 3rem; border-top: 1px solid var(--color-border); position: sticky; bottom: 0; z-index: 0; background: var(--docs-navigation-bg, var(--color-bg)); }
+	@media (max-height: 600px), (prefers-reduced-motion: reduce) { footer.spacious { position: relative; } }
+	.footer-logo { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
+	.footer-name { font-size: 2rem; font-weight: 700; line-height: 1.2; color: var(--color-text); }
 
 	nav {
 		display: flex;

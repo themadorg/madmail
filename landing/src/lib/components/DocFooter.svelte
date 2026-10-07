@@ -1,5 +1,15 @@
 <script>
-	import { getDocNeighbors } from '$lib/nav.js';
+	import { docTreeNodes } from '$lib/docTreeData.js';
+	import { sameDocPage } from '$lib/docs.js';
+
+	function flattenPages(nodes) {
+		return nodes.flatMap((node) => node.type === 'dir' ? flattenPages(node.children) : node.external ? [] : [node]);
+	}
+	const pages = flattenPages(docTreeNodes);
+	function getDocNeighbors(href) {
+		const index = pages.findIndex((page) => sameDocPage(page.href, href));
+		return { prev: index > 0 ? pages[index - 1] : null, next: index >= 0 ? pages[index + 1] ?? null : null };
+	}
 	import chevronLeft from '$lib/icons/chevron-left.svg?raw';
 	import chevronRight from '$lib/icons/chevron-right.svg?raw';
 
@@ -12,7 +22,7 @@
 {#if prev || next}
 	<nav class="doc-footer" aria-label="Documentation navigation">
 		{#if prev}
-			<a class="nav-btn prev" href={prev.href}>
+			<a class="nav-btn prev" href={prev.href} rel="prev">
 				<span class="icon" aria-hidden="true">{@html chevronLeft}</span>
 				<span class="label">
 					<span class="hint">Previous</span>
@@ -24,7 +34,7 @@
 		{/if}
 
 		{#if next}
-			<a class="nav-btn next" href={next.href}>
+			<a class="nav-btn next" href={next.href} rel="next">
 				<span class="label">
 					<span class="hint">Next</span>
 					{next.label}
@@ -43,7 +53,7 @@
 		gap: 1rem;
 		max-width: 48rem;
 		margin: 3rem auto 0;
-		padding-top: 2rem;
+		padding: 2rem 0 3rem;
 		border-top: 1px solid var(--color-border);
 	}
 
@@ -51,7 +61,8 @@
 		display: flex;
 		align-items: center;
 		gap: 0.65rem;
-		max-width: 14rem;
+		flex: 1;
+		min-width: 0;
 		padding: 0.75rem 1rem;
 		border: 1px solid var(--color-border-input);
 		border-radius: 0.5rem;
@@ -68,6 +79,7 @@
 	}
 
 	.next {
+		justify-content: flex-end;
 		margin-left: auto;
 		text-align: right;
 	}

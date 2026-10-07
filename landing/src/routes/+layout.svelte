@@ -1,4 +1,5 @@
 <script>
+	import { onMount, untrack } from 'svelte';
 	import { onNavigate } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
@@ -8,10 +9,16 @@
 	import { docTreeModal } from '$lib/docTreeModal.svelte.js';
 	import madmailLogoUrl from '$lib/logoUrl.js';
 	import { madMode } from '$lib/madMode.svelte.js';
-	import { theme } from '$lib/theme.svelte.js';
+	import { theme, watchSystemTheme } from '$lib/theme.svelte.js';
 	import '$lib/styles/global.css';
 
 	let { children } = $props();
+	onMount(watchSystemTheme);
+
+	$effect(() => {
+		if (!browser) return;
+		document.documentElement.classList.toggle('docs-theme', page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/') || page.url.pathname === '/releases' || page.url.pathname.startsWith('/releases/'));
+	});
 
 	if (browser) {
 		onNavigate((navigation) => {
@@ -53,9 +60,27 @@
 
 	$effect(() => {
 		if (!browser) return;
+		document.documentElement.style.setProperty('--doc-sidebar-width', `${docTreeModal.width}px`);
+	});
+
+	let wasOnDocs = false;
+	$effect(() => {
+		if (!browser) return;
+		const onDocs = page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/');
+		untrack(() => {
+			if (onDocs && !wasOnDocs && window.matchMedia('(min-width: 1024px)').matches) {
+				docTreeModal.open = true;
+				docTreeModal.docked = true;
+			}
+			wasOnDocs = onDocs;
+		});
+	});
+
+	$effect(() => {
+		if (!browser) return;
 
 		const onDocs = page.url.pathname.startsWith('/docs');
-		const dockedOpen = onDocs && docTreeModal.open && docTreeModal.docked;
+		const dockedOpen = onDocs && page.url.searchParams.get('focus') !== 'true' && docTreeModal.open && docTreeModal.docked;
 
 		document.documentElement.classList.toggle('doc-tree-docked', dockedOpen);
 
@@ -77,4 +102,6 @@
 
 {@render children()}
 <CommandPalette />
-<DocTreeModal currentHref={page.url.pathname} />
+{#if !browser || page.url.searchParams.get('focus') !== 'true'}
+	<DocTreeModal currentHref={page.url.pathname} />
+{/if}

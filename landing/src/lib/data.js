@@ -19,7 +19,7 @@ export const deltachatLinks = [
 ];
 
 export const resources = [
-	{ label: 'GitHub Releases', href: `${repo}/releases` },
+	{ label: 'Releases', href: '/releases' },
 	{ label: 'Delta Chat', href: 'https://delta.chat' },
 	{ label: 'Download Apps', href: 'https://delta.chat/en/download' },
 	{ label: 'Telegram', href: 'https://t.me/the_madmail' },

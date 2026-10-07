@@ -1,10 +1,12 @@
 <script>
 	import { browser } from '$app/environment';
+	import { loadRawDoc } from '$lib/rawDocModules.js';
 	import { routeFromHref } from '$lib/docs.js';
 	import chevronDown from '$lib/icons/chevron-down.svg?raw';
 	import documentDuplicate from '$lib/icons/document-duplicate.svg?raw';
+	import linkIcon from '$lib/icons/link.svg?raw';
+	import githubIcon from '$lib/icons/github.svg?raw';
 
-	const RAW_BASE = 'https://raw.githubusercontent.com/themadorg/madmail/main/docs';
 	const VIEW_BASE = 'https://github.com/themadorg/madmail/blob/main/docs';
 
 	/** @type {{ currentHref?: string }} */
@@ -18,7 +20,6 @@
 
 	const route = $derived(routeFromHref(currentHref));
 	const pageUrl = $derived(browser ? `${window.location.origin}${currentHref}` : currentHref);
-	const markdownUrl = $derived(`${RAW_BASE}/${route}.md`);
 	const githubUrl = $derived(`${VIEW_BASE}/${route}.md`);
 
 	/** @param {string} message */
@@ -32,14 +33,29 @@
 
 	/** @param {string} text */
 	async function copyText(text) {
-		await navigator.clipboard.writeText(text);
+		if (navigator.clipboard?.writeText) {
+			try { await navigator.clipboard.writeText(text); return; } catch { /* Try the HTTP-compatible fallback. */ }
+		}
+		const previousFocus = document.activeElement;
+		const input = document.createElement('textarea');
+		input.value = text;
+		input.style.position = 'fixed';
+		input.style.opacity = '0';
+		document.body.append(input);
+		try {
+			input.select();
+			if (!document.execCommand('copy')) throw new Error('Copy failed');
+		} finally {
+			input.remove();
+			if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true });
+		}
 	}
 
 	async function copyMarkdown() {
 		try {
-			const response = await fetch(markdownUrl);
-			if (!response.ok) throw new Error('fetch failed');
-			await copyText(await response.text());
+			const markdown = await loadRawDoc(route);
+			if (markdown === null || markdown === undefined) throw new Error('Page source unavailable');
+			await copyText(markdown);
 			showStatus('Copied');
 			menuOpen = false;
 		} catch {
@@ -92,15 +108,15 @@
 			aria-haspopup="menu"
 			onclick={toggleMenu}
 		>
-			<span class="icon" aria-hidden="true">{@html chevronDown}</span>
+			<span class="icon menu-chevron" class:open={menuOpen} aria-hidden="true">{@html chevronDown}</span>
 		</button>
 	</div>
 
 	{#if menuOpen}
 		<div class="copy-page__menu" role="menu">
-			<button type="button" role="menuitem" onclick={copyMarkdown}>Copy page</button>
-			<button type="button" role="menuitem" onclick={copyLink}>Copy link</button>
-			<a href={githubUrl} role="menuitem" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+			<button type="button" role="menuitem" onclick={copyMarkdown}><span class="icon" aria-hidden="true">{@html documentDuplicate}</span>Copy page</button>
+			<button type="button" role="menuitem" onclick={copyLink}><span class="icon" aria-hidden="true">{@html linkIcon}</span>Copy link</button>
+			<a href={githubUrl} role="menuitem" target="_blank" rel="noopener noreferrer"><span class="icon" aria-hidden="true">{@html githubIcon}</span>View on GitHub</a>
 		</div>
 	{/if}
 </div>
@@ -152,6 +168,10 @@
 		background: var(--color-hover);
 	}
 
+	.menu-chevron { transition: transform 160ms ease; }
+	.menu-chevron.open { transform: rotate(180deg); }
+	@media (prefers-reduced-motion: reduce) { .menu-chevron { transition: none; } }
+	.icon { flex-shrink: 0; }
 	.icon :global(svg) {
 		display: block;
 		width: 0.95rem;
@@ -175,7 +195,9 @@
 
 	.copy-page__menu button,
 	.copy-page__menu a {
-		display: block;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 		width: 100%;
 		padding: 0.5rem 0.65rem;
 		border: none;

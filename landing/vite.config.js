@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { mdsvex } from 'mdsvex';
 import adapter from '@sveltejs/adapter-static';
@@ -18,6 +19,14 @@ function generateDocumentationTree() {
 		throw new Error('Failed to generate documentation tree');
 	}
 }
+
+// Generate one snapshot shared by static pages and the homepage.
+const releaseResponse = await fetch('https://api.github.com/repos/themadorg/madmail/releases?per_page=20', {
+	headers: { Accept: 'application/vnd.github+json' }
+});
+if (!releaseResponse.ok) throw new Error(`Unable to generate releases: GitHub returned ${releaseResponse.status}`);
+const releases = (await releaseResponse.json()).filter((release) => !release.draft && !release.prerelease);
+await writeFile(new URL('./src/lib/assets/releases.json', import.meta.url), JSON.stringify(releases));
 
 export default defineConfig({
 	build: {

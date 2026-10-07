@@ -1,4 +1,4 @@
-export const docTreeModal = $state({ open: false, docked: false, focusDirId: null });
+export const docTreeModal = $state({ open: false, docked: true, width: 272, focusDirId: null });
 
 /** @param {string | null} dirId */
 export function openDocTreeAtDir(dirId) {

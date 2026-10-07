@@ -1,6 +1,12 @@
 <script>
+	import { docTreeModal, openDocTree } from '$lib/docTreeModal.svelte.js';
+	import showSidebarIcon from '$lib/icons/chevron-right.svg?raw';
+	import { setDocFocus } from '$lib/docFocus.js';
+	import focusIcon from '$lib/icons/arrows-pointing-out.svg?raw';
+	import exitFocusIcon from '$lib/icons/arrows-pointing-in.svg?raw';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
+	import DocBreadcrumb from '$lib/components/DocBreadcrumb.svelte';
 	import DocFooter from '$lib/components/DocFooter.svelte';
 	import DocHeader from '$lib/components/DocHeader.svelte';
 	import DocPageActions from '$lib/components/DocPageActions.svelte';
@@ -9,6 +15,7 @@
 
 	/** @type {{ href: string, children: import('svelte').Snippet }} */
 	let { href, children } = $props();
+	const focused = $derived(browser && page.url.searchParams.get('focus') === 'true');
 
 	$effect(() => {
 		if (!browser) return;
@@ -27,25 +34,93 @@
 	});
 </script>
 
-<main class="doc">
-	<DocHeader currentHref={href} />
+<svelte:window onkeydown={(event) => { if (focused && event.key === 'Escape') setDocFocus(false); }} />
+{#if !focused}<DocHeader currentHref={href} />{/if}
+<main class="doc" class:focused>
+	{#if !focused}
+	<div class="page-breadcrumb">
+		<DocBreadcrumb currentHref={href} />
+		<div class="page-tools">
+			<DocPageActions currentHref={href} />
+			<button class="focus-button" aria-label="Enter focus mode" title="Focus mode (Escape to exit)" onclick={() => setDocFocus(true)}><span aria-hidden="true">{@html focusIcon}</span></button>
+		</div>
+	</div>
+	{/if}
 	<article class="prose" use:enhanceDocProse>
 		{@render children()}
 	</article>
+	{#if !focused}
 	<DocPageActions currentHref={href} variant="footer" />
 	<DocFooter {href} />
-	<SiteFooter />
+	{/if}
 </main>
+{#if !focused}<SiteFooter spacious />{/if}
+{#if !focused && !docTreeModal.open}
+	<button class="restore-sidebar" aria-label="Show documentation sidebar" title="Show sidebar" onclick={() => { docTreeModal.docked = true; openDocTree(); }}>
+		<span aria-hidden="true">{@html showSidebarIcon}</span>
+	</button>
+{/if}
+{#if focused}
+	<button class="exit-focus" aria-label="Exit focus mode" title="Exit focus mode (Escape)" onclick={() => setDocFocus(false)}>
+		<span aria-hidden="true">{@html exitFocusIcon}</span>
+		<span>Exit focus</span>
+	</button>
+{/if}
 
 <style>
+	.restore-sidebar { position: fixed; bottom: 1rem; left: 1rem; z-index: 50; display: grid; place-items: center; width: 2rem; height: 2rem; border: 1px solid var(--color-border); border-radius: 0.5rem; background: var(--color-surface); color: var(--color-text-muted); cursor: pointer; }
+	.restore-sidebar:hover { background: var(--color-surface-raised); color: var(--color-text); }
+	.restore-sidebar :global(svg) { display: block; width: 1rem; height: 1rem; }
+
+	.exit-focus {
+		position: fixed;
+		bottom: 1rem;
+		left: 1rem;
+		z-index: 50;
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		padding: 0.55rem 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		background: var(--color-surface);
+		color: var(--color-text);
+		font: inherit;
+		font-size: 0.75rem;
+		opacity: 0.35;
+		cursor: pointer;
+		transition: opacity 160ms ease, background-color 160ms ease;
+	}
+	.exit-focus:hover, .exit-focus:focus-visible { opacity: 1; background: var(--color-surface-raised); }
+	.exit-focus :global(svg) { display: block; width: 1rem; height: 1rem; }
+	@media (prefers-reduced-motion: reduce) { .exit-focus { transition: none; } }
+
+	.doc.focused { padding-top: 2rem; }
+	.page-tools { display: flex; align-items: center; gap: 0.5rem; }
+	.focus-button { display: grid; place-items: center; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-surface); color: var(--color-text-muted); padding: 0.4rem; cursor: pointer; }
+	.focus-button:hover { color: var(--color-text); background: var(--color-hover); }
+	.focus-button :global(svg) { width: 1rem; height: 1rem; }
+
 	.doc {
+		position: relative;
+		z-index: 1;
 		min-height: 100vh;
 		min-height: 100dvh;
 		min-width: 0;
-		padding: 0 1.5rem 0;
+		padding: 4.5rem 2rem 0;
 		background: var(--color-bg);
 		color: var(--color-text);
 		transition: var(--transition-theme);
+	}
+
+	.page-breadcrumb {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		flex-wrap: wrap;
+		max-width: 48rem;
+		margin: 0 auto 1.25rem;
 	}
 
 	.prose {
@@ -60,7 +135,9 @@
 
 	@media (max-width: 640px) {
 		.doc {
-			padding: 0 1rem 0;
+		position: relative;
+		z-index: 1;
+			padding: 4rem 1rem 0;
 		}
 	}
 
@@ -232,6 +309,9 @@
 		display: block;
 		width: 100%;
 		overflow-x: auto;
+		overflow-wrap: normal;
+		word-break: normal;
+		overscroll-behavior-x: contain;
 		border-collapse: collapse;
 		font-size: 0.925rem;
 		line-height: 1.55;
@@ -239,6 +319,7 @@
 
 	.prose :global(th),
 	.prose :global(td) {
+		min-width: 10rem;
 		padding: 0.65rem 0.85rem;
 		border: 1px solid var(--color-border);
 		text-align: left;
@@ -246,6 +327,7 @@
 	}
 
 	.prose :global(th) {
+		white-space: nowrap;
 		background: var(--color-surface-raised);
 		font-weight: 600;
 	}

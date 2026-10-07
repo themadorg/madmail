@@ -144,6 +144,20 @@ function searchCommands(commands, tokens) {
 /** @param {SearchPage[]} pages @param {string} query @returns {PaletteItem[]} */
 export function searchPalette(pages, query) {
 	const commands = getPaletteCommands();
+	const cliPrefix = /^\s*cli\s+/i.exec(query);
+	if (cliPrefix) {
+		const cliPages = pages.filter((page) => page.href.startsWith('/docs/guide/cli/'));
+		const cliQuery = query.slice(cliPrefix[0].length).trim();
+		const matches = cliQuery ? searchPages(cliPages, cliQuery) : cliPages;
+		return matches.map((page) => ({
+			kind: /** @type {const} */ ('page'),
+			id: page.href,
+			label: page.label,
+			href: page.href,
+			group: page.group,
+			hint: page.hint
+		}));
+	}
 	const trimmed = query.trim().toLowerCase();
 
 	if (!trimmed) {

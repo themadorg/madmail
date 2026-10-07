@@ -1,9 +1,12 @@
 <script>
+	import { releases } from '$lib/releases.js';
 	import Button from '$lib/components/Button.svelte';
 	import MadGlitchText from '$lib/components/MadGlitchText.svelte';
 	import MadmailLogo from '$lib/components/MadmailLogo.svelte';
 	import NavLinks from '$lib/components/NavLinks.svelte';
 	import { heroNav, repo } from '$lib/nav.js';
+
+	const latest = releases[0] ?? null;
 
 	let { onDeltachat = () => {} } = $props();
 </script>
@@ -25,6 +28,9 @@
 		<Button href="{repo}/releases" variant="primary">Download</Button>
 		<Button href="/docs/quick-setup">Quick Start</Button>
 	</div>
+	{#if latest}
+		<a class="latest-release" href="/releases">{latest.tag_name}</a>
+	{/if}
 </section>
 
 <style>
@@ -111,6 +117,18 @@
 	}
 
 	:global(.nav a:hover) {
+		color: var(--color-text);
+		text-decoration: underline;
+	}
+
+	.latest-release {
+		margin-top: 1.25rem;
+		font-size: 0.9rem;
+		color: var(--color-text-subtle);
+		text-decoration: none;
+	}
+
+	.latest-release:hover {
 		color: var(--color-text);
 		text-decoration: underline;
 	}

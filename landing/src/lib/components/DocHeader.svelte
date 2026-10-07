@@ -1,52 +1,34 @@
 <script>
-	import { browser } from '$app/environment';
-	import DocBreadcrumb from '$lib/components/DocBreadcrumb.svelte';
-	import DocPageActions from '$lib/components/DocPageActions.svelte';
+	import SharePageModal from '$lib/components/SharePageModal.svelte';
 	import MadmailLogo from '$lib/components/MadmailLogo.svelte';
 	import { openCommandPalette } from '$lib/commandPalette.svelte.js';
-	import { openDocTree } from '$lib/docTreeModal.svelte.js';
-	import chevronLeft from '$lib/icons/chevron-left.svg?raw';
+	import { docTreeModal, openDocTree } from '$lib/docTreeModal.svelte.js';
+	import shareIcon from '$lib/icons/share.svg?raw';
 	import github from '$lib/icons/github.svg?raw';
 	import magnifyingGlass from '$lib/icons/magnifying-glass.svg?raw';
 	import queueList from '$lib/icons/queue-list.svg?raw';
 	import { repo } from '$lib/nav.js';
 
-	/** @type {{ currentHref?: string }} */
-	let { currentHref = '' } = $props();
+	/** @type {{ currentHref?: string, section?: string }} */
+	let { currentHref = '', section = 'Docs' } = $props();
 
-	let scrolled = $state(false);
-	let progress = $state(0);
-
-	function goBack() {
-		if (!browser) return;
-		history.back();
+	let shareOpen = $state(false);
+	let shareUrl = $state('');
+	let shareTitle = $state('');
+	function sharePage() {
+		shareUrl = window.location.href;
+		shareTitle = document.title;
+		shareOpen = true;
 	}
 
-	$effect(() => {
-		if (!browser) return;
-
-		const onScroll = () => {
-			scrolled = window.scrollY > 48;
-			const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-			progress = scrollable > 0 ? Math.min(window.scrollY / scrollable, 1) : 0;
-		};
-
-		onScroll();
-		window.addEventListener('scroll', onScroll, { passive: true });
-		window.addEventListener('resize', onScroll, { passive: true });
-		return () => {
-			window.removeEventListener('scroll', onScroll);
-			window.removeEventListener('resize', onScroll);
-		};
-	});
 </script>
 
-<header class="doc-header" class:scrolled={scrolled}>
+<header class="doc-header">
 	<div class="brand">
 		<div class="brand-start">
-			<button type="button" class="back" aria-label="Back" onclick={goBack}>
-				<span class="icon" aria-hidden="true">{@html chevronLeft}</span>
-			</button>
+			<MadmailLogo href="/" size="1.5rem" class="doc-logo" transitionName="madmail-logo" />
+			<a class="docs-label" href={section === 'Docs' ? '/docs' : '/releases'}>Madmail / {section}</a>
+			{#if section === 'Docs' && !(docTreeModal.open && docTreeModal.docked)}
 			<button
 				type="button"
 				class="docs-tree"
@@ -55,8 +37,13 @@
 			>
 				<span class="icon" aria-hidden="true">{@html queueList}</span>
 			</button>
+			{/if}
 		</div>
-		<MadmailLogo href="/" size="2rem" class="doc-logo" transitionName="madmail-logo" />
+		<button type="button" class="search-bar" aria-label="Search pages" onclick={() => openCommandPalette()}>
+			<span class="icon" aria-hidden="true">{@html magnifyingGlass}</span>
+			<span>Search documentation…</span>
+			<kbd>Ctrl K</kbd>
+		</button>
 		<div class="brand-end">
 			<button
 				type="button"
@@ -65,6 +52,9 @@
 				onclick={() => openCommandPalette()}
 			>
 				<span class="icon" aria-hidden="true">{@html magnifyingGlass}</span>
+			</button>
+			<button type="button" class="share" aria-label="Share page" title="Share page" onclick={sharePage}>
+				<span class="icon" aria-hidden="true">{@html shareIcon}</span>
 			</button>
 			<a
 				href={repo}
@@ -77,24 +67,24 @@
 			</a>
 		</div>
 	</div>
-	<div class="subheader">
-		<DocBreadcrumb {currentHref} />
-		<DocPageActions {currentHref} />
-	</div>
-	<div class="scroll-progress" aria-hidden="true" style="transform: scaleX({progress})"></div>
 </header>
+<SharePageModal bind:open={shareOpen} url={shareUrl} title={shareTitle} />
 
 <style>
 	.doc-header {
-		position: sticky;
+		position: fixed;
 		top: 0;
-		z-index: 40;
+		left: 0;
+		right: 0;
+		height: 3rem;
+		z-index: 110;
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
-		max-width: 48rem;
-		margin: 0 auto 2rem;
-		padding: 2rem 0 1.25rem;
+		gap: 0.4rem;
+		max-width: none;
+		margin: 0;
+		padding: 0 1rem;
+		justify-content: center;
 		border-bottom: 1px solid var(--color-border);
 		background: var(--color-bg);
 		transition: var(--transition-theme);
@@ -102,86 +92,27 @@
 
 	@media (max-width: 640px) {
 		.doc-header {
-			padding: 1.25rem 0 1rem;
-			margin-bottom: 1.5rem;
+			padding: 0 0.75rem;
+			margin-bottom: 0;
 		}
-	}
-
-	.scroll-progress {
-		position: absolute;
-		left: 0;
-		right: 0;
-		bottom: -1px;
-		height: 2px;
-		background: var(--color-text);
-		transform: scaleX(0);
-		transform-origin: left;
-		opacity: 0;
-		transition: opacity 0.25s ease;
-		pointer-events: none;
-	}
-
-	.doc-header.scrolled .scroll-progress {
-		opacity: 1;
 	}
 
 	.brand {
 		display: grid;
-		grid-template-columns: 1fr auto 1fr;
+		grid-template-columns: 1fr auto;
 		align-items: center;
 	}
 
-	.brand :global(.doc-logo) {
-		grid-column: 2;
-		justify-self: center;
-	}
+	.docs-label { color: var(--color-text-muted); text-decoration: none; font-size: 0.85rem; margin-right: 0.5rem; }
 
-	.subheader {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		min-height: 2rem;
-		opacity: 1;
-		transition: opacity 0.35s ease;
-	}
-
-	.subheader :global(.breadcrumb) {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.subheader :global(.doc-page-actions) {
-		flex-shrink: 0;
-	}
-
-	@media (max-width: 640px) {
-		.subheader {
-			flex-direction: column;
-			align-items: stretch;
-			gap: 0.65rem;
-		}
-	}
-
-	.doc-header.scrolled .subheader {
-		opacity: 0.2;
-		pointer-events: none;
-	}
-
-	.doc-header.scrolled:hover .subheader {
-		opacity: 1;
-		pointer-events: auto;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.subheader {
-			transition: none;
-		}
-
-		.doc-header.scrolled .subheader {
-			opacity: 1;
-			pointer-events: auto;
-		}
+	.search-bar { display: none; }
+	@media (min-width: 900px) {
+		.brand { grid-template-columns: 1fr minmax(16rem, 28rem) 1fr; gap: 1rem; }
+		.brand > .brand-end { grid-column: 3; }
+		.brand-end .search { display: none; }
+		.search-bar { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.35rem 0.65rem; border: 1px solid transparent; border-radius: 0.4rem; background: transparent; color: var(--color-text-subtle); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; transition: background-color 160ms ease; }
+		.search-bar:hover { background: var(--color-hover); }
+		.search-bar kbd { margin-left: auto; font-size: 0.7rem; border: 1px solid var(--color-border); border-radius: 0.2rem; padding: 0.1rem 0.3rem; opacity: 0.6; }
 	}
 
 	.brand-start {
@@ -192,22 +123,24 @@
 		justify-self: start;
 	}
 
+	.share-status { position: absolute; top: 3.25rem; right: 1rem; padding: 0.4rem 0.65rem; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-surface); color: var(--color-text-muted); font-size: 0.75rem; }
+
 	.brand-end {
 		display: flex;
 		align-items: center;
 		gap: 0.35rem;
-		grid-column: 3;
+		grid-column: 2;
 		justify-self: end;
 	}
 
-	.back,
+	.share,
 	.docs-tree,
 	.search {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		width: 2.25rem;
-		height: 2.25rem;
+		height: 1.9rem;
 		padding: 0;
 		border: none;
 		border-radius: 0.5rem;
@@ -216,7 +149,7 @@
 		cursor: pointer;
 	}
 
-	.back:hover,
+	.share:hover,
 	.docs-tree:hover,
 	.search:hover {
 		background: var(--color-hover);
@@ -228,7 +161,7 @@
 		align-items: center;
 		justify-content: center;
 		width: 2.25rem;
-		height: 2.25rem;
+		height: 1.9rem;
 		border-radius: 0.5rem;
 		color: var(--color-text-subtle);
 		text-decoration: none;
