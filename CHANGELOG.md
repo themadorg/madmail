@@ -1,3 +1,10 @@
+## [2.31.3](https://github.com/themadorg/madmail/compare/v2.31.2...v2.31.3) (2026-10-07)
+
+
+### Bug Fixes
+
+* **landing:** constrain footer reveal and mobile asset controls ([228e232](https://github.com/themadorg/madmail/commit/228e232c4ba9385d40b4faa0bf36e5552a517923))
+
 ## [2.31.2](https://github.com/themadorg/madmail/compare/v2.31.1...v2.31.2) (2026-10-07)
 
 
