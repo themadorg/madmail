@@ -190,7 +190,7 @@
 	.asset-digest { display: block; margin-top: 0.35rem; font-size: 0.65rem; color: var(--color-text-muted); overflow-wrap: anywhere; user-select: all; line-height: 1.5; }
 	.asset-size { margin-left: auto; flex-shrink: 0; color: var(--color-text-muted); font-size: 0.75rem; }
 	ul { padding-left: 1.25rem; line-height: 1.8; overflow-wrap: anywhere; }
-	.asset-download, .asset-checksum { display: none; }
+	.assets li .asset-download, .assets li .asset-checksum { display: none; }
 	@media (max-width: 700px) {
 		.header-inner { padding: 0.65rem 1rem; }
 		.header-inner nav { gap: 1rem; font-size: 0.8rem; }
@@ -215,7 +215,7 @@
 		.assets li > svg { display: none; }
 		.assets li .asset-download { display: flex; grid-column: 2; grid-row: 1 / 3; align-self: center; justify-content: center; align-items: center; gap: 0.25rem; min-height: 2rem; padding: 0 0.5rem; font-size: 0.65rem; margin: 0; border: 1px solid var(--color-border-input); border-radius: 0.5rem; background: var(--color-surface-raised); }
 		.asset-download:hover { background: var(--color-hover); }
-		.asset-checksum { display: block; grid-column: 1 / -1; min-width: 0; }
+		.assets li .asset-checksum { display: block; grid-column: 1 / -1; min-width: 0; }
 		.assets .asset-checksum summary { padding: 0.25rem 0; background: transparent; color: var(--color-text-muted); font-size: 0.65rem; font-weight: 400; }
 		.asset-checksum code { display: block; margin-top: 0.5rem; font-size: 0.7rem; overflow-wrap: anywhere; user-select: all; color: var(--color-code-text); }
 		.github-release { max-width: 100%; overflow-wrap: anywhere; }

@@ -4,9 +4,34 @@
 	let { spacious = false } = $props();
 	import { resources } from '$lib/data.js';
 	import { repo } from '$lib/nav.js';
+	function clipReveal(node) {
+		if (!spacious) return;
+		let frame = 0;
+		function update() {
+			frame = 0;
+			const content = node.previousElementSibling;
+			if (!content) return;
+			const footerBounds = node.getBoundingClientRect();
+			const covered = Math.max(0, Math.min(footerBounds.height, content.getBoundingClientRect().bottom - footerBounds.top));
+			node.style.clipPath = `inset(${covered}px 0 0)`;
+		}
+		function schedule() { if (!frame) frame = requestAnimationFrame(update); }
+		const observer = new ResizeObserver(schedule);
+		observer.observe(document.body);
+		window.addEventListener('scroll', schedule, { passive: true });
+		window.addEventListener('resize', schedule);
+		update();
+		return { destroy() {
+			observer.disconnect();
+			window.removeEventListener('scroll', schedule);
+			window.removeEventListener('resize', schedule);
+			cancelAnimationFrame(frame);
+		} };
+	}
+
 </script>
 
-<footer class:spacious data-doc-footer={spacious || undefined}>
+<footer use:clipReveal class:spacious data-doc-footer={spacious || undefined}>
 	{#if spacious}
 		<div class="footer-logo">
 			<MadmailLogo href="/" size="8rem" />
