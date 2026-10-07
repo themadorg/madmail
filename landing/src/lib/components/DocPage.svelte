@@ -2,7 +2,6 @@
 	import { docTreeModal, openDocTree } from '$lib/docTreeModal.svelte.js';
 	import showSidebarIcon from '$lib/icons/chevron-right.svg?raw';
 	import { setDocFocus } from '$lib/docFocus.js';
-	import focusIcon from '$lib/icons/arrows-pointing-out.svg?raw';
 	import exitFocusIcon from '$lib/icons/arrows-pointing-in.svg?raw';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
@@ -42,7 +41,6 @@
 		<DocBreadcrumb currentHref={href} />
 		<div class="page-tools">
 			<DocPageActions currentHref={href} />
-			<button class="focus-button" aria-label="Enter focus mode" title="Focus mode (Escape to exit)" onclick={() => setDocFocus(true)}><span aria-hidden="true">{@html focusIcon}</span></button>
 		</div>
 	</div>
 	{/if}
@@ -97,9 +95,6 @@
 
 	.doc.focused { padding-top: 2rem; }
 	.page-tools { display: flex; align-items: center; gap: 0.5rem; }
-	.focus-button { display: grid; place-items: center; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-surface); color: var(--color-text-muted); padding: 0.4rem; cursor: pointer; }
-	.focus-button:hover { color: var(--color-text); background: var(--color-hover); }
-	.focus-button :global(svg) { width: 1rem; height: 1rem; }
 
 	.doc {
 		position: relative;
