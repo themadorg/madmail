@@ -1,3 +1,10 @@
+# [2.31.0](https://github.com/themadorg/madmail/compare/v2.30.5...v2.31.0) (2026-10-07)
+
+
+### Features
+
+* **landing:** improve documentation navigation and static releases ([e83ccaf](https://github.com/themadorg/madmail/commit/e83ccaf3f9fdffc593fc1bcd1a4d14e0080c8c6d))
+
 ## [2.30.5](https://github.com/themadorg/madmail/compare/v2.30.4...v2.30.5) (2026-10-06)
 
 
