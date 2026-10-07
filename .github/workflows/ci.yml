@@ -13,59 +13,39 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  semantic-release:
-    name: Semantic Release
+  release:
+    name: Prepare release
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: release-main
+      cancel-in-progress: false
     permissions:
       contents: write
     outputs:
-      version: ${{ steps.version.outputs.VERSION }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: "24"
-          cache: npm
+          python-version: "3.11"
 
-      - name: Configure git for semantic-release
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install root dependencies (semantic-release)
-        run: npm ci
+      - name: Test release tooling
+        run: python3 -m unittest discover -s scripts -p test_release.py -v
 
-      - name: Run semantic-release (bump, commit, tag, push)
-        run: npx semantic-release --extends ./.github/releaserc.ci.json
+      - name: Prepare and push release
+        id: release
+        run: python3 scripts/release.py --write --push --github-output "$GITHUB_OUTPUT"
 
-      - name: Ensure .version exists when no release is cut
-        run: |
-          if [ ! -f .version ]; then
-            sed -n '/^\[workspace\.package\]/,/^\[/p' Cargo.toml \
-              | awk -F'"' '/^version[[:space:]]*=/ { print $2; exit }' > .version
-          fi
-
-      - name: Read version
-        id: version
-        run: echo "VERSION=$(cat .version)" >> "$GITHUB_OUTPUT"
-
-      - name: Verify Cargo.lock matches release version
-        run: |
-          v=$(cat .version)
-          lock_v=$(grep -A1 '^name = "chatmail"$' Cargo.lock | awk -F'"' '/^version =/ { print $2; exit }')
-          test -n "$lock_v" || { echo "Could not read chatmail version from Cargo.lock"; exit 1; }
-          test "$lock_v" = "$v" || { echo "Cargo.lock version mismatch: $lock_v != $v"; exit 1; }
-          # Workspace path crates (chatmail*, madmail*) must match the release version.
-          mismatched=$(awk -v v="$v" '/^name = "(chatmail|madmail)/ { n=$0; getline; if ($0 !~ "^version = \"" v "\"$") print n, $0 }' Cargo.lock)
-          if [ -n "$mismatched" ]; then
-            echo "Cargo.lock workspace crate versions do not all match $v:"
-            echo "$mismatched"
-            exit 1
-          fi
+      - name: Verify all workspace and manifest versions
+        run: python3 scripts/release.py --check
 
       - name: Upload version artifact for downstream jobs
         uses: actions/upload-artifact@v4
@@ -91,6 +71,16 @@ jobs:
         with:
           key: lint
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Test release tooling
+        run: python3 -m unittest discover -s scripts -p test_release.py -v
+
+      - name: Verify release manifests
+        run: python3 scripts/release.py --check
+
       - name: cargo fmt
         run: cargo fmt --all -- --check
 
@@ -115,22 +105,18 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, semantic-release]
-    if: always() && needs.lint.result == 'success' && (needs.semantic-release.result == 'success' || needs.semantic-release.result == 'skipped')
+    needs: [lint, release]
+    if: always() && needs.lint.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
-
-      - name: Sync version bump commit from semantic-release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: git pull origin main
+          ref: ${{ needs.release.outputs.sha || github.sha }}
 
       - name: Download computed version files
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           name: release-versions
           path: .
@@ -201,7 +187,7 @@ jobs:
   docker-build-push:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
-    needs: [build, semantic-release]
+    needs: [build, release]
     if: >-
       always() &&
       needs.build.result == 'success' &&
@@ -215,13 +201,10 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
-
-      - name: Sync version bump commit from semantic-release
-        run: git pull origin main
+          ref: ${{ needs.release.outputs.sha || github.sha }}
 
       - name: Download computed version files
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           name: release-versions
           path: .

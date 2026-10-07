@@ -3,7 +3,9 @@ target
 context
 data
 crates/chatmail-iroh/assets/iroh-relay
-/scripts
+/scripts/*
+!/scripts/release.py
+!/scripts/test_release.py
 build
 node_modules
 

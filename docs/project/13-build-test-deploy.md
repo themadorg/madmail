@@ -109,3 +109,32 @@ Now you know how to build and ship the thing.
 The next document explains the giant `context/` and `external/` directories that are not part of the shipping product but are essential for development and understanding.
 
 → [14-understanding-context-and-references.md](./14-understanding-context-and-references.md)
+
+## Version preparation in CI
+
+Main pushes run `python3 scripts/release.py --write --push`, a standalone Python
+3.11+ tool that analyzes Conventional Commits since the latest reachable stable
+`vMAJOR.MINOR.PATCH` tag. Features produce a minor version, fixes/performance/
+reverts a patch, and breaking changes a major. Documentation/test/chore commits
+alone keep the current version. No release-worthy commits still produce the
+current `.version` artifact and checkout SHA for downstream builds.
+
+The tool updates `.version`, Cargo workspace manifests and their exact path
+package entries in `Cargo.lock`, root npm manifests, and `CHANGELOG.md`. Cargo
+validates the lockfile offline with `--locked`. CI builds and Docker publication
+check out the release job's exact SHA, rather than pulling an independently
+changing `main`. Its `Madmail-CI <ci@madmail.chat>` commit contains `[skip ci]`;
+release generation is main-push-only and serialized to avoid loops and races.
+
+Use `python3 scripts/release.py --dry-run` to inspect proposed changes; use
+`--check` for existing version consistency. The [release design](../TDD/release-automation.md)
+documents write permissions, signing, failure recovery, and migration.
+
+`scripts/publish.sh` remains a separate maintainer publishing helper. Run it
+from the prepared release checkout (`.version` and `v<version>` must match) so
+binary names, binary signatures, uploads and GitHub notes describe the prepared
+version. Python helpers under `scripts/publish/` provide signing and AI-assisted
+publication, not deterministic version preparation; they depend on third-party
+packages and are deliberately not imported by the standalone release tool.
+Those local publishing helpers are outside this change and are not currently
+tracked in the public repository.

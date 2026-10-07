@@ -209,3 +209,15 @@ E2E and integration tests assert behaviour defined by these specs. Offline copie
 | Security (PGP) | [9580](RFC/rfc9580.txt), [3156](RFC/rfc3156.txt) | [9580](https://datatracker.ietf.org/doc/html/rfc9580), [3156](https://datatracker.ietf.org/doc/html/rfc3156) |
 | TURN / calls | [8656](RFC/rfc8656.txt), [8489](RFC/rfc8489.txt), [8445](RFC/rfc8445.txt) | [8656](https://datatracker.ietf.org/doc/html/rfc8656), [8489](https://datatracker.ietf.org/doc/html/rfc8489), [8445](https://datatracker.ietf.org/doc/html/rfc8445) |
 | Admin API | [9110](RFC/rfc9110.txt), [8259](RFC/rfc8259.txt) | [9110](https://datatracker.ietf.org/doc/html/rfc9110), [8259](https://datatracker.ietf.org/doc/html/rfc8259) |
+
+## Release tooling
+
+Run `python3 -m unittest discover -s scripts -p test_release.py -v` with Python
+3.11+, Git and Cargo. No Python packages or network access are needed. Unit tests
+cover Conventional Commit rules and input validation. Integration tests create
+small offline Cargo workspaces and local Git/bare repositories, covering version
+synchronization, changelog idempotence, dry runs, release identity, unsafe paths,
+failed writes/validation/commits/tags, atomic push rejection/retry, hooks,
+inherited Git environment variables, and concurrent attempts. Tests never push
+to the Madmail remote or invoke publishing helpers. `python3 scripts/release.py
+--check` additionally validates the real workspace and npm manifests in CI.

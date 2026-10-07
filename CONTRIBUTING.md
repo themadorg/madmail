@@ -16,6 +16,7 @@ This document is the short path into the project. For a deeper tour of the codeb
 Requirements:
 
 - Rust (see `rust-version` in the root `Cargo.toml`)
+- Python 3.11+ and Git for release tooling and its tests
 - System packages typically needed for builds: SQLite dev headers, `pkg-config`, Perl (see CI workflow)
 
 ```bash
@@ -23,6 +24,8 @@ git clone https://github.com/themadorg/madmail.git
 cd madmail
 cargo build -p chatmail
 cargo test --workspace
+python3 -m unittest discover -s scripts -p test_release.py -v
+python3 scripts/release.py --check
 ```
 
 Operator install and local runs:
@@ -49,7 +52,7 @@ CI enforces **fmt**, **clippy (`-D warnings`)**, **tests**, and **cargo audit** 
 1. Prefer **small, reviewable** changes (vertical slices over large mixed PRs).
 2. Use the [pull request template](.github/pull_request_template.md).
 3. Write a clear summary: what changed, why, and how you tested it.
-4. Use [Conventional Commits](https://www.conventionalcommits.org/) when practical (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, …). Releases use semantic-release from these messages.
+4. Use [Conventional Commits](https://www.conventionalcommits.org/) when practical (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, …). Releases use the standalone `scripts/release.py` tool to analyze these messages.
 5. Do **not** commit secrets, `data/`, `target/`, or `node_modules/`.
 
 ### Tests
@@ -92,3 +95,16 @@ Participation is governed by our [Code of Conduct](CODE_OF_CONDUCT.md).
 - Start with `docs/project/` and `docs/TDD/`.
 - Integration tests under `tests/` are executable examples of expected behavior.
 - Discussion and review happen on GitHub Issues and Pull Requests.
+
+## Release automation
+
+The Python 3.11+ standard-library tool [`scripts/release.py`](scripts/release.py)
+replaces the former Node release plugins. Git and Cargo are required; no pip/npm
+installation is needed. Read the [release design and migration guide](docs/TDD/release-automation.md)
+before preparing a release. Start with `python3 scripts/release.py --dry-run` in a
+clean checkout with full history and tags. Release commits and tags use
+`Madmail-CI <ci@madmail.chat>`; only `--write` commits/tags and only `--push`
+contacts the configured `origin` to publish Git refs. `--sign` signs both refs
+using the configured Git signing key. CI currently prepares unsigned release
+refs with its scoped GitHub token, matching the previous automation; human PR
+commits remain subject to the maintainer signing policy.
