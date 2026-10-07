@@ -216,5 +216,6 @@ E2E and integration tests assert behaviour defined by these specs. Offline copie
 redaction, bounded delivery/dedup, timeouts/retries, redirect rejection and reload.
 `cargo test -p chatmail-integration --test operator_webhooks_e2e` triggers actual
 admin, web and JIT registrations and IMAP/SMTP quota rejections through a mock
-receiver, verifies authorization and checks that public pages expose no webhook
+receiver, verifies concurrent admin imports emit one event, verifies authorization
+and checks that public pages expose no webhook
 settings. See [the design](25-operator-webhooks.md) for the complete contract.

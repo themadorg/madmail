@@ -89,6 +89,10 @@ pub const IROH_LOCAL_ONLY: &str = "__IROH_LOCAL_ONLY__";
 pub const HTTP_LOCAL_ONLY: &str = "__HTTP_LOCAL_ONLY__";
 pub const HTTPS_LOCAL_ONLY: &str = "__HTTPS_LOCAL_ONLY__";
 
+/// Operator-only JSON webhook settings, including the signing secret.
+/// Read/write only through `/admin/services/webhooks`; never expose as generic settings.
+pub const OPERATOR_WEBHOOKS: &str = "__OPERATOR_WEBHOOKS__";
+
 // ── Configuration settings ───────────────────────────────────────────────────
 pub const SMTP_HOSTNAME: &str = "__SMTP_HOSTNAME__";
 pub const TURN_REALM: &str = "__TURN_REALM__";

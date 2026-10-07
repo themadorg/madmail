@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use chatmail_db::{get_setting, set_setting, DbPool};
+use chatmail_db::{get_setting, set_setting, settings_keys::OPERATOR_WEBHOOKS, DbPool};
 use chatmail_types::{ChatmailError, Result};
 use hmac::{Hmac, Mac};
 use reqwest::{Client, Url};
@@ -17,7 +17,6 @@ use serde_json::{json, Value};
 use sha2::Sha256;
 use tokio::sync::mpsc;
 
-const SETTINGS_KEY: &str = "__OPERATOR_WEBHOOKS__";
 const QUEUE_CAPACITY: usize = 256;
 const DEDUP_CAPACITY: usize = 4096;
 const QUOTA_DEDUP: Duration = Duration::from_secs(3600);
@@ -234,7 +233,7 @@ impl OperatorWebhooks {
 
     pub async fn hydrate(&self) -> Result<()> {
         let _guard = self.inner.update_lock.lock().await;
-        let settings = match get_setting(&self.inner.pool, SETTINGS_KEY).await? {
+        let settings = match get_setting(&self.inner.pool, OPERATOR_WEBHOOKS).await? {
             Some(value) => serde_json::from_str::<Settings>(&value)
                 .map_err(|_| ChatmailError::config("invalid stored webhook settings"))?,
             None => Settings::default(),
@@ -266,7 +265,7 @@ impl OperatorWebhooks {
         settings.validate()?;
         let encoded = serde_json::to_string(&settings)
             .map_err(|_| ChatmailError::config("cannot encode webhook settings"))?;
-        set_setting(&self.inner.pool, SETTINGS_KEY, &encoded).await?;
+        set_setting(&self.inner.pool, OPERATOR_WEBHOOKS, &encoded).await?;
         self.replace(settings);
         self.start();
         Ok(())

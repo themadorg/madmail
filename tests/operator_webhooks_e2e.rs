@@ -501,3 +501,92 @@ async fn invite_metadata_and_concurrent_jit_emit_no_credentials_or_duplicate_eve
         .contains(&key.as_str())));
     }
 }
+
+#[tokio::test]
+async fn concurrent_admin_imports_emit_one_registration_event() {
+    let dir = tempfile::tempdir().unwrap();
+    let servers = spawn_mail_servers(dir.path()).await;
+    let receiver = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&receiver)
+        .await;
+    servers
+        .ctx
+        .webhooks
+        .update(
+            serde_json::from_value(json!({
+                "enabled": true, "url": receiver.uri(), "retry_attempts": 0
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let admin = Arc::new(AdminState::new(
+        servers.pool.clone(),
+        Arc::clone(&servers.ctx),
+        AppConfig::default(),
+        dir.path().into(),
+        "test".into(),
+        ADMIN_TOKEN.into(),
+        None,
+    ));
+    let username = "concurrentadmin@test";
+    let hash = chatmail_auth::hash_password("private-import-password").unwrap();
+    // Hold the shared flight while requests start, then release them together.
+    let flight = servers.ctx.jit_flight(username);
+    let guard = flight.lock().await;
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..8 {
+        let admin = Arc::clone(&admin);
+        let hash = hash.clone();
+        tasks.spawn(async move {
+            chatmail_admin::resources::dispatch(
+                &admin,
+                "PATCH",
+                "/admin/accounts",
+                &json!({"action": "import", "users": [{"username": username, "hash": hash}]}),
+            )
+            .await
+            .unwrap()
+        });
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    drop(guard);
+    while let Some(result) = tasks.join_next().await {
+        let (status, body) = result.unwrap();
+        assert_eq!(status, 200);
+        assert!(body.unwrap().get("errors").is_none());
+    }
+    // A final queued marker proves all preceding imports have been delivered.
+    servers.ctx.webhooks.registered(
+        "queue-marker@test",
+        chatmail_state::webhooks::RegistrationSource::Admin,
+        false,
+    );
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let events = received(&receiver, 1).await;
+            if events
+                .iter()
+                .any(|event| event["username"] == "queue-marker@test")
+            {
+                break events;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let registrations: Vec<_> = events
+        .iter()
+        .filter(|event| event["username"] == username)
+        .collect();
+    assert_eq!(registrations.len(), 1);
+    assert_eq!(registrations[0]["username"], username);
+    assert_eq!(registrations[0]["source"], "admin");
+    assert!(!registrations[0].to_string().contains(&hash));
+    assert!(!registrations[0]
+        .to_string()
+        .contains("private-import-password"));
+}

@@ -16,7 +16,7 @@ Disabled by default. One operator-selected URL receives JSON metadata:
 `source` is `jit`, `web`, or `admin`. Only successfully provisioned new accounts
 emit registration events; existing-account logins, hash upgrades and imports
 that update existing accounts do not. Web registration includes only a boolean
-indicating invite usage, never the invite or password. Concurrent JIT logins use
+indicating invite usage, never the invite or password. Concurrent JIT logins and admin provisioning share
 the existing per-user creation lock and emit one event.
 
 ```json
@@ -122,7 +122,7 @@ hourly dedup/expiry/capacity, bounded queue, generation cancellation, retries,
 redirect rejection, request timeout, counters and DB/reload hydration.
 
 `cargo test -p chatmail-integration --test operator_webhooks_e2e` exercises actual
-admin RPC authorization, all three registration sources, concurrent JIT and
+admin RPC authorization, all three registration sources, concurrent admin imports/JIT and
 repeat-login suppression, invite-token privacy,
 IMAP APPEND and SMTP quota rejection/dedup, per-event disabling, saved-config test,
 soft hydration and public-page isolation with a local mock receiver. Existing
