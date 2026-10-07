@@ -16,6 +16,7 @@ This document is the short path into the project. For a deeper tour of the codeb
 Requirements:
 
 - Rust (see `rust-version` in the root `Cargo.toml`)
+- Python 3.11+ and Git for release tooling and its tests
 - System packages typically needed for builds: SQLite dev headers, `pkg-config`, Perl (see CI workflow)
 
 ```bash

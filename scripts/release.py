@@ -16,7 +16,7 @@ from pathlib import Path
 
 import tomllib
 
-VERSION = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\Z")
+VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 HEADER = re.compile(r"^(\w+)(?:\(([^\r\n)]+)\))?(!)?: (.+)$")
 BREAKING = re.compile(r"^BREAKING[ -]CHANGE:\s*(.*)$", re.MULTILINE)
 FILES = (
@@ -379,7 +379,9 @@ def commits_since(root, tag):
 def identity_env(name, email):
     if not name or re.search(r"[\x00-\x1f\x7f<>]", name):
         raise ReleaseError("Invalid release identity name")
-    if not re.fullmatch(r"[^\s<>@]+@[^\s<>@]+", email):
+    if re.search(r"[\x00-\x1f\x7f]", email) or not re.fullmatch(
+        r"[^\s<>@]+@[^\s<>@]+", email
+    ):
         raise ReleaseError("Invalid release identity email")
     return {
         "GIT_AUTHOR_NAME": name,

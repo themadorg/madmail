@@ -58,7 +58,14 @@ class ConventionalCommitTests(unittest.TestCase):
         self.assertEqual(release.bump("2.31.3", 1), "2.31.4")
         self.assertEqual(release.bump("2.31.3", 2), "2.32.0")
         self.assertEqual(release.bump("2.31.3", 3), "3.0.0")
-        for bad in ["2.01.0", "v2.0.0", "2.0.0; touch owned", "2.0.0\nX=Y", "-1.0.0"]:
+        for bad in [
+            "2.01.0",
+            "v2.0.0",
+            "2.0.0; touch owned",
+            "2.0.0\nX=Y",
+            "-1.0.0",
+            "2.1\u0661.0",
+        ]:
             with self.assertRaises(release.ReleaseError):
                 release.version_tuple(bad)
 
@@ -92,6 +99,8 @@ class ConventionalCommitTests(unittest.TestCase):
         for name, email in [
             ("CI\nX", "ci@madmail.chat"),
             ("CI", "ci@madmail.chat\nX"),
+            ("CI", "ci\x00@madmail.chat"),
+            ("CI", "ci\x7f@madmail.chat"),
             ("CI", "invalid"),
             ("<CI>", "ci@madmail.chat"),
         ]:
