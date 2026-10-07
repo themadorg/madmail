@@ -647,7 +647,8 @@ impl SmtpSession {
 
         for rcpt in &self.rcpt_to {
             let rcpt = normalize_username(rcpt)?;
-            self.ctx.quota.check_quota(&rcpt, data.len() as u64)?;
+            self.ctx
+                .check_quota(&rcpt, data.len() as u64, "smtp.inbound")?;
             if delivery.is_local(&rcpt) {
                 if !self
                     .ctx

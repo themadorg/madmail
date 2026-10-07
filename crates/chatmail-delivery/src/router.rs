@@ -131,6 +131,18 @@ impl DeliveryContext {
         recipients: &[String],
         data: &[u8],
     ) -> Result<()> {
+        self.submit_authenticated_from(mail_from, recipients, data, "smtp.submission")
+            .await
+    }
+
+    /// The shared delivery policy, with an operator notification path label.
+    pub async fn submit_authenticated_from(
+        &self,
+        mail_from: &str,
+        recipients: &[String],
+        data: &[u8],
+        path: &'static str,
+    ) -> Result<()> {
         self.state.check_message_size(data.len())?;
 
         let ingest_start = std::time::Instant::now();
@@ -140,7 +152,7 @@ impl DeliveryContext {
 
         for raw_rcpt in recipients {
             let rcpt = normalize_username(raw_rcpt)?;
-            self.state.quota.check_quota(&rcpt, data.len() as u64)?;
+            self.state.check_quota(&rcpt, data.len() as u64, path)?;
 
             if self.is_local(&rcpt) {
                 // Authenticated submission may deliver to any local address (SMTP AUTH parity).
@@ -282,7 +294,8 @@ impl DeliveryContext {
                         debug!(rcpt = %rcpt, "silently dropped inbound local delivery");
                         continue;
                     }
-                    self.state.quota.check_quota(&rcpt, data.len() as u64)?;
+                    self.state
+                        .check_quota(&rcpt, data.len() as u64, "federation.inbound")?;
                     local_deliveries.push((rcpt, uuid::Uuid::new_v4().to_string()));
                 }
             } else {

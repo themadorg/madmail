@@ -54,6 +54,7 @@ Twenty-three library crates under `crates/` plus integration tests in `tests/`. 
 | `22-bandwidth-monitoring.md` | Bandwidth spec (planned) |
 | `23-push-notifications.md` | XDELTAPUSH, `notifications.delta.chat`, modes, CLI `madmail push` |
 | `24-version-manager.md` | **Plan:** versioned binaries (`/opt/madmail` Unix, `%ProgramFiles%\Madmail` Windows), stable PATH entry, upgrade/rollback |
+| `25-operator-webhooks.md` | Admin-only account/quota event delivery, HMAC, bounded retries |
 
 ## RFC reference library
 

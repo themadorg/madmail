@@ -28,6 +28,7 @@ pub mod reload;
 pub mod shared_port;
 pub mod silent_dismiss;
 pub mod tracker;
+pub mod webhooks;
 
 use std::sync::Arc;
 
@@ -69,6 +70,8 @@ pub struct AppState {
     pub events: Arc<EventBus>,
     /// FCM/APNS wake-up via Delta Chat notification proxy.
     pub push: Arc<PushNotifier>,
+    /// Operator-only account/quota metadata notifications.
+    pub webhooks: webhooks::OperatorWebhooks,
     /// Bound listener ports (IMAP, etc.) for admin status / `ss` probes.
     pub listener_ports: Arc<ListenerPortsStore>,
     /// Which mail protocols the HTTPS port also serves (admin-toggleable).
@@ -104,7 +107,7 @@ impl AppState {
     ) -> Self {
         let state_dir = state_dir.as_ref().to_path_buf();
         let queue_dir = state_dir.join("pending_notifications");
-        let push = Arc::new(PushNotifier::new(pool, queue_dir, None));
+        let push = Arc::new(PushNotifier::new(pool.clone(), queue_dir, None));
         Self {
             auth: Arc::new(AuthCache::new()),
             message_size: Arc::new(MessageSizeLimit::new(config)),
@@ -124,6 +127,7 @@ impl AppState {
             )),
             events: Arc::new(EventBus::new()),
             push,
+            webhooks: webhooks::OperatorWebhooks::new(pool),
             listener_ports: Arc::new(ListenerPortsStore::new()),
             jit_flights: Arc::new(DashMap::new()),
         }
@@ -135,6 +139,16 @@ impl AppState {
             .entry(user.to_string())
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone()
+    }
+
+    /// Keep quota policy unchanged while enqueueing metadata on rejection.
+    pub fn check_quota(&self, user: &str, incoming: u64, path: &'static str) -> Result<()> {
+        let result = self.quota.check_quota(user, incoming);
+        if let Err(chatmail_types::ChatmailError::QuotaExceeded { used, max, .. }) = &result {
+            self.webhooks
+                .quota_exceeded(user, *used, *max, incoming, path);
+        }
+        result
     }
 
     pub fn check_message_size(&self, len: usize) -> Result<()> {
@@ -161,6 +175,7 @@ impl AppState {
     }
 
     pub async fn hydrate(&self, pool: &DbPool, config: &AppConfig) -> Result<()> {
+        self.webhooks.hydrate().await?;
         self.auth.hydrate(pool).await?;
         self.message_size.hydrate(pool, config).await?;
         self.federation_size.hydrate(pool, config).await?;

@@ -157,7 +157,7 @@ async fn handle_mxdeliv(
     let mut deliveries: Vec<(String, String)> = Vec::new();
     let mut quota_err = None;
     for rcpt in rcpts {
-        match st.app.quota.check_quota(&rcpt, body.len() as u64) {
+        match st.app.check_quota(&rcpt, body.len() as u64, "mxdeliv") {
             Ok(()) => deliveries.push((rcpt, uuid::Uuid::new_v4().to_string())),
             Err(e) => {
                 tracing::warn!(rcpt = %rcpt, error = %e, "mxdeliv: recipient over quota");
