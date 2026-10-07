@@ -1,3 +1,10 @@
+## [2.31.2](https://github.com/themadorg/madmail/compare/v2.31.1...v2.31.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **landing:** compact release assets and layout on phones ([af6070d](https://github.com/themadorg/madmail/commit/af6070d584e4487b8b173d78fb55d0185b6b4303))
+
 ## [2.31.1](https://github.com/themadorg/madmail/compare/v2.31.0...v2.31.1) (2026-10-07)
 
 
