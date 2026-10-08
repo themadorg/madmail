@@ -1,3 +1,10 @@
+## [2.32.1](https://github.com/themadorg/madmail/compare/v2.32.0...v2.32.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **landing:** correct share icon sizing and button wrapping ([991fd75](https://github.com/themadorg/madmail/commit/991fd7573b5aa3195c5647e7cbdb2b0589559f82))
+
 # [2.32.0](https://github.com/themadorg/madmail/compare/v2.31.3...v2.32.0) (2026-10-07)
 
 
