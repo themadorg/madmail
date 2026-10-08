@@ -86,7 +86,7 @@ if ! docker run --rm -v "$STATE:/var/lib/madmail" -v "$CONFIG:/etc/madmail" \
 fi
 # Set the relay range in the native config before first boot.
 docker run --rm --entrypoint sh -v "$CONFIG:/etc/madmail" "$IMAGE" -c \
-    'sed -i "/^turn udp:/a\\    relay_port_min $1\n    relay_port_max $2" /etc/madmail/madmail.conf' \
+    'sed -i "s/^[$](primary_domain) =.*/\$(primary_domain) = [127.0.0.1] b.com c.com/" /etc/madmail/madmail.conf; sed -i "/^turn udp:/a\\    relay_port_min $1\n    relay_port_max $2" /etc/madmail/madmail.conf' \
     sh "$RELAY_MIN" "$RELAY_MAX"
 docker run -d --name "$NAME" --restart=no \
     -p 127.0.0.1::443 -p 127.0.0.1::465 -p 127.0.0.1::587 -p 127.0.0.1::993 \
@@ -115,6 +115,9 @@ ready() {
     return 1
 }
 ready
+docker run --rm -i --name "${NAME}-client" --network "container:$NAME" \
+    --entrypoint python3 "$TEST_IMAGE" - < tests/multidomain-docker.py
+echo "PASS: multi-domain page and API registration, IMAP/SMTP login, domain allowlist"
 ALICE='alice@[127.0.0.1]'
 BOB='bob@[127.0.0.1]'
 PASSWORD='docker-smoke-test-password'

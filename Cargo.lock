@@ -798,6 +798,7 @@ version = "2.32.0"
 dependencies = [
  "chatmail-types",
  "clap",
+ "http 1.4.0",
  "serde",
  "tempfile",
  "toml",

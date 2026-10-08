@@ -15,7 +15,7 @@ Reference: [`context/madmail/maddy.conf`](../../context/madmail/maddy.conf), [`s
 | Variable | Used for |
 |----------|----------|
 | `$(hostname)` | SMTP EHLO, TLS, DKIM |
-| `$(primary_domain)` | Local delivery domain |
+| `$(primary_domain)` | Server domain list (spaces or commas); first domain is the canonical default |
 | `$(local_domains)` | Accepted recipient domains (space-separated) |
 | `$(public_ip)` | QR, TURN, Iroh discovery. On `madmail install` without `--ip`, filled from DNS with **public IPv4 preferred** over IPv6 when both exist (#132); operators may set `--ip` or edit the config later. |
 
@@ -427,3 +427,22 @@ feature: `imap.example.org` has to be in the certificate's SANs.
 Unlike ALPN, hostname routing works with unmodified mail clients — Thunderbird,
 Apple Mail and K-9 send no ALPN at all, so before this they could only ever reach
 HTTPS on the shared port. Point them at `imap.example.org:443` with SSL/TLS.
+
+## Browser-selected registration domains
+
+`primary_domain` may list multiple DNS names and IPv4 literals. Parsing keeps the
+first as the canonical server identity and adds every entry to local delivery.
+The omitted `jit_domain` defaults to the full list; explicit values remain an
+allowlist and support spaces or commas. `mail_domain` and `mx_domain` directives
+use the first argument when a multi-value primary-domain macro is expanded.
+Embedded uses such as `postmaster@$(primary_domain)` also use the first domain;
+standalone uses such as `jit_domain $(primary_domain)` retain the complete list.
+
+The web page and `POST /new` select a normalized HTTP Host only if it exactly
+matches a configured primary/local/mail domain. Ports are removed; names are
+case-insensitive and IPv4 mail domains are bracketed. Unknown or malformed hosts
+fall back to the canonical domain. Hosts cannot add foreign domains to the JIT
+allowlist. Without explicit domain configuration, legacy Host-based registration
+is preserved. Existing accounts still authenticate independently of JIT policy.
+
+This intentionally extends the single-primary-domain Madmail v1 configuration.

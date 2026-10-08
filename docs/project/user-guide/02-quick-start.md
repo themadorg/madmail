@@ -375,3 +375,20 @@ It also links to the exact `madmail install` commands for each case.
 - See how to manage the server day-to-day: [Admin & CLI](./07-admin-and-cli.md)
 
 You now have a working chatmail server. Most people are surprised by how little ongoing work it requires.
+
+## Multiple addresses on one server
+
+After installation, set the server addresses in `/etc/madmail/madmail.conf`:
+
+```conf
+$(primary_domain) = b.com c.com 1.1.1.1
+$(local_domains) = $(primary_domain)
+```
+
+Keep `jit_domain $(primary_domain)` in `auth.pass_table`, or omit `jit_domain`
+to use the complete primary-domain list. Restart the service after editing.
+Point both DNS names to the server and provide TLS certificates covering the
+addresses used. Opening each address generates accounts with that email domain;
+IPv4 accounts use brackets, for example `user@[1.1.1.1]`. Each full email address
+has its own mailbox. The first domain is the default for an unlisted browser
+host and remains the canonical server identity.

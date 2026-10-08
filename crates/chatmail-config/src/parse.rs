@@ -103,7 +103,7 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
         toml::from_str(content).map_err(|e| ChatmailError::config(e.to_string()))?;
     // Do not copy primary_domain → mail_domain: registration domain comes from HTTP Host.
     let mx_domain = parsed.hostname.clone();
-    Ok(AppConfig {
+    let mut cfg = AppConfig {
         hostname: parsed.hostname,
         primary_domain: parsed.primary_domain,
         local_domains: parsed.local_domains,
@@ -180,12 +180,22 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
         ss_cert_path: None,
         ss_key_path: None,
         ss_allowed_ports: vec![],
-    })
+    };
+    cfg.normalize_primary_domains();
+    Ok(cfg)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toml_primary_domain_list_accepts_commas() {
+        let cfg = toml_to_app_config("primary_domain = \"b.com,c.com,1.1.1.1\"\n").unwrap();
+        assert_eq!(cfg.primary_domain.as_deref(), Some("b.com"));
+        assert_eq!(cfg.web_registration_domain(Some("c.com:443")), "c.com");
+        assert_eq!(cfg.web_registration_domain(Some("1.1.1.1")), "[1.1.1.1]");
+    }
 
     /// P1-UT02: TOML config loads `primary_domain` and related fields.
     #[test]

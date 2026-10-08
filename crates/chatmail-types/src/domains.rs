@@ -96,7 +96,7 @@ pub fn address_is_local(addr: &str, accepted_domains: &[String]) -> bool {
     })
 }
 
-/// JIT login restriction: username must be `local@expected` (Madmail `ValidateLoginDomain`).
+/// JIT restriction: username must match an allowed domain (spaces or commas separate domains).
 pub fn validate_login_domain(username: &str, expected_domain: &str) -> Result<(), String> {
     if expected_domain.is_empty() {
         return Ok(());
@@ -111,11 +111,16 @@ pub fn validate_login_domain(username: &str, expected_domain: &str) -> Result<()
         return Err("invalid username: empty localpart".into());
     }
     let domain = wrap_ip_domain(domain);
-    let expected = wrap_ip_domain(expected_domain);
-    if domain.eq_ignore_ascii_case(&expected) {
+    if expected_domain
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .filter(|s| !s.is_empty())
+        .any(|expected| domain.eq_ignore_ascii_case(&wrap_ip_domain(expected)))
+    {
         Ok(())
     } else {
-        Err(format!("invalid login domain: expected @{expected}"))
+        Err(format!(
+            "invalid login domain: expected one of {expected_domain}"
+        ))
     }
 }
 

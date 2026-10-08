@@ -996,3 +996,74 @@ fn database_docs_are_v2_sqlite_or_postgres() {
     let translations = include_str!("../www-src/translations.js");
     assert!(!translations.contains("PostgreSQL and MySQL"));
 }
+
+#[tokio::test]
+async fn registration_uses_each_configured_browser_domain_and_authenticates() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = parse_maddy_config("$(primary_domain) = b.com c.com 1.1.1.1\n").unwrap();
+    let state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    state.auth.hydrate(&pool).await.unwrap();
+    let router = crate::www_router(crate::WwwState::new(
+        pool.clone(),
+        state.clone(),
+        cfg.clone(),
+        dir.path(),
+    ));
+    let auth = chatmail_auth::AuthContext {
+        pool: pool.clone(),
+        state,
+        primary_domain: "b.com".into(),
+        jit_domain: cfg.effective_jit_domain("b.com"),
+        credential_policy: cfg.credential_policy(),
+    };
+    let cache = WwwContextCache::new();
+    for (host, expected) in [
+        ("b.com", "b.com"),
+        ("c.com:8080", "c.com"),
+        ("1.1.1.1:8080", "[1.1.1.1]"),
+        ("foreign.com", "b.com"),
+    ] {
+        let ctx = build_context(&pool, &cfg, None, Some(host), None, dir.path(), &cache)
+            .await
+            .unwrap();
+        assert_eq!(ctx.MailDomain, expected);
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/new")
+                    .header("host", host)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let data: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let email = data["email"].as_str().unwrap();
+        let password = data["password"].as_str().unwrap();
+        assert!(email.ends_with(&format!("@{expected}")), "{email}");
+        assert!(chatmail_db::passwords::user_exists(&pool, email)
+            .await
+            .unwrap());
+        chatmail_auth::authenticate(&auth, email, password)
+            .await
+            .unwrap();
+    }
+    for domain in ["b.com", "c.com", "[1.1.1.1]"] {
+        chatmail_auth::authenticate(&auth, &format!("jituser1@{domain}"), "longpassword1")
+            .await
+            .unwrap();
+    }
+    assert!(
+        chatmail_auth::authenticate(&auth, "jituser1@foreign.com", "longpassword1")
+            .await
+            .is_err()
+    );
+}
