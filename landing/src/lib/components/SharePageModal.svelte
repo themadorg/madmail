@@ -44,6 +44,7 @@
 	.copy-icon.copied { color: #3fb950; border-color: #3fb950; }
 	.copy-symbol { display: block; animation: copy-pop 180ms ease-out; }
 	.copy-symbol :global(svg), .service-icon :global(svg) { display: block; width: 1.1rem; height: 1.1rem; }
+	.service-icon { display: block; width: 1.1rem; height: 1.1rem; flex: 0 0 1.1rem; }
 	.share-options a { display: inline-flex; align-items: center; gap: 0.5rem; }
 	@keyframes copy-pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
 	@media (prefers-reduced-motion: reduce) { .copy-symbol { animation: none; } }
@@ -53,6 +54,6 @@
 	input { flex: 1; min-width: 0; padding: 0.6rem; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-bg); color: var(--color-text); font: inherit; font-size: 0.8rem; }
 	button, a { padding: 0.6rem 0.8rem; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
 	button:hover, a:hover { background: var(--color-hover); }
-	.share-options { display: flex; gap: 0.5rem; }
+	.share-options { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 	p { color: var(--color-text-muted); font-size: 0.8rem; }
 </style>
