@@ -219,3 +219,13 @@ admin, web and JIT registrations and IMAP/SMTP quota rejections through a mock
 receiver, verifies concurrent admin imports emit one event, verifies authorization
 and checks that public pages expose no webhook
 settings. See [the design](25-operator-webhooks.md) for the complete contract.
+
+### JIT domain retirement and CLI provisioning
+
+`cli_creation_and_existing_logins_survive_jit_domain_restriction` exercises the
+real account-creation CLI with a multi-domain config, explicit DNS/IP addresses,
+and a bare username defaulting to the first primary domain. It then narrows JIT
+to one domain and verifies existing accounts continue authenticating through
+both database fallback and the hydrated cache, incorrect passwords stay
+rejected, and unknown accounts on retired domains are never created. Explicit
+admin provisioning remains independent of the first-login JIT allowlist.
