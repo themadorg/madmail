@@ -421,3 +421,7 @@ need to receive mail.
 registration has its own registration/token policy; narrowing `jit_domain`
 does not disable that endpoint. Explicit CLI creation is an admin operation
 and remains available on retired JIT domains.
+
+For a complete domain-management recipe, including selective JIT retirement and
+CLI provisioning, see [English](../../guide/recipes/server-domains_en.md) /
+[فارسی](../../guide/recipes/server-domains_fa.md).
