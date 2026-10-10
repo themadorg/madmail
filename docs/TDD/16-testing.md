@@ -17,7 +17,7 @@ Chatmail's correctness is defined by **real Delta Chat client behavior**, not ju
 
 ## Docker tests
 
-`make test-docker` runs the full default Rust workspace suite and landing-site tests inside Docker, then builds the shipping image and installs an isolated self-signed relay. Docker clients check HTTPS and dashboard serving, admin authentication, SMTP TLS/STARTTLS delivery, IMAP retrieval and login rejection, plaintext rejection, restart persistence, and live IMAP TURN metadata plus UDP allocation. The runner removes its containers and volumes and retains logs under `target/docker-tests/`. See [Docker test instructions](../guide/docker.md#automated-local-docker-tests) for prerequisites, ignored/external tests, and port overrides. The PGP/MIME fixture and TURN allocation checks do not replace real Delta Chat client or media round-trip tests.
+`make test-docker` runs the full default Rust workspace suite and landing-site tests inside Docker, then builds the shipping image and installs an isolated self-signed relay. Docker clients check browser-selected DNS/IP account domains, foreign-host fallback, multi-domain JIT login and wrong-password rejection, HTTPS and dashboard serving, admin authentication, SMTP TLS/STARTTLS delivery, IMAP retrieval and login rejection, plaintext rejection, restart persistence, and live IMAP TURN metadata plus UDP allocation. The runner removes its containers and volumes and retains logs under `target/docker-tests/`. See [Docker test instructions](../guide/docker.md#automated-local-docker-tests) for prerequisites, ignored/external tests, and port overrides. The PGP/MIME fixture and TURN allocation checks do not replace real Delta Chat client or media round-trip tests.
 
 `make test-deltachat-docker` runs the existing 11 cmlxc relay_minitest checks and extensive Delta Chat RPC scenarios against two Docker relays, including encrypted messaging, groups, cross-relay delivery, files, and large-file SHA-256 verification. `make test-full-docker` combines both Docker suites. See [extensive Docker tests](../guide/docker.md#extensive-delta-chat-and-cmlxc-tests-in-docker) for selection, artifacts, and the explicit signing-key/Go-camouflage/LXC-exchanger exclusions.
 
@@ -219,3 +219,13 @@ admin, web and JIT registrations and IMAP/SMTP quota rejections through a mock
 receiver, verifies concurrent admin imports emit one event, verifies authorization
 and checks that public pages expose no webhook
 settings. See [the design](25-operator-webhooks.md) for the complete contract.
+
+### JIT domain retirement and CLI provisioning
+
+`cli_creation_and_existing_logins_survive_jit_domain_restriction` exercises the
+real account-creation CLI with a multi-domain config, explicit DNS/IP addresses,
+and a bare username defaulting to the first primary domain. It then narrows JIT
+to one domain and verifies existing accounts continue authenticating through
+both database fallback and the hydrated cache, incorrect passwords stay
+rejected, and unknown accounts on retired domains are never created. Explicit
+admin provisioning remains independent of the first-login JIT allowlist.

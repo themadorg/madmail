@@ -310,9 +310,7 @@ pub async fn new_account(
     }
 
     const MAX_ATTEMPTS: u32 = 5;
-    let domain = st
-        .config
-        .effective_registration_domain(client_host(&headers));
+    let domain = st.config.web_registration_domain(client_host(&headers));
     for _ in 0..MAX_ATTEMPTS {
         let policy = st.config.credential_policy();
         let user = match normalize_username(&format!(

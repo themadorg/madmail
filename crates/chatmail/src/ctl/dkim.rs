@@ -26,26 +26,67 @@ use super::context::CtlContext;
 use super::output::CtlOut;
 
 pub async fn dkim(args: &Args, cmd: Option<&DkimCommand>) -> Result<()> {
-    match cmd {
-        None | Some(DkimCommand::Show) => show(args),
-        Some(DkimCommand::Check) => check(args).await,
-        Some(DkimCommand::Status) => status(args).await,
+    let ctx = CtlContext::from_args(args)?;
+    let domains = ctx.config.effective_primary_domains("127.0.0.1");
+    let command = match cmd {
+        None | Some(DkimCommand::Show) => "dkim show",
+        Some(DkimCommand::Check) => "dkim check",
+        Some(DkimCommand::Status) => "dkim status",
+    };
+    let out = CtlOut::from_args(args, command);
+    if out.is_json() {
+        let mut records = Vec::new();
+        for domain in &domains {
+            let record = match cmd {
+                None | Some(DkimCommand::Show) => publish_info(&ctx.state_dir, domain),
+                Some(DkimCommand::Check) => check_dns(&ctx.state_dir, domain).await,
+                Some(DkimCommand::Status) => status_info(&ctx.state_dir, domain).await,
+            }
+            .map_err(ChatmailError::config)?;
+            records.push(record);
+        }
+        let failed = matches!(cmd, Some(DkimCommand::Check))
+            && records.iter().any(|data| {
+                data["checked"].as_bool().unwrap_or(false)
+                    && (!data["matched"].as_bool().unwrap_or(false)
+                        || data.get("lookup_error").is_some())
+            });
+        // Preserve the single-domain payload; add every record for multi-domain installs.
+        let mut data = records[0].clone();
+        if records.len() > 1 {
+            data["domains"] = serde_json::Value::Array(records);
+        }
+        out.emit(data)?;
+        if failed {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+    let mut failure = None;
+    for domain in &domains {
+        let result = match cmd {
+            None | Some(DkimCommand::Show) => show(args, domain),
+            Some(DkimCommand::Check) => check(args, domain).await,
+            Some(DkimCommand::Status) => status(args, domain).await,
+        };
+        if let Err(error) = result {
+            failure = Some(error);
+        }
+    }
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(()),
     }
 }
 
-fn show(args: &Args) -> Result<()> {
+fn show(args: &Args, registration: &str) -> Result<()> {
     let ctx = CtlContext::from_args(args)?;
     let out = CtlOut::from_args(args, "dkim show");
 
-    let registration = ctx.config.effective_registration_domain(None);
-    let data = publish_info(&ctx.state_dir, &registration).map_err(ChatmailError::config)?;
-
-    if out.is_json() {
-        return out.emit(data);
-    }
+    let data = publish_info(&ctx.state_dir, registration).map_err(ChatmailError::config)?;
 
     let selector = data["selector"].as_str().unwrap_or("default");
-    let domain = data["domain"].as_str().unwrap_or(&registration);
+    let domain = data["domain"].as_str().unwrap_or(registration);
     let publishable = data["publishable"].as_bool().unwrap_or(false);
     let generated = data["generated"].as_bool().unwrap_or(false);
     let private_path = data["private_key_path"].as_str().unwrap_or("-");
@@ -87,29 +128,16 @@ fn show(args: &Args) -> Result<()> {
     Ok(())
 }
 
-async fn check(args: &Args) -> Result<()> {
+async fn check(args: &Args, registration: &str) -> Result<()> {
     let ctx = CtlContext::from_args(args)?;
     let out = CtlOut::from_args(args, "dkim check");
-    let registration = ctx.config.effective_registration_domain(None);
-    let data = check_dns(&ctx.state_dir, &registration)
+    let data = check_dns(&ctx.state_dir, registration)
         .await
         .map_err(ChatmailError::config)?;
 
     let fqdn = data["dns_fqdn"].as_str().unwrap_or("-");
     let matched = data["matched"].as_bool().unwrap_or(false);
     let checked = data["checked"].as_bool().unwrap_or(false);
-    let lookup_failed = data.get("lookup_error").is_some();
-    let json_fail = checked && (!matched || lookup_failed);
-
-    if out.is_json() {
-        out.emit(&data)?;
-        if json_fail {
-            // Payload already on stdout; skip the ok:false stderr envelope.
-            std::process::exit(1);
-        }
-        return Ok(());
-    }
-
     out.blank();
     out.line("  DKIM DNS check");
     out.blank();
@@ -119,7 +147,7 @@ async fn check(args: &Args) -> Result<()> {
     ));
     out.line(format!(
         "  Signing domain:  {}",
-        data["domain"].as_str().unwrap_or(&registration)
+        data["domain"].as_str().unwrap_or(registration)
     ));
     out.line(format!("  DNS name:        {fqdn}"));
     out.blank();
@@ -170,19 +198,14 @@ async fn check(args: &Args) -> Result<()> {
     )))
 }
 
-async fn status(args: &Args) -> Result<()> {
+async fn status(args: &Args, registration: &str) -> Result<()> {
     let ctx = CtlContext::from_args(args)?;
     let out = CtlOut::from_args(args, "dkim status");
-    let registration = ctx.config.effective_registration_domain(None);
-    let data = status_info(&ctx.state_dir, &registration)
+    let data = status_info(&ctx.state_dir, registration)
         .await
         .map_err(ChatmailError::config)?;
 
-    if out.is_json() {
-        return out.emit(data);
-    }
-
-    let domain = data["domain"].as_str().unwrap_or(&registration);
+    let domain = data["domain"].as_str().unwrap_or(registration);
     let key = data["key_present"].as_bool().unwrap_or(false);
     let publishable = data["publishable"].as_bool().unwrap_or(false);
     let dns_checked = data["dns_checked"].as_bool().unwrap_or(false);

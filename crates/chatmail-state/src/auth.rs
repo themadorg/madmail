@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use chatmail_db::{
     blocklist, get_bool_setting, is_federation_rcpt_blocked, passwords, settings_keys, DbPool,
 };
-use chatmail_types::{is_ipv4_literal, wrap_ip_domain, Result};
+use chatmail_types::{domain_forms, Result};
 use dashmap::DashMap;
 
 /// How long a successful password verification is trusted before bcrypt re-runs.
@@ -117,10 +117,10 @@ impl AuthCache {
 
     /// Whether inbound mail may be delivered locally (reserved rcpt + account exists).
     ///
-    /// For IPv4-literal domains, looks up both the bracketed form (`user@[1.2.3.4]`)
+    /// For IP-literal domains, looks up both the bracketed form (`user@[1.2.3.4]`)
     /// and the bare form (`user@1.2.3.4`) so either registration spelling works.
     /// Prefer canonical delivery under the key that actually exists in the cache
-    /// (callers that need a storage key should wrap bare IPv4 domains first,
+    /// (callers that need a storage key should normalize IP domains first,
     /// e.g. via `chatmail_auth::normalize_username`).
     pub fn local_recipient_allowed(&self, rcpt: &str) -> bool {
         if is_federation_rcpt_blocked(rcpt) {
@@ -131,20 +131,9 @@ impl AuthCache {
         }
         if let Some((local, domain)) = rcpt.rsplit_once('@') {
             let local = local.to_ascii_lowercase();
-            let domain_l = domain.to_ascii_lowercase();
-            let wrapped = format!(
-                "{}@{}",
-                local,
-                wrap_ip_domain(&domain_l).to_ascii_lowercase()
-            );
-            if wrapped != rcpt && self.user_exists(&wrapped) {
-                return true;
-            }
-            // Reverse: rcpt is bracketed but account was stored bare (rare).
-            let bare_dom = domain_l.trim_matches(|c| c == '[' || c == ']');
-            if is_ipv4_literal(bare_dom) {
-                let bare = format!("{local}@{bare_dom}");
-                if bare != rcpt && bare != wrapped && self.user_exists(&bare) {
+            for form in domain_forms(domain) {
+                let alias = format!("{local}@{form}");
+                if self.user_exists(&alias) {
                     return true;
                 }
             }
@@ -274,6 +263,16 @@ mod tests {
         assert!(!cache.local_recipient_allowed("admin@test"));
         assert!(!cache.local_recipient_allowed("ghost@test"));
         assert!(cache.local_recipient_allowed("u@test"));
+    }
+
+    #[test]
+    fn local_recipient_matches_bare_and_bracketed_ipv6() {
+        for stored in ["u@2001:db8::1", "u@[2001:db8::1]"] {
+            let cache = AuthCache::new();
+            cache.insert(stored, "h");
+            assert!(cache.local_recipient_allowed("u@2001:db8::1"));
+            assert!(cache.local_recipient_allowed("u@[2001:db8::1]"));
+        }
     }
 
     #[test]

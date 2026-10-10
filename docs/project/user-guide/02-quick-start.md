@@ -375,3 +375,53 @@ It also links to the exact `madmail install` commands for each case.
 - See how to manage the server day-to-day: [Admin & CLI](./07-admin-and-cli.md)
 
 You now have a working chatmail server. Most people are surprised by how little ongoing work it requires.
+
+## Multiple addresses on one server
+
+After installation, set the server addresses in `/etc/madmail/madmail.conf`:
+
+```conf
+$(primary_domain) = b.com c.com 1.1.1.1
+$(local_domains) = $(primary_domain)
+```
+
+Keep `jit_domain $(primary_domain)` in `auth.pass_table`, or omit `jit_domain`
+to use the complete primary-domain list. Restart the service after editing.
+Point both DNS names to the server and provide TLS certificates covering the
+addresses used. Opening each address generates accounts with that email domain;
+IPv4 accounts use brackets, for example `user@[1.1.1.1]`. Each full email address
+has its own mailbox. The first domain is the default for an unlisted browser
+host and remains the canonical server identity.
+
+### Stop JIT registration on selected domains
+
+Keep every address in the server domain list so existing accounts still receive
+mail, and narrow `jit_domain` to the domains that may create new accounts:
+
+```conf
+$(primary_domain) = b.com c.com 1.1.1.1
+auth.pass_table local_authdb {
+    auto_create yes
+    jit_domain c.com
+    table sql_table {
+        driver sqlite3
+        dsn credentials.db
+        table_name passwords
+    }
+}
+```
+
+After restarting the service, new JIT accounts may use `@c.com` only. Existing
+accounts at `@b.com` and `@[1.1.1.1]` still log in with their existing passwords.
+Multiple allowed JIT domains can be separated by spaces or commas. Do not remove
+a retired domain from the server's local domain list while its accounts still
+need to receive mail.
+
+`jit_domain` controls first-login creation through IMAP/SMTP. Public `/new`
+registration has its own registration/token policy; narrowing `jit_domain`
+does not disable that endpoint. Explicit CLI creation is an admin operation
+and remains available on retired JIT domains.
+
+For a complete domain-management recipe, including selective JIT retirement and
+CLI provisioning, see [English](../../guide/recipes/server-domains_en.md) /
+[فارسی](../../guide/recipes/server-domains_fa.md).

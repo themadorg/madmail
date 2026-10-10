@@ -996,3 +996,173 @@ fn database_docs_are_v2_sqlite_or_postgres() {
     let translations = include_str!("../www-src/translations.js");
     assert!(!translations.contains("PostgreSQL and MySQL"));
 }
+
+#[tokio::test]
+async fn registration_uses_each_configured_browser_domain_and_authenticates() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = parse_maddy_config("$(primary_domain) = b.com,c.com,1.1.1.1,2001:db8::1\n$(local_domains) = $(primary_domain)\n").unwrap();
+    let state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    state.auth.hydrate(&pool).await.unwrap();
+    let router = crate::www_router(crate::WwwState::new(
+        pool.clone(),
+        state.clone(),
+        cfg.clone(),
+        dir.path(),
+    ));
+    let auth = chatmail_auth::AuthContext {
+        pool: pool.clone(),
+        state,
+        primary_domain: "b.com".into(),
+        jit_domain: cfg.effective_jit_domain("b.com"),
+        credential_policy: cfg.credential_policy(),
+    };
+    let cache = WwwContextCache::new();
+    for (host, expected) in [
+        ("b.com", "b.com"),
+        ("c.com:8080", "c.com"),
+        ("1.1.1.1:8080", "[1.1.1.1]"),
+        ("foreign.com", "b.com"),
+        ("b.com,c.com,1.1.1.1,2001:db8::1", "b.com"),
+        ("[2001:db8::1]:8080", "2001:db8::1"),
+    ] {
+        let ctx = build_context(&pool, &cfg, None, Some(host), None, dir.path(), &cache)
+            .await
+            .unwrap();
+        assert_eq!(ctx.MailDomain, expected);
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/new")
+                    .header("host", host)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let data: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let email = data["email"].as_str().unwrap();
+        let password = data["password"].as_str().unwrap();
+        assert!(email.ends_with(&format!("@{expected}")), "{email}");
+        assert!(chatmail_db::passwords::user_exists(&pool, email)
+            .await
+            .unwrap());
+        chatmail_auth::authenticate(&auth, email, password)
+            .await
+            .unwrap();
+        if expected == "2001:db8::1" {
+            let bracketed = email.replace("@2001:db8::1", "@[2001:db8::1]");
+            chatmail_auth::authenticate(&auth, &bracketed, password)
+                .await
+                .unwrap();
+            assert!(!chatmail_db::passwords::user_exists(&pool, &bracketed)
+                .await
+                .unwrap());
+            assert!(auth.state.auth.local_recipient_allowed(&bracketed));
+        }
+    }
+    for domain in ["b.com", "c.com", "[1.1.1.1]"] {
+        chatmail_auth::authenticate(&auth, &format!("jituser1@{domain}"), "longpassword1")
+            .await
+            .unwrap();
+    }
+    assert!(
+        chatmail_auth::authenticate(&auth, "jituser1@foreign.com", "longpassword1")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn ipv6_existing_bare_account_is_shared_by_page_new_and_login() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = parse_maddy_config("$(primary_domain) = 2001:db8::1\n$(local_domains) = $(primary_domain) [2001:db8::1] 2001:db8::1\n").unwrap();
+    let hash = chatmail_auth::hash_password("longpassword1").unwrap();
+    chatmail_db::passwords::create_user(&pool, "existing@2001:db8::1", &hash)
+        .await
+        .unwrap();
+    let state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    let auth = chatmail_auth::AuthContext {
+        pool: pool.clone(),
+        state: state.clone(),
+        primary_domain: "2001:db8::1".into(),
+        jit_domain: cfg.effective_jit_domain("2001:db8::1"),
+        credential_policy: cfg.credential_policy(),
+    };
+    // Cold DB login must use the existing row even through the bracketed spelling.
+    chatmail_auth::authenticate(&auth, "existing@[2001:db8::1]", "longpassword1")
+        .await
+        .unwrap();
+    state.auth.hydrate(&pool).await.unwrap();
+    chatmail_auth::authenticate(&auth, "existing@[2001:db8::1]", "longpassword1")
+        .await
+        .unwrap();
+    assert!(
+        chatmail_auth::authenticate(&auth, "existing@[2001:db8::1]", "wrongpassword1")
+            .await
+            .is_err()
+    );
+    let router = crate::www_router(crate::WwwState::new(pool.clone(), state, cfg, dir.path()));
+    let page = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .header("host", "[2001:db8::1]:8080")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let html = String::from_utf8(
+        to_bytes(page.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(
+        html.contains("REGISTRATION_DOMAIN = \"2001:db8::1\""),
+        "{html}"
+    );
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/new")
+                .header("host", "[2001:db8::1]:8080")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let data: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
+    let email = data["email"].as_str().unwrap();
+    assert!(email.ends_with("@2001:db8::1"));
+    chatmail_auth::authenticate(
+        &auth,
+        &email.replace("@2001:db8::1", "@[2001:db8::1]"),
+        data["password"].as_str().unwrap(),
+    )
+    .await
+    .unwrap();
+    let rows = chatmail_db::passwords::list_all_credentials(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|(user, _)| user.ends_with("@2001:db8::1")));
+}

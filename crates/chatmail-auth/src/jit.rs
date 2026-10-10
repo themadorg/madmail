@@ -33,7 +33,7 @@ pub struct AuthContext {
     pub pool: DbPool,
     pub state: Arc<AppState>,
     pub primary_domain: String,
-    /// `auth.pass_table` `jit_domain` — restrict JIT/login to this domain (often `[ip]`).
+    /// `auth.pass_table` `jit_domain` — allowed domains for new accounts (spaces or commas).
     pub jit_domain: Option<String>,
     /// `chatmail` credential length limits from `maddy.conf`.
     pub credential_policy: CredentialPolicy,

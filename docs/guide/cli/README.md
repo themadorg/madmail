@@ -11,6 +11,10 @@ Operator-only account/quota notifications are configured in the dashboard or
 admin RPC. See [Operator webhooks](../operator-webhooks.md) and
 [`admin-web`](admin-web.md) / [`admin-token`](admin-token.md) for access.
 
+Practical configuration recipes: multi-domain addresses, selective JIT
+registration, and CLI provisioning ([English](../recipes/server-domains_en.md) /
+[فارسی](../recipes/server-domains_fa.md)).
+
 ## Global flags
 
 Every subcommand accepts:

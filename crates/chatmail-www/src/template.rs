@@ -270,7 +270,7 @@ pub async fn build_context(
         .await
         .ok_or_else(|| chatmail_types::ChatmailError::config("www context cache empty"))?;
 
-    let mail_domain = config.effective_registration_domain(http_host);
+    let mail_domain = config.web_registration_domain(http_host);
     let mx_domain = config
         .mx_domain
         .clone()

@@ -85,6 +85,8 @@ pub use queue::QueueSettings;
 pub struct AppConfig {
     pub hostname: Option<String>,
     pub primary_domain: Option<String>,
+    /// Complete normalized primary list, before selecting the canonical identity.
+    pub primary_domains: Vec<String>,
     pub local_domains: Option<String>,
     pub public_ip: Option<String>,
     pub state_dir: Option<PathBuf>,
@@ -246,6 +248,15 @@ impl AppConfig {
         chatmail_types::wrap_ip_domain(raw)
     }
 
+    /// All configured primary domains, independent of local-delivery and JIT overrides.
+    pub fn effective_primary_domains(&self, hostname_fallback: &str) -> Vec<String> {
+        if self.primary_domains.is_empty() {
+            vec![self.effective_registration_domain(Some(hostname_fallback))]
+        } else {
+            self.primary_domains.clone()
+        }
+    }
+
     /// All domains this server accepts locally (`$(local_domains)` + bracket/bare IP aliases).
     pub fn effective_local_domains(&self, hostname_fallback: &str) -> Vec<String> {
         let primary = self.effective_primary_domain(hostname_fallback);
@@ -275,7 +286,58 @@ impl AppConfig {
         chatmail_types::wrap_ip_domain(fallback)
     }
 
-    /// JIT / login domain restriction (`auth.pass_table` `jit_domain`).
+    /// Expand a primary-domain list while preserving a single canonical server identity.
+    pub(crate) fn normalize_primary_domains(&mut self) {
+        let domains: Vec<String> = self
+            .primary_domain
+            .as_deref()
+            .unwrap_or_default()
+            .split(|c: char| c.is_whitespace() || c == ',')
+            .filter(|s| !s.is_empty())
+            .map(chatmail_types::wrap_ip_domain)
+            .collect();
+        if domains.is_empty() {
+            return;
+        }
+        self.primary_domains = domains.clone();
+        self.primary_domain = Some(domains[0].clone());
+        if domains.len() > 1 {
+            let mut local = domains.clone();
+            if let Some(existing) = self.local_domains.as_deref() {
+                local.extend(
+                    existing
+                        .split(|c: char| c.is_whitespace() || c == ',')
+                        .filter(|s| !s.is_empty())
+                        .map(chatmail_types::wrap_ip_domain),
+                );
+            }
+            self.local_domains = Some(local.join(" "));
+            if self.jit_domain.is_none() {
+                self.jit_domain = Some(domains.join(" "));
+            }
+        }
+    }
+
+    /// Use the browser host for registration when it is a configured local domain.
+    /// Unknown hosts keep the default domain rather than creating foreign accounts.
+    pub fn web_registration_domain(&self, http_host: Option<&str>) -> String {
+        let fallback = self.effective_registration_domain(None);
+        if let Some(host) = http_host {
+            if let Ok(authority) = host.parse::<http::uri::Authority>() {
+                let domain = chatmail_types::wrap_ip_domain(authority.host()).to_ascii_lowercase();
+                let configured = self.primary_domain.is_some()
+                    || self.mail_domain.is_some()
+                    || self.local_domains.is_some();
+                let allowed = self.effective_local_domains(&fallback);
+                if !configured || allowed.iter().any(|d| d.eq_ignore_ascii_case(&domain)) {
+                    return domain;
+                }
+            }
+        }
+        fallback
+    }
+
+    /// Allowed JIT domains (`auth.pass_table` `jit_domain`), separated by spaces or commas.
     pub fn effective_jit_domain(&self, hostname_fallback: &str) -> Option<String> {
         let raw = self
             .jit_domain
@@ -369,6 +431,73 @@ pub fn default_state_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ipv6_browser_host_preserves_existing_account_domain() {
+        let cfg = crate::parse_maddy_config("$(primary_domain) = 2001:db8::1\n$(local_domains) = $(primary_domain) [2001:db8::1] 2001:db8::1\n").unwrap();
+        for host in ["[2001:db8::1]", "[2001:db8::1]:8080", "2001:db8::1"] {
+            assert_eq!(cfg.web_registration_domain(Some(host)), "2001:db8::1");
+        }
+        assert!(chatmail_types::validate_login_domain("user@[2001:db8::1]", "2001:db8::1").is_ok());
+    }
+
+    #[test]
+    fn comma_macro_is_not_a_registration_domain() {
+        let cfg = crate::parse_maddy_config(
+            "$(primary_domain) = b.com,c.com,192.0.2.1\n$(local_domains) = $(primary_domain)\n",
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.web_registration_domain(Some("b.com,c.com,192.0.2.1")),
+            "b.com"
+        );
+        let local = cfg.effective_local_domains("b.com");
+        assert!(local.iter().all(|d| !d.contains(',')));
+        assert!(local.contains(&"c.com".to_string()));
+        assert!(local.contains(&"[192.0.2.1]".to_string()));
+    }
+
+    #[test]
+    fn multiple_primary_domains_select_browser_host_and_default() {
+        let cfg = crate::parse_maddy_config("$(primary_domain) = b.com c.com 1.1.1.1\nauth.pass_table local_authdb {\n jit_domain $(primary_domain)\n}\nchatmail {\n mail_domain $(primary_domain)\n mx_domain $(primary_domain)\n}\n").unwrap();
+        assert_eq!(cfg.primary_domain.as_deref(), Some("b.com"));
+        assert_eq!(cfg.mail_domain.as_deref(), Some("b.com"));
+        assert_eq!(cfg.mx_domain.as_deref(), Some("b.com"));
+        assert_eq!(cfg.effective_registration_domain(None), "b.com");
+        for (host, expected) in [
+            ("b.com", "b.com"),
+            ("C.COM:8443", "c.com"),
+            ("1.1.1.1:8080", "[1.1.1.1]"),
+            ("unknown.com", "b.com"),
+        ] {
+            assert_eq!(cfg.web_registration_domain(Some(host)), expected);
+        }
+        let jit = cfg.effective_jit_domain("b.com").unwrap();
+        for domain in ["b.com", "c.com", "[1.1.1.1]"] {
+            assert!(
+                chatmail_types::validate_login_domain(&format!("newuser1@{domain}"), &jit).is_ok()
+            );
+        }
+        assert!(chatmail_types::validate_login_domain("newuser1@unknown.com", &jit).is_err());
+    }
+
+    #[test]
+    fn web_registration_accepts_local_domains_and_preserves_jit_override() {
+        let cfg = crate::parse_maddy_config(
+            "$(primary_domain) = b.com\n$(local_domains) = b.com c.com [1.1.1.1]\nauth.pass_table local_authdb {\n jit_domain b.com\n}\n"
+        ).unwrap();
+        assert_eq!(cfg.web_registration_domain(Some("c.com")), "c.com");
+        assert_eq!(cfg.web_registration_domain(Some("1.1.1.1")), "[1.1.1.1]");
+        assert_eq!(cfg.effective_jit_domain("b.com").as_deref(), Some("b.com"));
+        assert_eq!(cfg.web_registration_domain(Some("foreign.com")), "b.com");
+        assert_eq!(cfg.web_registration_domain(Some("bad host")), "b.com");
+        let mut conflicting = cfg.clone();
+        conflicting.mail_domain = Some("foreign.com".into());
+        assert_eq!(
+            conflicting.web_registration_domain(Some("foreign.com")),
+            "b.com"
+        );
+    }
 
     #[test]
     fn p1_resolve_state_dir_prefers_config() {
