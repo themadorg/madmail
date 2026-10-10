@@ -12,9 +12,8 @@ import re
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 HEADER = re.compile(r"^(\w+)(?:\(([^\r\n)]+)\))?(!)?: (.+)$")
@@ -166,11 +165,12 @@ def markdown_text(value):
     return re.sub(r"([\\`*_{}\[\]<>])", r"\\\1", value)
 
 
-def release_notes(version, base, changes, date):
+def release_notes(version, base, changes, date, *, tag=None):
+    tag = tag or f"v{version}"
     compare = (
-        f"{REPOSITORY}/compare/{base}...v{version}"
+        f"{REPOSITORY}/compare/{base}...{tag}"
         if base
-        else (f"{REPOSITORY}/releases/tag/v{version}")
+        else (f"{REPOSITORY}/releases/tag/{tag}")
     )
     notes = [f"# [{version}]({compare}) ({date})", ""]
     groups = (
@@ -360,10 +360,25 @@ def atomic_write(path, text):
             os.unlink(temporary)
 
 
+def latest_release_at(root, revision, exclude=None):
+    tags = git(root, "tag", "--merged", revision, "--list", "v*").splitlines()
+    versioned = [
+        tag
+        for tag in tags
+        if tag != exclude and VERSION.fullmatch(tag[1:].removesuffix("-unstable"))
+    ]
+    return max(
+        versioned,
+        key=lambda tag: (
+            version_tuple(tag[1:].removesuffix("-unstable")),
+            tag.endswith("-unstable"),
+        ),
+        default=None,
+    )
+
+
 def latest_release(root):
-    tags = git(root, "tag", "--merged", "HEAD", "--list", "v*").splitlines()
-    stable = [tag for tag in tags if VERSION.fullmatch(tag[1:])]
-    return max(stable, key=lambda tag: version_tuple(tag[1:]), default=None)
+    return latest_release_at(root, "HEAD")
 
 
 def commits_since(root, tag):
@@ -404,7 +419,7 @@ def push_release(root, tag, head):
 
 
 def prepare(root, updates, originals, version, notes, head, identity, sign):
-    tag = f"v{version}"
+    tag = f"v{version}-unstable"
     index = Path(
         git(root, "rev-parse", "--path-format=absolute", "--git-path", "index").strip()
     )
@@ -501,27 +516,36 @@ def release(
             ):
                 expected = f"chore(release): {current} [skip ci]"
                 if (
-                    tag != f"v{current}"
+                    tag != f"v{current}-unstable"
                     or git(root, "log", "-1", "--format=%s").strip() != expected
                 ):
                     raise ReleaseError("HEAD is not a prepared release")
                 push_release(root, tag, head)
-            return {"version": current, "sha": head, "released": False}
-        version = bump(tag[1:], level) if tag else "1.0.0"
+            return {
+                "version": current,
+                "sha": head,
+                "released": False,
+                "tag": tag
+                if tag
+                and tag.endswith("-unstable")
+                and git(root, "rev-parse", f"{tag}^{{commit}}").strip() == head
+                else "",
+            }
+        version = bump(tag[1:].removesuffix("-unstable"), level) if tag else "1.0.0"
         # Permit the first release only in a fresh 0.x/1.0.0 repository.
         if version_tuple(version) < version_tuple(current):
             raise ReleaseError("Planned version would downgrade the manifests")
-        if git(root, "tag", "--list", f"v{version}").strip():
+        if git(root, "tag", "--list", f"v{version}-unstable").strip():
             raise ReleaseError("Planned release tag already exists")
-        date = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-        notes = release_notes(version, tag, changes, date)
+        date = datetime.datetime.now(datetime.UTC).date().isoformat()
+        notes = release_notes(version, tag, changes, date, tag=f"v{version}-unstable")
         updates = planned_files(root, data, cargo_metadata(root), version, notes)
         result = {
             "version": version,
             "sha": head,
             "released": True,
             "dry_run": not write,
-            "tag": f"v{version}",
+            "tag": f"v{version}-unstable",
             "files": sorted(updates),
             "notes": notes,
         }
@@ -530,7 +554,7 @@ def release(
                 root, updates, data, version, notes, head, identity, sign
             )
             if push:
-                push_release(root, f"v{version}", result["sha"])
+                push_release(root, f"v{version}-unstable", result["sha"])
         return result
 
 
@@ -578,6 +602,7 @@ def main(argv=None):
                 handle.write(
                     f"version={result['version']}\nsha={result['sha']}\n"
                     f"released={str(result['released']).lower()}\n"
+                    f"tag={result.get('tag', '')}\n"
                 )
         return 0
     except (ReleaseError, OSError, ValueError, KeyError) as exc:

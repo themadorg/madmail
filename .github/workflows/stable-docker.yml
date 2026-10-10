@@ -1,0 +1,108 @@
+name: Stable Docker
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published stable vMAJOR.MINOR.PATCH tag (retry Docker publication)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    concurrency:
+      group: stable-publication
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - name: Resolve published stable source
+        id: source
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          tag = os.environ['TAG']
+          if not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag):
+              raise SystemExit('Expected stable tag')
+          data = json.loads(subprocess.check_output(['gh','release','view',tag,'--repo',os.environ['GITHUB_REPOSITORY'],'--json','isDraft,isPrerelease,targetCommitish']))
+          sha = data['targetCommitish']
+          if data['isDraft'] or data['isPrerelease'] or not re.fullmatch('[0-9a-f]{40}',sha):
+              raise SystemExit('Expected published stable with exact source SHA')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as handle:
+              handle.write(f'sha={sha}\nversion={tag[1:]}\n')
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          submodules: recursive
+          fetch-depth: 0
+      - name: Verify promotion provenance
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern release.json --pattern SHA256SUMS --dir provenance
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          path=pathlib.Path('provenance/release.json')
+          sums=pathlib.Path('provenance/SHA256SUMS').read_text().splitlines()
+          expected=next(line.split('  ')[0] for line in sums if line.endswith('  release.json'))
+          assert hashlib.sha256(path.read_bytes()).hexdigest()==expected
+          data=json.loads(path.read_text())
+          assert data['source_commit']==os.environ['SOURCE_SHA']
+          assert data['version']==os.environ['VERSION']
+          assert data['candidate']==os.environ['TAG']+'-unstable'
+          for tag in (os.environ['TAG'], data['candidate']):
+              assert subprocess.check_output(['git','rev-parse',f'refs/tags/{tag}^{{commit}}'],text=True).strip()==data['source_commit']
+          for name, digest in data['dependencies'].items():
+              assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest()==digest
+          PY
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: publishing-tools
+          sparse-checkout: scripts/registry_image.py
+          sparse-checkout-cone-mode: false
+      - name: Check immutable stable image
+        id: image
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.source.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: python3 publishing-tools/scripts/registry_image.py --repository "$GITHUB_REPOSITORY" --tag "$VERSION" --sha "$SOURCE_SHA"
+      - name: Build immutable stable image
+        if: steps.image.outputs.exists != 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ steps.source.outputs.version }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.source.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Advance latest only for current latest stable release
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [ "$current" = "$TAG" ]; then
+            docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$VERSION"
+          fi

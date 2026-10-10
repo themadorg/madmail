@@ -3,7 +3,7 @@
 Operator-facing Windows installers and release binaries for Madmail.
 
 > Epic: [#103](https://github.com/themadorg/madmail/issues/103).  
-> CI: merges to **`main`** validate Windows (lint / smoke / arm64); **GitHub Releases** build Inno setup and attach `madmail.exe` + `setup.exe` (see [CI](#ci)).
+> CI: merges to **`main`** validate Windows (lint / smoke / arm64); **manual stable promotion** packages the securely signed server from a draft release (see [CI](#ci)).
 
 ## Artifacts
 
@@ -184,17 +184,17 @@ GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflow
 |---------|------|
 | **Push to `main`** (merge) | Linux Windows-crate tests, amd64 smoke, arm64 compile |
 | **PR to `main`** (Windows-related paths) | Same as main push |
-| **GitHub Release** published | amd64 smoke → Inno setup → **upload assets to that Release** |
-| **`workflow_dispatch`** | Same as main push (validate only; no Release upload) |
+| **`workflow_dispatch` with `candidate`** | Verify signed draft server → Inno setup → upload installer package to draft |
+| **`workflow_dispatch` without `candidate`** | Same as main push (validate only; no Release upload) |
 
 | Job | Purpose |
 |-----|---------|
 | `linux-windows-crates` | Unit tests for tray / service / firewall / packaging file presence |
 | `windows-amd64-smoke` | MSVC build, tray smoke, service status, local self-signed install |
-| `windows-arm64-compile` | `cargo check` for `aarch64-pc-windows-msvc` (server + tray); **not** on Release |
-| `windows-amd64-setup` | Inno Setup → setup.exe; **Release only** — attaches assets to the GitHub Release |
+| `windows-arm64-compile` | `cargo check` for `aarch64-pc-windows-msvc` (server + tray); validation only |
+| `windows-amd64-setup` | Inno Setup → setup.exe; manual candidate dispatch only; consumes the signed draft executable and never overwrites it |
 
-**Release assets** (attached when a Release is published):
+**Stable release assets** (all staged and verified before publication):
 
 | File | Notes |
 |------|--------|
@@ -202,11 +202,11 @@ GitHub Actions workflow [`.github/workflows/windows.yml`](../../.github/workflow
 | `madmail-tray-windows-amd64.exe` | Tray (if built) |
 | `madmail-windows-amd64-setup.exe` | Inno wizard |
 
-Semantic-release on `main` creates the tag/Release; the Windows workflow then listens for `release: published` and fills in the Windows binaries. Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
+Main merges create testing-only unstable prereleases with unsigned CI binaries. For stable publication, the secure publisher selects an exact unstable candidate, builds and Ed25519-signs the portable server, and stages a draft. Dispatch `windows.yml` with `candidate=vX.Y.Z-unstable` to verify and package that signed server. The secure publisher verifies the installer package and publishes the completed release. See [Release automation](../../docs/TDD/release-automation.md). Manual sign-off: [MANUAL-CHECKLIST.md](./MANUAL-CHECKLIST.md).
 
 ### Windows Defender, SmartScreen, and UAC
 
-CI- and tag-built `setup.exe` / `madmail.exe` are **unsigned** (no Authenticode). That is expected for this open-source project.
+Windows artifacts have **no Authenticode signature**. Stable portable servers carry the existing Ed25519 signature trailer verified by Madmail’s updater; this is separate from Windows publisher trust. Unstable CI servers have no production Ed25519 signature and are testing-only. The stable installer packages the already verified signed server.
 
 | Prompt / alert | What it is | What to do |
 |----------------|------------|------------|
@@ -219,8 +219,8 @@ CI- and tag-built `setup.exe` / `madmail.exe` are **unsigned** (no Authenticode)
 
 1. **Exclusions** for `C:\Program Files\Madmail`, `%ProgramData%\Madmail`, and the folder where you download `setup.exe` (while installing).  
 2. **Protection history** → restore the file if Defender quarantined it mid-install.  
-3. If setup is blocked, copy **`madmail.exe`** from the CI artifact and run elevated `madmail install …`.  
-4. Prefer builds from this repository’s **GitHub Actions** (or a known mirror), not random re-uploads.  
+3. If setup is blocked, download the signed portable **`madmail-windows-amd64.exe`** from a published stable release and run elevated `madmail install …`.
+4. For production, use this repository’s published **stable releases** (or a verified mirror); Actions/unstable builds are for isolated testing.
 
 There is no free public Authenticode path for this project; stay on the notice above rather than expecting signed SmartScreen trust.
 

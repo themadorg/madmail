@@ -278,7 +278,8 @@ class GitIntegrationTests(unittest.TestCase):
                     "Madmail-CI <ci@madmail.chat>|Madmail-CI <ci@madmail.chat>",
                 )
                 self.assertEqual(
-                    self.git("rev-parse", f"v{expected}^{{commit}}"), result["sha"]
+                    self.git("rev-parse", f"v{expected}-unstable^{{commit}}"),
+                    result["sha"],
                 )
                 self.assertIn("[skip ci]", self.git("log", "-1", "--format=%s"))
                 self.assertEqual(self.git("status", "--porcelain"), "")
@@ -305,13 +306,13 @@ class GitIntegrationTests(unittest.TestCase):
     def test_existing_unreachable_tag_is_not_overwritten(self):
         self.commit("fix: competing release")
         competing = self.git("rev-parse", "HEAD")
-        self.git("tag", "v1.2.4")
+        self.git("tag", "v1.2.4-unstable")
         self.git("reset", "--hard", "HEAD~1")
         self.commit("fix: intended release")
         before = self.snapshot()
         with self.assertRaisesRegex(release.ReleaseError, "already exists"):
             release.release(self.root, write=True)
-        self.assertEqual(self.git("rev-parse", "v1.2.4"), competing)
+        self.assertEqual(self.git("rev-parse", "v1.2.4-unstable"), competing)
         self.assertEqual(self.snapshot(), before)
 
     def test_dirty_branch_and_symlink_refused(self):
@@ -414,7 +415,9 @@ class GitIntegrationTests(unittest.TestCase):
         self.assertEqual(
             self.command("git", "--git-dir", str(remote), "rev-parse", "main"), old_head
         )
-        self.assertNotIn("v1.2.4", self.command("git", "--git-dir", str(remote), "tag"))
+        self.assertNotIn(
+            "v1.2.4-unstable", self.command("git", "--git-dir", str(remote), "tag")
+        )
         hook.unlink()
         result = release.release(self.root, write=True, push=True)
         self.assertEqual(result["sha"], prepared)
@@ -422,7 +425,9 @@ class GitIntegrationTests(unittest.TestCase):
         self.assertEqual(
             self.command("git", "--git-dir", str(remote), "rev-parse", "main"), prepared
         )
-        self.assertIn("v1.2.4", self.command("git", "--git-dir", str(remote), "tag"))
+        self.assertIn(
+            "v1.2.4-unstable", self.command("git", "--git-dir", str(remote), "tag")
+        )
 
     def test_concurrent_remote_release_rejects_branch_and_tag(self):
         remote = self.bare_remote()
@@ -463,7 +468,9 @@ class GitIntegrationTests(unittest.TestCase):
         self.commit("feat: our release")
         with self.assertRaises(release.ReleaseError):
             release.release(self.root, write=True, push=True)
-        self.assertNotIn("v1.3.0", self.command("git", "--git-dir", str(remote), "tag"))
+        self.assertNotIn(
+            "v1.3.0-unstable", self.command("git", "--git-dir", str(remote), "tag")
+        )
 
     def test_no_hooks_shell_or_environment_injection(self):
         hook = self.root / ".git/hooks/pre-commit"
@@ -516,7 +523,7 @@ class GitIntegrationTests(unittest.TestCase):
             release.release(self.root, write=True, sign=True)
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
-        self.assertNotIn("v1.2.4", self.git("tag"))
+        self.assertNotIn("v1.2.4-unstable", self.git("tag"))
 
     @unittest.skipUnless(shutil.which("ssh-keygen"), "SSH signer required")
     def test_signed_commit_and_tag(self):
@@ -530,7 +537,7 @@ class GitIntegrationTests(unittest.TestCase):
         self.commit("fix: signed patch")
         release.release(self.root, write=True, sign=True)
         self.git("verify-commit", "HEAD")
-        self.git("verify-tag", "v1.2.4")
+        self.git("verify-tag", "v1.2.4-unstable")
 
     def test_shallow_check_allowed_but_analysis_rejected(self):
         shallow = Path(self.temp.name) / "shallow"

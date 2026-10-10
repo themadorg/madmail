@@ -6,6 +6,12 @@ crates/chatmail-iroh/assets/iroh-relay
 /scripts/*
 !/scripts/release.py
 !/scripts/test_release.py
+!/scripts/registry_image.py
+!/scripts/publish.py
+!/scripts/publish.sh
+!/scripts/artifact_signing.py
+!/scripts/test_publish.py
+!/scripts/build-release-static.sh
 build
 node_modules
 

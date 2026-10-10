@@ -11,7 +11,7 @@
 	windows-vagrant-up windows-vagrant-e2e \
 	man man-lint man-check incus-up incus-down docker-up docker-down
 
-# Optional overrides (copy .env.example → .env; publish merges context/madmail/.env into .env)
+# Optional local overrides (copy .env.example → .env)
 -include .env
 export
 
@@ -41,7 +41,7 @@ DOCKER_DEPLOY_SCRIPT ?= tests/docker-deploy-script.sh
 INCUS_ARGS       ?=
 DOCKER_ARGS      ?=
 
-# scripts/publish.sh flags (e.g. --no-github-release). Not the `init` target — use `make init publish`.
+# Secure publisher arguments, e.g. --write stage --candidate v2.31.0-unstable --key /secure/private.hex.
 PUBLISH_ARGS ?=
 # Legacy name; `init` is stripped (asset setup is `make init`, then `make publish`).
 _publish_args := $(strip $(filter-out init,$(PUBLISH_ARGS) $(ARGS)))
@@ -499,7 +499,7 @@ windows-vagrant-e2e:
 # First-time assets (iroh-relay, admin-web submodule) then full release publish.
 init-publish: init publish
 
-publish: build-publish
+publish:
 	@chmod +x scripts/publish.sh
 	@if echo ' $(PUBLISH_ARGS) $(ARGS) ' | grep -q ' init '; then \
 		echo 'ℹ️  Ignoring init (Makefile target, not a publish.sh flag). Use: make init publish'; \

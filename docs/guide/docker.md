@@ -54,8 +54,10 @@ docker pull ghcr.io/themadorg/madmail:2.3.1
 
 | Tag | Description |
 |-----|-------------|
-| `latest` | Most recent release from `main` |
-| `X.Y.Z` | Exact semver from [releases](https://github.com/themadorg/madmail/releases) |
+| `latest` | Latest published stable release |
+| `X.Y.Z` | Immutable stable version from [releases](https://github.com/themadorg/madmail/releases) |
+| `unstable` | Latest successful testing build; unsuitable for production |
+| `X.Y.Z-unstable` | Immutable testing version; unsuitable for production |
 
 GHCR packages are public; no login is required to pull.
 

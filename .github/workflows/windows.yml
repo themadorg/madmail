@@ -1,15 +1,13 @@
 # Windows pipeline
 #
 # - Merges / pushes to main (+ Windows-related PRs): lint, amd64 smoke, arm64 compile
-# - GitHub Releases (published): amd64 smoke → Inno setup → attach assets to the Release
-# - workflow_dispatch: same as main (validate only); use a Release for setup.exe assets
+# - Manual stable-setup: package the already signed server from a draft release
+# - workflow_dispatch without a candidate: validate only
 name: Windows
 
 on:
   push:
     branches: [main]
-  release:
-    types: [published]
   pull_request:
     branches: [main]
     paths:
@@ -22,6 +20,11 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
   workflow_dispatch:
+    inputs:
+      candidate:
+        description: "Unstable tag to package for its staged stable draft (empty = validate only)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -34,7 +37,7 @@ jobs:
   # ── Validation (main merges, PRs, manual) — not on Release ─────────────────
   linux-windows-crates:
     name: Linux (windows-related crates)
-    if: github.event_name != 'release'
+    if: github.event_name != 'workflow_dispatch' || inputs.candidate == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +67,7 @@ jobs:
   # ── amd64 smoke (main, PRs, release, manual) ───────────────────────────────
   windows-amd64-smoke:
     name: Windows amd64 smoke
+    if: github.event_name != 'workflow_dispatch' || inputs.candidate == ''
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -134,7 +138,7 @@ jobs:
   # ── arm64 compile-only (main merges / PRs / manual — not Release) ──────────
   windows-arm64-compile:
     name: Windows arm64 compile-only
-    if: github.event_name != 'release'
+    if: github.event_name != 'workflow_dispatch' || inputs.candidate == ''
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -155,87 +159,94 @@ jobs:
           cargo check -p chatmail -p madmail-tray --target aarch64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  # ── Inno setup + attach to GitHub Release (Release events only) ────────────
   windows-amd64-setup:
-    name: Windows amd64 Inno setup
-    if: github.event_name == 'release'
+    name: Package signed stable server from draft
+    if: github.event_name == 'workflow_dispatch' && inputs.candidate != ''
     runs-on: windows-latest
-    needs: windows-amd64-smoke
+    concurrency:
+      group: stable-publication
+      cancel-in-progress: false
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CANDIDATE: ${{ inputs.candidate }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Download madmail + tray binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: madmail-windows-amd64-ci
-          path: ci-bin
-
-      - name: Stage build/ names expected by Madmail.iss
+      - name: Validate candidate and resolve source
+        id: candidate
         shell: pwsh
+        run: |
+          if ($env:CANDIDATE -notmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-unstable$') { throw "Invalid candidate" }
+          $stable = $env:CANDIDATE -replace '-unstable$', ''
+          $draft = gh release view $stable --repo $env:GITHUB_REPOSITORY --json isDraft,isPrerelease,targetCommitish | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $draft.isDraft -or $draft.isPrerelease) { throw "Expected stable draft" }
+          if ($draft.targetCommitish -notmatch '^[0-9a-f]{40}$') { throw "Expected exact source SHA" }
+          "sha=$($draft.targetCommitish)" >> $env:GITHUB_OUTPUT
+          "stable=$stable" >> $env:GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.candidate.outputs.sha }}
+          fetch-depth: 0
+      - name: Get current verification helper
+        # Older selected candidates predate this helper. The workflow implementation
+        # is taken from its trusted dispatch revision, never from an arbitrary ref.
+        shell: pwsh
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          git show "${env:WORKFLOW_SHA}:scripts/artifact_signing.py" | Set-Content -Encoding utf8 artifact_signing.py
+          if ($LASTEXITCODE -ne 0) { throw "Missing verification helper" }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install public signature verifier
+        run: python -m pip install cryptography==46.0.3
+      - name: Download and verify signed server
+        shell: pwsh
+        env:
+          STABLE: ${{ steps.candidate.outputs.stable }}
+          SOURCE_SHA: ${{ steps.candidate.outputs.sha }}
         run: |
           New-Item -ItemType Directory -Force -Path build | Out-Null
-          $madmail = Get-ChildItem -Path ci-bin -Recurse -Filter madmail.exe | Select-Object -First 1
-          if (-not $madmail) { throw "madmail.exe not found under ci-bin" }
-          Copy-Item -Force $madmail.FullName build\madmail-windows-amd64.exe
-          Write-Host "staged $($madmail.FullName) -> build\madmail-windows-amd64.exe"
-          $tray = Get-ChildItem -Path ci-bin -Recurse -Filter madmail-tray.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($tray) {
-            Copy-Item -Force $tray.FullName build\madmail-tray-windows-amd64.exe
-            Write-Host "staged $($tray.FullName) -> build\madmail-tray-windows-amd64.exe"
-          } else {
-            Write-Host "madmail-tray.exe not in artifact; setup will omit tray (skipifsourcedoesntexist)"
-          }
-          Get-ChildItem build | Format-Table Name, Length
-
-      - name: Install Inno Setup 6
+          gh release download $env:STABLE --repo $env:GITHUB_REPOSITORY --dir build
+          if ($LASTEXITCODE -ne 0) { throw "Draft download failed" }
+          python artifact_signing.py build/madmail-windows-amd64.exe --checksums build/binary-checksums.txt
+          if ($LASTEXITCODE -ne 0) { throw "Signature/checksum verification failed" }
+          $manifest = Get-Content build/release.json -Raw | ConvertFrom-Json
+          if ($manifest.source_commit -ne $env:SOURCE_SHA -or $manifest.candidate -ne $env:CANDIDATE -or $manifest.version -ne ($env:STABLE -replace '^v','')) { throw "Provenance mismatch" }
+          $tagSha = git rev-parse "refs/tags/$($env:CANDIDATE)^{commit}"
+          $stableSha = git rev-parse "refs/tags/$($env:STABLE)^{commit}"
+          if ($tagSha -ne $env:SOURCE_SHA -or $stableSha -ne $env:SOURCE_SHA) { throw "Tag mismatch" }
+          $binaryVersion = & ./build/madmail-windows-amd64.exe version
+          if ($LASTEXITCODE -ne 0 -or $binaryVersion -notmatch ([regex]::Escape($manifest.version) + '(\s|$)')) { throw "Binary version mismatch" }
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Build installer or verify existing installer on resume
         shell: pwsh
-        run: |
-          choco install innosetup -y --no-progress
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $iscc = @(
-            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $iscc) { throw "ISCC.exe not found after choco install innosetup" }
-          Write-Host "ISCC: $iscc"
-          & $iscc /? 2>&1 | Select-Object -First 5
-
-      - name: Compile setup.exe
-        shell: pwsh
-        run: |
-          & .\packaging\windows\build-setup.ps1 -Arch amd64
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $setup = Join-Path $env:GITHUB_WORKSPACE "build\madmail-windows-amd64-setup.exe"
-          if (-not (Test-Path $setup)) { throw "missing $setup" }
-          Get-Item $setup | Format-List FullName, Length, LastWriteTime
-
-      - name: Upload setup installer (Actions artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: madmail-windows-amd64-setup
-          path: ${{ github.workspace }}/build/madmail-windows-amd64-setup.exe
-          retention-days: 14
-
-      - name: Attach Windows assets to GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
+          STABLE: ${{ steps.candidate.outputs.stable }}
+          SOURCE_SHA: ${{ steps.candidate.outputs.sha }}
         run: |
-          $tag = "${{ github.event.release.tag_name }}"
-          if ([string]::IsNullOrWhiteSpace($tag)) { throw "missing release tag_name" }
-          $root = $env:GITHUB_WORKSPACE
-          $files = @(
-            (Join-Path $root "build\madmail-windows-amd64.exe"),
-            (Join-Path $root "build\madmail-windows-amd64-setup.exe")
-          )
-          $tray = Join-Path $root "build\madmail-tray-windows-amd64.exe"
-          if (Test-Path $tray) { $files += $tray }
-          foreach ($f in $files) {
-            if (-not (Test-Path $f)) { throw "missing release asset: $f" }
+          $setup = 'build/madmail-windows-amd64-setup.exe'
+          $package = 'build/setup-package.zip'
+          $serverHash = (Get-FileHash build/madmail-windows-amd64.exe -Algorithm SHA256).Hash.ToLower()
+          if (Test-Path $package) {
+            Expand-Archive $package -DestinationPath setup-resume
+            python -c "from pathlib import Path; from artifact_signing import verify_checksums; verify_checksums(Path('setup-resume'), 'setup-checksums.txt')"
+            if ($LASTEXITCODE -ne 0) { throw "Existing installer verification failed" }
+            $receipt = Get-Content setup-resume/setup-source.json -Raw | ConvertFrom-Json
+            if ($receipt.source_commit -ne $env:SOURCE_SHA -or $receipt.server_sha256 -ne $serverHash) { throw "Installer provenance mismatch" }
+            Write-Host 'Installer already uploaded; verified, leaving draft for secure finalization.'
+          } else {
+            & ./packaging/windows/build-setup.ps1 -Arch amd64
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $setup)) { throw "Installer build failed" }
+            if ((Get-FileHash build/madmail-windows-amd64.exe -Algorithm SHA256).Hash.ToLower() -ne $serverHash) { throw "Server was modified" }
+            @{ source_commit = $env:SOURCE_SHA; server_sha256 = $serverHash } | ConvertTo-Json -Compress | Set-Content -Encoding utf8 build/setup-source.json
+            $setupHash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+            $receiptHash = (Get-FileHash build/setup-source.json -Algorithm SHA256).Hash.ToLower()
+            "$setupHash  madmail-windows-amd64-setup.exe`n$receiptHash  setup-source.json" | Set-Content -Encoding utf8 build/setup-checksums.txt
+            Compress-Archive -Path $setup,build/setup-source.json,build/setup-checksums.txt -DestinationPath $package
+            gh release upload $env:STABLE $package --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw "Installer upload failed; rerun to verify any completed upload" }
           }
-          Write-Host "Uploading to release $tag :"
-          $files | ForEach-Object { Get-Item $_ | Format-List FullName, Length }
-          # --clobber replaces assets if the workflow is re-run on the same release
-          gh release upload $tag @files --clobber
+          # The signed portable executable is never uploaded or overwritten here.
