@@ -1,3 +1,15 @@
+# [2.33.0](https://github.com/themadorg/madmail/compare/v2.32.1...v2.33.0) (2026-10-10)
+
+
+### Bug Fixes
+
+* **domains:** preserve IPv6 accounts and sign all primary DNS domains ([0b7cae6](https://github.com/themadorg/madmail/commit/0b7cae667335c411964b8e10ba08b9ec45df559a))
+
+
+### Features
+
+* **config:** register accounts on multiple server domains ([cee814a](https://github.com/themadorg/madmail/commit/cee814ab1e0f6673b2e76aa3c4cbf33dbc83c5fc))
+
 ## [2.32.1](https://github.com/themadorg/madmail/compare/v2.32.0...v2.32.1) (2026-10-08)
 
 
