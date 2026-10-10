@@ -115,6 +115,87 @@ ready() {
     return 1
 }
 ready
+# Metrics are opt-in. Config is mounted read-only in the running server;
+# use a short-lived container with a writable mount for configuration changes.
+monitor_config() {
+    docker run --rm -v "$CONFIG:/etc/madmail" "$IMAGE" --json monitor "$@"
+}
+monitor_sample() {
+    docker exec "$NAME" madmail --json monitor --count 1
+}
+monitor_config status > "$WORK/monitor-disabled.json"
+grep -q '"enabled":false' "$WORK/monitor-disabled.json"
+if monitor_sample > "$WORK/monitor-disabled.log" 2>&1; then
+    echo "Disabled monitoring unexpectedly succeeded" >&2
+    exit 1
+fi
+grep -q 'madmail monitor enable' "$WORK/monitor-disabled.log"
+if http --fail http://127.0.0.1:9749/metrics > "$WORK/metrics-disabled.log" 2>&1; then
+    echo "Default-disabled metrics endpoint unexpectedly responded" >&2
+    exit 1
+fi
+monitor_config enable > "$WORK/monitor-enable.json"
+grep -q '"enabled":true' "$WORK/monitor-enable.json"
+grep -q '"changed":true' "$WORK/monitor-enable.json"
+grep -q '"restart_required":true' "$WORK/monitor-enable.json"
+monitor_config enable > "$WORK/monitor-enable-again.json"
+grep -q '"changed":false' "$WORK/monitor-enable-again.json"
+if monitor_sample > "$WORK/monitor-before-restart.log" 2>&1; then
+    echo "Metrics unexpectedly became live without a restart" >&2
+    exit 1
+fi
+docker restart "$NAME" >/dev/null
+ready
+monitor_sample > "$WORK/monitor-live.json"
+grep -q '"ok":true' "$WORK/monitor-live.json"
+grep -q '"conns":' "$WORK/monitor-live.json"
+http --fail http://127.0.0.1:9749/metrics > "$WORK/metrics-live.txt"
+grep -q 'maddy_conns_active' "$WORK/metrics-live.txt"
+monitor_config disable > "$WORK/monitor-disable.json"
+grep -q '"enabled":false' "$WORK/monitor-disable.json"
+grep -q '"changed":true' "$WORK/monitor-disable.json"
+monitor_config disable > "$WORK/monitor-disable-again.json"
+grep -q '"changed":false' "$WORK/monitor-disable-again.json"
+docker restart "$NAME" >/dev/null
+ready
+if monitor_sample > "$WORK/monitor-disabled-again.log" 2>&1; then
+    echo "Monitoring unexpectedly succeeded after disabling and restarting" >&2
+    exit 1
+fi
+if http --fail http://127.0.0.1:9749/metrics > "$WORK/metrics-disabled-again.log" 2>&1; then
+    echo "Metrics endpoint still responds after disabling and restarting" >&2
+    exit 1
+fi
+echo "PASS: metrics default disabled, enable/restart/live scrape, disable/restart, idempotence and expected failures"
+
+# Check authentication on a custom listen IP and port in the shipping server.
+monitor_config enable --ip 0.0.0.0 --port 9750 --username exporter --password docker-metrics-secret > "$WORK/monitor-auth-enable.json"
+grep -q '"listen":"0.0.0.0:9750"' "$WORK/monitor-auth-enable.json"
+grep -q '"authentication_required":true' "$WORK/monitor-auth-enable.json"
+! grep -q 'docker-metrics-secret' "$WORK/monitor-auth-enable.json"
+docker restart "$NAME" >/dev/null
+ready
+[[ "$(http -o "$WORK/metrics-no-auth.txt" -w '%{http_code}' http://127.0.0.1:9750/metrics)" = 401 ]]
+[[ "$(http --user exporter:wrong-password -o "$WORK/metrics-wrong-auth.txt" -w '%{http_code}' http://127.0.0.1:9750/metrics)" = 401 ]]
+http --fail --user exporter:docker-metrics-secret http://127.0.0.1:9750/metrics > "$WORK/metrics-authenticated.txt"
+grep -q 'maddy_conns_active' "$WORK/metrics-authenticated.txt"
+monitor_sample > "$WORK/monitor-authenticated.json"
+grep -q '"ok":true' "$WORK/monitor-authenticated.json"
+if docker exec "$NAME" madmail --json monitor --count 1 --password wrong-password > "$WORK/monitor-wrong-password.log" 2>&1; then
+    echo "Monitoring with incorrect HTTP password unexpectedly succeeded" >&2
+    exit 1
+fi
+grep -q '401' "$WORK/monitor-wrong-password.log"
+monitor_config enable --clear-password > "$WORK/monitor-auth-clear.json"
+grep -q '"authentication_required":false' "$WORK/monitor-auth-clear.json"
+docker restart "$NAME" >/dev/null
+ready
+http --fail http://127.0.0.1:9750/metrics > "$WORK/metrics-auth-cleared.txt"
+monitor_config disable > "$WORK/monitor-auth-disabled.json"
+docker restart "$NAME" >/dev/null
+ready
+echo "PASS: custom metrics IP/port, Basic auth success and rejection, saved CLI credentials, password removal"
+
 ALICE='alice@[127.0.0.1]'
 BOB='bob@[127.0.0.1]'
 PASSWORD='docker-smoke-test-password'

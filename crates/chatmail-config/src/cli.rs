@@ -208,9 +208,14 @@ pub enum Command {
     MigratePgpConfig,
     /// Live server metrics (connections and message throughput).
     ///
-    /// Polls the `openmetrics` endpoint, so that endpoint has to be enabled in
-    /// the config (`openmetrics tcp://127.0.0.1:9749 { }`).
+    /// Metrics are disabled by default in new installations. Use `madmail monitor
+    /// enable` and restart the server, or add an `openmetrics` listener to the config.
+    /// With no subcommand, polls `/metrics` for live stats. `status` reports saved
+    /// configuration; `enable` and `disable` update the file selected by --config.
     Monitor {
+        /// Inspect or change the metrics endpoint configuration.
+        #[command(subcommand)]
+        cmd: Option<MonitorCommand>,
         /// Seconds between samples.
         #[arg(long, short = 'n', default_value_t = 2)]
         interval: u64,
@@ -220,6 +225,12 @@ pub enum Command {
         /// Override the scrape address (default: `openmetrics` from the config).
         #[arg(long, value_name = "HOST:PORT")]
         addr: Option<String>,
+        /// HTTP Basic username (default: config, or metrics).
+        #[arg(long)]
+        username: Option<String>,
+        /// HTTP Basic password (default: config). Can be supplied via environment.
+        #[arg(long, env = "MADMAIL_MONITOR_PASSWORD", hide_env_values = true)]
+        password: Option<String>,
     },
     /// Show server status (connections, users, uptime).
     Status {
@@ -503,6 +514,47 @@ pub enum WebmailCorsCommand {
         origin: Option<String>,
     },
     /// Disable browser access (turn off WebIMAP + WebSMTP).
+    Disable,
+}
+
+/// Configure the opt-in metrics endpoint.
+#[derive(Debug, Clone, Subcommand)]
+pub enum MonitorCommand {
+    /// Show the saved metrics endpoint configuration.
+    ///
+    /// Reports enabled/disabled and the listen address from --config. Does not
+    /// check whether the running server has applied the saved configuration.
+    Status,
+    /// Enable the metrics endpoint (restart required).
+    ///
+    /// Adds a loopback listener at 127.0.0.1:9749 to --config when absent.
+    /// Preserves an existing listener. Restart the server to apply the change.
+    Enable {
+        /// Listen IP (default: existing config, or 127.0.0.1).
+        #[arg(long)]
+        ip: Option<std::net::IpAddr>,
+        /// Listen port (default: existing config, or 9749).
+        #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
+        port: Option<u16>,
+        /// HTTP Basic username (default: existing config, or metrics).
+        #[arg(long)]
+        username: Option<String>,
+        /// Protect /metrics with this HTTP Basic password.
+        #[arg(
+            long,
+            env = "MADMAIL_MONITOR_PASSWORD",
+            hide_env_values = true,
+            conflicts_with = "clear_password"
+        )]
+        password: Option<String>,
+        /// Remove HTTP password protection.
+        #[arg(long)]
+        clear_password: bool,
+    },
+    /// Disable the metrics endpoint (restart required).
+    ///
+    /// Updates --config to disable the listener. Restart the server to stop
+    /// serving metrics; `madmail reload` does not reread this static setting.
     Disable,
 }
 

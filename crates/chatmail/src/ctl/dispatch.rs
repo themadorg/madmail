@@ -114,10 +114,26 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::Sharing(cmd)) => sharing::sharing(&cli.args, cmd).await,
         Some(Command::Db(cmd)) => db::db(&cli.args, cmd).await,
         Some(Command::Monitor {
+            cmd,
             interval,
             count,
             addr,
-        }) => monitor::monitor(&cli.args, *interval, *count, addr.as_deref()).await,
+            username,
+            password,
+        }) => match cmd {
+            Some(cmd) => monitor::configure(&cli.args, cmd),
+            None => {
+                monitor::monitor(
+                    &cli.args,
+                    *interval,
+                    *count,
+                    addr.as_deref(),
+                    username.as_deref(),
+                    password.as_deref(),
+                )
+                .await
+            }
+        },
         Some(Command::Status { details }) => status_cmd::status(&cli.args, *details).await,
         Some(Command::Uninstall(flags)) => uninstall::uninstall(&cli.args, flags).await,
         Some(Command::Service(cmd)) => service_cmd::service(&cli.args, cmd).await,

@@ -1236,10 +1236,9 @@ mod tests {
             conf.contains(&format!("relay_ip {IPV6}")),
             "TURN relay_ip should use explicit IPv6: {conf}"
         );
-        // `madmail monitor` reads this endpoint, so the generated config has to
-        // enable it - and parse back to the loopback listener, not just contain it.
+        // Metrics must remain opt-in in the generated config.
         let parsed = chatmail_config::parse_maddy_config(&conf).expect("generated config parses");
-        assert_eq!(parsed.openmetrics_listen.as_deref(), Some("127.0.0.1:9749"));
+        assert_eq!(parsed.openmetrics_listen, None);
     }
 
     #[test]

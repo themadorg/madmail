@@ -545,8 +545,19 @@ impl SupervisorInner {
         let cancel = CancellationToken::new();
         let addr_owned = addr.to_string();
         let cancel_metrics = cancel.clone();
+        let username = self
+            .file_config
+            .openmetrics_username
+            .clone()
+            .unwrap_or_else(|| "metrics".into());
+        let password = self.file_config.openmetrics_password.clone();
         let metrics_task = async move {
-            let _ = chatmail_metrics::run_openmetrics_listener(&addr_owned, cancel_metrics).await;
+            let _ = chatmail_metrics::run_openmetrics_listener_with_auth(
+                &addr_owned,
+                password.as_deref().map(|p| (username.as_str(), p)),
+                cancel_metrics,
+            )
+            .await;
         };
         let cancel_queue = cancel.clone();
         let queue_task = async move {

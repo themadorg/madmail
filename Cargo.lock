@@ -946,11 +946,13 @@ name = "chatmail-metrics"
 version = "2.32.1"
 dependencies = [
  "axum",
+ "base64",
  "chatmail-types",
  "http-body-util",
  "once_cell",
  "prometheus",
  "reqwest",
+ "subtle",
  "tokio",
  "tokio-util",
  "tower",
