@@ -102,14 +102,14 @@ pub async fn html_serve(args: &Args, www_dir: &str) -> Result<()> {
             p.display()
         ));
         out.blank();
-        out.line("Ensure the chatmail service user can read this directory.");
+        out.line("Ensure the madmail service user can read this directory.");
         out.line(format!(
-            "Example: sudo chown -R chatmail:chatmail {}",
+            "Example: sudo chown -R madmail:madmail {}",
             p.display()
         ));
     }
     out.blank();
-    out.line("Restart chatmail to apply: sudo systemctl restart madmail");
+    out.line("Restart madmail to apply: sudo systemctl restart madmail");
     Ok(())
 }
 
