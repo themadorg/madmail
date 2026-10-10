@@ -37,7 +37,7 @@ primary domain.
 
 Each full email address is a separate account with its own mailbox and
 credentials. `a@b.com`, `a@c.com`, and `a@[1.1.1.1]` are not automatically aliases.
-IP email domains use brackets, although login and CLI input may use a bare IPv4
+IPv4 email domains use brackets, although login and CLI input may use a bare IPv4
 address and have it normalized.
 
 ## Allow JIT registration on all listed domains
@@ -165,3 +165,20 @@ Further CLI details: [accounts create](../cli/accounts-create.md) and
 This behavior is covered by configuration/authentication tests, the Docker
 multi-domain registration and login checks, and the CLI/JIT domain-retirement
 end-to-end regression test.
+
+## DKIM for multiple domains
+
+Outbound mail from each DNS name in `primary_domain` is signed with that address's
+From domain. IP-literal addresses remain unsigned. DNS domains still work when
+the first primary entry is an IP address. `local_domains` and `jit_domain` do not
+add signing domains.
+
+Run `madmail dkim show` and publish the displayed TXT record at
+`default._domainkey.<domain>` for every DNS primary domain. The domains share the
+existing selector and private key. `madmail dkim check` and `madmail dkim status`
+report each primary domain; multi-domain JSON output adds a `domains` array while
+retaining the first domain's existing fields.
+
+IPv6 accounts retain the bare domain spelling (`user@2001:db8::1`) used by
+existing installations. Bracketed browser hosts and login addresses resolve to
+that same spelling, so the page, `/new`, and login agree.

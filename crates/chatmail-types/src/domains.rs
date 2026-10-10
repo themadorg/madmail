@@ -31,18 +31,21 @@ pub fn is_ipv4_literal(s: &str) -> bool {
     parts.iter().all(|p| p.parse::<u8>().is_ok())
 }
 
-/// Canonical domain for config: bare IPs become `[1.2.3.4]` (RFC 5321 address-literal).
+/// Canonical account domain: IPv4 uses brackets; IPv6 retains its legacy bare spelling.
 pub fn wrap_ip_domain(domain: &str) -> String {
     let trimmed = domain.trim();
     let bare = trimmed.trim_matches(|c| c == '[' || c == ']');
     if is_ipv4_literal(bare) {
         format!("[{bare}]")
+    } else if bare.parse::<std::net::Ipv6Addr>().is_ok() {
+        // Keep the bare spelling used by existing IPv6 installations and the web page.
+        bare.to_ascii_lowercase()
     } else {
         trimmed.to_string()
     }
 }
 
-/// Accepted forms for matching: `example.org`, `[1.2.3.4]`, and bare `1.2.3.4`.
+/// Accepted forms for matching: DNS names and both bare/bracketed IP spellings.
 pub fn domain_forms(domain: &str) -> Vec<String> {
     let lower = wrap_ip_domain(domain).to_ascii_lowercase();
     let mut forms = HashSet::new();
@@ -50,7 +53,7 @@ pub fn domain_forms(domain: &str) -> Vec<String> {
     let stripped = lower.trim_matches(|c| c == '[' || c == ']');
     if stripped != lower {
         forms.insert(stripped.to_string());
-    } else if is_ipv4_literal(stripped) {
+    } else if is_ipv4_literal(stripped) || stripped.parse::<std::net::Ipv6Addr>().is_ok() {
         forms.insert(format!("[{stripped}]"));
     }
     forms.into_iter().collect()
@@ -63,7 +66,7 @@ pub fn build_local_domains(primary_domain: &str, local_domains: Option<&str>) ->
         all.insert(form);
     }
     if let Some(list) = local_domains {
-        for token in list.split_whitespace() {
+        for token in list.split(|c: char| c.is_whitespace() || c == ',') {
             if token.is_empty() {
                 continue;
             }
@@ -77,7 +80,7 @@ pub fn build_local_domains(primary_domain: &str, local_domains: Option<&str>) ->
     v
 }
 
-/// Domain part of `user@domain`, normalized (IPs wrapped in brackets).
+/// Domain part of `user@domain`, normalized to the canonical account spelling.
 pub fn address_domain(addr: &str) -> Option<String> {
     let addr = addr.trim().trim_start_matches('<').trim_end_matches('>');
     let (_, domain) = addr.rsplit_once('@')?;

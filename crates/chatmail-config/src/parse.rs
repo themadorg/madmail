@@ -106,6 +106,7 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
     let mut cfg = AppConfig {
         hostname: parsed.hostname,
         primary_domain: parsed.primary_domain,
+        primary_domains: Vec::new(),
         local_domains: parsed.local_domains,
         public_ip: parsed.public_ip,
         state_dir: parsed.state_dir.map(Into::into),

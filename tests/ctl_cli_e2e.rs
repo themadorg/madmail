@@ -431,6 +431,57 @@ fn e2e_version_repairs_0700_through_symlink() {
 }
 
 #[test]
+fn e2e_ctl_dkim_show_all_primary_domains_with_ip_first() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("madmail.conf");
+    std::fs::write(&config, "$(primary_domain) = 192.0.2.1,b.com,c.com\n$(local_domains) = $(primary_domain) extra.com\n").unwrap();
+    let output = chatmail()
+        .args([
+            "--state-dir",
+            dir.path().to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "show",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&output).unwrap();
+    let records = envelope["data"]["domains"].as_array().unwrap();
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0]["publishable"], false);
+    assert_eq!(records[1]["dns_fqdn"], "default._domainkey.b.com");
+    assert_eq!(records[2]["dns_fqdn"], "default._domainkey.c.com");
+    assert_eq!(records[1]["txt"], records[2]["txt"]);
+    assert_eq!(
+        records[1]["private_key_path"],
+        records[2]["private_key_path"]
+    );
+    let output = chatmail()
+        .args([
+            "--state-dir",
+            dir.path().to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "show",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("default._domainkey.b.com"));
+    assert!(text.contains("default._domainkey.c.com"));
+    assert!(!text.contains("default._domainkey.extra.com"));
+}
+
+#[test]
 fn e2e_ctl_dkim_show_json() {
     let dir = TempDir::new().expect("tempdir");
     let state = dir.path();

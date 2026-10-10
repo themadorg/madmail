@@ -142,7 +142,21 @@ impl ServerSupervisor {
             state: Arc::clone(&app),
             primary_domain: primary_domain.clone(),
             local_domains: local_domains.clone(),
-            dkim: None,
+            dkim: match chatmail_delivery::dkim::DkimSigner::load_or_create(
+                state_dir,
+                chatmail_delivery::dkim::DKIM_SELECTOR,
+                &file_config.effective_primary_domains(&hostname).join(" "),
+            ) {
+                Ok(signer) => {
+                    info!(domains = %file_config.effective_primary_domains(&hostname).join(" "),
+                        selector = %signer.selector, "DKIM signer ready for federation outbound");
+                    Some(Arc::new(signer))
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "DKIM signer unavailable");
+                    None
+                }
+            },
         };
         let queue = start_outbound_queue(delivery, state_dir, &file_config.queue).await?;
         if file_config.debug {

@@ -85,6 +85,8 @@ pub use queue::QueueSettings;
 pub struct AppConfig {
     pub hostname: Option<String>,
     pub primary_domain: Option<String>,
+    /// Complete normalized primary list, before selecting the canonical identity.
+    pub primary_domains: Vec<String>,
     pub local_domains: Option<String>,
     pub public_ip: Option<String>,
     pub state_dir: Option<PathBuf>,
@@ -246,6 +248,15 @@ impl AppConfig {
         chatmail_types::wrap_ip_domain(raw)
     }
 
+    /// All configured primary domains, independent of local-delivery and JIT overrides.
+    pub fn effective_primary_domains(&self, hostname_fallback: &str) -> Vec<String> {
+        if self.primary_domains.is_empty() {
+            vec![self.effective_registration_domain(Some(hostname_fallback))]
+        } else {
+            self.primary_domains.clone()
+        }
+    }
+
     /// All domains this server accepts locally (`$(local_domains)` + bracket/bare IP aliases).
     pub fn effective_local_domains(&self, hostname_fallback: &str) -> Vec<String> {
         let primary = self.effective_primary_domain(hostname_fallback);
@@ -288,11 +299,17 @@ impl AppConfig {
         if domains.is_empty() {
             return;
         }
+        self.primary_domains = domains.clone();
         self.primary_domain = Some(domains[0].clone());
         if domains.len() > 1 {
             let mut local = domains.clone();
             if let Some(existing) = self.local_domains.as_deref() {
-                local.extend(existing.split_whitespace().map(str::to_owned));
+                local.extend(
+                    existing
+                        .split(|c: char| c.is_whitespace() || c == ',')
+                        .filter(|s| !s.is_empty())
+                        .map(chatmail_types::wrap_ip_domain),
+                );
             }
             self.local_domains = Some(local.join(" "));
             if self.jit_domain.is_none() {
@@ -414,6 +431,31 @@ pub fn default_state_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ipv6_browser_host_preserves_existing_account_domain() {
+        let cfg = crate::parse_maddy_config("$(primary_domain) = 2001:db8::1\n$(local_domains) = $(primary_domain) [2001:db8::1] 2001:db8::1\n").unwrap();
+        for host in ["[2001:db8::1]", "[2001:db8::1]:8080", "2001:db8::1"] {
+            assert_eq!(cfg.web_registration_domain(Some(host)), "2001:db8::1");
+        }
+        assert!(chatmail_types::validate_login_domain("user@[2001:db8::1]", "2001:db8::1").is_ok());
+    }
+
+    #[test]
+    fn comma_macro_is_not_a_registration_domain() {
+        let cfg = crate::parse_maddy_config(
+            "$(primary_domain) = b.com,c.com,192.0.2.1\n$(local_domains) = $(primary_domain)\n",
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.web_registration_domain(Some("b.com,c.com,192.0.2.1")),
+            "b.com"
+        );
+        let local = cfg.effective_local_domains("b.com");
+        assert!(local.iter().all(|d| !d.contains(',')));
+        assert!(local.contains(&"c.com".to_string()));
+        assert!(local.contains(&"[192.0.2.1]".to_string()));
+    }
 
     #[test]
     fn multiple_primary_domains_select_browser_host_and_default() {
