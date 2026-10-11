@@ -735,6 +735,68 @@ async fn dispatch_federation_transport_set_persists() {
 
     let cli = parse_cli(dir.path(), &["federation", "transport"]);
     dispatch(&cli).await.unwrap();
+
+    let cli = parse_cli(
+        dir.path(),
+        &["federation", "transport", "set", "smtp", "inherit"],
+    );
+    let err = dispatch(&cli).await.unwrap_err().to_string();
+    assert!(err.contains("--domain"), "{err}");
+}
+
+#[tokio::test]
+async fn dispatch_federation_transport_domain_override_persists() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+
+    let cli = parse_cli(
+        dir.path(),
+        &[
+            "federation",
+            "transport",
+            "set",
+            "http",
+            "block",
+            "--domain",
+            "Evil.TEST",
+        ],
+    );
+    dispatch(&cli).await.unwrap();
+    let stored = get_setting(&pool, settings_keys::FEDERATION_TRANSPORT_DOMAINS)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored, r#"{"evil.test":{"http":"block"}}"#);
+    assert!(get_setting(&pool, settings_keys::FEDERATION_TRANSPORT_HTTP)
+        .await
+        .unwrap()
+        .is_none());
+
+    let cli = parse_cli(
+        dir.path(),
+        &[
+            "federation",
+            "transport",
+            "set",
+            "http",
+            "inherit",
+            "--domain",
+            "evil.test",
+        ],
+    );
+    dispatch(&cli).await.unwrap();
+    assert!(
+        get_setting(&pool, settings_keys::FEDERATION_TRANSPORT_DOMAINS)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let cli = parse_cli(
+        dir.path(),
+        &["federation", "transport", "status", "not a domain"],
+    );
+    let err = dispatch(&cli).await.unwrap_err().to_string();
+    assert!(err.contains("destination domain"), "{err}");
 }
 
 #[tokio::test]
@@ -788,8 +850,38 @@ fn cli_language_and_registration_parse() {
     assert!(matches!(
         cli.command,
         Some(Command::Federation(FederationCommand::Transport {
-            cmd: Some(FederationTransportCommand::Set { transport, mode })
+            cmd: Some(FederationTransportCommand::Set { transport, mode, domain: None })
         })) if transport == "http" && mode == "block"
+    ));
+
+    let cli = parse_cli(
+        std::path::Path::new("/tmp"),
+        &[
+            "federation",
+            "transport",
+            "set",
+            "smtp",
+            "inherit",
+            "--domain",
+            "evil.test",
+        ],
+    );
+    assert!(matches!(
+        cli.command,
+        Some(Command::Federation(FederationCommand::Transport {
+            cmd: Some(FederationTransportCommand::Set { transport, mode, domain: Some(domain) })
+        })) if transport == "smtp" && mode == "inherit" && domain == "evil.test"
+    ));
+
+    let cli = parse_cli(
+        std::path::Path::new("/tmp"),
+        &["federation", "transport", "status", "evil.test"],
+    );
+    assert!(matches!(
+        cli.command,
+        Some(Command::Federation(FederationCommand::Transport {
+            cmd: Some(FederationTransportCommand::Status { domain: Some(domain) })
+        })) if domain == "evil.test"
     ));
 
     let cli = parse_cli(

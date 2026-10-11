@@ -53,6 +53,9 @@ pub const FEDERATION_TRANSPORT_HTTPS: &str = "__FEDERATION_TRANSPORT_HTTPS__";
 pub const FEDERATION_TRANSPORT_HTTP: &str = "__FEDERATION_TRANSPORT_HTTP__";
 /// Outbound SMTP fallback. `allow` (default when unset) or `block`.
 pub const FEDERATION_TRANSPORT_SMTP: &str = "__FEDERATION_TRANSPORT_SMTP__";
+/// JSON object of per-destination transport overrides. A missing transport
+/// inherits the global `__FEDERATION_TRANSPORT_*__` mode. Empty deletes the key.
+pub const FEDERATION_TRANSPORT_DOMAINS: &str = "__FEDERATION_TRANSPORT_DOMAINS__";
 /// When `"true"`, unauthenticated inbound SMTP (port 25) accepts non-local RCPT
 /// (open-relay-class). Default off — file `allow_inbound_remote_rcpt` is the fallback
 /// when this key is unset.

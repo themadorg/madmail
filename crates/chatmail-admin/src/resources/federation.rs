@@ -25,9 +25,11 @@ use chatmail_db::{
     set_setting, settings_keys,
 };
 use chatmail_state::{
-    load_transport_policy, parse_transport_mode, set_transport_mode, PolicyMode, TransportName,
+    domain_overrides_json, load_domain_overrides, load_transport_policy, parse_override_mode,
+    parse_transport_mode, set_transport_mode, update_domain_transports, PolicyMode, TransportName,
     TransportPolicy,
 };
+use chatmail_types::ChatmailError;
 
 #[derive(Deserialize)]
 struct TransportPost {
@@ -40,6 +42,8 @@ struct TransportPost {
 struct FederationPost {
     enabled: Option<bool>,
     policy: Option<String>,
+    /// When set, `transports` is a per-destination override. `inherit` clears one mode.
+    domain: Option<String>,
     transports: Option<TransportPost>,
 }
 
@@ -60,6 +64,7 @@ async fn federation_settings_body(st: &AdminState) -> Result<Value, (u16, String
         .map_err(db_err)?;
     let federation_effective = st.app.federation_size.effective();
     let transports = load_transport_policy(&st.pool).await.map_err(db_err)?;
+    let overrides = load_domain_overrides(&st.pool).await.map_err(db_err)?;
     Ok(json!({
         "enabled": enabled,
         "policy": policy,
@@ -67,6 +72,7 @@ async fn federation_settings_body(st: &AdminState) -> Result<Value, (u16, String
         "federation_size_effective": format_data_size(federation_effective),
         "federation_size_effective_bytes": federation_effective,
         "transports": transport_json(transports),
+        "transport_overrides": domain_overrides_json(&overrides),
     }))
 }
 
@@ -78,22 +84,54 @@ fn transport_json(policy: TransportPolicy) -> Value {
     })
 }
 
-async fn apply_transport_post(st: &AdminState, body: TransportPost) -> Result<(), (u16, String)> {
-    let updates = [
+fn transport_fields(body: TransportPost) -> [(TransportName, Option<String>); 3] {
+    [
         (TransportName::Https, body.https),
         (TransportName::Http, body.http),
         (TransportName::Smtp, body.smtp),
-    ];
-    let mut parsed = Vec::with_capacity(updates.len());
-    for (name, mode) in updates {
-        let Some(mode) = mode else { continue };
-        let allow = parse_transport_mode(&mode).map_err(|e| (400, e.to_string()))?;
-        parsed.push((name, allow));
+    ]
+}
+
+fn config_or_db(err: ChatmailError) -> (u16, String) {
+    match err {
+        ChatmailError::Config(msg) => (400, msg),
+        other => db_err(other),
     }
-    for (name, allow) in parsed {
-        set_transport_mode(&st.pool, name, allow)
+}
+
+async fn apply_transport_post(
+    st: &AdminState,
+    body: TransportPost,
+    domain: Option<String>,
+) -> Result<(), (u16, String)> {
+    if let Some(domain) = domain {
+        if domain.trim().is_empty() {
+            return Err((400, "domain is required".into()));
+        }
+        let mut parsed = Vec::new();
+        for (name, mode) in transport_fields(body) {
+            let Some(mode) = mode else { continue };
+            let mode = parse_override_mode(&mode).map_err(|e| (400, e.to_string()))?;
+            parsed.push((name, mode));
+        }
+        if parsed.is_empty() {
+            return Err((400, "transports required when domain is set".into()));
+        }
+        update_domain_transports(&st.pool, &domain, &parsed)
             .await
-            .map_err(db_err)?;
+            .map_err(config_or_db)?;
+    } else {
+        let mut parsed = Vec::new();
+        for (name, mode) in transport_fields(body) {
+            let Some(mode) = mode else { continue };
+            let allow = parse_transport_mode(&mode).map_err(|e| (400, e.to_string()))?;
+            parsed.push((name, allow));
+        }
+        for (name, allow) in parsed {
+            set_transport_mode(&st.pool, name, allow)
+                .await
+                .map_err(db_err)?;
+        }
     }
     st.app
         .federation_transport
@@ -127,7 +165,9 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
                     .set_global_mode(PolicyMode::from_label(&p));
             }
             if let Some(transports) = req.transports {
-                apply_transport_post(st, transports).await?;
+                apply_transport_post(st, transports, req.domain).await?;
+            } else if req.domain.is_some() {
+                return Err((400, "transports required when domain is set".into()));
             }
             Ok((200, Some(federation_settings_body(st).await?)))
         }

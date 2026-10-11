@@ -618,6 +618,83 @@ async fn admin_federation_transport_block_updates_cache() {
 }
 
 #[tokio::test]
+async fn admin_federation_transport_domain_override_updates_cache() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let (status, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({
+            "domain": "Evil.TEST",
+            "transports": { "https": "block", "http": "block", "smtp": "block" }
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status, 200);
+    let body = body.unwrap();
+    assert_eq!(
+        body.pointer("/transports/https").and_then(|v| v.as_str()),
+        Some("allow")
+    );
+    let overrides = body
+        .get("transport_overrides")
+        .and_then(|v| v.as_array())
+        .unwrap();
+    assert_eq!(overrides.len(), 1);
+    assert_eq!(
+        overrides[0].get("domain").and_then(|v| v.as_str()),
+        Some("evil.test")
+    );
+    assert_eq!(
+        overrides[0].get("smtp").and_then(|v| v.as_str()),
+        Some("block")
+    );
+    assert!(st.app.federation_transport.get().any_allowed());
+    assert!(!st
+        .app
+        .federation_transport
+        .effective("evil.test")
+        .any_allowed());
+
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "domain": "evil.test", "transports": { "http": "inherit" } }),
+    )
+    .await;
+    assert!(err.is_ok());
+    assert!(st.app.federation_transport.effective("evil.test").http);
+    assert!(!st.app.federation_transport.effective("evil.test").smtp);
+
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "transports": { "http": "inherit" } }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400);
+    assert!(!st.app.federation_transport.effective("evil.test").smtp);
+
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "domain": "evil.test" }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400);
+}
+
+#[tokio::test]
 async fn admin_settings_max_federation_size_updates_effective() {
     let (st, _dir) = test_state(
         "secret-token-01234567890123456789012345678901",

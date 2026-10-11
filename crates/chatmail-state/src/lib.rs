@@ -45,8 +45,10 @@ pub use auth::AuthCache;
 pub use events::{EventBus, NewMessageEvent};
 pub use federation_size::FederationSizeLimit;
 pub use federation_transport::{
-    load_transport_policy, parse_transport_mode, set_transport_mode, FederationTransportPolicy,
-    TransportName, TransportPolicy, ALL_BLOCKED_REASON,
+    domain_overrides_json, load_domain_overrides, load_transport_policy,
+    normalize_transport_domain, parse_override_mode, parse_transport_mode, set_transport_mode,
+    update_domain_transports, DomainTransportOverride, FederationTransportPolicy, TransportName,
+    TransportPolicy, ALL_BLOCKED_REASON, INHERIT,
 };
 pub use flusher::{flush_federation_stats, flush_modseq, start_flusher, FlusherHandle};
 pub use inbound_remote_rcpt::InboundRemoteRcptFlag;

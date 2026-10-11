@@ -326,6 +326,10 @@ mod tests {
             script.contains("transport"),
             "bash completion should list federation transport"
         );
+        assert!(
+            script.contains("--domain"),
+            "bash completion should offer federation transport --domain"
+        );
     }
 
     #[test]

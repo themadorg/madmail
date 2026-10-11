@@ -137,7 +137,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | Command | Guide | Madmail source | madmail-v2 |
 |---------|-------|----------------|-------------|
 | `openrelay` | [openrelay.md](../guide/cli/openrelay.md) | — (v2; inbound anti open-relay) | **done** — `__ALLOW_INBOUND_REMOTE_RCPT__` / `allow_inbound_remote_rcpt` |
-| `federation` | [federation.md](../guide/cli/federation.md) | `ctl/federation.go` | **done** — silent dismiss (`chatmail-state::silent_dismiss`); outbound transport allow/block (`federation transport`) |
+| `federation` | [federation.md](../guide/cli/federation.md) | `ctl/federation.go` | **done** — silent dismiss (`chatmail-state::silent_dismiss`); outbound transport allow/block, including per-domain overrides (`federation transport`) |
 | `dkim` | [dkim.md](../guide/cli/dkim.md) | — (v2; outbound federation DKIM) | **done** — `show` / `check` / `status` |
 | `endpoint-cache` | [endpoint-cache.md](../guide/cli/endpoint-cache.md) | `ctl/dnscache.go` | **done** |
 | `sharing` | [sharing.md](../guide/cli/sharing.md) | `ctl/sharing.go` | **done** |
@@ -230,7 +230,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 - **`upgrade` / `update`:** HTTP(S) download (100 MB cap); `.tar.gz` / `.tgz` URLs extract the binary first, then signed replace.
 - **`certificate autocert`:** writes `tls_mode autocert` + `acme_email` to config; optional immediate `get` ([`certificate-autocert-enable.md`](../guide/cli/certificate-autocert-enable.md)).
 - **`federation dismiss`:** silent-dismiss cache (`chatmail-state::silent_dismiss`) — extra vs base Madmail CLI surface.
-- **`federation transport`:** allow or block outbound HTTPS, plain HTTP, and SMTP (`__FEDERATION_TRANSPORT_*__`). Unset stays allowed.
+- **`federation transport`:** allow or block outbound HTTPS, plain HTTP, and SMTP (`__FEDERATION_TRANSPORT_*__`). Unset stays allowed. `--domain` writes `__FEDERATION_TRANSPORT_DOMAINS__` (JSON). A missing transport in that object inherits the global mode.
 - **`dkim show` / `dkim check` / `dkim status`:** print / generate outbound federation DKIM (`default._domainkey`), verify the published TXT, or summarize without creating a key — extra vs base Madmail CLI surface.
 
 ## Related RFCs
