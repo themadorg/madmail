@@ -7,6 +7,8 @@
 ## Overview
 Chatmail uses **HTTP-based federation** as the primary delivery method between servers, with traditional SMTP as fallback. This enables reliable delivery even for IP-only deployments without DNS MX records.
 
+Outbound transports are individually allow/block (`__FEDERATION_TRANSPORT_HTTPS__`, `__FEDERATION_TRANSPORT_HTTP__`, `__FEDERATION_TRANSPORT_SMTP__`). Missing keys stay allowed, so an untouched server still tries HTTPS `/mxdeliv`, then plain HTTP, then SMTP. `madmail federation transport` and `POST /admin/settings/federation` (`transports`) write the same keys. Blocking all three fails that delivery with `federation transport blocked by policy` and does not dial.
+
 ## Wire Protocol
 
 ### Sending (Outbound)

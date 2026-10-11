@@ -166,6 +166,8 @@ Outbound federation DKIM (selector `default`): print `d=`, key paths, and the TX
 - [`policy`](federation-policy.md)
 - [`remove`](federation-remove.md)
 - [`status`](federation-status.md)
+- [`transport`](federation-transport.md)
+- [`transport set`](federation-transport-set.md)
 - [`undismiss`](federation-undismiss.md)
 
 ### [`endpoint-cache`](endpoint-cache.md)
