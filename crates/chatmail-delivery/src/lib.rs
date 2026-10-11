@@ -16,6 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 pub mod dkim;
+mod dsn;
 mod federation_http;
 mod federation_smtp;
 pub mod queue;
