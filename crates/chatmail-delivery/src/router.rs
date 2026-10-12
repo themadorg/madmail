@@ -131,6 +131,18 @@ impl DeliveryContext {
         recipients: &[String],
         data: &[u8],
     ) -> Result<()> {
+        self.submit_authenticated_from(mail_from, recipients, data, "smtp.submission")
+            .await
+    }
+
+    /// The shared delivery policy, with an operator notification path label.
+    pub async fn submit_authenticated_from(
+        &self,
+        mail_from: &str,
+        recipients: &[String],
+        data: &[u8],
+        path: &'static str,
+    ) -> Result<()> {
         self.state.check_message_size(data.len())?;
 
         let ingest_start = std::time::Instant::now();
@@ -140,7 +152,7 @@ impl DeliveryContext {
 
         for raw_rcpt in recipients {
             let rcpt = normalize_username(raw_rcpt)?;
-            self.state.quota.check_quota(&rcpt, data.len() as u64)?;
+            self.state.check_quota(&rcpt, data.len() as u64, path)?;
 
             if self.is_local(&rcpt) {
                 // Authenticated submission may deliver to any local address (SMTP AUTH parity).
@@ -282,7 +294,8 @@ impl DeliveryContext {
                         debug!(rcpt = %rcpt, "silently dropped inbound local delivery");
                         continue;
                     }
-                    self.state.quota.check_quota(&rcpt, data.len() as u64)?;
+                    self.state
+                        .check_quota(&rcpt, data.len() as u64, "federation.inbound")?;
                     local_deliveries.push((rcpt, uuid::Uuid::new_v4().to_string()));
                 }
             } else {
@@ -592,6 +605,61 @@ mod tests {
         assert!(
             leftovers.is_empty(),
             "enqueue_batch rollback left files: {leftovers:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inbound_delivery_reaches_secondary_and_existing_ipv6_mailboxes() {
+        let pool = init_memory_db().await.unwrap();
+        for user in ["user@c.com", "user@2001:db8::1"] {
+            chatmail_db::passwords::create_user(&pool, user, "bcrypt:x")
+                .await
+                .unwrap();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let cfg = chatmail_config::parse_maddy_config(
+            "$(primary_domain) = b.com,c.com,2001:db8::1\n$(local_domains) = $(primary_domain)\n",
+        )
+        .unwrap();
+        let ctx = DeliveryContext {
+            pool: pool.clone(),
+            state: app.clone(),
+            primary_domain: "b.com".into(),
+            local_domains: cfg.effective_local_domains("b.com"),
+            dkim: None,
+        };
+        for cached in [false, true] {
+            if cached {
+                app.auth.hydrate(&pool).await.unwrap();
+            }
+            // SMTP and federation handlers normalize recipients before routing.
+            let recipients = ["user@c.com", "user@[2001:db8::1]"]
+                .iter()
+                .map(|addr| chatmail_auth::normalize_username(addr).unwrap())
+                .collect::<Vec<_>>();
+            ctx.route_message(
+                "sender@foreign.com",
+                &recipients,
+                b"From: sender@foreign.com\r\nTo: user@c.com\r\n\r\nhello",
+            )
+            .await
+            .unwrap();
+        }
+        for user in ["user@c.com", "user@2001:db8::1"] {
+            assert_eq!(
+                chatmail_storage::list_inbox(&app.mailbox_store, user)
+                    .await
+                    .unwrap()
+                    .len(),
+                2
+            );
+        }
+        assert!(
+            chatmail_storage::list_inbox(&app.mailbox_store, "user@[2001:db8::1]")
+                .await
+                .unwrap()
+                .is_empty()
         );
     }
 

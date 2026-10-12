@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+http = "1"
 chatmail-types = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }

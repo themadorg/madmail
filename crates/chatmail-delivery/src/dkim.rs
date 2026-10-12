@@ -33,11 +33,13 @@ pub const DKIM_SELECTOR: &str = "default";
 pub const IP_SIGNING_REASON: &str =
     "DKIM d= cannot be an IP literal; use a DNS mail domain, then publish default._domainkey";
 
-/// RSA-SHA256 signer for one selector + domain (`d=`).
+/// RSA-SHA256 signer sharing one selector/key across configured DNS primary domains.
 #[derive(Clone)]
 pub struct DkimSigner {
     key: Arc<SigningKey>,
     pub domain: String,
+    /// DNS primary domains authorized to use this shared selector/key.
+    domains: Vec<String>,
     pub selector: String,
 }
 
@@ -48,7 +50,11 @@ impl DkimSigner {
         selector: &str,
         primary_domain: &str,
     ) -> Result<Self, String> {
-        let domain = signing_domain(primary_domain).ok_or_else(|| {
+        let domains: Vec<String> = primary_domain
+            .split(|c: char| c.is_whitespace() || c == ',')
+            .filter_map(signing_domain)
+            .collect();
+        let domain = domains.first().cloned().ok_or_else(|| {
             format!("DKIM d= cannot be an IP literal ({primary_domain}); publish a DNS name")
         })?;
         let dir = dkim_dir(state_dir);
@@ -72,19 +78,24 @@ impl DkimSigner {
         Ok(Self {
             key: Arc::new(SigningKey::Rsa(rsa_key)),
             domain,
+            domains,
             selector: selector.to_string(),
         })
     }
 
     /// Prepend `DKIM-Signature` unless the message is already signed, `From` is
-    /// an IP literal, or `From`/`MAIL FROM` is not this signer's domain
+    /// an IP literal, or `From`/`MAIL FROM` is outside this signer's primary domains
     /// (filtermail requires `d=` == From domain).
     pub async fn sign_message(&self, raw: &[u8], mail_from: &str) -> Vec<u8> {
         if has_header(raw, "dkim-signature") {
             return raw.to_vec();
         }
         let crlf = to_crlf(raw);
-        let Some(d) = aligned_signing_domain(&crlf, mail_from, &self.domain) else {
+        let Some(d) = self
+            .domains
+            .iter()
+            .find_map(|domain| aligned_signing_domain(&crlf, mail_from, domain))
+        else {
             debug!("skip DKIM: no DNS From/MAIL FROM aligned with signing domain");
             return raw.to_vec();
         };
@@ -803,6 +814,24 @@ mod tests {
         assert!(signed.windows(raw.len()).any(|w| w == raw) || signed.len() > raw.len());
         let txt = s.public_txt(dir.path()).unwrap();
         viadkim_accepts(&signed, &txt, "mail.example.org").await;
+    }
+
+    #[tokio::test]
+    async fn secondary_primary_domain_is_signed_and_verifiable() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = DkimSigner::load_or_create(dir.path(), "default", "192.0.2.1 b.com c.com").unwrap();
+        for domain in ["b.com", "c.com"] {
+            let from = format!("alice@{domain}");
+            let raw = sample_msg(&from);
+            let signed = s.sign_message(&raw, &from).await;
+            assert!(signed.starts_with(b"DKIM-Signature:"));
+            viadkim_accepts(&signed, &s.public_txt(dir.path()).unwrap(), domain).await;
+        }
+        for domain in ["foreign.com", "192.0.2.1", "[2001:db8::1]"] {
+            let from = format!("alice@{domain}");
+            let raw = sample_msg(&from);
+            assert_eq!(s.sign_message(&raw, &from).await, raw);
+        }
     }
 
     #[tokio::test]

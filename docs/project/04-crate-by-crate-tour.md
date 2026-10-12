@@ -73,6 +73,8 @@ Also has Postgres migrations (alternate application-database backend; operator g
 - `tracker.rs` (FederationTracker)
 - `flusher.rs` — background task that persists stats
 - `events.rs` (EventBus for IDLE)
+- `webhooks.rs` — operator-only registration/quota metadata, settings hydration,
+  bounded delivery, HMAC signing and quota deduplication ([guide](../guide/operator-webhooks.md))
 - `silent_dismiss.rs`, `message_size.rs`, `listener_ports.rs`
 
 Almost every delivery path touches this crate under lock.

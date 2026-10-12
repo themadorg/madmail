@@ -42,6 +42,7 @@ fn apply_config(nodes: &[Node], macros: &HashMap<String, Vec<String>>) -> AppCon
     if cfg.tls_mode.is_none() {
         cfg.tls_mode = detect_tls_mode(nodes);
     }
+    cfg.normalize_primary_domains();
     if cfg.jit_domain.is_none() {
         cfg.jit_domain = cfg.primary_domain.clone();
     }
@@ -61,7 +62,7 @@ fn apply_macros(macros: &HashMap<String, Vec<String>>, cfg: &mut AppConfig) {
     if let Some(v) = macro_first(macros, "hostname") {
         cfg.hostname = Some(v);
     }
-    if let Some(v) = macro_first(macros, "primary_domain") {
+    if let Some(v) = macro_join(macros, "primary_domain") {
         cfg.primary_domain = Some(v);
     }
     if let Some(v) = macro_join(macros, "local_domains") {
@@ -341,12 +342,14 @@ fn apply_directive(name: &str, args: &[String], block_path: &[&str], cfg: &mut A
     if in_block(block_path, "chatmail") {
         match name {
             "mail_domain" if has_value => {
-                cfg.mail_domain = Some(value.clone());
+                cfg.mail_domain = Some(arg0.split(',').next().unwrap_or(arg0).to_string());
                 if cfg.primary_domain.is_none() {
                     cfg.primary_domain = Some(value.clone());
                 }
             }
-            "mx_domain" if has_value => cfg.mx_domain = Some(value.clone()),
+            "mx_domain" if has_value => {
+                cfg.mx_domain = Some(arg0.split(',').next().unwrap_or(arg0).to_string())
+            }
             "public_ip" if has_value => cfg.public_ip = Some(value.clone()),
             "admin_path" if has_value => cfg.admin_path = Some(value.clone()),
             "admin_web_path" if has_value => cfg.admin_web_path = Some(value.clone()),

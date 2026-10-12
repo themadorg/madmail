@@ -385,13 +385,23 @@ fn expand_single_value_macro(
         let macro_name = &rest[..end_rel];
         let replacement = macros.get(macro_name);
         if let Some(vals) = replacement {
-            if vals.len() > 1 {
+            if vals.len() > 1 && macro_name != "primary_domain" {
                 return Err(ParseError {
                     message: "can't expand macro with multiple arguments inside a string".into(),
                     line: 0,
                 });
             }
-            let value = vals.first().map(String::as_str).unwrap_or("");
+            // Embedded addresses use the canonical domain; standalone macros keep the list.
+            let value = if macro_name == "primary_domain" {
+                vals.first()
+                    .and_then(|v| {
+                        v.split(|c: char| c.is_whitespace() || c == ',')
+                            .find(|s| !s.is_empty())
+                    })
+                    .unwrap_or("")
+            } else {
+                vals.first().map(String::as_str).unwrap_or("")
+            };
             let placeholder = format!("$({macro_name})");
             out = out.replacen(&placeholder, value, 1);
         } else {
@@ -490,5 +500,18 @@ mod tests {
         std::env::set_var("CHATMAIL_CONFIG_TEST_VAR", "xyzzy");
         let ast = read("a {env:CHATMAIL_CONFIG_TEST_VAR}").unwrap();
         assert_eq!(ast.nodes[0].args, ["xyzzy"]);
+    }
+}
+
+#[cfg(test)]
+mod primary_domain_tests {
+    #[test]
+    fn primary_list_uses_canonical_domain_inside_addresses() {
+        for list in ["b.com c.com 1.1.1.1", "b.com,c.com,1.1.1.1"] {
+            let parsed = super::read(&format!("$(primary_domain) = {list}\nentry postmaster postmaster@$(primary_domain)\njit_domain $(primary_domain)\n")).unwrap();
+            assert_eq!(parsed.nodes[0].args, ["postmaster", "postmaster@b.com"]);
+            assert_eq!(parsed.nodes[1].args.join(" "), list);
+        }
+        assert!(super::read("$(other) = b.com c.com\nentry user user@$(other)\n").is_err());
     }
 }

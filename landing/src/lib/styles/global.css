@@ -481,3 +481,17 @@ html.docs-theme[data-light] .token.function { color: #1d4ed8; }
 }
 
 html.docs-theme .prose .external-link-icon { display: inline-block; width: 0.75em; height: 0.75em; margin-left: 0.2em; vertical-align: super; }
+
+@font-face {
+ font-family: Shabnam;
+ src: url('/fonts/shabnam/Shabnam.woff2') format('woff2');
+ font-weight: 400;
+ font-display: swap;
+}
+@font-face {
+ font-family: Shabnam;
+ src: url('/fonts/shabnam/Shabnam-Bold.woff2') format('woff2');
+ font-weight: 600 900;
+ font-display: swap;
+}
+[lang="fa"] { font-family: Shabnam, sans-serif; }

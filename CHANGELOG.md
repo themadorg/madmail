@@ -1,3 +1,43 @@
+# [2.34.0](https://github.com/themadorg/madmail/compare/v2.33.0...v2.34.0) (2026-10-11)
+
+
+### Features
+
+* **landing:** add a static blog ([7c6749e](https://github.com/themadorg/madmail/commit/7c6749e8d9a458165fb85efcf11d4bd51975b7f8))
+* **landing:** add blog social previews and sharing options ([3b7957a](https://github.com/themadorg/madmail/commit/3b7957a75cb65f580ebb526be6d956c43c299d2a))
+* **landing:** polish blog cards and add language navigation ([d7c3e2e](https://github.com/themadorg/madmail/commit/d7c3e2ed625fc153538f437e3f5f1051de839fd8))
+
+# [2.33.0](https://github.com/themadorg/madmail/compare/v2.32.1...v2.33.0) (2026-10-10)
+
+
+### Bug Fixes
+
+* **domains:** preserve IPv6 accounts and sign all primary DNS domains ([0b7cae6](https://github.com/themadorg/madmail/commit/0b7cae667335c411964b8e10ba08b9ec45df559a))
+
+
+### Features
+
+* **config:** register accounts on multiple server domains ([cee814a](https://github.com/themadorg/madmail/commit/cee814ab1e0f6673b2e76aa3c4cbf33dbc83c5fc))
+
+## [2.32.1](https://github.com/themadorg/madmail/compare/v2.32.0...v2.32.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **landing:** correct share icon sizing and button wrapping ([991fd75](https://github.com/themadorg/madmail/commit/991fd7573b5aa3195c5647e7cbdb2b0589559f82))
+
+# [2.32.0](https://github.com/themadorg/madmail/compare/v2.31.3...v2.32.0) (2026-10-07)
+
+
+### Bug Fixes
+
+* **admin:** coalesce registration webhooks during concurrent imports ([5a404fe](https://github.com/themadorg/madmail/commit/5a404fead0db14bf94dd48669c39add4b2c41d56))
+
+
+### Features
+
+* **admin:** notify operators of registration and quota events ([bde37ae](https://github.com/themadorg/madmail/commit/bde37ae9afebd9e372e668c23c9bffe94d32473e))
+
 ## [2.31.3](https://github.com/themadorg/madmail/compare/v2.31.2...v2.31.3) (2026-10-07)
 
 

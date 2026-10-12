@@ -33,7 +33,7 @@ pub struct AuthContext {
     pub pool: DbPool,
     pub state: Arc<AppState>,
     pub primary_domain: String,
-    /// `auth.pass_table` `jit_domain` — restrict JIT/login to this domain (often `[ip]`).
+    /// `auth.pass_table` `jit_domain` — allowed domains for new accounts (spaces or commas).
     pub jit_domain: Option<String>,
     /// `chatmail` credential length limits from `maddy.conf`.
     pub credential_policy: CredentialPolicy,
@@ -164,7 +164,13 @@ pub async fn authenticate(ctx: &AuthContext, username: &str, password: &str) -> 
     ctx.state.mailbox_store.init_user_dir(&user).await?;
     registration_tokens::ensure_new_account_quota(&ctx.pool, &user).await?;
 
-    finish_successful_login(ctx, &user).await
+    finish_successful_login(ctx, &user).await?;
+    ctx.state.webhooks.registered(
+        &user,
+        chatmail_state::webhooks::RegistrationSource::Jit,
+        false,
+    );
+    Ok(())
 }
 
 async fn finish_successful_login(ctx: &AuthContext, user: &str) -> Result<()> {

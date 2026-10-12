@@ -64,6 +64,20 @@ Use `rustls` + `rustls-acme` or `instant-acme` crates.
 Checked on every delivery and IMAP quota command.
 In-memory cache with write-through updates.
 
+### 8. Operator Webhooks
+
+`/admin/services/webhooks` uses the existing authenticated admin RPC boundary.
+Notifications contain account/quota metadata only; never passwords, message content
+or invitation identifiers. Stored signing secrets are excluded from API responses,
+generic settings, public pages and logs. Receivers must verify HMAC-SHA256 over the
+raw request body and apply their own replay protection.
+
+HTTPS uses normal certificate verification; HTTP is restricted to loopback testing.
+Redirects and environment proxies are disabled. Bounded in-process queues, timeouts,
+retries and per-user quota deduplication isolate mail paths from receiver failures.
+The feature is disabled by default and follows the existing No-Log policy.
+See [operator webhook design and tests](25-operator-webhooks.md).
+
 ## Cross-Protocol Attacks (ALPACA)
 
 Every TLS listener presents the same certificate, because there is one hostname.

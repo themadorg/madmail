@@ -112,6 +112,12 @@ async fn provision_account(
     username: &str,
     stored_hash: &str,
 ) -> Result<(), (u16, String)> {
+    // Share the JIT flight so simultaneous provisioning emits one creation event.
+    let flight = st.app.jit_flight(username);
+    let _guard = flight.lock().await;
+    let existed = passwords::user_exists(&st.pool, username)
+        .await
+        .map_err(db_err)?;
     passwords::create_user(&st.pool, username, stored_hash)
         .await
         .map_err(db_err)?;
@@ -124,6 +130,13 @@ async fn provision_account(
     registration_tokens::ensure_new_account_quota(&st.pool, username)
         .await
         .map_err(db_err)?;
+    if !existed {
+        st.app.webhooks.registered(
+            username,
+            chatmail_state::webhooks::RegistrationSource::Admin,
+            false,
+        );
+    }
     Ok(())
 }
 

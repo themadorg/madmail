@@ -1,3 +1,4 @@
+import { posts } from '$lib/blog.js';
 import { hrefFromRoute } from '$lib/docs.js';
 import { getAllDirRoutes, hrefForDirId } from '$lib/docTreeData.js';
 import { getAllDocRoutes } from '$lib/rawDocModules.js';
@@ -9,7 +10,10 @@ import { siteOrigin } from '$lib/siteMeta.js';
  * @returns {string[]}
  */
 export function getSitemapPathnames() {
-	const paths = new Set(['/', '/docs', '/docs/quick-setup']);
+	const paths = new Set(['/', '/docs', '/docs/quick-setup', '/blog']);
+	for (const post of posts) {
+		paths.add(`/blog/${post.slug}`);
+	}
 
 	for (const route of getAllDocRoutes()) {
 		paths.add(hrefFromRoute(route));

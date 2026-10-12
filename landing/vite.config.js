@@ -57,7 +57,16 @@ export default defineConfig({
 			adapter: adapter(),
 			prerender: {
 				handleHttpError: 'ignore',
-				handleMissingId: 'ignore'
+				handleMissingId: 'ignore',
+				// An empty blog has no /blog/[slug] pages yet. Once a post exists,
+				// entries() prerenders it and this route is no longer unseen.
+				handleUnseenRoutes: ({ routes }) => {
+					const unexpected = routes.filter((id) => id !== '/blog/[slug]');
+					if (unexpected.length === 0) return;
+					throw new Error(
+						`Routes were not prerendered:\n${unexpected.map((id) => `  - ${id}`).join('\n')}`
+					);
+				}
 			},
 			preprocess: [
 				mdsvex({

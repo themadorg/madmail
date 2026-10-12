@@ -54,6 +54,9 @@ Accessed via:
 - `__REGISTRATION_OPEN__`, `__JIT_REGISTRATION_ENABLED__`
 - `__TURN_ENABLED__`, `__IROH_ENABLED__`, `__SS_ENABLED__`
 - `__PUSH_MODE__` (`auto` / `on` / `off`, default `off`)
+- `__OPERATOR_WEBHOOKS__` — private JSON receiver settings, disabled by default;
+  managed only by `/admin/services/webhooks`, excluded from generic settings.
+  Changes activate immediately; see [operator webhooks](../guide/operator-webhooks.md).
 - `__APPENDLIMIT__`, `__MAX_MESSAGE_SIZE__` (effective message cap)
 - `__FEDERATION_POLICY__`, `__FEDERATION_ENABLED__`
 - Port overrides (`__SMTP_PORT__`, `__IMAP_TLS_PORT__`, …) and `__*_LOCAL_ONLY__` access flags
@@ -155,3 +158,27 @@ Useful commands / techniques:
 Now that you know how knobs flow into the system, see how authentication and first-account creation use those knobs:
 
 → [07-authentication-and-jit.md](./07-authentication-and-jit.md)
+
+### Registration on multiple server addresses
+
+List all server addresses in `primary_domain`; the first is the default server identity:
+
+```conf
+$(primary_domain) = b.com c.com 1.1.1.1
+$(local_domains) = $(primary_domain)
+```
+
+Opening `b.com`, `c.com`, or `1.1.1.1` generates accounts under `@b.com`,
+`@c.com`, or `@[1.1.1.1]` respectively. The addresses share one server, but each
+full email address is a separate account. An unlisted browser host falls back
+to the first domain. DNS and TLS must be configured for the addresses used.
+
+The listed primary domains are automatically accepted for local delivery and
+JIT registration when `jit_domain` is omitted. An explicit `jit_domain` keeps
+its restriction; use `jit_domain $(primary_domain)` to allow the entire list.
+Existing `local_domains` entries remain supported and can also be selected by
+the registration page. To allow client-side JIT registration there, use
+`jit_domain $(local_domains)`.
+
+In TOML, use `primary_domain = "b.com c.com 1.1.1.1"`. Commas are also accepted
+in `primary_domain` and `jit_domain` lists.

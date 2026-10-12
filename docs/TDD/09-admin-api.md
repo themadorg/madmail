@@ -286,3 +286,11 @@ Admin API is HTTP + JSON over a single endpoint. Offline copies: [`RFC/README.md
 | [9110](https://datatracker.ietf.org/doc/html/rfc9110) | HTTP semantics | [rfc9110.txt](RFC/rfc9110.txt) |
 | [8259](https://datatracker.ietf.org/doc/html/rfc8259) | JSON bodies | [rfc8259.txt](RFC/rfc8259.txt) |
 | [6750](https://datatracker.ietf.org/doc/html/rfc6750) | Bearer token pattern | [rfc6750.txt](RFC/rfc6750.txt) |
+
+## Operator webhooks
+
+Authenticated `/admin/services/webhooks` supports GET (redacted settings/stats),
+PUT (partial configuration), and POST `{"action":"test"}`. Configuration is
+operator-only and excluded from public templates and generic settings snapshots.
+See [25-operator-webhooks.md](25-operator-webhooks.md) for schema, HMAC signing,
+registration/quota hooks, retry/timeout policy, persistence and security tests.

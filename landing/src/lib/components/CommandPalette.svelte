@@ -242,6 +242,11 @@
 		outline: none;
 	}
 
+	.search input:focus-visible {
+		outline: none;
+		box-shadow: none;
+	}
+
 	.search input::placeholder {
 		color: var(--color-text-faint);
 	}

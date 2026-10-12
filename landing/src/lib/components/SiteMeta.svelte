@@ -31,7 +31,12 @@
 	<meta name="description" content={description} />
 	<link rel="canonical" href={canonicalUrl} />
 
-	<meta property="og:type" content="website" />
+	<meta property="og:type" content={page.data?.article ? 'article' : 'website'} />
+	{#if page.data?.article}
+		<meta property="article:published_time" content={`${page.data.published}T00:00:00Z`} />
+		<meta property="article:author" content={`https://github.com/${encodeURIComponent(page.data.author)}`} />
+		<meta property="og:locale" content={page.data.language === 'fa' ? 'fa_IR' : page.data.language === 'ru' ? 'ru_RU' : 'en_US'} />
+	{/if}
 	<meta property="og:site_name" content={siteName} />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />

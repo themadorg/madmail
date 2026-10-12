@@ -20,6 +20,9 @@ madmail accounts create-random [OPTIONS]
 
 Same as [`create-user`](create-user.md). Prints JSON with a `dclogin` Delta Chat login URI.
 
+Uses the first primary domain. This explicit admin operation bypasses the JIT
+domain allowlist; to choose another domain, use `accounts create user@domain`.
+
 ## JSON output (`--json`)
 
 ```bash

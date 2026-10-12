@@ -22,6 +22,86 @@ fn state_argv(state_dir: &str) -> Vec<String> {
     ]
 }
 
+#[tokio::test]
+async fn cli_creation_and_existing_logins_survive_jit_domain_restriction() {
+    use chatmail_auth::{authenticate, AuthContext};
+    use chatmail_state::AppState;
+    use std::sync::Arc;
+
+    let dir = TempDir::new().unwrap();
+    let config_path = dir.path().join("madmail.conf");
+    let config = "$(primary_domain) = b.com c.com 1.1.1.1\nauth.pass_table local_authdb {\n jit_domain c.com\n table sql_table {\n driver sqlite3\n dsn credentials.db\n }\n}\n";
+    std::fs::write(&config_path, config).unwrap();
+    let cfg = chatmail_config::parse_maddy_config(config).unwrap();
+    for (input, expected) in [
+        ("cliuser1", "cliuser1@b.com"),
+        ("cliuser2@c.com", "cliuser2@c.com"),
+        ("cliuser3@1.1.1.1", "cliuser3@[1.1.1.1]"),
+    ] {
+        let output = chatmail()
+            .args([
+                "--state-dir",
+                dir.path().to_str().unwrap(),
+                "--config",
+                config_path.to_str().unwrap(),
+                "--json",
+                "accounts",
+                "create",
+                input,
+                "--password",
+                "longpassword1",
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let data: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(data["data"]["username"], expected);
+    }
+    let pool = init_db(&effective_app_db_path(dir.path(), &cfg))
+        .await
+        .unwrap();
+    let state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    let mut ctx = AuthContext {
+        pool: pool.clone(),
+        state,
+        primary_domain: "b.com".into(),
+        jit_domain: cfg.effective_jit_domain("b.com"),
+        credential_policy: cfg.credential_policy(),
+    };
+    ctx.jit_domain = Some("b.com c.com 1.1.1.1".into());
+    for email in ["retired1@b.com", "retired1@[1.1.1.1]"] {
+        authenticate(&ctx, email, "longpassword1").await.unwrap();
+    }
+    ctx.jit_domain = cfg.effective_jit_domain("b.com");
+    // Check both cold DB lookup and hydrated cache lookup after the policy changed.
+    for cached in [false, true] {
+        if cached {
+            ctx.state.auth.hydrate(&pool).await.unwrap();
+        }
+        for email in [
+            "cliuser1@b.com",
+            "cliuser2@c.com",
+            "cliuser3@1.1.1.1",
+            "retired1@b.com",
+            "retired1@[1.1.1.1]",
+        ] {
+            authenticate(&ctx, email, "longpassword1").await.unwrap();
+            assert!(authenticate(&ctx, email, "incorrect-password")
+                .await
+                .is_err());
+        }
+    }
+    authenticate(&ctx, "newuser1@c.com", "longpassword1")
+        .await
+        .unwrap();
+    for email in ["newuser1@b.com", "newuser1@[1.1.1.1]"] {
+        assert!(authenticate(&ctx, email, "longpassword1").await.is_err());
+        assert!(!passwords::user_exists(&pool, email).await.unwrap());
+    }
+}
+
 #[test]
 fn e2e_ctl_db_sqlite_to_postgres_dry_run_json() {
     let dir = TempDir::new().expect("tempdir");
@@ -348,6 +428,57 @@ fn e2e_version_repairs_0700_through_symlink() {
         mode, 0o755,
         "version must chmod symlink target to 0755 (#147), got {mode:#o}"
     );
+}
+
+#[test]
+fn e2e_ctl_dkim_show_all_primary_domains_with_ip_first() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("madmail.conf");
+    std::fs::write(&config, "$(primary_domain) = 192.0.2.1,b.com,c.com\n$(local_domains) = $(primary_domain) extra.com\n").unwrap();
+    let output = chatmail()
+        .args([
+            "--state-dir",
+            dir.path().to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "show",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&output).unwrap();
+    let records = envelope["data"]["domains"].as_array().unwrap();
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0]["publishable"], false);
+    assert_eq!(records[1]["dns_fqdn"], "default._domainkey.b.com");
+    assert_eq!(records[2]["dns_fqdn"], "default._domainkey.c.com");
+    assert_eq!(records[1]["txt"], records[2]["txt"]);
+    assert_eq!(
+        records[1]["private_key_path"],
+        records[2]["private_key_path"]
+    );
+    let output = chatmail()
+        .args([
+            "--state-dir",
+            dir.path().to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+            "dkim",
+            "show",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("default._domainkey.b.com"));
+    assert!(text.contains("default._domainkey.c.com"));
+    assert!(!text.contains("default._domainkey.extra.com"));
 }
 
 #[test]

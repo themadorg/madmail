@@ -89,6 +89,9 @@ Defined in `chatmail-state/src/lib.rs`.
 It loads the "hot" working set from durable storage so that the first mail delivery doesn't have to hit disk for policy/quota decisions:
 
 - `message_size.hydrate(...)`
+- `webhooks.hydrate()` — loads operator-only receiver settings and starts the bounded
+  metadata delivery worker. Registration/quota paths enqueue without awaiting HTTP;
+  see [operator webhooks](../TDD/25-operator-webhooks.md).
 - `quota.hydrate(pool, &mailbox_store)` — walks Maildir to compute current used bytes per user
 - `federation_policy.hydrate(pool)`
 - `federation_silent_dismiss.hydrate(pool)`
