@@ -1,5 +1,7 @@
 # 11 — Proxy & Sidecar Services (TURN, Iroh, Shadowsocks)
 
+Configuration precedence is **environment → file → database → defaults**. Explicit environment/file settings are read-only through database-backed commands. File/environment changes require restart. See [configuration sources and migration](../guide/configuration.md).
+
 A chatmail server can bundle the auxiliary services that Delta Chat uses for real-time and p2p features.
 
 These run in the same process (or as supervised children) and are configured via the same mechanisms as the mail protocols.

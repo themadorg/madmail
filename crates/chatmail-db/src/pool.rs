@@ -27,9 +27,17 @@ use std::str::FromStr;
 
 /// Application database pool (`auth.pass_table` / credentials DB).
 #[derive(Clone)]
-pub enum DbPool {
+pub enum DbConnection {
     Sqlite(SqlitePool),
     Postgres(sqlx::PgPool),
+}
+
+/// A database connection with a process-local immutable deployment policy.
+#[derive(Clone)]
+pub struct DbPool {
+    connection: DbConnection,
+    policy: std::sync::Arc<chatmail_config::SettingsPolicy>,
+    mutation_locks: std::sync::Arc<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,10 +47,55 @@ pub enum DbBackend {
 }
 
 impl DbPool {
+    #[allow(non_snake_case)]
+    pub fn Sqlite(pool: SqlitePool) -> Self {
+        Self::new(DbConnection::Sqlite(pool))
+    }
+    #[allow(non_snake_case)]
+    pub fn Postgres(pool: sqlx::PgPool) -> Self {
+        Self::new(DbConnection::Postgres(pool))
+    }
+    fn new(connection: DbConnection) -> Self {
+        Self {
+            connection,
+            policy: Default::default(),
+            mutation_locks: Default::default(),
+        }
+    }
+    pub fn connection(&self) -> &DbConnection {
+        &self.connection
+    }
+    pub fn with_policy(mut self, policy: chatmail_config::SettingsPolicy) -> Self {
+        self.policy = std::sync::Arc::new(policy);
+        self
+    }
+    pub fn with_mutation_locks(
+        mut self,
+        locks: std::collections::BTreeMap<String, String>,
+    ) -> Self {
+        self.mutation_locks = std::sync::Arc::new(locks);
+        self
+    }
+    pub fn policy(&self) -> &chatmail_config::SettingsPolicy {
+        &self.policy
+    }
+    pub fn check_settings_writable(&self, keys: &[&str]) -> Result<()> {
+        self.policy.check_writable(keys)?;
+        for key in keys {
+            if let Some(source_name) = self.mutation_locks.get(*key) {
+                return Err(ChatmailError::ConfigurationLocked {
+                    setting: chatmail_config::settings_policy::setting_name(key).into(),
+                    source_name: source_name.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub fn backend(&self) -> DbBackend {
-        match self {
-            Self::Sqlite(_) => DbBackend::Sqlite,
-            Self::Postgres(_) => DbBackend::Postgres,
+        match &self.connection {
+            DbConnection::Sqlite(_) => DbBackend::Sqlite,
+            DbConnection::Postgres(_) => DbBackend::Postgres,
         }
     }
 
@@ -69,15 +122,15 @@ impl DbPool {
 #[macro_export]
 macro_rules! db_fetch_optional {
     ($pool:expr, $ty:ty, $sql:expr $(, $bind:expr)*) => {{
-        match &$pool {
-            $crate::DbPool::Sqlite(__p) => {
+        match ($pool).connection() {
+            $crate::pool::DbConnection::Sqlite(__p) => {
                 sqlx::query_as::<_, $ty>($sql)
                     $(.bind($bind))*
                     .fetch_optional(__p)
                     .await
                     .map_err(chatmail_types::ChatmailError::from)
             }
-            $crate::DbPool::Postgres(__p) => {
+            $crate::pool::DbConnection::Postgres(__p) => {
                 let __pg_sql = $crate::pool::pg_sql($sql);
                 sqlx::query_as::<_, $ty>(&__pg_sql)
                     $(.bind($bind))*
@@ -93,15 +146,15 @@ macro_rules! db_fetch_optional {
 #[macro_export]
 macro_rules! db_fetch_one {
     ($pool:expr, $ty:ty, $sql:expr $(, $bind:expr)*) => {{
-        match &$pool {
-            $crate::DbPool::Sqlite(__p) => {
+        match ($pool).connection() {
+            $crate::pool::DbConnection::Sqlite(__p) => {
                 sqlx::query_as::<_, $ty>($sql)
                     $(.bind($bind))*
                     .fetch_one(__p)
                     .await
                     .map_err(chatmail_types::ChatmailError::from)
             }
-            $crate::DbPool::Postgres(__p) => {
+            $crate::pool::DbConnection::Postgres(__p) => {
                 let __pg_sql = $crate::pool::pg_sql($sql);
                 sqlx::query_as::<_, $ty>(&__pg_sql)
                     $(.bind($bind))*
@@ -117,15 +170,15 @@ macro_rules! db_fetch_one {
 #[macro_export]
 macro_rules! db_fetch_all {
     ($pool:expr, $ty:ty, $sql:expr $(, $bind:expr)*) => {{
-        match &$pool {
-            $crate::DbPool::Sqlite(__p) => {
+        match ($pool).connection() {
+            $crate::pool::DbConnection::Sqlite(__p) => {
                 sqlx::query_as::<_, $ty>($sql)
                     $(.bind($bind))*
                     .fetch_all(__p)
                     .await
                     .map_err(chatmail_types::ChatmailError::from)
             }
-            $crate::DbPool::Postgres(__p) => {
+            $crate::pool::DbConnection::Postgres(__p) => {
                 let __pg_sql = $crate::pool::pg_sql($sql);
                 sqlx::query_as::<_, $ty>(&__pg_sql)
                     $(.bind($bind))*
@@ -149,15 +202,15 @@ macro_rules! db_fetch_scalar {
 #[macro_export]
 macro_rules! db_execute {
     ($pool:expr, $sql:expr $(, $bind:expr)*) => {{
-        match &$pool {
-            $crate::DbPool::Sqlite(__p) => {
+        match ($pool).connection() {
+            $crate::pool::DbConnection::Sqlite(__p) => {
                 sqlx::query($sql)
                     $(.bind($bind))*
                     .execute(__p)
                     .await
                     .map(|_| ())
             }
-            $crate::DbPool::Postgres(__p) => {
+            $crate::pool::DbConnection::Postgres(__p) => {
                 let __pg_sql = $crate::pool::pg_sql($sql);
                 sqlx::query(&__pg_sql)
                     $(.bind($bind))*
@@ -308,12 +361,12 @@ pub(crate) async fn run_migrations(pool: &DbPool) -> Result<()> {
         return Ok(());
     }
 
-    match pool {
-        DbPool::Sqlite(p) => sqlx::migrate!("./migrations/sqlite")
+    match pool.connection() {
+        crate::pool::DbConnection::Sqlite(p) => sqlx::migrate!("./migrations/sqlite")
             .run(p)
             .await
             .map_err(map_migration_error)?,
-        DbPool::Postgres(p) => sqlx::migrate!("./migrations/postgres")
+        crate::pool::DbConnection::Postgres(p) => sqlx::migrate!("./migrations/postgres")
             .run(p)
             .await
             .map_err(map_migration_error)?,
@@ -344,14 +397,14 @@ async fn apply_legacy_schema_tables(pool: &DbPool) -> Result<()> {
         DbBackend::Postgres => POSTGRES_ENSURE_TABLE_STATEMENTS,
     };
     for sql in stmts {
-        match pool {
-            DbPool::Sqlite(p) => {
+        match pool.connection() {
+            crate::pool::DbConnection::Sqlite(p) => {
                 sqlx::query(sql)
                     .execute(p)
                     .await
                     .map_err(ChatmailError::from)?;
             }
-            DbPool::Postgres(p) => {
+            crate::pool::DbConnection::Postgres(p) => {
                 sqlx::query(sql)
                     .execute(p)
                     .await
@@ -825,8 +878,8 @@ mod tests {
         let idx: Vec<(String,)> = sqlx::query_as(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE '%message_stats%'",
         )
-        .fetch_all(match &pool {
-            DbPool::Sqlite(p) => p,
+        .fetch_all(match pool.connection() {
+            crate::pool::DbConnection::Sqlite(p) => p,
             _ => unreachable!(),
         })
         .await
@@ -839,8 +892,8 @@ mod tests {
         // Seed rows present; second ensure is idempotent.
         let count: (i64,) =
             sqlx::query_as("SELECT COUNT(*) FROM message_stats WHERE name = 'sent_messages'")
-                .fetch_one(match &pool {
-                    DbPool::Sqlite(p) => p,
+                .fetch_one(match pool.connection() {
+                    crate::pool::DbConnection::Sqlite(p) => p,
                     _ => unreachable!(),
                 })
                 .await
@@ -853,8 +906,8 @@ mod tests {
             "INSERT INTO message_stats (name, count) VALUES ('sent_messages', 42)
              ON CONFLICT(name) DO UPDATE SET count = excluded.count",
         )
-        .execute(match &pool {
-            DbPool::Sqlite(p) => p,
+        .execute(match pool.connection() {
+            crate::pool::DbConnection::Sqlite(p) => p,
             _ => unreachable!(),
         })
         .await
@@ -863,8 +916,8 @@ mod tests {
             "INSERT INTO blocked_users (username, reason) VALUES ('u@test', 'x')
              ON CONFLICT(username) DO UPDATE SET reason = excluded.reason",
         )
-        .execute(match &pool {
-            DbPool::Sqlite(p) => p,
+        .execute(match pool.connection() {
+            crate::pool::DbConnection::Sqlite(p) => p,
             _ => unreachable!(),
         })
         .await
@@ -903,8 +956,8 @@ mod tests {
             .expect("idempotent ensure");
 
         // Runtime ON CONFLICT used by message_stats flush.
-        match &pool {
-            DbPool::Postgres(p) => {
+        match pool.connection() {
+            crate::pool::DbConnection::Postgres(p) => {
                 sqlx::query(
                     "INSERT INTO message_stats (name, count) VALUES ('sent_messages', 123)
                      ON CONFLICT (name) DO UPDATE SET count = excluded.count",

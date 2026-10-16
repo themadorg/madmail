@@ -99,7 +99,7 @@ pub fn render_maddy_conf(c: &InstallConfig) -> String {
     let imap_turn = if c.enable_turn {
         format!(
             r#"
-    turn_enable yes
+    # turn_enable yes  # Uncomment to protect this toggle from CLI/UI changes.
     turn_server {}
     turn_port {}
     turn_secret {}
@@ -171,7 +171,7 @@ chatmail tcp://0.0.0.0:80 {{
     public_ip $(public_ip)
     turn_off_tls {turn_off}
     enable_contact_sharing {contact}
-    language {lang}
+    # language {lang}  # Installed language is stored in the database.
 {ss_block}}}
 
 chatmail tls://0.0.0.0:443 {{
@@ -188,7 +188,7 @@ chatmail tls://0.0.0.0:443 {{
     alpn_smtp {alpn_smtp}
     alpn_imap {alpn_imap}
     enable_contact_sharing {contact}
-    language {lang}
+    # language {lang}  # Installed language is stored in the database.
 {ss_block}}}
 "#,
             turn_off = turn_off,
@@ -242,9 +242,9 @@ storage.imapsql local_mailboxes {{
     auto_create yes
     driver sqlite3
     dsn imapsql.db
-    retention 24h
+    # retention 24h  # Also requires settings.message_retention_enabled.
     default_quota 1G
-    appendlimit 100M
+    # appendlimit 100M  # Default; uncomment to protect the value.
 }}
 
 hostname $(hostname)
@@ -273,7 +273,7 @@ smtp tcp://0.0.0.0:25 {{
         all rate 20 1s
         all concurrency 200
     }}
-    max_message_size 100M
+    # max_message_size 100M  # Default; uncomment to protect the value.
     dmarc yes
     check {{
 {require_tls_smtp}        require_mx_record
@@ -297,7 +297,7 @@ submission tls://0.0.0.0:465 tcp://0.0.0.0:587 {{
     limits {{
         all rate 50 1s
     }}
-    max_message_size 100M
+    # max_message_size 100M  # Default; uncomment to protect the value.
     auth &local_authdb
     insecure_auth {insecure}
     source $(local_domains) {{

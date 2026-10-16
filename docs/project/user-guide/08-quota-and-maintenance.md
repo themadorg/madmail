@@ -1,5 +1,7 @@
 # Quota, Retention, and Maintenance
 
+Configuration precedence is **environment → file → database → defaults**. Explicit environment/file settings are read-only through database-backed commands. File/environment changes require restart. See [configuration sources and migration](../../guide/configuration.md).
+
 As a server admin you will regularly deal with storage limits, old messages, and accounts that are no longer used. This guide explains how these things work on a chatmail server and what you can do about them.
 
 ## Storage Quota

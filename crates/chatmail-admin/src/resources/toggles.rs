@@ -49,15 +49,6 @@ pub async fn jit(st: &AdminState, method: &str, body: &Value) -> AdminResult {
 
 pub async fn service_bool(st: &AdminState, method: &str, body: &Value, key: &str) -> AdminResult {
     let mut res = toggle_setting(&st.pool, method, body, key, "enabled", "disabled").await?;
-    if method == "POST" && key == chatmail_db::settings_keys::ADMIN_WEB_ENABLED {
-        if let Some(body) = &res.1 {
-            if body.get("status").and_then(|v| v.as_str()) == Some("enabled") {
-                chatmail_admin_web::ensure_default_admin_web_path(&st.file_config, &st.pool)
-                    .await
-                    .map_err(|e| (500, e.to_string()))?;
-            }
-        }
-    }
     if method == "POST"
         && (key == chatmail_db::settings_keys::TURN_ENABLED
             || key == chatmail_db::settings_keys::IROH_ENABLED

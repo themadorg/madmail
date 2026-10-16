@@ -96,6 +96,7 @@ async fn set_size(
     let out = CtlOut::from_args(args, "message-size set");
     let size = size.trim();
     parse_data_size(size)?;
+    pool.check_settings_writable(&[settings_keys::APPENDLIMIT, settings_keys::MAX_MESSAGE_SIZE])?;
     set_setting(pool, settings_keys::APPENDLIMIT, size).await?;
     set_setting(pool, settings_keys::MAX_MESSAGE_SIZE, size).await?;
     let config_eff = chatmail_config::effective_max_message_bytes(&ctx.config);
@@ -113,6 +114,7 @@ async fn set_size(
 
 async fn reset(args: &Args, pool: &chatmail_db::DbPool, config: &AppConfig) -> Result<()> {
     let out = CtlOut::from_args(args, "message-size reset");
+    pool.check_settings_writable(&[settings_keys::APPENDLIMIT, settings_keys::MAX_MESSAGE_SIZE])?;
     delete_setting(pool, settings_keys::APPENDLIMIT).await?;
     delete_setting(pool, settings_keys::MAX_MESSAGE_SIZE).await?;
     let effective = chatmail_config::effective_max_message_bytes(config);

@@ -4,19 +4,27 @@ Chatmail has a **three-layer** configuration model. Understanding it is essentia
 
 ## The Three Layers
 
-1. **Static file** (`chatmail.toml` or legacy `maddy.conf` syntax)
-2. **Database settings table** (dynamic, most things here are reloadable)
-3. **CLI / environment overrides** (highest precedence for some values)
+Highest priority first:
 
-The `chatmail-config` crate is responsible for turning all of this into `AppConfig` and the various `effective_*` values used at runtime.
+1. **Environment variables**
+2. **Explicit configuration file values**
+3. **Database settings**
+4. **Built-in defaults**
+
+Environment/file values protect settings from database-backed CLI/API changes.
+Startup flags retain their documented startup-only behavior. See the
+[operator reference](../guide/configuration.md) and
+[TDD contract](../TDD/26-configuration-precedence.md).
+
+The `chatmail-config` crate defines `AppConfig` and the shared settings policy. `chatmail-db` applies that immutable policy to single, batch, and list setting reads and guards mutations. Existing `effective_*` consumers receive resolved values.
 
 ## Static Config (File)
 
 Loaded in `boot.rs` via `load_config` (or defaults if file missing).
 
 Supports two syntaxes:
-- Modern: TOML (`chatmail.toml`)
-- Legacy: maddy.conf style (the parser in `madmail_parse.rs` + `maddy.rs` can read the old blocks like `tls file ...`, `listen ...`, etc.)
+- TOML (`chatmail.toml`; top-level operational fields)
+- Madmail block syntax (the parser in `madmail_parse.rs` + `maddy.rs` can read the old blocks like `tls file ...`, `listen ...`, etc.)
 
 Important keys (see `AppConfig` struct):
 - `hostname`, `primary_domain`, `local_domains`
@@ -31,7 +39,7 @@ Important keys (see `AppConfig` struct):
 
 Boolean fields (`debug`, `turn_enable`, `auth_auto_create`, …) accept flexible enable/disable strings via `chatmail_config::parse_bool_str` (see [TDD 13-configuration](../TDD/13-configuration.md)).
 
-The file is read **once at boot**. Changes require a reload or restart (depending on the key).
+The file is read **once at boot**. File/environment changes require a restart. Database changes retain their immediate/reload/restart behavior.
 
 ## Dynamic Settings (the `settings` table)
 
@@ -94,7 +102,7 @@ These are the **single source of truth** that the rest of the code should use.
 
 They combine:
 - File config
-- DB overrides (e.g. `mail_ports` table for per-service port overrides)
+- Effective settings resolved by the policy attached to the DB pool (environment/file before stored rows)
 - CLI args
 - Sensible defaults
 - Dev-mode aliases (`localhost`, `127.0.0.1`, etc.)
@@ -123,9 +131,8 @@ Dev mode automatically adds `localhost` / `127.0.0.1` variants.
 See `crates/chatmail/src/admin.rs` and `boot.rs`.
 
 Order of precedence:
-1. `CHATMAIL_ADMIN_TOKEN` env?
-2. Explicit `admin_token = "..."` in static config (or the literal string "disabled")
-3. The file `state_dir/admin_token` (created on first boot with strong random value)
+1. Explicit `admin_token = "..."` in static config (or the literal string "disabled")
+2. The file `state_dir/admin_token` (created on first boot with strong random value)
 
 The file is never stored in the DB (security).
 
@@ -141,7 +148,7 @@ The file is never stored in the DB (security).
 
 Trace the path:
 1. `chatmail-imap` calls `effective_imap_plain_listen(config, db_ports_override)`
-2. That function looks at CLI, then static config `imap_listen`, then DB `mail_ports` table, then default 143/993.
+2. Effective database access resolves environment, explicit file values, persisted settings, then defaults. Listener bind addresses use this resolved snapshot.
 3. In local dev people often set `state_dir = "./data"` and a custom toml that maps to 1143 for testing without root.
 
 ## Debugging Config

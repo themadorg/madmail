@@ -118,6 +118,14 @@ pub async fn shared_port(args: &Args, cmd: &SharedPortCommand) -> Result<()> {
                     "shared-port disable"
                 },
             );
+            let mut keys = Vec::new();
+            if want_imap {
+                keys.push(settings_keys::SHARED_PORT_IMAP);
+            }
+            if want_smtp {
+                keys.push(settings_keys::SHARED_PORT_SMTP);
+            }
+            pool.check_settings_writable(&keys)?;
             let value = if on { "true" } else { "false" };
             if want_imap {
                 set_setting(&pool, settings_keys::SHARED_PORT_IMAP, value).await?;

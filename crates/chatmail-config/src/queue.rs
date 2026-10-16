@@ -20,7 +20,8 @@
 use std::path::PathBuf;
 
 /// Parsed from `target.queue remote_queue { ... }` in `maddy.conf`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct QueueSettings {
     /// Queue directory (default: `{state_dir}/remote_queue`).
     pub location: Option<PathBuf>,

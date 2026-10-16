@@ -14,7 +14,7 @@ Enable/disable, cipher, password, and client URL: [`proxy`](proxy.md).
 |------------|-------------|
 | `status` | Show current port and local/public mode |
 | `set <PORT>` | Set port number (`1`–`65535`) |
-| `reset` | Clear DB override (revert to config default) |
+| `reset` | Clear unprotected DB value (inherit defaults) |
 | `local` | Listen on localhost only |
 | `public` | Listen on all interfaces (`0.0.0.0`) |
 

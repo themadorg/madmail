@@ -10,7 +10,7 @@ Manage **HTTPS (443)** listener port and bind mode. Default port: **443**.
 |------------|-------------|
 | `status` | Show current port, enabled state, and local/public mode |
 | `set <PORT>` | Set port number (`1`–`65535`) |
-| `reset` | Clear DB override (revert to config default) |
+| `reset` | Clear unprotected DB value (inherit defaults) |
 | `local` | Listen on localhost only |
 | `public` | Listen on all interfaces (`0.0.0.0`) |
 | `enable` | Start the HTTPS listener |

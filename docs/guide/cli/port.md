@@ -1,5 +1,7 @@
 # `port`
 
+Configuration precedence is **environment → file → database → defaults**. Explicit environment/file settings are read-only through database-backed commands. File/environment changes require restart. See [configuration sources and migration](../configuration.md).
+
 Manage listener ports and local-only vs public bind mode for each service.
 
 

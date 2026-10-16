@@ -166,3 +166,6 @@ PGP policy, MIME, TLS, and certificate automation. Index: [`RFC/README.md`](RFC/
 | [7301](https://datatracker.ietf.org/doc/html/rfc7301) | TLS ALPN extension | — |
 | [9325](https://datatracker.ietf.org/doc/html/rfc9325) | TLS BCP 195 — strict ALPN/SNI vs ALPACA | — |
 | [8555](https://datatracker.ietf.org/doc/html/rfc8555) | ACME (Let's Encrypt / DNS-01) | [rfc8555.txt](RFC/rfc8555.txt) |
+## Deployment configuration diagnostics
+
+Startup emits source-only protected-setting warnings to stderr (and the systemd journal), even when routine logging is disabled. This explicit No-Log exception contains setting names and source identifiers only, never values, mail data, tokens, or passwords. See [configuration safeguards](26-configuration-precedence.md).

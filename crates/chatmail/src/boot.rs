@@ -43,7 +43,10 @@ pub fn load_file_config(path: &Path) -> Result<AppConfig> {
     if path.exists() {
         load_config(path)
     } else {
-        Ok(AppConfig::default())
+        let mut cfg = AppConfig::default();
+        cfg.apply_deployment_environment()?;
+        cfg.validate_deployment()?;
+        Ok(cfg)
     }
 }
 
@@ -63,7 +66,9 @@ pub async fn initialize_state(
     std::fs::create_dir_all(state_dir)?;
     let database = effective_database_config(state_dir, config);
     let db_path = effective_app_db_path(state_dir, config);
-    let pool = init_db_from_config(&database).await?;
+    let pool = init_db_from_config(&database)
+        .await?
+        .with_policy(config.deployment_policy()?);
     chatmail_push::hydrate_push_stats(&pool).await?;
     chatmail_push::start_push_stats_flush_task(pool.clone());
     // No routine boot logging under No-Log; DB open failures surface via `?` → stderr.
@@ -134,6 +139,8 @@ pub async fn run_until(
     } else {
         None
     };
+
+    crate::configuration_policy::publish(&state_dir, pool.policy())?;
 
     if args.boot_once {
         flusher.shutdown().await;

@@ -2,7 +2,7 @@
 
 Parent: [`language`](language.md)
 
-Remove DB override (use config default)
+Remove unprotected DB value (inherit defaults)
 
 ## Synopsis
 

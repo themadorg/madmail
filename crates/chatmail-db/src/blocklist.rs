@@ -75,7 +75,6 @@ mod tests {
     use super::*;
     use crate::init_memory_db;
     use crate::passwords;
-    use crate::DbPool;
 
     #[tokio::test]
     async fn block_prevents_reregistration_check() {
@@ -130,7 +129,7 @@ mod tests {
     #[tokio::test]
     async fn list_blocked_users_tolerates_null_blocked_at() {
         let pool = init_memory_db().await.unwrap();
-        let DbPool::Sqlite(p) = &pool else {
+        let crate::pool::DbConnection::Sqlite(p) = pool.connection() else {
             panic!("memory db is sqlite");
         };
         sqlx::query("INSERT INTO blocked_users (username, reason, blocked_at) VALUES (?, ?, NULL)")
@@ -192,8 +191,8 @@ mod tests {
         );
 
         // Legacy NULL blocked_at must not break list (boot hydrate path).
-        match &pool {
-            DbPool::Postgres(p) => {
+        match pool.connection() {
+            crate::pool::DbConnection::Postgres(p) => {
                 let null_user = format!("{user}-null");
                 sqlx::query(
                     "INSERT INTO blocked_users (username, reason, blocked_at)

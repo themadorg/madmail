@@ -41,8 +41,8 @@ async fn fetch_settings_in_keys(
         return Ok(Vec::new());
     }
     let prefix = format!("SELECT key, value FROM {table} WHERE key IN (");
-    match pool {
-        DbPool::Sqlite(p) => {
+    match pool.connection() {
+        crate::pool::DbConnection::Sqlite(p) => {
             let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(prefix);
             let mut sep = qb.separated(", ");
             for key in keys {
@@ -51,7 +51,7 @@ async fn fetch_settings_in_keys(
             qb.push(")");
             Ok(qb.build_query_as().fetch_all(p).await?)
         }
-        DbPool::Postgres(p) => {
+        crate::pool::DbConnection::Postgres(p) => {
             let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new(prefix);
             let mut sep = qb.separated(", ");
             for key in keys {
@@ -93,7 +93,16 @@ fn is_madmail_runtime_key(key: &str) -> bool {
     key.starts_with("__") && key.ends_with("__")
 }
 
+/// Effective setting: deployment policy before persisted settings.
 pub async fn get_setting(pool: &DbPool, key: &str) -> Result<Option<String>> {
+    if let Some(value) = pool.policy().0.get(key) {
+        return Ok(Some(value.value.clone()));
+    }
+    get_stored_setting(pool, key).await
+}
+
+/// Persisted value only, for explicit inspection/migration.
+pub async fn get_stored_setting(pool: &DbPool, key: &str) -> Result<Option<String>> {
     if uses_madmail_settings_kv(pool).await? && is_madmail_runtime_key(key) {
         if let Some(v) = get_setting_madmail_kv(pool, key).await? {
             return Ok(Some(v));
@@ -117,6 +126,7 @@ pub async fn get_setting(pool: &DbPool, key: &str) -> Result<Option<String>> {
 }
 
 pub async fn set_setting(pool: &DbPool, key: &str, value: &str) -> Result<()> {
+    pool.check_settings_writable(&[key])?;
     if uses_madmail_settings_kv(pool).await? && is_madmail_runtime_key(key) {
         set_setting_madmail_kv(pool, key, value).await?;
         if has_settings_table(pool).await? {
@@ -165,10 +175,15 @@ pub async fn get_settings_many(pool: &DbPool, keys: &[&str]) -> Result<HashMap<S
 
     if use_kv {
         for (k, v) in fetch_settings_in_keys(pool, "passwords", keys).await? {
-            out.entry(k).or_insert(v);
+            out.insert(k, v);
         }
     }
 
+    for key in keys {
+        if let Some(value) = pool.policy().0.get(*key) {
+            out.insert((*key).into(), value.value.clone());
+        }
+    }
     Ok(out)
 }
 
@@ -184,15 +199,19 @@ pub async fn list_double_underscore_settings(pool: &DbPool) -> Result<Vec<(Strin
         let sql = runtime_keys_sql("passwords", backend);
         let rows: Vec<(String, String)> = db_fetch_all!(pool, (String, String), sql.as_str())?;
         for row in rows {
-            if !out.iter().any(|(k, _)| k == &row.0) {
-                out.push(row);
-            }
+            out.retain(|(key, _)| key != &row.0);
+            out.push(row);
         }
+    }
+    for (key, value) in &pool.policy().0 {
+        out.retain(|(k, _)| k != key);
+        out.push((key.clone(), value.value.clone()));
     }
     Ok(out)
 }
 
 pub async fn delete_setting(pool: &DbPool, key: &str) -> Result<()> {
+    pool.check_settings_writable(&[key])?;
     if has_settings_table(pool).await? {
         db_execute!(pool, "DELETE FROM settings WHERE key = ?", key)?;
     }
@@ -422,7 +441,7 @@ mod tests {
             Some(value)
         );
 
-        let DbPool::Sqlite(p) = &pool else {
+        let crate::pool::DbConnection::Sqlite(p) = pool.connection() else {
             panic!("memory db is sqlite");
         };
         let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM settings")
@@ -435,7 +454,7 @@ mod tests {
     #[tokio::test]
     async fn madmail_kv_settings_in_passwords_table() {
         let pool = init_memory_db().await.unwrap();
-        let DbPool::Sqlite(p) = &pool else {
+        let crate::pool::DbConnection::Sqlite(p) = pool.connection() else {
             panic!("memory db is sqlite");
         };
         sqlx::query("DROP TABLE settings").execute(p).await.unwrap();
@@ -467,5 +486,93 @@ mod tests {
                 .as_deref(),
             Some("1143")
         );
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+    use chatmail_config::SettingsPolicy;
+    #[tokio::test]
+    async fn all_read_shapes_agree_and_protected_writes_preserve_database() {
+        let raw = crate::init_memory_db().await.unwrap();
+        let key = "__ADMIN_WEB_PATH__";
+        set_setting(&raw, key, "/database").await.unwrap();
+        let mut policy = SettingsPolicy::default();
+        policy
+            .insert("admin_web_path", "/file", "file:test.toml")
+            .unwrap();
+        let pool = raw.clone().with_policy(policy);
+        assert_eq!(
+            get_setting(&pool, key).await.unwrap().as_deref(),
+            Some("/file")
+        );
+        assert_eq!(
+            get_settings_many(&pool, &[key]).await.unwrap()[key],
+            "/file"
+        );
+        let list: HashMap<_, _> = list_double_underscore_settings(&pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(list[key], "/file");
+        assert!(set_setting(&pool, key, "/changed").await.is_err());
+        assert!(delete_setting(&pool, key).await.is_err());
+        assert_eq!(
+            get_stored_setting(&pool, key).await.unwrap().as_deref(),
+            Some("/database")
+        );
+        assert_eq!(
+            get_setting(&raw, key).await.unwrap().as_deref(),
+            Some("/database")
+        );
+        assert_eq!(
+            get_setting(&pool.clone(), key).await.unwrap().as_deref(),
+            Some("/file")
+        );
+    }
+    #[tokio::test]
+    async fn service_environment_lock_blocks_cli_with_different_environment() {
+        let raw = crate::init_memory_db().await.unwrap();
+        let key = "__ADMIN_WEB_ENABLED__";
+        let pool = raw.clone().with_mutation_locks(
+            [(key.into(), "environment:CHATMAIL_ADMIN_WEB_ENABLED".into())].into(),
+        );
+        assert!(set_setting(&pool, key, "true")
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("configuration_locked"));
+        assert!(get_stored_setting(&raw, key).await.unwrap().is_none());
+        set_setting(&pool, "__LANGUAGE__", "en").await.unwrap();
+    }
+    #[tokio::test]
+    async fn retention_consumes_protected_values_and_false_disables() {
+        let raw = crate::init_memory_db().await.unwrap();
+        set_setting(&raw, "__MESSAGE_RETENTION_ENABLED__", "true")
+            .await
+            .unwrap();
+        set_setting(&raw, "__MESSAGE_RETENTION__", "1d")
+            .await
+            .unwrap();
+        let mut policy = SettingsPolicy::default();
+        policy.insert("message_retention", "14d", "file").unwrap();
+        let pool = raw.clone().with_policy(policy.clone());
+        assert_eq!(
+            crate::effective_message_retention(&pool)
+                .await
+                .unwrap()
+                .unwrap()
+                .as_secs(),
+            14 * 86400
+        );
+        policy
+            .insert("message_retention_enabled", "false", "file")
+            .unwrap();
+        assert!(crate::effective_message_retention(&raw.with_policy(policy))
+            .await
+            .unwrap()
+            .is_none());
     }
 }

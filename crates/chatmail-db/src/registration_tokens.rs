@@ -173,8 +173,8 @@ pub async fn record_first_login(pool: &DbPool, username: &str) -> Result<FirstLo
 }
 
 async fn consume_registration_token(pool: &DbPool, token: &str) -> Result<bool> {
-    let affected = match pool {
-        DbPool::Sqlite(p) => sqlx::query(
+    let affected = match pool.connection() {
+        crate::pool::DbConnection::Sqlite(p) => sqlx::query(
             "UPDATE registration_tokens SET used_count = used_count + 1
                  WHERE token = ? AND used_count < max_uses",
         )
@@ -182,7 +182,7 @@ async fn consume_registration_token(pool: &DbPool, token: &str) -> Result<bool> 
         .execute(p)
         .await?
         .rows_affected(),
-        DbPool::Postgres(p) => sqlx::query(&pg_sql(
+        crate::pool::DbConnection::Postgres(p) => sqlx::query(&pg_sql(
             "UPDATE registration_tokens SET used_count = used_count + 1
                  WHERE token = ? AND used_count < max_uses",
         ))
@@ -288,7 +288,7 @@ mod tests {
     #[tokio::test]
     async fn first_login_with_invalid_token_removes_quota() {
         let pool = init_memory_db().await.unwrap();
-        let DbPool::Sqlite(p) = &pool else {
+        let crate::pool::DbConnection::Sqlite(p) = pool.connection() else {
             panic!("memory db is sqlite");
         };
         sqlx::query(

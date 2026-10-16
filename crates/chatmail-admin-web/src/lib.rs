@@ -21,7 +21,7 @@ mod serve;
 
 use chatmail_config::AppConfig;
 use chatmail_db::settings_keys::ADMIN_WEB_PATH;
-use chatmail_db::{get_setting, set_setting, DbPool};
+use chatmail_db::{get_setting, DbPool};
 use chatmail_types::Result;
 
 pub use serve::{admin_web_router, AdminWebState};
@@ -31,16 +31,7 @@ pub const DEFAULT_ADMIN_WEB_PATH: &str = "/admin";
 
 /// Normalize an admin-web mount path (`/xxx`, trims trailing slash). Returns `None` if empty.
 pub fn normalize_admin_web_path(path: &str) -> Option<String> {
-    let path = path.trim();
-    if path.is_empty() {
-        return None;
-    }
-    let path = path.trim_end_matches('/');
-    if path.starts_with('/') {
-        Some(path.to_string())
-    } else {
-        Some(format!("/{path}"))
-    }
+    chatmail_config::settings_policy::validate("admin_web_path", path).ok()
 }
 
 fn normalize_prefix(path: &str) -> String {
@@ -51,6 +42,13 @@ fn normalize_prefix(path: &str) -> String {
 ///
 /// Falls back to [`DEFAULT_ADMIN_WEB_PATH`] when neither source sets a path.
 pub async fn resolve_admin_web_path(file_config: &AppConfig, pool: &DbPool) -> Option<String> {
+    if let Some(value) = pool.policy().0.get(ADMIN_WEB_PATH) {
+        return normalize_admin_web_path(&value.value);
+    }
+    let protected = file_config.deployment_policy().ok()?;
+    if let Some(value) = protected.0.get(ADMIN_WEB_PATH) {
+        return normalize_admin_web_path(&value.value);
+    }
     let mut path = file_config.admin_web_path.clone();
     if let Ok(Some(v)) = get_setting(pool, ADMIN_WEB_PATH).await {
         if !v.is_empty() {
@@ -64,19 +62,6 @@ pub async fn resolve_admin_web_path(file_config: &AppConfig, pool: &DbPool) -> O
     } else {
         Some(normalized)
     }
-}
-
-/// Persist [`DEFAULT_ADMIN_WEB_PATH`] when enabling and no path is configured yet.
-pub async fn ensure_default_admin_web_path(file_config: &AppConfig, pool: &DbPool) -> Result<()> {
-    if file_config.admin_web_path.is_some() {
-        return Ok(());
-    }
-    if let Ok(Some(v)) = get_setting(pool, ADMIN_WEB_PATH).await {
-        if !v.is_empty() {
-            return Ok(());
-        }
-    }
-    set_setting(pool, ADMIN_WEB_PATH, DEFAULT_ADMIN_WEB_PATH).await
 }
 
 /// Build router for the admin-web SPA (mounted at resolved path, usually `/admin`).
@@ -95,7 +80,7 @@ pub async fn router_if_configured(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chatmail_db::init_memory_db;
+    use chatmail_db::{init_memory_db, set_setting};
 
     #[tokio::test]
     async fn resolve_defaults_to_admin() {
@@ -119,5 +104,42 @@ mod tests {
         assert_eq!(normalize_admin_web_path("xxx/"), Some("/xxx".into()));
         assert_eq!(normalize_admin_web_path("/xxx"), Some("/xxx".into()));
         assert_eq!(normalize_admin_web_path("  "), None);
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+    #[tokio::test]
+    async fn reset_enable_then_add_file_path_does_not_seed_database() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        chatmail_db::set_setting(&pool, ADMIN_WEB_PATH, "/old")
+            .await
+            .unwrap();
+        chatmail_db::delete_setting(&pool, ADMIN_WEB_PATH)
+            .await
+            .unwrap();
+        chatmail_db::set_setting(&pool, chatmail_db::settings_keys::ADMIN_WEB_ENABLED, "true")
+            .await
+            .unwrap();
+        assert!(chatmail_db::get_setting(&pool, ADMIN_WEB_PATH)
+            .await
+            .unwrap()
+            .is_none());
+        let cfg = AppConfig {
+            admin_web_path: Some("/from-file".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_admin_web_path(&cfg, &pool).await.as_deref(),
+            Some("/from-file")
+        );
+        chatmail_db::set_setting(&pool, ADMIN_WEB_PATH, "/stale-db")
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_admin_web_path(&cfg, &pool).await.as_deref(),
+            Some("/from-file")
+        );
     }
 }
