@@ -11,6 +11,8 @@ Outbound transports are individually allow/block (`__FEDERATION_TRANSPORT_HTTPS_
 
 `__FEDERATION_TRANSPORT_DOMAINS__` is a JSON object of destination-domain overrides (`{"evil.test":{"smtp":"block"}}`). A missing transport key inherits the global mode. Delivery uses the recipient domain. Corrupt JSON is ignored and the global modes apply. The value lives in `settings`, so the existing sqlite-to-postgres copy carries it.
 
+A permanent failure, an expiry, or a run of attempts that gives up writes one `mailer-daemon` `multipart/report` (`report-type=delivery-status`) into the local sender's inbox. The text part is the reason. The third part carries the original headers, including `Message-ID`, so Delta Chat can mark that message failed. The report is not sent to a remote sender, and a report is not generated for `mailer-daemon` itself. The PGP gate already accepts this shape.
+
 ## Wire Protocol
 
 ### Sending (Outbound)

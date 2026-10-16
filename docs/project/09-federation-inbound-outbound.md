@@ -21,6 +21,8 @@ The `chatmail-delivery` queue tries, unless that transport is blocked:
 
 Each of those can be set to `block` with `madmail federation transport` or `POST /admin/settings/federation`. The default is allow for all three. `madmail federation transport set smtp block --domain evil.test` (or the same POST with `"domain": "evil.test"`) blocks SMTP only toward that destination. Other domains keep the global mode.
 
+When outbound delivery is refused, expires, or runs out of attempts, the sender's inbox receives a `mailer-daemon` delivery report. The text is the reason. Delta Chat uses the original `Message-ID` in that report to show the failure on the message.
+
 All paths are tracked for latency and failure rate.
 
 ## Inbound: `POST /mxdeliv` Handler
