@@ -14,10 +14,12 @@ Fallback: SMTP to port 25
 
 ### Outbound (this server → remote server)
 
-The `chatmail-delivery` queue tries:
+The `chatmail-delivery` queue tries, unless that transport is blocked:
 1. HTTPS POST /mxdeliv (using discovered or configured endpoint)
 2. Plain HTTP
-3. Traditional SMTP (MX lookup + STARTTLS)
+3. Traditional SMTP (MX lookup + STARTTLS when the peer advertises it)
+
+Each of those can be set to `block` with `madmail federation transport` or `POST /admin/settings/federation`. The default is allow for all three.
 
 All paths are tracked for latency and failure rate.
 

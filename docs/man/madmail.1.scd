@@ -126,7 +126,10 @@ Extended documentation:
 	*disable*. Run *reload* after enable/disable on a running server.
 
 *federation*
-	Federation policy, domain rules, and silent\-dismiss lists.
+	Federation policy, domain rules, silent\-dismiss lists, and outbound
+	transport allow/block (*transport status*, *transport set*). Unset
+	transports stay allowed. Run *reload* after a CLI change on a running
+	server.
 
 *dkim*
 	Print outbound federation DKIM selector, signing domain, and the

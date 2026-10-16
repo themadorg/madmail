@@ -47,6 +47,12 @@ pub const PUSH_ENABLED: &str = "__PUSH_ENABLED__";
 pub const PUSH_MODE: &str = "__PUSH_MODE__";
 pub const FEDERATION_POLICY: &str = "__FEDERATION_POLICY__";
 pub const FEDERATION_ENABLED: &str = "__FEDERATION_ENABLED__";
+/// Outbound `/mxdeliv` over TLS. `allow` (default when unset) or `block`.
+pub const FEDERATION_TRANSPORT_HTTPS: &str = "__FEDERATION_TRANSPORT_HTTPS__";
+/// Outbound `/mxdeliv` over plain HTTP. `allow` (default when unset) or `block`.
+pub const FEDERATION_TRANSPORT_HTTP: &str = "__FEDERATION_TRANSPORT_HTTP__";
+/// Outbound SMTP fallback. `allow` (default when unset) or `block`.
+pub const FEDERATION_TRANSPORT_SMTP: &str = "__FEDERATION_TRANSPORT_SMTP__";
 /// When `"true"`, unauthenticated inbound SMTP (port 25) accepts non-local RCPT
 /// (open-relay-class). Default off — file `allow_inbound_remote_rcpt` is the fallback
 /// when this key is unset.

@@ -566,6 +566,55 @@ async fn admin_federation_settings_includes_size() {
         body.get("max_federation_size").and_then(|v| v.as_str()),
         Some("70M")
     );
+    assert_eq!(
+        body.pointer("/transports/https").and_then(|v| v.as_str()),
+        Some("allow")
+    );
+}
+
+#[tokio::test]
+async fn admin_federation_transport_block_updates_cache() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let (status, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "transports": { "http": "block", "smtp": "block" } }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status, 200);
+    let body = body.unwrap();
+    assert_eq!(
+        body.pointer("/transports/https").and_then(|v| v.as_str()),
+        Some("allow")
+    );
+    assert_eq!(
+        body.pointer("/transports/http").and_then(|v| v.as_str()),
+        Some("block")
+    );
+    assert_eq!(
+        body.pointer("/transports/smtp").and_then(|v| v.as_str()),
+        Some("block")
+    );
+    let live = st.app.federation_transport.get();
+    assert!(live.https);
+    assert!(!live.http);
+    assert!(!live.smtp);
+
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "transports": { "https": "sometimes" } }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400);
 }
 
 #[tokio::test]

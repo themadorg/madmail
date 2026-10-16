@@ -28,6 +28,8 @@ madmail federation <subcommand>
 | `flush` | Remove all domain exceptions |
 | `list` | Show policy and active rules |
 | `status` | Live federation traffic diagnostics from DB |
+| `transport [status]` | Show outbound HTTPS / HTTP / SMTP allow-block |
+| `transport set <TRANSPORT> <allow\|block>` | Allow or block one outbound transport |
 | `dismiss <DOMAIN>` | Accept mail but do not deliver (silent drop) |
 | `undismiss <DOMAIN>` | Remove from dismiss list |
 | `dismiss-list` | List dismiss domains |
@@ -41,7 +43,10 @@ madmail federation policy accept
 madmail federation block spamdomain.net
 madmail federation dismiss newsletter.example
 madmail federation status
+madmail federation transport set http block
 ```
+
+`transport` controls which outbound paths are attempted. Unset transports stay allowed (HTTPS, then plain HTTP, then SMTP). See [`federation transport`](federation-transport.md).
 
 Outbound DKIM for `/mxdeliv` and SMTP fallback is [`dkim show`](dkim.md) / [`dkim check`](dkim-check.md) / [`dkim status`](dkim-status.md) (not this command).
 
@@ -57,6 +62,8 @@ Outbound DKIM for `/mxdeliv` and SMTP fallback is [`dkim show`](dkim.md) / [`dki
 - [`policy`](federation-policy.md) — `madmail federation policy`
 - [`remove`](federation-remove.md) — `madmail federation remove`
 - [`status`](federation-status.md) — `madmail federation status`
+- [`transport`](federation-transport.md) — `madmail federation transport`
+- [`transport set`](federation-transport-set.md) — `madmail federation transport set`
 - [`undismiss`](federation-undismiss.md) — `madmail federation undismiss`
 
 ## JSON output (`--json`)
