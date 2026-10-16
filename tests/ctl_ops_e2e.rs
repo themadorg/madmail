@@ -512,4 +512,69 @@ fn e2e_federation_transport_set_and_status_json() {
     let envelope: Value = serde_json::from_slice(&out).expect("transport default status");
     assert_eq!(envelope["data"]["http"], "block");
     assert_eq!(envelope["data"]["https"], "allow");
+    assert_eq!(
+        envelope["data"]["overrides"].as_array().map(Vec::len),
+        Some(0)
+    );
+}
+
+#[test]
+fn e2e_federation_transport_domain_override_json() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    let out = chatmail()
+        .args(base.clone())
+        .args([
+            "federation",
+            "transport",
+            "set",
+            "smtp",
+            "block",
+            "--domain",
+            "Evil.TEST",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("domain transport set");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "federation transport set");
+    assert_eq!(envelope["data"]["domain"], "evil.test");
+    assert_eq!(envelope["data"]["transport"], "smtp");
+    assert_eq!(envelope["data"]["mode"], "block");
+    assert_eq!(envelope["data"]["reload_required"], true);
+
+    let out = chatmail()
+        .args(base.clone())
+        .args(["federation", "transport", "status", "evil.test", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("domain transport status");
+    assert_eq!(envelope["command"], "federation transport status");
+    assert_eq!(envelope["data"]["domain"], "evil.test");
+    assert_eq!(envelope["data"]["smtp"], "block");
+    assert_eq!(envelope["data"]["https"], "allow");
+    assert_eq!(envelope["data"]["override"]["smtp"], "block");
+    assert!(envelope["data"]["override"].get("https").is_none());
+
+    let out = chatmail()
+        .args(base)
+        .args(["federation", "transport", "status", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("global status lists override");
+    assert_eq!(envelope["data"]["smtp"], "allow");
+    assert_eq!(envelope["data"]["overrides"][0]["domain"], "evil.test");
+    assert_eq!(envelope["data"]["overrides"][0]["smtp"], "block");
 }

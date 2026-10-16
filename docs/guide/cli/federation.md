@@ -46,7 +46,7 @@ madmail federation status
 madmail federation transport set http block
 ```
 
-`transport` controls which outbound paths are attempted. Unset transports stay allowed (HTTPS, then plain HTTP, then SMTP). See [`federation transport`](federation-transport.md).
+`transport` controls which outbound paths are attempted. Unset transports stay allowed (HTTPS, then plain HTTP, then SMTP). `--domain` overrides one destination; a missing override inherits the global mode. See [`federation transport`](federation-transport.md).
 
 Outbound DKIM for `/mxdeliv` and SMTP fallback is [`dkim show`](dkim.md) / [`dkim check`](dkim-check.md) / [`dkim status`](dkim-status.md) (not this command).
 

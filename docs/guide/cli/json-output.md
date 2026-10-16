@@ -711,12 +711,33 @@ Does not create a key (`generated` is always `false`). Missing key or IP-literal
   "data": {
     "https": "allow",
     "http": "block",
-    "smtp": "allow"
+    "smtp": "allow",
+    "overrides": [
+      { "domain": "evil.test", "smtp": "block" }
+    ]
   }
 }
 ```
 
-`allow` and `block` are the only stored modes. A missing key is reported as `allow`.
+`allow` and `block` are the only stored global modes. A missing key is reported as `allow`. `overrides` lists destination domains that differ from those modes. A transport omitted inside an override inherits the global mode. `overrides` is an empty array when every domain inherits.
+
+`madmail federation transport status evil.test --json` reports the effective mode for that destination:
+
+```json
+{
+  "ok": true,
+  "command": "federation transport status",
+  "data": {
+    "domain": "evil.test",
+    "https": "allow",
+    "http": "allow",
+    "smtp": "block",
+    "override": { "smtp": "block" }
+  }
+}
+```
+
+`https`, `http`, and `smtp` are the modes delivery will use. `override` contains only the explicit per-domain values.
 
 ### `federation transport set`
 
@@ -732,6 +753,8 @@ Does not create a key (`generated` is always `false`). Missing key or IP-literal
   }
 }
 ```
+
+With `--domain`, `data` also includes the normalized `domain`. `mode` is `allow`, `block`, or `inherit`.
 
 `reload_required` means a running server needs `madmail reload` before the worker sees the CLI change.
 

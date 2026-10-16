@@ -21,8 +21,10 @@ use chatmail_config::cli::{FederationCommand, FederationTransportCommand};
 use chatmail_config::Args;
 use chatmail_db::{federation_policy_label, set_federation_policy_label, DbPool};
 use chatmail_state::{
-    load_transport_policy, parse_transport_mode, set_transport_mode, FederationPolicyCache,
-    FederationSilentDismissCache, FederationTracker, TransportName,
+    domain_overrides_json, load_domain_overrides, load_transport_policy,
+    normalize_transport_domain, parse_override_mode, parse_transport_mode, set_transport_mode,
+    update_domain_transports, DomainTransportOverride, FederationPolicyCache,
+    FederationSilentDismissCache, FederationTracker, TransportName, TransportPolicy,
 };
 use chatmail_types::{ChatmailError, Result};
 
@@ -258,26 +260,92 @@ async fn transport_cmd(
     cmd: Option<&FederationTransportCommand>,
 ) -> Result<()> {
     match cmd {
-        None | Some(FederationTransportCommand::Status) => {
+        None | Some(FederationTransportCommand::Status { domain: None }) => {
             let policy = load_transport_policy(pool).await?;
+            let overrides = load_domain_overrides(pool).await?;
             let out = CtlOut::from_args(args, "federation transport status");
             if out.is_json() {
                 return out.emit(serde_json::json!({
                     "https": policy.mode(TransportName::Https),
                     "http": policy.mode(TransportName::Http),
                     "smtp": policy.mode(TransportName::Smtp),
+                    "overrides": domain_overrides_json(&overrides),
                 }));
             }
             out.line("[ FEDERATION TRANSPORT ]");
             out.line(format!("HTTPS: {}", policy.mode(TransportName::Https)));
             out.line(format!("HTTP:  {}", policy.mode(TransportName::Http)));
             out.line(format!("SMTP:  {}", policy.mode(TransportName::Smtp)));
+            write_override_lines(&out, &overrides);
             out.blank();
-            out.line("Unset transports stay allowed.");
+            out.line("Unset transports stay allowed. A domain with no override uses these modes.");
             out.line("Apply to a running server: madmail reload");
             Ok(())
         }
-        Some(FederationTransportCommand::Set { transport, mode }) => {
+        Some(FederationTransportCommand::Status {
+            domain: Some(domain),
+        }) => {
+            let domain = normalize_transport_domain(domain)?;
+            let policy = load_transport_policy(pool).await?;
+            let overrides = load_domain_overrides(pool).await?;
+            let ov = overrides.get(&domain).cloned().unwrap_or_default();
+            let effective = effective_policy(policy, &ov);
+            let out = CtlOut::from_args(args, "federation transport status");
+            if out.is_json() {
+                let mut override_body = serde_json::Map::new();
+                for name in [
+                    TransportName::Https,
+                    TransportName::Http,
+                    TransportName::Smtp,
+                ] {
+                    if let Some(allowed) = ov.get(name) {
+                        override_body.insert(
+                            name.as_str().into(),
+                            serde_json::Value::String(TransportPolicy::label(allowed).into()),
+                        );
+                    }
+                }
+                return out.emit(serde_json::json!({
+                    "domain": domain,
+                    "https": effective.mode(TransportName::Https),
+                    "http": effective.mode(TransportName::Http),
+                    "smtp": effective.mode(TransportName::Smtp),
+                    "override": override_body,
+                }));
+            }
+            out.line("[ FEDERATION TRANSPORT ]");
+            out.line(format!("Domain: {domain}"));
+            for name in [
+                TransportName::Https,
+                TransportName::Http,
+                TransportName::Smtp,
+            ] {
+                let source = if ov.get(name).is_some() {
+                    "override"
+                } else {
+                    "inherit"
+                };
+                out.line(format!(
+                    "{}: {} ({source})",
+                    name.as_str().to_ascii_uppercase(),
+                    effective.mode(name)
+                ));
+            }
+            out.blank();
+            out.line("A missing override inherits the global mode.");
+            out.line("Apply to a running server: madmail reload");
+            Ok(())
+        }
+        Some(FederationTransportCommand::Set {
+            transport,
+            mode,
+            domain: None,
+        }) => {
+            if mode.trim().eq_ignore_ascii_case("inherit") {
+                return Err(ChatmailError::config(
+                    "inherit applies to one destination domain; pass --domain",
+                ));
+            }
             let name = TransportName::parse(transport)?;
             let allow = parse_transport_mode(mode)?;
             set_transport_mode(pool, name, allow).await?;
@@ -296,6 +364,84 @@ async fn transport_cmd(
                 format!("Outbound {} {label}", name.as_str().to_ascii_uppercase()),
             )
         }
+        Some(FederationTransportCommand::Set {
+            transport,
+            mode,
+            domain: Some(domain),
+        }) => {
+            let name = TransportName::parse(transport)?;
+            let parsed = parse_override_mode(mode)?;
+            let domain = update_domain_transports(pool, domain, &[(name, parsed)]).await?;
+            let out = CtlOut::from_args(args, "federation transport set");
+            let mode_label = match parsed {
+                Some(true) => "allow",
+                Some(false) => "block",
+                None => "inherit",
+            };
+            let human = match parsed {
+                Some(true) => format!(
+                    "Success: outbound {} allowed for {domain}. Apply to a running server: madmail reload",
+                    name.as_str().to_ascii_uppercase()
+                ),
+                Some(false) => format!(
+                    "Success: outbound {} blocked for {domain}. Apply to a running server: madmail reload",
+                    name.as_str().to_ascii_uppercase()
+                ),
+                None => format!(
+                    "Success: outbound {} for {domain} inherits the global mode. Apply to a running server: madmail reload",
+                    name.as_str().to_ascii_uppercase()
+                ),
+            };
+            out.done_msg(
+                human,
+                serde_json::json!({
+                    "transport": name.as_str(),
+                    "mode": mode_label,
+                    "domain": domain,
+                    "reload_required": true,
+                }),
+                format!(
+                    "Outbound {} {mode_label} for {domain}",
+                    name.as_str().to_ascii_uppercase()
+                ),
+            )
+        }
+    }
+}
+
+fn effective_policy(global: TransportPolicy, ov: &DomainTransportOverride) -> TransportPolicy {
+    TransportPolicy {
+        https: ov.https.unwrap_or(global.https),
+        http: ov.http.unwrap_or(global.http),
+        smtp: ov.smtp.unwrap_or(global.smtp),
+    }
+}
+
+fn write_override_lines(
+    out: &CtlOut,
+    overrides: &std::collections::BTreeMap<String, DomainTransportOverride>,
+) {
+    if overrides.is_empty() {
+        return;
+    }
+    out.blank();
+    out.line("Domain overrides:");
+    for (domain, ov) in overrides {
+        let mut parts = Vec::new();
+        for name in [
+            TransportName::Https,
+            TransportName::Http,
+            TransportName::Smtp,
+        ] {
+            if let Some(allowed) = ov.get(name) {
+                parts.push(format!(
+                    "{} {}",
+                    name.as_str(),
+                    TransportPolicy::label(allowed)
+                ));
+            }
+        }
+        out.line(format!("- {domain}: {}", parts.join(", ")));
     }
 }
 
