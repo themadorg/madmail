@@ -432,3 +432,12 @@ For IP/self-signed relays, Delta Chat clients may need to accept self-signed cer
 - [CLI tools (TDD)](../TDD/14-cli-tools.md) — global flags and ctl overview
 - [Configuration (TDD)](../TDD/13-configuration.md) — runtime config after install
 - [PostgreSQL](postgres.md) — optional application database (empty DB, not a SQLite conversion)
+
+## Installer regression testing
+
+Developers can run `make test-install-docker` for a compact debug build and an
+isolated Debian provisioning test. It covers installation modes, permissions,
+custom systemd paths, repeated installation, skip flags, dry-run/JSON output and
+failure handling without modifying host accounts or services. Docker and Cargo
+are required. This test validates unit syntax and service-user boot; it does not
+run systemd as PID 1. Details: [testing design](../TDD/16-testing.md#expanded-installer-e2e-matrix).

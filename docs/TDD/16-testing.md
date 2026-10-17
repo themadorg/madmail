@@ -256,3 +256,27 @@ final installer subset 17 passed, plus the CLI dry-run integration test; strict
 workspace clippy, fmt, man-page generation/groff, and the Docker provisioning
 regression passed. Windows-specific behavior is covered by a cfg-gated regression
 for the Windows CI runner; it was not executed locally.
+
+### Expanded installer E2E matrix
+
+`make test-install-docker` builds the installer with dev debug symbols and incremental
+compilation disabled and two build jobs, then runs the isolated Debian test. This
+limits local build storage and memory without changing release or normal dev profiles.
+The image receives only its Dockerfile as build context; source/build directories
+are not uploaded to Docker. The binary is mounted read-only for the test.
+
+Coverage includes flag conflicts; automatic FHS/custom and explicit modes; JSON
+plans (including certificate-only and skip flags); rejected relative/control-character
+paths; dry-run side-effect absence; root enforcement; root and non-root local
+bootstrap; real account, ownership, binary and host-doc installation; generated-unit
+verification; boot as the service user; repeated installation; each skip flag
+independently and combined; an escaped binary path; and propagation of daemon-reload
+failure. Negative assertions explicitly fail the suite when an unexpected user or
+unit directive is present. An actual systemd PID-1 start remains outside this test;
+only daemon-reload is stubbed. Windows service installation remains a separate flow.
+
+Expanded matrix verification: `make test-install-docker` passed after a clean
+compact build, and all 17 installer unit tests passed with the same compact
+profiles. The test Docker build context was 2 KiB. No production/release profile
+settings were changed. Failure-path checks include invalid mode/path input,
+non-root system installation, and a nonzero daemon-reload result.
