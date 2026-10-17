@@ -1,0 +1,35 @@
+name: WebSocket mail bridge E2E
+
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'external/madmail-admin-web'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile'
+      - 'tests/websocket*'
+      - 'tests/Cargo.toml'
+      - 'tests/support/**'
+      - '.github/workflows/websocket-bridge-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: websocket-bridge-e2e
+      - name: Install host client build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev pkg-config perl openssl curl
+      - name: Test shipping Docker image with Rust WebSocket client
+        run: bash tests/websocket-bridge-docker.sh

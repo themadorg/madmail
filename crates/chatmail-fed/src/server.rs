@@ -65,7 +65,8 @@ where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     let io = TokioIo::new(tls_stream);
-    let hyper_svc = TowerToHyperService::new(router);
+    let hyper_svc =
+        TowerToHyperService::new(router.layer(axum::Extension(chatmail_state::SecureHttp)));
     // WebSocket upgrades (WebIMAP /webimap/ws) require the upgrade-aware
     // connection driver; plain serve_connection closes right after 101.
     if let Err(e) = Builder::new(TokioExecutor::new())
@@ -96,7 +97,8 @@ pub async fn run_http_listener(
     local_domains: Vec<String>,
     extra: Option<Router>,
 ) -> Result<()> {
-    let router = build_router(pool, app, primary_domain, local_domains, extra);
+    let router = build_router(pool, app, primary_domain, local_domains, extra)
+        .layer(axum::Extension(cancel.clone()));
 
     let listener = TcpListener::bind(addr).await?;
     let tls_acceptor = tls.map(TlsAcceptor::from);

@@ -47,6 +47,23 @@ pub async fn jit(st: &AdminState, method: &str, body: &Value) -> AdminResult {
     .await
 }
 
+pub async fn websocket_bridge(st: &AdminState, method: &str, body: &Value) -> AdminResult {
+    if method == "GET" {
+        let on = get_bool_setting(
+            &st.pool,
+            settings_keys::WEBSOCKET_BRIDGE_ENABLED,
+            st.file_config.websocket_bridge_enabled,
+        )
+        .await
+        .map_err(db_err)?;
+        return Ok((
+            200,
+            Some(json!({"status": if on {"enabled"} else {"disabled"}})),
+        ));
+    }
+    service_bool(st, method, body, settings_keys::WEBSOCKET_BRIDGE_ENABLED).await
+}
+
 pub async fn service_bool(st: &AdminState, method: &str, body: &Value, key: &str) -> AdminResult {
     let mut res = toggle_setting(&st.pool, method, body, key, "enabled", "disabled").await?;
     if method == "POST" && key == chatmail_db::settings_keys::ADMIN_WEB_ENABLED {

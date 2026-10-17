@@ -161,6 +161,8 @@ pub fn www_router(state: WwwState) -> Router {
             post(webimap::message_flags).options(webimap::options_preflight),
         )
         .route("/webimap/ws", get(webimap::websocket))
+        .route("/transport/imap", get(crate::bridge::imap))
+        .route("/transport/smtp", get(crate::bridge::smtp))
         .route(
             "/share",
             get(handlers::share_get).post(handlers::share_post),

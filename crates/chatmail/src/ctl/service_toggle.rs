@@ -33,7 +33,9 @@ pub async fn run(
 ) -> Result<()> {
     let ctx = CtlContext::from_args(args)?;
     let pool = ctx.open_pool().await?;
-    let command = if service_label.contains("WebIMAP") {
+    let command = if setting_key == chatmail_db::settings_keys::WEBSOCKET_BRIDGE_ENABLED {
+        "websocket-bridge"
+    } else if service_label.contains("WebIMAP") {
         "webimap"
     } else {
         "websmtp"
@@ -41,7 +43,15 @@ pub async fn run(
 
     match cmd {
         ServiceToggleCommand::Status => {
-            status(args, command, &pool, setting_key, service_label).await
+            status(
+                args,
+                command,
+                &pool,
+                setting_key,
+                service_label,
+                ctx.config.websocket_bridge_enabled,
+            )
+            .await
         }
         ServiceToggleCommand::Enable => {
             set_flag(args, command, &pool, setting_key, service_label, true).await
@@ -58,9 +68,15 @@ async fn status(
     pool: &DbPool,
     key: &str,
     label: &str,
+    bridge_default: bool,
 ) -> Result<()> {
     let out = CtlOut::from_args(args, command);
-    let on = get_bool_setting(pool, key, false).await?;
+    let on = get_bool_setting(
+        pool,
+        key,
+        key == chatmail_db::settings_keys::WEBSOCKET_BRIDGE_ENABLED && bridge_default,
+    )
+    .await?;
     if out.is_json() {
         return out.emit(serde_json::json!({ "enabled": on }));
     }
