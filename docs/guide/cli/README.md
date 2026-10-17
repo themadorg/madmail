@@ -48,6 +48,14 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 
 ### [`install`](install.md)
 
+Full CLI reference for new setup and existing-installation repair:
+
+- [System versus local mode, effects and prerequisites](install.md#choose-the-operation)
+- [Custom-path host setup](install.md#new-server-with-custom-paths)
+- [User-only and systemd-only repair](install.md#repair-only-the-service-account-or-systemd-unit)
+- [Every install option](install.md#all-install-options)
+- [Dry-run, JSON and troubleshooting](install.md#preview-and-json-output)
+
 
 ### [`uninstall`](uninstall.md)
 

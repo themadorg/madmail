@@ -54,6 +54,38 @@ Before install, create an **`A`/`AAAA`** record for the hostname pointing at you
 
 If both A and AAAA exist and you omit `--ip`, install sets `$(public_ip)` (TURN / discovery) from a **public IPv4** when available. To advertise IPv6 for TURN instead, pass `--ip` with that address.
 
+### Custom paths and targeted repair
+
+For a new Unix service at custom paths, select `--system` explicitly:
+
+```bash
+sudo ./madmail install --simple --system --domain mail.example.org \
+  --acme-email admin@example.org \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail --dry-run
+```
+
+Review the plan, rerun without `--dry-run`, then `sudo systemctl enable --now madmail`.
+Use `--local` for application bootstrap without host users or systemd changes.
+Running as root alone does not select system mode for custom paths.
+
+For an **existing installation**, avoid rerunning full bootstrap just to fix its
+account or unit. Stop the service if present, then run the needed repair:
+
+```bash
+sudo ./madmail install --user-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail
+sudo ./madmail install --systemd-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail
+```
+
+Account repair fixes user/group and permissions. Unit repair replaces the unit and
+reloads systemd. Both preserve config, database, certificate and binary contents;
+start the service explicitly afterward. Use the original executable name and paths.
+
+[Complete CLI reference and all flags](../../guide/cli/install.md) · [Mode comparison](../../guide/cli/install.md#choose-the-operation) · [Repair prerequisites](../../guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
+
 ### Windows
 
 Prefer the **setup wizard** when available (`madmail-windows-amd64-setup.exe` from the GitHub **Release** assets), or use the CLI.
@@ -185,7 +217,8 @@ This command:
 - Writes a basic config
 - Sets up the systemd service
 
-After it finishes, your server is reachable on the normal mail ports and you can connect with Delta Chat using your IP address or a domain that points to it.
+After installation, run `sudo systemctl enable --now madmail`. Once the service
+is running and the firewall permits access, your server is reachable on the normal mail ports and you can connect with Delta Chat using your IP address or a domain that points to it.
 
 ## Option 2: Using the Admin Web Interface
 
@@ -425,22 +458,3 @@ and remains available on retired JIT domains.
 For a complete domain-management recipe, including selective JIT retirement and
 CLI provisioning, see [English](../../guide/recipes/server-domains_en.md) /
 [فارسی](../../guide/recipes/server-domains_fa.md).
-
-### Custom-path Unix service installation
-
-Use `madmail install --system` with custom `--config-dir`, `--state-dir`, and
-`--binary-path` to create the host service account, apply ownership, copy the binary,
-and install the systemd unit. Use `--local` for local bootstrap without host changes.
-Preview with `--dry-run`; see the [native install guide](../../guide/install.md#system-install-vs-local-paths)
-for the complete example and the existing skip flags. Windows uses its separate
-`--install-service` / `--start-service` options.
-
-### Repair provisioning without reinstalling
-
-For an existing Unix relay, `sudo madmail install --user-only` repairs the service
-account and permissions. `sudo madmail install --systemd-only` replaces the service
-unit and reloads systemd, without starting it. For custom layouts, pass the original
-`--config-dir`, `--state-dir` and `--binary-path` as appropriate. Both preserve config,
-database, certificate and binary contents. Preview with `--dry-run`; see the
-[installer repair guide](../../guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
-for prerequisites and precise effects.
