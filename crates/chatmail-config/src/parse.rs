@@ -76,6 +76,11 @@ pub struct TomlConfig {
         default,
         deserialize_with = "crate::bool_str::deserialize_option_bool_flexible"
     )]
+    pub websocket_bridge_enabled: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::bool_str::deserialize_option_bool_flexible"
+    )]
     pub auth_auto_create: Option<bool>,
     pub jit_domain: Option<String>,
 }
@@ -145,6 +150,7 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
         language: parsed.language,
         www_dir: parsed.www_dir.map(PathBuf::from),
         enable_contact_sharing: false,
+        websocket_bridge_enabled: parsed.websocket_bridge_enabled.unwrap_or(false),
         allow_inbound_remote_rcpt: false,
         sharing_dsn: None,
         admin_token: None,
@@ -193,6 +199,26 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bridge_config_defaults_off_and_accepts_both_formats() {
+        assert!(!toml_to_app_config("").unwrap().websocket_bridge_enabled);
+        assert!(
+            toml_to_app_config("websocket_bridge_enabled = true")
+                .unwrap()
+                .websocket_bridge_enabled
+        );
+        assert!(
+            !toml_to_app_config("websocket_bridge_enabled = false")
+                .unwrap()
+                .websocket_bridge_enabled
+        );
+        assert!(
+            crate::parse_maddy_config("chatmail {\n websocket_bridge_enabled true\n}\n")
+                .unwrap()
+                .websocket_bridge_enabled
+        );
+    }
 
     #[test]
     fn toml_primary_domain_list_accepts_commas() {

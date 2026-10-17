@@ -772,7 +772,11 @@ impl SupervisorInner {
             Some(self.reload_tx.clone()),
         )
         .await?;
-        *self.http_extra.lock().await = http_extra;
+        let sessions = chatmail_www::bridge::BridgeSessions {
+            imap: self.imap_cfg.lock().await.clone(),
+            submission: self.submission_cfg.clone(),
+        };
+        *self.http_extra.lock().await = http_extra.map(|r| r.layer(axum::Extension(sessions)));
         Ok(())
     }
 

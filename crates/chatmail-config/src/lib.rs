@@ -145,6 +145,8 @@ pub struct AppConfig {
     pub www_dir: Option<PathBuf>,
     /// `enable_contact_sharing` — Delta Chat `/share` pages and slug URLs.
     pub enable_contact_sharing: bool,
+    /// Raw IMAP/SMTP over WSS. DB override takes precedence; disabled by default.
+    pub websocket_bridge_enabled: bool,
     /// `allow_inbound_remote_rcpt` — when true, unauthenticated inbound SMTP
     /// (port 25) accepts non-local RCPT (open-relay-class). **Default false.**
     /// Overridable at runtime via admin `__ALLOW_INBOUND_REMOTE_RCPT__`.
