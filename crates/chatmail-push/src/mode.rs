@@ -61,6 +61,15 @@ pub fn reset_consecutive_failures() {
 
 /// Read configured push mode (default `off`; legacy `__PUSH_ENABLED__` maps to on/off).
 pub async fn push_mode(pool: &DbPool) -> Result<PushMode> {
+    if !pool.policy().0.contains_key(settings_keys::PUSH_MODE) {
+        if let Some(value) = pool.policy().0.get(settings_keys::PUSH_ENABLED) {
+            return Ok(if value.value == "true" {
+                PushMode::On
+            } else {
+                PushMode::Off
+            });
+        }
+    }
     if let Some(raw) = get_setting(pool, settings_keys::PUSH_MODE).await? {
         if let Some(mode) = PushMode::parse(&raw) {
             return Ok(mode);
@@ -76,6 +85,7 @@ pub async fn push_mode(pool: &DbPool) -> Result<PushMode> {
 
 /// Persist mode and keep legacy `__PUSH_ENABLED__` in sync for older admin builds.
 pub async fn set_push_mode(pool: &DbPool, mode: PushMode) -> Result<()> {
+    pool.check_settings_writable(&[settings_keys::PUSH_MODE, settings_keys::PUSH_ENABLED])?;
     set_setting(pool, settings_keys::PUSH_MODE, mode.as_str()).await?;
     set_setting(
         pool,
@@ -93,7 +103,9 @@ pub async fn set_push_mode(pool: &DbPool, mode: PushMode) -> Result<()> {
 
 /// Whether push delivery and `XDELTAPUSH` should be active right now.
 pub async fn push_runtime_enabled(pool: &DbPool) -> Result<bool> {
-    Ok(push_mode(pool).await?.runtime_enabled())
+    let mode = push_mode(pool).await?;
+    Ok(mode.runtime_enabled()
+        && !(mode == PushMode::Auto && consecutive_failures() >= AUTO_DISABLE_AFTER_FAILURES))
 }
 
 /// Successful proxy delivery — resets the consecutive failure counter.
@@ -111,6 +123,12 @@ pub async fn record_delivery_failure(pool: &DbPool) {
         return;
     };
     if mode != PushMode::Auto {
+        return;
+    }
+    if pool
+        .check_settings_writable(&[settings_keys::PUSH_MODE, settings_keys::PUSH_ENABLED])
+        .is_err()
+    {
         return;
     }
     if let Err(e) = set_push_mode(pool, PushMode::Off).await {

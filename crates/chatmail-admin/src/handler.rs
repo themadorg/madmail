@@ -47,6 +47,8 @@ pub struct AdminResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<Value>,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
     pub version: String,
 }
 
@@ -110,6 +112,9 @@ fn envelope(
         resource: resource.map(str::to_string),
         body,
         error: error.map(str::to_string),
+        error_code: error
+            .filter(|e| e.starts_with("configuration_locked:"))
+            .map(|_| "configuration_locked".into()),
         version: st.version.clone(),
     }
 }

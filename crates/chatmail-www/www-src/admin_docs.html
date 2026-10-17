@@ -41,6 +41,7 @@
 
     <div class="card card--wide">
         <h1>مستندات مدیر سیستم</h1>
+<p>Configuration priority: environment variables, explicit file settings, database settings, then defaults. Environment/file settings are protected from database-backed CLI/API changes. The admin settings response exposes <code>configuration_sources</code>; a protected mutation returns status <code>409</code> and <code>configuration_locked</code>. Change the controlling source and restart the service.</p>
         <p>این راهنما نحوه مدیریت سهمیه (Quota) کاربران و مشاهده آمار سرور را با استفاده از دستورات <code>madmail</code>
             توضیح می‌دهد.</p>
 

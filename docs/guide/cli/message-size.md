@@ -1,5 +1,7 @@
 # `message-size`
 
+Configuration precedence is **environment → file → database → defaults**. Explicit environment/file settings are read-only through database-backed commands. File/environment changes require restart. See [configuration sources and migration](../configuration.md).
+
 View or set maximum message size (`__APPENDLIMIT__` / `__MAX_MESSAGE_SIZE__`).
 
 

@@ -16,7 +16,7 @@ madmail proxy password [status|set|reset]
 |------------|-------------|
 | `status` | Show password source (default; value hidden) |
 | `set <PASSWORD>` | Set DB override |
-| `reset` | Clear DB override (revert to config file) |
+| `reset` | Clear unprotected DB value (inherit defaults) |
 
 ## Examples
 

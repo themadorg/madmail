@@ -6,6 +6,15 @@
 
 Enable/disable core madmail features and edit server-wide configuration (hostnames, TURN/Iroh, admin paths, Delta Chat login security, frontpage language).
 
+## Deployment protection
+
+Settings follow **environment > explicit config file > database > defaults**.
+`configuration_sources` identifies protected settings and their controlling source.
+Protected controls are read-only; change their environment/file source and restart
+Madmail. CLI/API writes and resets return `configuration_locked`. Removing a
+protection exposes the previously stored database value. See the
+[configuration guide](../guide/configuration.md).
+
 ## Data loaded
 
 | When | Loader | API |

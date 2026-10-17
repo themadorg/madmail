@@ -59,6 +59,7 @@ async fn status(args: &Args, ctx: &CtlContext) -> Result<()> {
         return out.emit(serde_json::json!({
             "enabled": enabled,
             "path": effective_path,
+            "configuration_sources": pool.policy().sources(),
         }));
     }
 
@@ -69,6 +70,14 @@ async fn status(args: &Args, ctx: &CtlContext) -> Result<()> {
         .unwrap_or("(default)");
 
     out.blank();
+    for (key, source) in pool.policy().sources() {
+        if key == ADMIN_WEB_PATH || key == ADMIN_WEB_ENABLED {
+            out.line(format!(
+                "  Protected: {} ({source})",
+                chatmail_config::settings_policy::setting_name(&key)
+            ));
+        }
+    }
     out.line(format!(
         "  Admin Web Dashboard:  {}",
         if enabled { "enabled" } else { "disabled" }
@@ -90,9 +99,6 @@ async fn set_flag(args: &Args, ctx: &CtlContext, on: bool) -> Result<()> {
     let out = CtlOut::from_args(args, "admin-web");
     let pool = ctx.open_pool().await?;
     set_setting(&pool, ADMIN_WEB_ENABLED, if on { "true" } else { "false" }).await?;
-    if on {
-        chatmail_admin_web::ensure_default_admin_web_path(&ctx.config, &pool).await?;
-    }
     let path = resolve_admin_web_path(&ctx.config, &pool)
         .await
         .unwrap_or_else(|| DEFAULT_ADMIN_WEB_PATH.into());
@@ -140,10 +146,18 @@ async fn path_cmd(args: &Args, ctx: &CtlContext, path: Option<&str>, reset: bool
         return Ok(());
     };
 
+    let enable_needed = !chatmail_db::get_bool_setting(&pool, ADMIN_WEB_ENABLED, false).await?;
+    pool.check_settings_writable(if enable_needed {
+        &[ADMIN_WEB_PATH, ADMIN_WEB_ENABLED]
+    } else {
+        &[ADMIN_WEB_PATH]
+    })?;
     let normalized = normalize_admin_web_path(new_path)
         .ok_or_else(|| ChatmailError::config("admin web path must not be empty"))?;
     set_setting(&pool, ADMIN_WEB_PATH, &normalized).await?;
-    set_setting(&pool, ADMIN_WEB_ENABLED, "true").await?;
+    if enable_needed {
+        set_setting(&pool, ADMIN_WEB_ENABLED, "true").await?;
+    }
     notify_http_routes_changed(ctx, &normalized).await?;
     out.done_msg(
         format!("✅ Admin web dashboard enabled at {normalized}"),

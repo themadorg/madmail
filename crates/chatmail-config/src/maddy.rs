@@ -32,7 +32,15 @@ pub fn parse_maddy_conf_str(content: &str) -> AppConfig {
 /// Parse `maddy.conf` and return an error if the file is syntactically invalid.
 pub fn parse_maddy_config(content: &str) -> Result<AppConfig, madmail_parse::ParseError> {
     let ast = madmail_parse::read(content)?;
-    Ok(apply_config(&ast.nodes, &ast.macros))
+    let mut cfg = apply_config(&ast.nodes, &ast.macros);
+    collect_settings(&ast.nodes, "", &mut cfg.settings_policy)?;
+    cfg.validate_deployment()
+        .map_err(|e| madmail_parse::ParseError {
+            message: e.to_string(),
+            line: 1,
+        })?;
+    cfg.apply_policy_fields();
+    Ok(cfg)
 }
 
 fn apply_config(nodes: &[Node], macros: &HashMap<String, Vec<String>>) -> AppConfig {
@@ -512,6 +520,44 @@ pub fn resolve_state_path(state_dir: &std::path::Path, path: &str) -> PathBuf {
     } else {
         state_dir.join(p)
     }
+}
+
+/// Collect explicitly supplied values without collapsing absent booleans into false.
+fn collect_settings(
+    nodes: &[Node],
+    block: &str,
+    policy: &mut crate::SettingsPolicy,
+) -> Result<(), madmail_parse::ParseError> {
+    for node in nodes {
+        if let Some(children) = &node.children {
+            collect_settings(children, &node.name, policy)?;
+            continue;
+        }
+        let name = node.name.as_str();
+        let mapped = match (block, name) {
+            ("imap", "turn_enable") => Some("turn_enabled"),
+            ("turn", "realm") => Some("turn_realm"),
+            ("turn", "secret") => Some("turn_secret"),
+            ("turn", "relay_ip") => Some("turn_relay_ip"),
+            ("imap", name) if crate::settings_policy::setting_key(name).is_some() => Some(name),
+            ("turn", "relay_port_min") => Some("turn_relay_port_min"),
+            ("turn", "relay_port_max") => Some("turn_relay_port_max"),
+            ("storage.imapsql", "retention") => Some("message_retention"),
+            (_, "allow_inbound_remote_rcpt") => Some("allow_inbound_remote_rcpt"),
+            ("settings", _) => Some(name),
+            ("chatmail", _) if crate::settings_policy::setting_key(name).is_some() => Some(name),
+            _ => None,
+        };
+        if let Some(mapped) = mapped {
+            policy
+                .insert(mapped, &node.args.join(" "), "file")
+                .map_err(|e| madmail_parse::ParseError {
+                    message: e.to_string(),
+                    line: node.line,
+                })?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

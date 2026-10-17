@@ -56,7 +56,7 @@ mod tests {
     async fn dormant_accounts_never_logged_in() {
         let pool = init_memory_db().await.unwrap();
         let now = 1_700_000_000_i64;
-        let DbPool::Sqlite(p) = &pool else {
+        let crate::pool::DbConnection::Sqlite(p) = pool.connection() else {
             panic!("memory db is sqlite");
         };
         sqlx::query(
@@ -81,7 +81,7 @@ mod tests {
         passwords::create_user(&pool, "gone@x.org", "hash")
             .await
             .unwrap();
-        let DbPool::Sqlite(p) = &pool else {
+        let crate::pool::DbConnection::Sqlite(p) = pool.connection() else {
             panic!("memory db is sqlite");
         };
         sqlx::query(

@@ -159,8 +159,11 @@ pub fn update_config_monitor_options(
         updated
     };
     if !is_toml {
-        let parsed = crate::parse_maddy_config(&updated)
+        let mut parsed = crate::parse_maddy_config(&updated)
             .map_err(|e| ChatmailError::config(e.to_string()))?;
+        // Source annotations differ between a loaded file and this in-memory parse.
+        parsed.settings_policy = crate::SettingsPolicy::default();
+        desired.settings_policy = crate::SettingsPolicy::default();
         if parsed != desired {
             return Err(ChatmailError::config(
                 "could not safely update metrics configuration; edit it manually",

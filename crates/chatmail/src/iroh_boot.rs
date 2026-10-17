@@ -26,7 +26,11 @@ use chatmail_types::Result;
 
 /// Whether Iroh is active: static config **and** admin `__IROH_ENABLED__` (default on).
 pub async fn iroh_runtime_enabled(pool: &DbPool, file_config: &AppConfig) -> Result<bool> {
-    if !file_config.iroh_configured() {
+    if !file_config.iroh_configured()
+        && get_setting(pool, settings_keys::IROH_RELAY_URL)
+            .await?
+            .is_none()
+    {
         return Ok(false);
     }
     let admin_on = get_bool_setting(pool, settings_keys::IROH_ENABLED, true).await?;

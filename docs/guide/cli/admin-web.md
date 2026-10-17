@@ -1,5 +1,7 @@
 # `admin-web`
 
+Configuration precedence is **environment → file → database → defaults**. Explicit environment/file settings are read-only through database-backed commands. File/environment changes require restart. See [configuration sources and migration](../configuration.md).
+
 Control the embedded admin web dashboard (`__ADMIN_WEB_*__` settings).
 
 

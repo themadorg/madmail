@@ -71,6 +71,8 @@ pub async fn status(args: &Args, details: bool) -> Result<()> {
         AppConfig::default()
     };
 
+    let mut configuration_locks = config.deployment_policy()?.sources();
+    configuration_locks.extend(crate::configuration_policy::read(&ctx.state_dir)?);
     let scan = parse_service_ports(&args.config, &config, &ctx.state_dir)?;
     let mut service_totals: HashMap<&str, i32> = HashMap::new();
     let mut service_ips: HashMap<&str, HashSet<String>> = HashMap::new();
@@ -124,6 +126,14 @@ pub async fn status(args: &Args, details: bool) -> Result<()> {
         }
     });
 
+    if !out.is_json() {
+        for (key, source) in &configuration_locks {
+            out.line(format!(
+                "  Protected: {} ({source}); change source and restart",
+                chatmail_config::settings_policy::setting_name(key)
+            ));
+        }
+    }
     if out.is_json() {
         let services: Vec<_> = ["IMAP", "TURN", "Shadowsocks"]
             .iter()
@@ -142,6 +152,7 @@ pub async fn status(args: &Args, details: bool) -> Result<()> {
         let mut data = serde_json::json!({
             "services": services,
             "registered_users": registered_users,
+            "configuration_locks": configuration_locks,
         });
 
         if details {
