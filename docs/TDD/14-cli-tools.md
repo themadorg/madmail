@@ -267,3 +267,24 @@ avoiding StateDirectory/ConfigurationDirectory aliases for custom persistent pat
 Dry-run lists planned actions without creating files, accounts or invoking systemctl.
 Tests cover CLI conflicts, default/auto/explicit modes, custom unit paths, dry-run
 side-effect absence, root enforcement and isolated installation/idempotence.
+
+### Isolated Unix installation repair
+
+`install --user-only` and `install --systemd-only` are mutually exclusive,
+non-interactive system operations for existing installations. They imply `--system`
+and bypass domain resolution, TLS setup, configuration rendering, database seeding,
+binary copying, and documentation installation. Local, certificate-only, skip,
+Windows service and firewall options conflict with these repair modes.
+
+User-only creates or aligns the service account and applies existing config/TLS/state
+ownership using installer rules. Existing config and state directories are required;
+content is preserved, but ownership and config mode may change. Systemd-only requires
+an existing config file, state directory, executable binary and service account;
+it writes the unit and runs daemon-reload, without enabling or starting it. Existing
+unit customizations are replaced, so operators should use systemd drop-ins.
+
+Paths remain explicit installer inputs, not values inferred from config contents;
+use the same binary name and paths as the original install. Dry runs need no root
+and report the selected operation without mutation. Live prerequisites are checked
+before provisioning; failures return a nonzero exit status. This is a deliberate
+extension to the full installer, preserving its default behavior.

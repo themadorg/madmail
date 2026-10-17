@@ -2,9 +2,9 @@
 
 Every `madmail` subcommand accepts a global **`--json`** flag. In JSON mode:
 
-- **Stdout** receives a single JSON object (success envelope or legacy bare JSON — see below).
+- **Stdout** normally receives a single JSON object (success envelope or legacy bare JSON — see below). **Exception:** [`install`](#install) prints progress before its final JSON envelope.
 - **Stderr** receives `{"ok":false,"error":"..."}` on failure.
-- Decorative text, emoji, and QR codes are **not** printed.
+- Commands normally suppress decorative output; `install` retains human progress output.
 - Confirmation prompts still apply unless you pass `-y` / `--yes`.
 
 ```bash
@@ -203,17 +203,54 @@ One envelope per sample (newline-delimited when `--count` is not 1):
 
 ### `install`
 
+Use `madmail --json install ...` with a valid install or repair invocation.
+Human progress precedes the final JSON envelope; parse the envelope rather than
+passing the entire stdout stream to a JSON parser. Always check the exit status.
+The `data` fields depend on the selected operation:
+
+| Operation | Fields in `data` |
+|-----------|------------------|
+| Full-install dry-run | `dry_run`, `system_install`, `create_service_user`, `install_binary`, `install_systemd` |
+| Completed full install | `installed`, `primary_domain`, `paths_explicit`, `config`, `state_dir`, `system_install`, `service_installed`, `service_started`, `firewall_applied`, `man_page`, `completions` |
+| Completed certificate-only | `cert_only`, `primary_domain`, `tls_mode`, `cert_path`, `key_path` |
+| Repair, including dry-run | `mode`, `dry_run`, `system_install`, `create_service_user`, `apply_permissions`, `install_binary`, `install_systemd`, `service_installed`, `service_started` |
+
+`man_page` and `completions` are null for local installs; system installs report
+paths, with `bash`, `zsh` and `fish` fields in `completions`. `config` is the config
+path (not `config_path`). Unix `service_installed` means the unit was installed;
+`service_started` remains false. Windows uses its service registration/start flags.
+
+Repair preview example:
+
+```bash
+madmail --json install --systemd-only --dry-run
+```
+
+Final envelope:
+
 ```json
 {
   "ok": true,
   "command": "install",
-  "message": "Install completed",
   "data": {
-    "config_path": "/etc/madmail/madmail.conf",
-    "state_dir": "/var/lib/madmail"
+    "mode": "systemd-only",
+    "dry_run": true,
+    "system_install": true,
+    "create_service_user": false,
+    "apply_permissions": false,
+    "install_binary": false,
+    "install_systemd": true,
+    "service_installed": false,
+    "service_started": false
   }
 }
 ```
+
+The `install_*`, `create_service_user` and `apply_permissions` fields describe
+selected actions, including during preview. `service_installed` is false in repair
+dry-runs and true only after successful unit repair. User-only uses `mode: "user-only"`,
+selects account/permission actions and leaves systemd actions false. See
+[installer semantics](install.md#preview-and-json-output).
 
 ### `uninstall`
 

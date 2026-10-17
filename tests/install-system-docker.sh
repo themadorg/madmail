@@ -149,5 +149,72 @@ json_check /tmp/nonroot-local.log system_install false service_installed false
 reject 'systemctl daemon-reload failed' env MADMAIL_TEST_SYSTEMCTL_EXIT=1 /tmp/madmail "${args[@]}"
 [[ -x /var/xyzzy/bin/madmail && -f /etc/systemd/system/madmail.service ]]
 echo 'PASS: non-root local install and propagated systemd failure'
+# Isolated repair: no DNS/network, TLS, configuration, DB or binary writes.
+repair_paths=(--config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail
+              --binary-path /var/xyzzy/bin/madmail)
+for mode in --user-only --systemd-only; do
+    for conflict in --local --cert-only --skip-user --skip-systemd --install-service --start-service --firewall; do
+        reject 'cannot be used with' /tmp/madmail install "$mode" "$conflict"
+    done
+    for flag in --config-dir --state-dir --binary-path; do
+        reject 'must be absolute' /tmp/madmail install "$mode" "$flag" relative --dry-run
+    done
+    reject 'control characters' /tmp/madmail install "$mode" --state-dir $'/tmp/bad\npath' --dry-run
+    reject 'requires root' runuser -u nobody -- /tmp/madmail install "$mode" "${repair_paths[@]}"
+    reject 'existing config file' /tmp/madmail install "$mode" --config-dir /tmp/missing-repair
+    runuser -u nobody -- /tmp/madmail --json install "$mode" --dry-run \
+        --config-dir /tmp/dry-repair --state-dir /tmp/dry-state > /tmp/repair-dry.log
+    json_check /tmp/repair-dry.log dry_run true install_binary false service_installed false
+    [[ ! -e /tmp/dry-repair && ! -e /tmp/dry-state ]]
+done
+reject 'cannot be used with' /tmp/madmail install --user-only --systemd-only
+
+# Snapshot every persisted file and binary, including arbitrary operator config edits.
+printf '\n# operator customization must survive repair\n' >> /var/xyzzy/etc/madmail/madmail.conf
+find /var/xyzzy/etc/madmail /var/xyzzy/lib/madmail /var/xyzzy/bin -type f -exec sha256sum {} + | sort > /tmp/repair-files.before
+sha256sum /etc/systemd/system/madmail.service > /tmp/repair-unit.before
+reloads_before="$(wc -l < /tmp/systemctl-calls)"
+userdel madmail
+# Repair must also handle a retained group from a partially deleted account.
+getent group madmail >/dev/null || groupadd -r madmail
+retained_gid="$(getent group madmail | cut -d: -f3)"
+/tmp/madmail --json install --user-only "${repair_paths[@]}" > /tmp/user-repair.log
+json_check /tmp/user-repair.log create_service_user true apply_permissions true install_binary false install_systemd false
+id madmail >/dev/null
+[[ "$(id -g madmail)" = "$retained_gid" ]]
+[[ "$(stat -c '%U:%G:%a' /var/xyzzy/etc/madmail/madmail.conf)" = root:madmail:640 ]]
+[[ "$(stat -c '%U:%G' /var/xyzzy/lib/madmail/credentials.db)" = madmail:madmail ]]
+sha256sum -c /tmp/repair-unit.before >/dev/null
+[[ "$(wc -l < /tmp/systemctl-calls)" = "$reloads_before" ]]
+repair_uid="$(id -u madmail)"
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-repair-repeat.log
+[[ "$(id -u madmail)" = "$repair_uid" ]]
+
+# Unit-only preflights fail before replacing the unit or reloading systemd.
+chmod 644 /var/xyzzy/bin/madmail
+reject 'executable binary' /tmp/madmail install --systemd-only "${repair_paths[@]}"
+chmod 755 /var/xyzzy/bin/madmail
+userdel madmail
+reject 'not found' /tmp/madmail install --systemd-only "${repair_paths[@]}"
+sha256sum -c /tmp/repair-unit.before >/dev/null
+[[ "$(wc -l < /tmp/systemctl-calls)" = "$reloads_before" ]]
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/restore-user.log
+sha256sum /etc/passwd /etc/group > /tmp/repair-accounts.before
+find /var/xyzzy/etc/madmail /var/xyzzy/lib/madmail /var/xyzzy/bin -printf '%p %u %g %m\n' | sort > /tmp/repair-modes.before
+rm /etc/systemd/system/madmail.service
+/tmp/madmail --json install --systemd-only "${repair_paths[@]}" > /tmp/unit-repair.log
+json_check /tmp/unit-repair.log create_service_user false apply_permissions false install_binary false service_installed true service_started false
+systemd-analyze verify /etc/systemd/system/madmail.service
+sha256sum -c /tmp/repair-unit.before >/dev/null
+/tmp/madmail install --systemd-only "${repair_paths[@]}" > /tmp/unit-repair-repeat.log
+sha256sum -c /tmp/repair-accounts.before >/dev/null
+find /var/xyzzy/etc/madmail /var/xyzzy/lib/madmail /var/xyzzy/bin -printf '%p %u %g %m\n' | sort > /tmp/repair-modes.after
+diff -u /tmp/repair-modes.before /tmp/repair-modes.after
+[[ "$(wc -l < /tmp/systemctl-calls)" = "$((reloads_before + 2))" ]]
+if grep -v '^daemon-reload$' /tmp/systemctl-calls; then fail 'unexpected systemctl operation'; fi
+find /var/xyzzy/etc/madmail /var/xyzzy/lib/madmail /var/xyzzy/bin -type f -exec sha256sum {} + | sort > /tmp/repair-files.after
+diff -u /tmp/repair-files.before /tmp/repair-files.after
+reject 'systemctl daemon-reload failed' env MADMAIL_TEST_SYSTEMCTL_EXIT=1 /tmp/madmail install --systemd-only "${repair_paths[@]}"
+echo 'PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, content preservation, repeatability and failure propagation'
 echo 'PASS: complete Unix installer E2E matrix'
 INNER

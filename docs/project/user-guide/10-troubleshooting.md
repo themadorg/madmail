@@ -2,6 +2,20 @@
 
 This guide collects the most frequent issues that server admins and users run into, along with practical ways to diagnose and fix them.
 
+## Installation skipped the account or systemd unit
+
+Custom paths can select local mode even when run as root. For a **new** host setup,
+use `install --system` with the intended config/state/binary paths and inspect
+`--dry-run` first. For an **existing** config and state directory, use `--user-only`
+to repair the account/permissions or `--systemd-only` to replace the unit and reload
+systemd. Do not rerun full bootstrap just to repair provisioning: it rewrites config.
+
+Stop the service before account repair, use the original executable name and paths,
+and start it explicitly afterward. Unit-only repair needs the installed executable
+and service account already present. It replaces the generated unit; keep custom
+unit settings in drop-ins. See the [complete repair procedure](../../guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
+and [error reference](../../guide/cli/install.md#troubleshooting).
+
 ## Users Cannot Register or Log In
 
 ### Possible causes

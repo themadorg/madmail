@@ -8,6 +8,7 @@ The command is **Madmail-compatible**. The binary name (`madmail`, `chatmail`, �
 
 - [Quick start](#quick-start)
 - [Install modes](#install-modes)
+- [Targeted repair](cli/install.md#repair-only-the-service-account-or-systemd-unit)
 - [What install creates](#what-install-creates)
 - [Default paths](#default-paths)
 - [System install vs local paths](#system-install-vs-local-paths)
@@ -54,12 +55,12 @@ Prefer **`madmail-windows-amd64-setup.exe`** from [GitHub Releases](https://gith
   --install-service --start-service --firewall
 ```
 
-Defaults: `%ProgramData%\Madmail\config` and `%ProgramData%\Madmail\data`, service name **`Madmail`**. Details: [Windows packaging](../packaging/windows/README.md), [Quick Start — Windows](../project/user-guide/02-quick-start.md).
+Defaults: `%ProgramData%\Madmail\config` and `%ProgramData%\Madmail\data`, service name **`Madmail`**. Details: [Windows packaging](../../packaging/windows/README.md), [Quick Start — Windows](../project/user-guide/02-quick-start.md).
 
 ### Local / dev — custom paths (no root)
 
 ```bash
-madmail install --simple --ip 127.0.0.1 \
+madmail install --local --simple --ip 127.0.0.1 \
   --config-dir /tmp/mm --state-dir /tmp/sd --lang en
 madmail --config /tmp/mm/madmail.conf run --libexec /tmp/sd
 ```
@@ -77,18 +78,30 @@ See [Docker deployment guide](docker.md) for volume mounts and container layout.
 
 ## Install modes
 
+Choose full system setup, local bootstrap or isolated account/unit repair using the
+[operation comparison](cli/install.md#choose-the-operation). Full install can
+overwrite configuration; use repair modes for existing host provisioning.
+
 | Mode | Flag | Required inputs | Notes |
 |------|------|-----------------|-------|
 | **Simple** | `--simple` / `-s` | `--ip` **or** `--domain` | Recommended. Enables chatmail HTTP/HTTPS blocks, Shadowsocks in config, TURN, and sensible TLS defaults. |
-| **Non-interactive** | `--non-interactive` / `-n` | `--domain` (no `--simple`) | Script-oriented full install. Interactive prompts are **not implemented** — you must pass `--simple` or `--non-interactive`. |
+| **Non-interactive** | `--non-interactive` / `-n` | `--domain` (no `--simple`) | Script-oriented full install. Interactive prompts are **not implemented** — full bootstrap requires `--simple` or `--non-interactive`. Repair modes require neither. |
 
-Without `--simple` or `--non-interactive`, install exits with:
+For full bootstrap, without `--simple` or `--non-interactive`, install exits with:
 
 ```text
 interactive install is not implemented yet; use --non-interactive or --simple
 ```
 
 ---
+
+## Repair an existing Unix installation
+
+Use `madmail install --user-only` to repair its service account and permissions, or
+`madmail install --systemd-only` to replace its unit and reload systemd. Supply the
+original config/state/binary paths; neither mode rewrites configuration, seeds the
+database, obtains certificates or copies the binary. See the
+[repair commands and prerequisites](cli/install.md#repair-only-the-service-account-or-systemd-unit).
 
 ## What install creates
 
@@ -98,11 +111,11 @@ interactive install is not implemented yet; use --non-interactive or --simple
 | TLS certificates | `/etc/madmail/certs/fullchain.pem`, `privkey.pem` | Self-signed, autocert, or existing files (`file` mode) |
 | State directory | `/var/lib/madmail/` | `credentials.db`, `messages/`, `remote_queue/`, `autocert/` |
 | SQLite credentials DB | `{state_dir}/credentials.db` | Seeded with `__LANGUAGE__` from `--lang` |
-| Binary (system install) | `/usr/local/bin/madmail` | Skipped for non-system paths |
+| Binary (system install) | `/usr/local/bin/madmail` | Skipped in local mode |
 | Man page (system install) | `/usr/share/man/man1/<binary>.1` | Embedded in the binary; `mandb` refreshed when available |
 | Shell completions (system install) | bash, zsh, fish under `/usr/share/…` | Tab completion for all CLI subcommands |
-| systemd unit (system install) | `/etc/systemd/system/madmail.service` | Skipped with `--skip-systemd` or non-system paths |
-| Service user (system install) | user/group `madmail` | `useradd -mrU`, home = state dir; skipped with `--skip-user` |
+| systemd unit (system install) | `/etc/systemd/system/madmail.service` | Skipped with `--skip-systemd` or local mode |
+| Service user (system install) | user/group `madmail` | System account with home = state dir; skipped with `--skip-user` |
 
 Generated config includes (when applicable):
 
@@ -220,7 +233,7 @@ If `--tls-mode` is omitted, install **auto-detects**:
 | `--acme-email` | empty (auto-filled for DNS autocert) | ACME account email. **Required** with `--auto-ip-cert`. |
 | `--obtain-certificate` | **on** (default) | Obtain a Let's Encrypt certificate during install when mode is `autocert`, or when mode is `file` and PEMs are missing. Port 80 must be free on `--http-listen` (default `0.0.0.0:80`). |
 | `--no-obtain-certificate` | off | Skip ACME issuance (use with existing PEMs or `self_signed`). |
-| `--cert-only` | off | Only create TLS directories and obtain a certificate; skip config, database, and systemd. Run full install afterward with `--tls-mode file --no-obtain-certificate`. |
+| `--cert-only` | off | Stop after TLS setup; skip config, database, binary/docs and systemd. System account, directories and DKIM keys may still be created. Run full install afterward with `--tls-mode file --no-obtain-certificate`. |
 | `--http-listen` | `0.0.0.0:80` | HTTP-01 bind address for certificate issuance during install. |
 | `--turn-off-tls` | off | Sets `turn_off_tls yes` in `chatmail` blocks (plain HTTP registration, insecure IMAP/SMTP auth). Default for `--simple --ip` without `--auto-ip-cert`. |
 | `--cert-path` | `{config-dir}/certs/fullchain.pem` | TLS certificate PEM path written into config |
@@ -230,30 +243,8 @@ If `--tls-mode` is omitted, install **auto-detects**:
 
 ## All install options
 
-| Flag | Short | Argument | Default | Description |
-|------|-------|----------|---------|-------------|
-| `--simple` | `-s` | — | off | Quick setup: requires `--ip` or `--domain`. Enables chatmail blocks, Shadowsocks in config, TURN, and TLS auto-detection. |
-| `--non-interactive` | `-n` | — | off | Non-interactive install for scripts. Requires `--domain` when not using `--simple`. |
-| `--domain` | | string | — | Mail primary domain (DNS hostname). With `--simple --domain`: must **not** be an IP — use `--ip` for IP installs. |
-| `--hostname` | | string | same as domain | Server hostname (`$(hostname)` in config). SMTP EHLO, TLS SANs, etc. |
-| `--ip` | | string | — | Public IP (IPv4 or IPv6). With `--simple --ip`: sets wrapped primary domain `[IP]`, hostname, and `public_ip`. With domain install, omit to auto-detect from DNS (**public IPv4 preferred** over IPv6 when both exist; use this flag to force a specific address). |
-| `--config-dir` | | path | `/etc/madmail` | Directory for `madmail.conf` and `certs/`. Overrides default layout; affects systemd unit when paths differ from defaults. |
-| `--state-dir` | | path | `/var/lib/<binary>` for `--simple` / `/etc` config | Database, queues, `admin_token`, autocert state. |
-| `--tls-mode` | | `autocert` \| `file` \| `self_signed` | auto | Force TLS mode; see [TLS](#tls). |
-| `--cert-path` | | path | `{config-dir}/certs/fullchain.pem` | Certificate file for `tls file` / HTTPS |
-| `--key-path` | | path | `{config-dir}/certs/privkey.pem` | Private key file |
-| `--acme-email` | | email | `admin@<domain>` for DNS autocert | Let's Encrypt account contact |
-| `--enable-chatmail` | | — | on with `--simple` or `--domain` | Emit `chatmail { … }` HTTP/HTTPS blocks in config |
-| `--enable-ss` | | — | on with `--simple` | Add Shadowsocks `ss_addr` / `ss_password` / `ss_cipher` to chatmail blocks |
-| `--turn-off-tls` | | — | off (on for `--simple --ip` without `--auto-ip-cert`) | Disable TLS requirements for chatmail/IMAP/SMTP in generated config |
-| `--lang` | | `en` \| `fa` \| `ru` \| `es` | `en` | Website/UI language; seeded into DB as `__LANGUAGE__` |
-| `--system` / `--local` | | — | auto | Select Unix system installation or local bootstrap independently of paths. |
-| `--dry-run` | | — | off | Print resolved paths and exit before any writes; skips root check |
-| `--skip-systemd` | | — | off | Do not write systemd unit or run `daemon-reload` |
-| `--skip-user` | | — | off | Do not create or adjust the service system user (`useradd` / `usermod`) |
-| `--binary-path` | | path | `/usr/local/bin/<binary>` | Destination for binary copy on system install |
-| `--obtain-certificate` | | — | **on** | Issue Let's Encrypt cert during install when mode is `autocert` |
-| `--auto-ip-cert` | | — | off | Use Let's Encrypt **IP** certificate with `--simple --ip` |
+See the [complete installer CLI option table](cli/install.md#all-install-options),
+including system/local selection, isolated repair, TLS, Windows and output flags.
 
 ### `--simple` domain vs IP
 

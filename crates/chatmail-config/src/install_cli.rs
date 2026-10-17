@@ -40,6 +40,14 @@ pub struct InstallArgs {
     #[arg(long, conflicts_with = "system")]
     pub local: bool,
 
+    /// Repair only the Unix service account and existing installation permissions.
+    #[arg(long, conflicts_with_all = ["systemd_only", "local", "cert_only", "skip_user", "skip_systemd", "install_service", "start_service", "firewall"])]
+    pub user_only: bool,
+
+    /// Install only the systemd unit for an existing installation, then daemon-reload.
+    #[arg(long, conflicts_with_all = ["user_only", "local", "cert_only", "skip_user", "skip_systemd", "install_service", "start_service", "firewall"])]
+    pub systemd_only: bool,
+
     #[arg(long)]
     pub domain: Option<String>,
 
@@ -201,4 +209,39 @@ pub struct CertificateArgs {
     /// Force issuance on `get` even if current cert is still valid.
     #[arg(long)]
     pub force: bool,
+}
+
+#[cfg(test)]
+mod repair_tests {
+    use super::*;
+
+    #[test]
+    fn repair_modes_need_no_domain_or_interactive_flag() {
+        for mode in ["--user-only", "--systemd-only"] {
+            let args = InstallArgs::try_parse_from(["install", mode, "--dry-run"]).unwrap();
+            assert!(args.user_only || args.systemd_only);
+            assert!(args.domain.is_none());
+        }
+    }
+
+    #[test]
+    fn repair_rejects_other_mutating_modes() {
+        for mode in ["--user-only", "--systemd-only"] {
+            for conflict in [
+                "--local",
+                "--cert-only",
+                "--skip-user",
+                "--skip-systemd",
+                "--install-service",
+                "--start-service",
+                "--firewall",
+            ] {
+                assert!(
+                    InstallArgs::try_parse_from(["install", mode, conflict]).is_err(),
+                    "{mode} accepted {conflict}"
+                );
+            }
+        }
+        assert!(InstallArgs::try_parse_from(["install", "--user-only", "--systemd-only"]).is_err());
+    }
 }
