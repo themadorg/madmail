@@ -92,7 +92,75 @@ fn print_install_plan(cfg: &InstallConfig, args: &InstallArgs) {
     }
 }
 
+/// Repair existing host provisioning without entering the full bootstrap pipeline.
+fn repair_installation(global: &Args, args: &InstallArgs) -> Result<()> {
+    #[cfg(not(unix))]
+    {
+        let _ = (global, args);
+        Err(ChatmailError::config("installation repair is Unix-only"))
+    }
+    #[cfg(unix)]
+    {
+        let cfg = InstallConfig::from_args(global, args)?;
+        system::require_root_for_system_install(&cfg, args.dry_run)?;
+        let mode = if args.user_only {
+            "user-only"
+        } else {
+            "systemd-only"
+        };
+        println!("  Install mode: {mode}");
+        println!("  Config: {}", cfg.config_path.display());
+        println!("  State: {}", cfg.state_dir.display());
+        if args.user_only {
+            println!("  Plan: create/update service account and apply existing config/TLS/state permissions");
+        } else {
+            println!("  Plan: replace systemd unit and daemon-reload (no enable/start)");
+            println!("  Binary: {}", cfg.binary_path.display());
+        }
+        if !args.dry_run {
+            // Check prerequisites before account or unit mutations.
+            if !cfg.config_path.is_file() || !cfg.state_dir.is_dir() {
+                return Err(ChatmailError::config(
+                    "repair requires an existing config file and state directory; use the original install paths",
+                ));
+            }
+            if args.user_only {
+                system::create_service_user(&cfg, false)?;
+                system::setup_config_permissions(&cfg, false)?;
+                system::setup_permissions(&cfg, false)?;
+            } else {
+                system::validate_service_prerequisites(&cfg)?;
+                systemd::install_unit(&cfg)?;
+                systemd::daemon_reload()?;
+            }
+        }
+        if global.json {
+            CtlOut::from_args(global, "install").emit(serde_json::json!({
+                "mode": mode,
+                "dry_run": args.dry_run,
+                "system_install": true,
+                "create_service_user": args.user_only,
+                "apply_permissions": args.user_only,
+                "install_binary": false,
+                "install_systemd": args.systemd_only,
+                "service_installed": args.systemd_only && !args.dry_run,
+                "service_started": false,
+            }))?;
+        } else if args.dry_run {
+            println!(
+                "[dry-run] no changes; live execution checks existing installation prerequisites"
+            );
+        } else {
+            println!("Installation repair completed ({mode}).");
+        }
+        Ok(())
+    }
+}
+
 pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
+    if args.user_only || args.systemd_only {
+        return repair_installation(global, args);
+    }
     if !args.non_interactive && !args.simple {
         return Err(ChatmailError::config(
             "interactive install is not implemented yet; use --non-interactive or --simple",
@@ -660,6 +728,8 @@ impl InstallConfig {
         #[cfg(not(windows))]
         let system_install = !args.local
             && (args.system
+                || args.user_only
+                || args.systemd_only
                 || config_dir.starts_with("/etc/")
                 || state_dir.starts_with("/var/lib/")
                 || (args.simple && !paths_explicit));
@@ -669,7 +739,7 @@ impl InstallConfig {
             ));
         }
         #[cfg(windows)]
-        if args.system {
+        if args.system || args.user_only || args.systemd_only {
             return Err(ChatmailError::config(
                 "--system is Unix-only; use --install-service on Windows",
             ));
@@ -705,7 +775,18 @@ impl InstallConfig {
             }
         }
 
-        let (primary_domain, hostname, public_ip, local_domains, turn_off_tls) = if args.simple {
+        let (primary_domain, hostname, public_ip, local_domains, turn_off_tls) = if args.user_only
+            || args.systemd_only
+        {
+            // Repair does not read domain/TLS settings or perform DNS lookups.
+            (
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                false,
+            )
+        } else if args.simple {
             if let Some(domain) = args.domain.clone() {
                 let bare = domain
                     .trim()
@@ -1006,6 +1087,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
             system: false,
             local: false,
             non_interactive: false,
@@ -1110,6 +1193,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
             system: false,
             local: false,
             non_interactive: false,
@@ -1163,6 +1248,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
             system: false,
             local: false,
             non_interactive: false,
@@ -1221,6 +1308,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
             system: false,
             local: false,
             non_interactive: false,
@@ -1270,6 +1359,8 @@ mod tests {
         let args = InstallArgs {
             lang: "fa".into(),
             ..InstallArgs {
+                user_only: false,
+                systemd_only: false,
                 system: false,
                 local: false,
                 non_interactive: false,
@@ -1317,6 +1408,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
             system: false,
             local: false,
             non_interactive: false,
@@ -1372,6 +1465,8 @@ mod tests {
         };
         const IPV6: &str = "2606:4700:4700::1111";
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
             system: false,
             local: false,
             non_interactive: true,
@@ -1431,6 +1526,8 @@ mod tests {
             simple: true,
             domain: Some(EXAMPLE_PUBLIC_IP.into()),
             ..InstallArgs {
+                user_only: false,
+                systemd_only: false,
                 system: false,
                 local: false,
                 non_interactive: false,
@@ -1472,6 +1569,8 @@ mod tests {
             obtain_certificate: false,
             no_obtain_certificate: false,
             ..InstallArgs {
+                user_only: false,
+                systemd_only: false,
                 system: false,
                 local: false,
                 non_interactive: false,
@@ -1521,6 +1620,8 @@ mod tests {
         let args = InstallArgs {
             lang: "de".into(),
             ..InstallArgs {
+                user_only: false,
+                systemd_only: false,
                 system: false,
                 local: false,
                 non_interactive: false,
@@ -1565,6 +1666,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
             system: false,
             local: false,
             non_interactive: true,

@@ -99,3 +99,41 @@ Schema: [json-output.md](json-output.md#install).
 [← CLI index](README.md) · [Global flags](global-flags.md)
 
 [Source: `crates/chatmail/src/ctl/install/mod.rs`](https://github.com/themadorg/madmail/blob/main/crates/chatmail/src/ctl/install/mod.rs)
+
+## Repair only the service account or systemd unit
+
+For an existing Unix installation, use one of these mutually exclusive modes:
+
+```bash
+sudo ./madmail install --user-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail
+
+sudo ./madmail install --systemd-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail
+```
+
+Both imply system mode, even with custom paths. Use the same executable name and
+paths as the original installation: the executable name determines the service
+account, unit name and config filename (`madmail.conf` for `madmail`). These modes
+use the supplied installer paths; they do not discover paths from config contents.
+No `--simple`, `--non-interactive`, domain, IP or ACME options are needed.
+
+- `--user-only` creates or repairs the account/home/group and applies config, TLS
+  and state ownership. Config permissions become `0640`. Run while the service is
+  stopped if its account needs repair. Custom TLS locations can be supplied using
+  `--cert-path` and `--key-path`.
+- `--systemd-only` replaces the unit and runs `systemctl daemon-reload`. It requires
+  an existing executable binary and service user/group. Keep local unit changes in
+  systemd drop-ins. It does not enable, start or restart the service.
+
+Both require an existing config file and state directory, and preserve the contents
+of configuration, database, certificates, DKIM keys and binary. They do not install
+CLI documentation. They cannot be combined with `--local`, `--cert-only`, either
+skip flag, or Windows service/firewall flags. Unlike full installation, neither
+repair mode seeds settings or obtains certificates.
+
+Add `--dry-run` to preview without root or changes; live execution validates existing
+files/accounts. Global `--json` reports the mode and planned actions. A failed step
+returns nonzero; if daemon-reload fails, the written unit remains for inspection and
+retry. These operations are repeatable but are not transactional.

@@ -67,6 +67,19 @@ Extended documentation:
 	mode and planned actions. *--skip-user* and *--skip-systemd* remain
 	independent opt-outs. See EXAMPLES and NOTES.
 
+	For existing Unix installations, *--user-only* repairs the service account
+	and config/TLS/state permissions; *--systemd-only* replaces the unit and
+	runs daemon-reload without enabling or starting the service. Both imply
+	system mode and preserve config, database, certificates and binary contents.
+	Use the original executable name and config/state/binary paths; paths are
+	not inferred from config contents. Existing config and state are required;
+	unit repair also requires an executable binary and service user/group.
+	No domain/IP or non-interactive flag is needed. Preview with *--dry-run*.
+	These modes conflict with each other, local/cert-only/skip and Windows
+	service/firewall flags. Stop the service before account repair. Unit
+	customizations belong in drop-ins; a failed reload leaves the written unit.
+
+
 *uninstall*
 	Remove the service, configuration, and data.
 	Confirmation is required; use keep flags such as *--keep-data* to

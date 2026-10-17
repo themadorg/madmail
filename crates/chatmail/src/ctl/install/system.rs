@@ -44,6 +44,30 @@ pub fn require_root_for_system_install(cfg: &InstallConfig, dry_run: bool) -> Re
     )))
 }
 
+/// A unit-only repair must point at an existing executable and service identity.
+pub fn validate_service_prerequisites(cfg: &InstallConfig) -> Result<()> {
+    let metadata =
+        fs::metadata(&cfg.binary_path).map_err(|e| io_error("stat binary", &cfg.binary_path, e))?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+        return Err(ChatmailError::config(
+            "systemd-only requires an existing executable binary",
+        ));
+    }
+    lookup_uid_gid(&cfg.maddy_user)?;
+    let group_exists = Command::new("getent")
+        .args(["group", &cfg.maddy_group])
+        .output()
+        .map_err(|e| ChatmailError::config(format!("getent group: {e}")))?
+        .status
+        .success();
+    if !group_exists {
+        return Err(ChatmailError::config(
+            "service group missing; run install --user-only first",
+        ));
+    }
+    Ok(())
+}
+
 pub fn create_service_user(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
     if cfg.skip_user || !cfg.system_install {
         return Ok(());
@@ -73,9 +97,22 @@ pub fn create_service_user(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
     }
 
     println!("   Creating user {}", cfg.maddy_user);
-    let status = Command::new("useradd")
+    // A partially removed installation can retain its group after user deletion.
+    let group_exists = Command::new("getent")
+        .args(["group", &cfg.maddy_group])
+        .output()
+        .map_err(|e| ChatmailError::config(format!("getent group: {e}")))?
+        .status
+        .success();
+    let mut command = Command::new("useradd");
+    if group_exists {
+        command.args(["-g", &cfg.maddy_group]);
+    } else {
+        command.arg("-U");
+    }
+    let status = command
         .args([
-            "-mrU",
+            "-mr",
             "-s",
             "/sbin/nologin",
             "-d",

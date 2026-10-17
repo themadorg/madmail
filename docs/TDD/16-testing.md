@@ -280,3 +280,13 @@ compact build, and all 17 installer unit tests passed with the same compact
 profiles. The test Docker build context was 2 KiB. No production/release profile
 settings were changed. Failure-path checks include invalid mode/path input,
 non-root system installation, and a nonzero daemon-reload result.
+
+Installer repair coverage (`make test-install-docker`) additionally checks
+`--user-only` and `--systemd-only`: no-domain offline operation, incompatible flags,
+absolute/control-character path validation, non-root rejection, non-root dry-run
+isolation, missing installation/binary/account prerequisites, deleted-account and
+unit restoration, repeated execution, JSON actions, preserved config/TLS/DKIM/DB/
+binary hashes, unchanged accounts and file modes during unit-only repair, no unit
+or daemon changes during user-only repair, and propagated daemon-reload failures.
+Systemd uses the same recording stub and real unit syntax verification as the full
+installer suite; running a service under systemd PID 1 is not covered here.

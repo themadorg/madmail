@@ -441,3 +441,11 @@ custom systemd paths, repeated installation, skip flags, dry-run/JSON output and
 failure handling without modifying host accounts or services. Docker and Cargo
 are required. This test validates unit syntax and service-user boot; it does not
 run systemd as PID 1. Details: [testing design](../TDD/16-testing.md#expanded-installer-e2e-matrix).
+
+### Repair an existing Unix installation
+
+Use `madmail install --user-only` to repair its service account and permissions, or
+`madmail install --systemd-only` to replace its unit and reload systemd. Supply the
+original config/state/binary paths; neither mode rewrites configuration, seeds the
+database, obtains certificates or copies the binary. See the
+[repair commands and prerequisites](cli/install.md#repair-only-the-service-account-or-systemd-unit).

@@ -434,3 +434,13 @@ and install the systemd unit. Use `--local` for local bootstrap without host cha
 Preview with `--dry-run`; see the [native install guide](../../guide/install.md#system-install-vs-local-paths)
 for the complete example and the existing skip flags. Windows uses its separate
 `--install-service` / `--start-service` options.
+
+### Repair provisioning without reinstalling
+
+For an existing Unix relay, `sudo madmail install --user-only` repairs the service
+account and permissions. `sudo madmail install --systemd-only` replaces the service
+unit and reloads systemd, without starting it. For custom layouts, pass the original
+`--config-dir`, `--state-dir` and `--binary-path` as appropriate. Both preserve config,
+database, certificate and binary contents. Preview with `--dry-run`; see the
+[installer repair guide](../../guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
+for prerequisites and precise effects.
