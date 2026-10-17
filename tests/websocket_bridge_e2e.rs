@@ -9,7 +9,8 @@ use chatmail_db::{set_setting, settings_keys};
 use chatmail_www::bridge::BridgeSessions;
 use futures_util::{SinkExt, StreamExt};
 use rustls::pki_types::ServerName;
-use tokio::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
@@ -45,6 +46,16 @@ async fn connect(
     tls: Arc<rustls::ClientConfig>,
     origin: Option<&str>,
 ) -> Result<Socket, tokio_tungstenite::tungstenite::Error> {
+    connect_with_headers(addr, path, tls, origin, &[]).await
+}
+
+async fn connect_with_headers(
+    addr: &str,
+    path: &str,
+    tls: Arc<rustls::ClientConfig>,
+    origin: Option<&str>,
+    headers: &[(&str, String)],
+) -> Result<Socket, tokio_tungstenite::tungstenite::Error> {
     let tcp = TcpStream::connect(addr).await.unwrap();
     let stream = TlsConnector::from(tls)
         .connect(ServerName::try_from("localhost").unwrap(), tcp)
@@ -55,6 +66,13 @@ async fn connect(
         .unwrap();
     if let Some(origin) = origin {
         req.headers_mut().insert("Origin", origin.parse().unwrap());
+    }
+    for (name, value) in headers {
+        req.headers_mut().insert(
+            tokio_tungstenite::tungstenite::http::header::HeaderName::from_bytes(name.as_bytes())
+                .unwrap(),
+            value.parse().unwrap(),
+        );
     }
     client_async(req, stream).await.map(|(ws, _)| ws)
 }
@@ -112,7 +130,167 @@ impl MailClient {
     }
 }
 
+/// A real TCP canary proves attempted destinations are never contacted. Docker
+/// first probes it from inside the server container, so an unreachable host cannot
+/// make this negative assertion pass accidentally.
+async fn exercise_service_isolation(addr: &str, tls: Arc<rustls::ClientConfig>) {
+    let container = std::env::var("BRIDGE_TEST_CONTAINER").ok();
+    let listener = TcpListener::bind(if container.is_some() {
+        "0.0.0.0:0"
+    } else {
+        "127.0.0.1:0"
+    })
+    .await
+    .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let host = if container.is_some() {
+        "host.docker.internal"
+    } else {
+        "127.0.0.1"
+    };
+    let destination = format!("{host}:{port}");
+    let probe = async {
+        if let Some(container) = container {
+            let result = tokio::task::spawn_blocking(move || {
+                std::process::Command::new("docker")
+                    .args([
+                        "exec",
+                        &container,
+                        "sh",
+                        "-c",
+                        &format!("printf canary-probe | nc -w 2 host.docker.internal {port}"),
+                    ])
+                    .output()
+                    .unwrap()
+            })
+            .await
+            .unwrap();
+            assert!(
+                result.status.success(),
+                "Docker canary probe failed: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        } else {
+            TcpStream::connect(&destination)
+                .await
+                .unwrap()
+                .write_all(b"canary-probe")
+                .await
+                .unwrap();
+        }
+    };
+    let accept = async {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut bytes = [0; 12];
+        socket.read_exact(&mut bytes).await.unwrap();
+        assert_eq!(&bytes, b"canary-probe");
+    };
+    timeout(Duration::from_secs(10), async {
+        tokio::join!(probe, accept);
+    })
+    .await
+    .expect("canary must be reachable from the mail server");
+
+    for path in ["/transport/imap", "/transport/smtp"] {
+        for query in [
+            format!("target={destination}"),
+            format!("host={host}&port={port}"),
+            format!("url=http://{destination}/api/admin"),
+            "protocol=ssh".to_string(),
+            "%74arget=127.0.0.1:22".to_string(),
+        ] {
+            match connect(addr, &format!("{path}?{query}"), tls.clone(), None).await {
+                Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
+                    assert_eq!(res.status(), 400)
+                }
+                _ => panic!("destination/protocol override accepted: {path}?{query}"),
+            }
+        }
+    }
+    for path in [
+        "/transport/http",
+        "/transport/ssh",
+        "/transport/redis",
+        "/transport/admin",
+        "/transport/imap/extra",
+        "/transport/imap/%2e%2e/http",
+    ] {
+        assert!(
+            matches!(
+                connect(addr, path, tls.clone(), None).await,
+                Err(tokio_tungstenite::tungstenite::Error::Http(_))
+            ),
+            "non-mail route upgraded: {path}"
+        );
+    }
+    let overrides = [
+        ("host", destination.clone()),
+        ("x-target", destination.clone()),
+        ("x-forwarded-host", destination.clone()),
+    ];
+    for path in ["/transport/imap", "/transport/smtp"] {
+        let mut protocols = overrides.to_vec();
+        protocols.push(("sec-websocket-protocol", "ssh, http, redis".into()));
+        assert!(
+            matches!(connect_with_headers(addr,path,tls.clone(),None,&protocols).await,
+            Err(tokio_tungstenite::tungstenite::Error::Protocol(
+                tokio_tungstenite::tungstenite::error::ProtocolError::SecWebSocketSubProtocolError(
+                    tokio_tungstenite::tungstenite::error::SubProtocolError::NoSubProtocol
+                )
+            ))),
+            "non-mail WebSocket subprotocol was selected"
+        );
+        let ws = connect_with_headers(addr, path, tls.clone(), None, &overrides)
+            .await
+            .unwrap();
+        let mut client = MailClient {
+            ws,
+            buffered: Vec::new(),
+        };
+        let greeting = client.until(b"\r\n").await;
+        let imap = path.ends_with("imap");
+        assert!(greeting.starts_with(if imap { b"* OK" } else { b"220 " }));
+        for command in [
+            format!("CONNECT {destination} HTTP/1.1"),
+            format!("GET http://{destination}/api/admin HTTP/1.1"),
+            "PING".into(),
+            "UPDATE users SET active=1".into(),
+        ] {
+            let line = if imap {
+                format!("x {command}\r\n")
+            } else {
+                format!("{command}\r\n")
+            };
+            let reply = client.command(&line, b"\r\n").await;
+            assert!(
+                reply.starts_with(if imap { b"x BAD" } else { b"502" }),
+                "non-mail traffic escaped the protocol parser: {reply:?}"
+            );
+        }
+        // Selecting the IMAP route cannot switch to SMTP, or vice versa.
+        let reply = client
+            .command(
+                if imap {
+                    "x EHLO client\r\n"
+                } else {
+                    "x LOGIN bridgeuser@test bridge-secret\r\n"
+                },
+                b"\r\n",
+            )
+            .await;
+        assert!(reply.starts_with(if imap { b"x BAD" } else { b"502" }));
+        client.ws.close(None).await.unwrap();
+    }
+    assert!(
+        timeout(Duration::from_millis(500), listener.accept())
+            .await
+            .is_err(),
+        "bridge contacted an arbitrary TCP destination"
+    );
+}
+
 async fn exercise(addr: &str, tls: Arc<rustls::ClientConfig>) {
+    exercise_service_isolation(addr, tls.clone()).await;
     let mut imap = MailClient::open(addr, "/transport/imap", tls.clone()).await;
     imap.until(b"ready\r\n").await;
     let denied = imap

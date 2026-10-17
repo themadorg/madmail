@@ -60,3 +60,15 @@ visibility. Follow CONTRIBUTING.md's fmt, clippy and workspace test requirements
 
 The `WebSocket mail bridge E2E` GitHub Actions workflow runs the shipping-image
 scenario for relevant pull requests and supports manual dispatch.
+
+
+## Destination isolation regression
+
+The Rust client attempts arbitrary destination queries, protocol selection, unknown
+transport routes, Host/forwarding/subprotocol overrides and HTTP CONNECT/GET,
+Redis and SQL commands inside both mail sockets. Each remains rejected by the
+HTTP gate or the selected native mail parser. A TCP canary must receive no
+connections from these attempts; the Docker test first reaches that canary from
+inside the server container as a positive control. Legitimate authenticated SMTP
+mail delivery retains its normal routing semantics; the bridge is not a general
+TCP, HTTP CONNECT or SOCKS proxy.

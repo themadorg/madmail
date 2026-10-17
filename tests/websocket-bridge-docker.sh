@@ -58,7 +58,7 @@ chatmail tls://0.0.0.0:8443 tcp://0.0.0.0:8080 {
  admin_token bridge-e2e-token-012345678901234567890123456789
 }
 CONF
-docker run -d --name "$NAME" -v "$WORK:/etc/madmail:ro" \
+docker run -d --name "$NAME" --add-host host.docker.internal:host-gateway -v "$WORK:/etc/madmail:ro" \
     -p 127.0.0.1::8443 "$IMAGE" >/dev/null
 PORT="$(docker port "$NAME" 8443/tcp | sed 's/.*://')"
 URL="https://localhost:$PORT"
@@ -76,7 +76,7 @@ rpc() {
         -H 'Content-Type: application/json' --data "{\"headers\":{\"Authorization\":\"Bearer bridge-e2e-token-012345678901234567890123456789\"},$payload" "$URL/api/admin"
 }
 client() {
-    BRIDGE_TEST_ADDR="127.0.0.1:$PORT" BRIDGE_TEST_CA="$WORK/cert.pem" BRIDGE_TEST_MODE="$1" \
+    BRIDGE_TEST_CONTAINER="$NAME" BRIDGE_TEST_ADDR="127.0.0.1:$PORT" BRIDGE_TEST_CA="$WORK/cert.pem" BRIDGE_TEST_MODE="$1" \
         cargo test -p chatmail-integration --test websocket_bridge_e2e --locked docker_websocket_bridge -- --ignored --exact
 }
 client disabled
