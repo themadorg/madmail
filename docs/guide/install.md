@@ -132,13 +132,35 @@ When you omit `--config-dir` and `--state-dir`:
 
 ## System install vs local paths
 
-Install is a **system install** (requires root: service user, binary copy, systemd) when **any** of these is true:
+Choose installation intent explicitly when using custom paths:
+
+- `--system`: Unix system install, requiring root, regardless of directory layout.
+- `--local`: local bootstrap; skip host account/ownership, binary, CLI docs and unit installation.
+- The flags are mutually exclusive. `--skip-user` and `--skip-systemd` still opt out of their respective system steps. System config, state and binary paths must be absolute.
+
+For example, the custom-path bootstrap in issue #216 becomes:
+
+```bash
+sudo ./madmail install --simple --system --domain example.com \
+  --acme-email noreply@example.com --lang en \
+  --config-dir /var/xyzzy/etc/madmail \
+  --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail
+```
+
+The installer creates/updates the service account, applies ownership, copies the
+binary to the requested location, and writes the systemd unit with those paths.
+It reloads systemd but does not enable/start the Unix service. Review the unit, then
+run `sudo systemctl enable --now madmail`.
+
+Without either flag, retain automatic selection: install is a **system install**
+(requires root) when **any** of these is true:
 
 - Config directory is under `/etc/`, or
 - State directory is under `/var/lib/`, or
 - `--simple` is used **and** you did not override paths away from the defaults above
 
-**Local install** (no root): use explicit non-FHS paths, e.g. `--config-dir /tmp/mm --state-dir /tmp/sd`. Install writes config, certs, and DB only; skips binary install, service user, and systemd.
+**Local install** (no root): use explicit non-FHS paths, e.g. `--config-dir /tmp/mm --state-dir /tmp/sd`. Install writes config, certs, and DB only; skips binary install, service user, host CLI docs, and systemd. The output explains the selected mode and suggests `--system` for custom-path host deployments.
 
 Root error (system install without `sudo`):
 
@@ -146,7 +168,7 @@ Root error (system install without `sudo`):
 system install requires root (use sudo): installs service user, binary, and systemd unit; config /etc/madmail, state /var/lib/madmail
 ```
 
-Use `--dry-run` to validate resolved paths without writing files or checking root.
+Use `--dry-run` to validate resolved paths and inspect the selected mode and planned actions without writing files, creating users, invoking systemctl, or checking root.
 
 ---
 
@@ -166,7 +188,7 @@ ReadWritePaths=/var/lib/madmail /etc/madmail
 ExecStart=/usr/local/bin/madmail --config /etc/madmail/madmail.conf run --libexec /var/lib/madmail
 ```
 
-**Custom `--config-dir` / `--state-dir`** — unit omits `StateDirectory` / `ConfigurationDirectory` and uses your paths in `WorkingDirectory`, `ReadWritePaths`, and `ExecStart` instead.
+**Custom `--config-dir` / `--state-dir`** — unit omits `StateDirectory` / `ConfigurationDirectory` and uses your paths in `WorkingDirectory`, `ReadWritePaths`, and `ExecStart` instead. `RuntimeDirectory=<binary>` is retained to create the service-owned `/run/<binary>` directory.
 
 ---
 
@@ -225,6 +247,7 @@ If `--tls-mode` is omitted, install **auto-detects**:
 | `--enable-ss` | | — | on with `--simple` | Add Shadowsocks `ss_addr` / `ss_password` / `ss_cipher` to chatmail blocks |
 | `--turn-off-tls` | | — | off (on for `--simple --ip` without `--auto-ip-cert`) | Disable TLS requirements for chatmail/IMAP/SMTP in generated config |
 | `--lang` | | `en` \| `fa` \| `ru` \| `es` | `en` | Website/UI language; seeded into DB as `__LANGUAGE__` |
+| `--system` / `--local` | | — | auto | Select Unix system installation or local bootstrap independently of paths. |
 | `--dry-run` | | — | off | Print resolved paths and exit before any writes; skips root check |
 | `--skip-systemd` | | — | off | Do not write systemd unit or run `daemon-reload` |
 | `--skip-user` | | — | off | Do not create or adjust the service system user (`useradd` / `usermod`) |
@@ -409,3 +432,12 @@ For IP/self-signed relays, Delta Chat clients may need to accept self-signed cer
 - [CLI tools (TDD)](../TDD/14-cli-tools.md) — global flags and ctl overview
 - [Configuration (TDD)](../TDD/13-configuration.md) — runtime config after install
 - [PostgreSQL](postgres.md) — optional application database (empty DB, not a SQLite conversion)
+
+## Installer regression testing
+
+Developers can run `make test-install-docker` for a compact debug build and an
+isolated Debian provisioning test. It covers installation modes, permissions,
+custom systemd paths, repeated installation, skip flags, dry-run/JSON output and
+failure handling without modifying host accounts or services. Docker and Cargo
+are required. This test validates unit syntax and service-user boot; it does not
+run systemd as PID 1. Details: [testing design](../TDD/16-testing.md#expanded-installer-e2e-matrix).

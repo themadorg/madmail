@@ -425,3 +425,12 @@ and remains available on retired JIT domains.
 For a complete domain-management recipe, including selective JIT retirement and
 CLI provisioning, see [English](../../guide/recipes/server-domains_en.md) /
 [فارسی](../../guide/recipes/server-domains_fa.md).
+
+### Custom-path Unix service installation
+
+Use `madmail install --system` with custom `--config-dir`, `--state-dir`, and
+`--binary-path` to create the host service account, apply ownership, copy the binary,
+and install the systemd unit. Use `--local` for local bootstrap without host changes.
+Preview with `--dry-run`; see the [native install guide](../../guide/install.md#system-install-vs-local-paths)
+for the complete example and the existing skip flags. Windows uses its separate
+`--install-service` / `--start-service` options.

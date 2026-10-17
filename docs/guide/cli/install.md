@@ -39,7 +39,7 @@ sudo madmail install --simple --domain example.org --acme-email admin@example.or
 sudo madmail install --simple --domain example.org --tls-mode file --no-obtain-certificate --lang en
 
 # Local dev (no root)
-madmail install --simple --ip 127.0.0.1   --config-dir /tmp/mm --state-dir /tmp/sd
+madmail install --local --simple --ip 127.0.0.1   --config-dir /tmp/mm --state-dir /tmp/sd
 
 # Windows (elevated): ProgramData defaults, service + firewall
 madmail install --simple --ip 203.0.113.50 --tls-mode self_signed --lang en `
@@ -50,6 +50,10 @@ On **Windows**, default install paths are `%ProgramData%\Madmail\config` and `%P
 
 **Let's Encrypt on Windows:** open **inbound TCP 80** (Windows Firewall + provider panel) before HTTP-01. Install opens a Madmail HTTP firewall rule when possible, but cloud firewalls still matter. For a lab finish without LE, use `--tls-mode self_signed --no-obtain-certificate`.
 
+For custom-path host deployments, use `--system` with `--config-dir`, `--state-dir`,
+and `--binary-path`. `--dry-run` prints the mode and planned actions. The existing
+`--skip-user` and `--skip-systemd` flags still apply.
+
 ## Key flags
 
 | Flag | Description |
@@ -57,6 +61,7 @@ On **Windows**, default install paths are `%ProgramData%\Madmail\config` and `%P
 | `-s`, `--simple` | Quick setup (`--ip` or `--domain` required) |
 | `-n`, `--non-interactive` | Script install (requires `--domain` without `--simple`) |
 | `--ip`, `--domain`, `--hostname` | Server identity |
+| `--system`, `--local` | Explicit system installation or local bootstrap; mutually exclusive. Use `--system` for custom-path Unix deployments. |
 | `--config-dir`, `--state-dir` | Override FHS / ProgramData paths |
 | `--install-service` | Register Windows service after install (no-op notice on Unix) |
 | `--start-service` | Start Windows service after install |
