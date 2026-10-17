@@ -39,6 +39,59 @@ use super::docs;
 use super::language::validate_language_code;
 use super::output::CtlOut;
 
+fn print_install_plan(cfg: &InstallConfig, args: &InstallArgs) {
+    println!(
+        "  Install mode:  {}",
+        if cfg.system_install {
+            "system"
+        } else {
+            "local"
+        }
+    );
+    println!("  Plan: create directories and prepare TLS certificates");
+    if args.cert_only {
+        println!("  Plan: certificate-only; skip config, database, binary, docs and systemd");
+    } else {
+        println!("  Plan: write config and initialize database");
+        if cfg.system_install {
+            println!(
+                "  Plan: install binary at {} and CLI documentation",
+                cfg.binary_path.display()
+            );
+            println!(
+                "  Plan: {} systemd unit",
+                if cfg.skip_systemd {
+                    "skip"
+                } else {
+                    "install and daemon-reload"
+                }
+            );
+        }
+    }
+    if cfg.system_install {
+        println!(
+            "  Plan: {} service account",
+            if cfg.skip_user {
+                "skip"
+            } else {
+                "create/update"
+            }
+        );
+        if !args.cert_only {
+            println!(
+                "  Plan: {} ownership setup",
+                if cfg.skip_user { "skip" } else { "apply" }
+            );
+        }
+    } else {
+        println!("  Plan: skip host account, ownership, binary, documentation and systemd changes");
+        #[cfg(unix)]
+        if !args.local {
+            println!("  Custom paths selected local mode; use --system to install a host service at these paths.");
+        }
+    }
+}
+
 pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
     if !args.non_interactive && !args.simple {
         return Err(ChatmailError::config(
@@ -69,13 +122,16 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         ));
     }
 
+    print_install_plan(&cfg, args);
     if args.dry_run {
-        #[cfg(unix)]
-        if cfg.system_install {
-            docs::install_cli_docs(&cfg.binary_name, true)?;
-        }
         if global.json {
-            CtlOut::from_args(global, "install").emit(serde_json::json!({ "dry_run": true }))?;
+            CtlOut::from_args(global, "install").emit(serde_json::json!({
+                "dry_run": true,
+                "system_install": cfg.system_install,
+                "create_service_user": cfg.system_install && !cfg.skip_user,
+                "install_binary": cfg.system_install && !args.cert_only,
+                "install_systemd": cfg.system_install && !cfg.skip_systemd && !args.cert_only,
+            }))?;
         } else {
             println!("[dry-run] would run full install steps");
         }
@@ -117,7 +173,9 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         system::setup_config_permissions(&cfg, false)?;
         system::setup_permissions(&cfg, false)?;
         system::install_binary(&cfg, false)?;
-        docs::install_cli_docs(&cfg.binary_name, false)?;
+        if cfg.system_install {
+            docs::install_cli_docs(&cfg.binary_name, false)?;
+        }
     }
     #[cfg(unix)]
     if cfg.system_install && !args.skip_systemd {
@@ -135,7 +193,8 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
             "paths_explicit": cfg.paths_explicit,
             "config": cfg.config_path.display().to_string(),
             "state_dir": cfg.state_dir.display().to_string(),
-            "service_installed": post.service_installed,
+            "system_install": cfg.system_install,
+            "service_installed": post.service_installed || (cfg.system_install && !cfg.skip_systemd),
             "service_started": post.service_started,
             "firewall_applied": post.firewall_applied,
             "man_page": if cfg.system_install { Some(doc_paths.man_page.display().to_string()) } else { None },
@@ -599,9 +658,22 @@ impl InstallConfig {
         #[cfg(windows)]
         let system_install = false;
         #[cfg(not(windows))]
-        let system_install = config_dir.starts_with("/etc/")
-            || state_dir.starts_with("/var/lib/")
-            || (args.simple && !paths_explicit);
+        let system_install = !args.local
+            && (args.system
+                || config_dir.starts_with("/etc/")
+                || state_dir.starts_with("/var/lib/")
+                || (args.simple && !paths_explicit));
+        if args.system && args.local {
+            return Err(ChatmailError::config(
+                "--system and --local cannot be combined",
+            ));
+        }
+        #[cfg(windows)]
+        if args.system {
+            return Err(ChatmailError::config(
+                "--system is Unix-only; use --install-service on Windows",
+            ));
+        }
 
         let binary_path = args.binary_path.clone().unwrap_or_else(|| {
             #[cfg(windows)]
@@ -613,6 +685,25 @@ impl InstallConfig {
                 PathBuf::from(format!("/usr/local/bin/{binary_name}"))
             }
         });
+
+        if system_install {
+            for (flag, path) in [
+                ("--config-dir", &config_dir),
+                ("--state-dir", &state_dir),
+                ("--binary-path", &binary_path),
+            ] {
+                if path.to_string_lossy().chars().any(char::is_control) {
+                    return Err(ChatmailError::config(format!(
+                        "{flag} must not contain control characters"
+                    )));
+                }
+                if !path.is_absolute() {
+                    return Err(ChatmailError::config(format!(
+                        "{flag} must be absolute for a system install"
+                    )));
+                }
+            }
+        }
 
         let (primary_domain, hostname, public_ip, local_domains, turn_off_tls) = if args.simple {
             if let Some(domain) = args.domain.clone() {
@@ -829,6 +920,79 @@ mod tests {
     use super::*;
     use chatmail_config::Args;
 
+    #[test]
+    fn install_mode_flags_conflict() {
+        use clap::Parser;
+        assert!(InstallArgs::try_parse_from(["install", "--system", "--local"]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_modes_override_path_heuristic_and_preserve_opt_outs() {
+        use clap::Parser;
+        let global = Args {
+            config: "/etc/madmail/madmail.conf".into(),
+            state_dir: "./data".into(),
+            boot_once: false,
+            json: false,
+        };
+        let base = [
+            "install",
+            "--simple",
+            "--ip",
+            "127.0.0.1",
+            "--config-dir",
+            "/var/xyzzy/etc/madmail",
+            "--state-dir",
+            "/var/xyzzy/lib/madmail",
+            "--binary-path",
+            "/var/xyzzy/bin/madmail",
+        ];
+        let mut args = InstallArgs::try_parse_from(base).unwrap();
+        assert!(
+            !InstallConfig::from_args(&global, &args)
+                .unwrap()
+                .system_install
+        );
+        args.system = true;
+        args.skip_user = true;
+        args.skip_systemd = true;
+        let cfg = InstallConfig::from_args(&global, &args).unwrap();
+        assert!(cfg.system_install && cfg.skip_user && cfg.skip_systemd);
+        assert_eq!(cfg.binary_path, PathBuf::from("/var/xyzzy/bin/madmail"));
+        assert!(!cfg.use_default_systemd_paths);
+        args.binary_path = Some("relative/madmail".into());
+        assert!(InstallConfig::from_args(&global, &args).is_err());
+        let local =
+            InstallArgs::try_parse_from(["install", "--simple", "--ip", "127.0.0.1", "--local"])
+                .unwrap();
+        assert!(
+            !InstallConfig::from_args(&global, &local)
+                .unwrap()
+                .system_install
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unix_system_mode_rejected_on_windows() {
+        use clap::Parser;
+        let args =
+            InstallArgs::try_parse_from(["install", "--simple", "--ip", "127.0.0.1", "--system"])
+                .unwrap();
+        let global = Args {
+            config: "config.toml".into(),
+            state_dir: "data".into(),
+            boot_once: false,
+            json: false,
+        };
+        assert!(InstallConfig::from_args(&global, &args)
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("Unix-only"));
+    }
+
     /// Globally routable example IP for `--auto-ip-cert` (not a real deployment host).
     /// RFC 5737 addresses such as 203.0.113.50 are documentation-only and are rejected by ACME.
     const EXAMPLE_PUBLIC_IP: &str = "1.2.3.4";
@@ -842,6 +1006,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: None,
@@ -944,6 +1110,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: None,
@@ -995,6 +1163,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: None,
@@ -1051,6 +1221,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: None,
@@ -1098,6 +1270,8 @@ mod tests {
         let args = InstallArgs {
             lang: "fa".into(),
             ..InstallArgs {
+                system: false,
+                local: false,
                 non_interactive: false,
                 simple: true,
                 domain: None,
@@ -1143,6 +1317,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: Some("mail.example.org".into()),
@@ -1196,6 +1372,8 @@ mod tests {
         };
         const IPV6: &str = "2606:4700:4700::1111";
         let args = InstallArgs {
+            system: false,
+            local: false,
             non_interactive: true,
             simple: true,
             domain: Some("mail.example.org".into()),
@@ -1253,6 +1431,8 @@ mod tests {
             simple: true,
             domain: Some(EXAMPLE_PUBLIC_IP.into()),
             ..InstallArgs {
+                system: false,
+                local: false,
                 non_interactive: false,
                 simple: false,
                 domain: None,
@@ -1292,6 +1472,8 @@ mod tests {
             obtain_certificate: false,
             no_obtain_certificate: false,
             ..InstallArgs {
+                system: false,
+                local: false,
                 non_interactive: false,
                 simple: true,
                 domain: None,
@@ -1339,6 +1521,8 @@ mod tests {
         let args = InstallArgs {
             lang: "de".into(),
             ..InstallArgs {
+                system: false,
+                local: false,
                 non_interactive: false,
                 simple: true,
                 domain: None,
@@ -1381,6 +1565,8 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            system: false,
+            local: false,
             non_interactive: true,
             simple: true,
             domain: None,

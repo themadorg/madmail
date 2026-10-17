@@ -233,3 +233,26 @@ to one domain and verifies existing accounts continue authenticating through
 both database fallback and the hydrated cache, incorrect passwords stay
 rejected, and unknown accounts on retired domains are never created. Explicit
 admin provisioning remains independent of the first-login JIT allowlist.
+
+## Custom-path installer regression (#216)
+
+Cover mutually exclusive `--system`/`--local`, legacy automatic selection, explicit
+custom-path system mode, skip flags, absolute-path validation, Windows rejection of
+Unix system mode, custom systemd paths and RuntimeDirectory. CLI dry-run integration
+tests assert action reporting and absence of filesystem writes. Verify real account,
+ownership, binary and unit installation in an isolated container; never exercise
+host provisioning against the developer machine as a test.
+
+Run the provisioning regression with `cargo build -p chatmail`, followed by
+`bash tests/install-system-docker.sh`. The script builds a disposable Debian 13
+image and mounts only the test binary read-only. It validates real account creation,
+config/DB ownership, binary installation, unit syntax (`systemd-analyze verify`),
+boot as the service user, repeated installation and independent skip flags. It
+stubs only `systemctl daemon-reload` because systemd is not PID 1; it does not verify
+an actual systemd service start.
+
+Verification for #216: full workspace 1,067 passed / zero failed / three ignored;
+final installer subset 17 passed, plus the CLI dry-run integration test; strict
+workspace clippy, fmt, man-page generation/groff, and the Docker provisioning
+regression passed. Windows-specific behavior is covered by a cfg-gated regression
+for the Windows CI runner; it was not executed locally.
