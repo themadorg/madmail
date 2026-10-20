@@ -891,3 +891,26 @@ fn cli_language_and_registration_parse() {
         }) if value == "aes-256-gcm"
     ));
 }
+
+#[tokio::test]
+async fn dispatch_websocket_bridge_toggle() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+    assert!(
+        !get_bool_setting(&pool, settings_keys::WEBSOCKET_BRIDGE_ENABLED, false)
+            .await
+            .unwrap()
+    );
+    for (action, expected) in [("enable", true), ("disable", false)] {
+        let cli = parse_cli(dir.path(), &["websocket-bridge", action]);
+        dispatch(&cli).await.unwrap();
+        assert_eq!(
+            get_bool_setting(&pool, settings_keys::WEBSOCKET_BRIDGE_ENABLED, !expected)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+    dispatch(&parse_cli(dir.path(), &["websocket-bridge", "status"]))
+        .await
+        .unwrap();
+}

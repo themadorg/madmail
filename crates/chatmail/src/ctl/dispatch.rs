@@ -82,9 +82,22 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::Registration(cmd)) => registration::registration(&cli.args, cmd).await,
         Some(Command::Openrelay(cmd)) => openrelay::openrelay(&cli.args, cmd).await,
         Some(Command::SharedPort(cmd)) => shared_port::shared_port(&cli.args, cmd).await,
+        Some(Command::WebsocketBridge(cmd)) => {
+            service_toggle::run(
+                &cli.args,
+                "websocket-bridge",
+                |config| config.websocket_bridge_enabled,
+                settings_keys::WEBSOCKET_BRIDGE_ENABLED,
+                "WebSocket mail bridge",
+                cmd,
+            )
+            .await
+        }
         Some(Command::Webimap(cmd)) => {
             service_toggle::run(
                 &cli.args,
+                "webimap",
+                |_| false,
                 settings_keys::WEBIMAP_ENABLED,
                 "WebIMAP HTTP API",
                 cmd,
@@ -94,6 +107,8 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::Websmtp(cmd)) => {
             service_toggle::run(
                 &cli.args,
+                "websmtp",
+                |_| false,
                 settings_keys::WEBSMTP_ENABLED,
                 "WebSMTP HTTP send API",
                 cmd,
@@ -162,7 +177,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
          See docs/TDD/14-cli-tools.md and context/madmail/docs/chatmail/commands.md.\n\
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, openrelay, language, \
-         html-export, html-serve, html-migrate, webimap, websmtp, webmail-cors, push, federation, registration-tokens, sharing, \
+         html-export, html-serve, html-migrate, webimap, websmtp, websocket-bridge, webmail-cors, push, federation, registration-tokens, sharing, \
          monitor, status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, dkim, db, reload, message-size, tasks, queue, versions, completion"
     )))
 }
@@ -212,6 +227,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Service { .. } => "service",
         Command::Firewall { .. } => "firewall",
         Command::Creds => "creds",
+        Command::WebsocketBridge { .. } => "websocket-bridge",
         Command::Webimap { .. } => "webimap",
         Command::Websmtp { .. } => "websmtp",
         Command::WebmailCors { .. } => "webmail-cors",

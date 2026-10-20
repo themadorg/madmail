@@ -57,6 +57,7 @@ pub struct SmtpSession {
     pub pool: DbPool,
     pub cfg: SmtpSessionConfig,
     authenticated_user: Option<String>,
+    transport_authenticated: Option<Arc<std::sync::atomic::AtomicBool>>,
     mail_from: String,
     rcpt_to: Vec<String>,
     seen_ehlo: bool,
@@ -69,10 +70,27 @@ impl SmtpSession {
             pool,
             cfg,
             authenticated_user: None,
+            transport_authenticated: None,
             mail_from: String::new(),
             rcpt_to: Vec::new(),
             seen_ehlo: false,
         }
+    }
+
+    /// Serve bytes from a trusted TLS-terminated transport. Caller must establish
+    /// confidentiality before invoking this entry point; STARTTLS is unavailable.
+    pub async fn handle_secure_transport<S>(
+        &mut self,
+        stream: S,
+        authenticated: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        self.cfg.starttls_config = None;
+        self.transport_authenticated = Some(authenticated);
+        let (reader, writer) = tokio::io::split(stream);
+        self.serve(reader, writer, true).await
     }
 
     pub async fn handle_connection(&mut self, stream: TcpStream) -> Result<()> {
@@ -257,6 +275,9 @@ impl SmtpSession {
                         continue;
                     }
                     self.authenticated_user = Some(normalize_username(&user.0)?);
+                    if let Some(flag) = &self.transport_authenticated {
+                        flag.store(true, std::sync::atomic::Ordering::Release);
+                    }
                     writer
                         .write_all(b"235 2.7.0 Authentication successful\r\n")
                         .await?;
@@ -831,6 +852,7 @@ mod tests {
                 starttls_config: None,
             },
             authenticated_user: None,
+            transport_authenticated: None,
             mail_from: String::new(),
             rcpt_to: Vec::new(),
             seen_ehlo: false,

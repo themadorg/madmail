@@ -324,6 +324,11 @@ test-install-docker:
 	bash tests/install-system-docker.sh
 
 # Full workspace + landing tests in Docker, then isolated install/mail/API/TURN checks.
+test-websocket-bridge-docker:
+	bash tests/websocket-bridge-docker.sh
+
+.PHONY: test-websocket-bridge-docker
+
 test-docker:
 	bash tests/docker-test.sh
 

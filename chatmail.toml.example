@@ -15,3 +15,7 @@ http_listen = "127.0.0.1:8080"
 
 admin_path = "/api/admin"
 admin_web_path = "/admin"
+
+# Raw IMAP/SMTP over secure WebSocket; disabled unless explicitly enabled.
+# CLI/Admin API DB override takes precedence over this value.
+websocket_bridge_enabled = false

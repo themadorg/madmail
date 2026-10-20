@@ -280,3 +280,7 @@ compact build, and all 17 installer unit tests passed with the same compact
 profiles. The test Docker build context was 2 KiB. No production/release profile
 settings were changed. Failure-path checks include invalid mode/path input,
 non-root system installation, and a nonzero daemon-reload result.
+
+## Raw IMAP/SMTP WebSocket transport
+
+See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.
