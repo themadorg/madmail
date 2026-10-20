@@ -1,3 +1,13 @@
+# [2.38.0](https://github.com/themadorg/madmail/compare/v2.37.0-unstable...v2.38.0-unstable) (2026-10-20)
+
+### Features
+
+* **transport:** add opt-in IMAP and SMTP WebSocket bridge ([50350e9](https://github.com/themadorg/madmail/commit/50350e9a324a904a365d5977318c8dad6579e7db)), [#224](https://github.com/themadorg/madmail/issues/224)
+
+### Bug Fixes
+
+* **transport:** harden WebSocket bridge lifecycle and auth limits ([44e74dd](https://github.com/themadorg/madmail/commit/44e74dd6ec0b95ef1cb35a015fba12726d17de84))
+
 # [2.37.0](https://github.com/themadorg/madmail/compare/v2.36.0-unstable...v2.37.0-unstable) (2026-10-17)
 
 ### Features
