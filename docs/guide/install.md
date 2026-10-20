@@ -188,7 +188,7 @@ ReadWritePaths=/var/lib/madmail /etc/madmail
 ExecStart=/usr/local/bin/madmail --config /etc/madmail/madmail.conf run --libexec /var/lib/madmail
 ```
 
-**Custom `--config-dir` / `--state-dir`** — unit omits `StateDirectory` / `ConfigurationDirectory` and uses your paths in `WorkingDirectory`, `ReadWritePaths`, and `ExecStart` instead. `RuntimeDirectory=<binary>` is retained to create the service-owned `/run/<binary>` directory.
+**Custom `--config-dir` / `--state-dir`** — unit omits `StateDirectory` / `ConfigurationDirectory` and uses your paths in `WorkingDirectory`, `ReadWritePaths`, and `ExecStart` instead. `RuntimeDirectory=<binary>` is retained to create the service-owned `/run/<binary>` directory. If a required path is under `/home`, `/root`, or `/run/user`, the unit disables `ProtectHome` so systemd does not hide it; ordinary filesystem permissions still apply. Other layouts keep `ProtectHome=true`.
 
 ---
 
@@ -309,7 +309,12 @@ sudo madmail install --simple --domain example.org \
   --acme-email admin@example.org
 ```
 
-systemd `ExecStart` and `ReadWritePaths` use the custom directories; `StateDirectory` shortcuts are omitted.
+systemd `ExecStart`, `WorkingDirectory`, and `ReadWritePaths` use the custom directories;
+`StateDirectory` shortcuts are omitted, while `RuntimeDirectory` is retained.
+When a required state, configuration, binary, or TLS path is under `/home`, `/root`,
+or `/run/user`, the unit sets `ProtectHome=false`; other layouts retain
+`ProtectHome=true`. Parent directories must still allow the service user to traverse
+and read the required files (in particular, `/root` normally does not).
 
 ### Non-interactive domain install (no `--simple`)
 

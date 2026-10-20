@@ -52,7 +52,8 @@ fn unit_path(path: &Path, command: bool) -> String {
 
 /// Build the `.service` unit body. Default FHS paths use `StateDirectory` /
 /// `ConfigurationDirectory`; explicit `--config-dir` / `--state-dir` are reflected
-/// in `ExecStart`, `WorkingDirectory`, and `ReadWritePaths` only.
+/// in `ExecStart`, `WorkingDirectory`, and `ReadWritePaths`. Both layouts retain
+/// `RuntimeDirectory`. Home protection is disabled when a required path needs it.
 pub fn render_systemd_unit(cfg: &InstallConfig) -> String {
     let managed_dirs = if cfg.use_default_systemd_paths {
         format!(
@@ -65,6 +66,21 @@ LogsDirectory={name}"#,
     } else {
         String::new()
     };
+
+    let protect_home = ![
+        &cfg.state_dir,
+        &cfg.config_dir,
+        &cfg.config_path,
+        &cfg.binary_path,
+        &cfg.cert_path,
+        &cfg.key_path,
+    ]
+    .iter()
+    .any(|path| {
+        ["/home", "/root", "/run/user"]
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+    });
 
     format!(
         r#"[Unit]
@@ -86,7 +102,7 @@ RuntimeDirectory={name}
 ReadWritePaths={state_dir} {config_dir}
 
 PrivateTmp=true
-ProtectHome=true
+ProtectHome={protect_home}
 ProtectSystem=full
 NoNewPrivileges=true
 
@@ -178,6 +194,29 @@ mod tests {
             skip_systemd: false,
             generated: String::new(),
         }
+    }
+
+    #[test]
+    fn home_protection_matches_required_paths() {
+        assert!(render_systemd_unit(&sample_cfg()).contains("ProtectHome=true"));
+        for prefix in ["/home", "/root", "/run/user"] {
+            for field in 0..6 {
+                let mut cfg = sample_cfg();
+                let path = PathBuf::from(format!("{prefix}/custom/mail"));
+                match field {
+                    0 => cfg.state_dir = path,
+                    1 => cfg.config_dir = path,
+                    2 => cfg.config_path = path,
+                    3 => cfg.binary_path = path,
+                    4 => cfg.cert_path = path,
+                    _ => cfg.key_path = path,
+                }
+                assert!(render_systemd_unit(&cfg).contains("ProtectHome=false"));
+            }
+        }
+        let mut cfg = sample_cfg();
+        cfg.state_dir = PathBuf::from("/home-other/mail");
+        assert!(render_systemd_unit(&cfg).contains("ProtectHome=true"));
     }
 
     #[test]
