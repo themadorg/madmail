@@ -1098,7 +1098,10 @@ async fn invalid_admin_paths_do_not_enable_or_persist() {
         AppConfig::default(),
     )
     .await;
+    let long_path = format!("/{}", "a".repeat(253));
     for path in [
+        "/panel+1",
+        &long_path,
         "/",
         "/api/admin",
         "/api/admin/child",

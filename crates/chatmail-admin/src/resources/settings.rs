@@ -737,6 +737,7 @@ pub(crate) async fn generic_setting(
                             return Err((400, "admin API and web paths must not overlap".into()));
                         }
                     }
+                    let mut enable_web = false;
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
                         value = chatmail_admin_web::normalize_admin_web_path(&value)
                             .ok_or((400, "admin web path must not be empty".into()))?;
@@ -754,17 +755,18 @@ pub(crate) async fn generic_setting(
                                 &[settings_keys::ADMIN_WEB_PATH]
                             })
                             .map_err(db_err)?;
-                        if needs_enable {
-                            set_setting(&st.pool, settings_keys::ADMIN_WEB_ENABLED, "true")
-                                .await
-                                .map_err(db_err)?;
-                        }
+                        enable_web = needs_enable;
                     }
                     validate_setting_value(db_key, &value)?;
                     validate_turn_relay_port_setting(st, db_key, &value).await?;
                     set_setting(&st.pool, db_key, &value)
                         .await
                         .map_err(db_err)?;
+                    if enable_web {
+                        set_setting(&st.pool, settings_keys::ADMIN_WEB_ENABLED, "true")
+                            .await
+                            .map_err(db_err)?;
+                    }
                     super::message_size::refresh_message_size_after_setting(st, db_key).await;
                     super::federation_size::refresh_federation_size_after_setting(st, db_key).await;
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
