@@ -101,6 +101,7 @@ pub async fn dispatch(st: &AdminState, method: &str, resource: &str, body: &Valu
             )
             .await
         }
+        "/admin/services/websocket_bridge" => toggles::websocket_bridge(st, method, body).await,
         "/admin/services/webimap" => {
             toggles::service_bool(
                 st,

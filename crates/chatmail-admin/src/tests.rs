@@ -1131,3 +1131,44 @@ async fn invalid_admin_paths_do_not_enable_or_persist() {
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn websocket_bridge_config_fallback_and_api_override() {
+    for configured in [false, true] {
+        let cfg = AppConfig {
+            websocket_bridge_enabled: configured,
+            ..Default::default()
+        };
+        let (st, _dir) = test_state("secret-token-01234567890123456789012345678901", cfg).await;
+        let (_, body) =
+            resources::dispatch(&st, "GET", "/admin/services/websocket_bridge", &json!({}))
+                .await
+                .unwrap();
+        assert_eq!(
+            body.unwrap()["status"],
+            if configured { "enabled" } else { "disabled" }
+        );
+        for (action, expected) in [("enable", "enabled"), ("disable", "disabled")] {
+            resources::dispatch(
+                &st,
+                "POST",
+                "/admin/services/websocket_bridge",
+                &json!({"action":action}),
+            )
+            .await
+            .unwrap();
+            let (_, body) = resources::dispatch(&st, "GET", "/admin/settings", &json!({}))
+                .await
+                .unwrap();
+            assert_eq!(body.unwrap()["websocket_bridge_enabled"], expected);
+        }
+        assert!(resources::dispatch(
+            &st,
+            "POST",
+            "/admin/services/websocket_bridge",
+            &json!({"action":"invalid"})
+        )
+        .await
+        .is_err());
+    }
+}

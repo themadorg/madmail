@@ -1,0 +1,543 @@
+name: Unsigned matrix
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: build-only or publish
+        required: true
+        type: string
+      sha:
+        description: Full commit SHA every job builds
+        required: true
+        type: string
+      version:
+        description: Numeric version for publication. Empty for build-only.
+        required: false
+        type: string
+        default: ""
+      tag:
+        description: Unstable tag for publication. Empty for build-only.
+        required: false
+        type: string
+        default: ""
+    outputs:
+      version:
+        description: Numeric version confirmed for this commit
+        value: ${{ jobs.unstable-admin-web.outputs.version }}
+      generation:
+        description: Recorded admin-web gitlink
+        value: ${{ jobs.unstable-admin-web.outputs.generation }}
+
+permissions:
+  contents: read
+
+jobs:
+  unstable-admin-web:
+    name: Admin web for unsigned servers
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      generation: ${{ steps.source.outputs.generation }}
+    steps:
+      - name: Check out the selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - id: source
+        uses: ./.github/actions/unstable-prepare
+        with:
+          mode: ${{ inputs.mode }}
+          sha: ${{ inputs.sha }}
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build the admin web at the recorded gitlink
+        working-directory: external/madmail-admin-web
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          bun run build
+          test -f build/index.html
+          if grep -q "Admin Web UI Not Available" build/index.html; then
+            echo "admin web build is the placeholder"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unstable-admin-web
+          path: external/madmail-admin-web/build
+          if-no-files-found: error
+
+  unstable-linux-amd64:
+    name: Unsigned linux amd64
+    runs-on: ubuntu-latest
+    needs: unstable-admin-web
+    steps:
+      - name: Check out the selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - id: source
+        uses: ./.github/actions/unstable-prepare
+        with:
+          mode: ${{ inputs.mode }}
+          sha: ${{ inputs.sha }}
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          expect-version: ${{ needs.unstable-admin-web.outputs.version }}
+          expect-generation: ${{ needs.unstable-admin-web.outputs.generation }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: unstable-admin-web
+          path: admin-web
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config perl
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: unstable-linux-amd64
+      - name: Build madmail-linux-amd64
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+          GENERATION: ${{ steps.source.outputs.generation }}
+        run: |
+          set -euo pipefail
+          test -f admin-web/index.html
+          python3 scripts/unstable_assets.py fetch-relay --triple x86_64-unknown-linux-musl --dest "${RUNNER_TEMP}/iroh-relay"
+          export CHATMAIL_REQUIRE_IROH=1
+          export CHATMAIL_IROH_RELAY_BIN="${RUNNER_TEMP}/iroh-relay"
+          export CHATMAIL_REQUIRE_ADMIN_WEB=1
+          export CHATMAIL_ADMIN_WEB_BUILD="${GITHUB_WORKSPACE}/admin-web"
+          export CHATMAIL_ADMIN_WEB_GENERATION="$GENERATION"
+          # SQLite is the amalgamation bundled in the locked libsqlite3-sys crate.
+          cargo build --release --locked --bin madmail
+          git diff --exit-code -- Cargo.lock
+          bin=target/release/madmail
+          python3 scripts/unstable_assets.py verify-server \
+            --name madmail-linux-amd64 --path "$bin" \
+            --version "$VERSION" --generation "$GENERATION" \
+            --relay "${RUNNER_TEMP}/iroh-relay"
+          "$bin" version | grep -F "madmail-v2 ${VERSION}"
+          mkdir -p dist
+          cp "$bin" dist/madmail-linux-amd64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unstable-bin-linux-amd64
+          path: dist/madmail-linux-amd64
+          if-no-files-found: error
+
+  unstable-linux-amd64-legacy:
+    name: Unsigned linux amd64 legacy
+    runs-on: ubuntu-latest
+    needs: unstable-admin-web
+    steps:
+      - name: Check out the selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - id: source
+        uses: ./.github/actions/unstable-prepare
+        with:
+          mode: ${{ inputs.mode }}
+          sha: ${{ inputs.sha }}
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          expect-version: ${{ needs.unstable-admin-web.outputs.version }}
+          expect-generation: ${{ needs.unstable-admin-web.outputs.generation }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: unstable-admin-web
+          path: admin-web
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config perl
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: unstable-linux-amd64-legacy
+      - name: Build madmail-linux-amd64-legacy
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+          GENERATION: ${{ steps.source.outputs.generation }}
+        run: |
+          set -euo pipefail
+          test -f admin-web/index.html
+          python3 scripts/unstable_assets.py fetch-relay --triple x86_64-unknown-linux-musl --dest "${RUNNER_TEMP}/iroh-relay"
+          export CHATMAIL_REQUIRE_IROH=1
+          export CHATMAIL_IROH_RELAY_BIN="${RUNNER_TEMP}/iroh-relay"
+          export CHATMAIL_REQUIRE_ADMIN_WEB=1
+          export CHATMAIL_ADMIN_WEB_BUILD="${GITHUB_WORKSPACE}/admin-web"
+          export CHATMAIL_ADMIN_WEB_GENERATION="$GENERATION"
+          # Public static-pie recipe from the Makefile comment. The root manifest is
+          # virtual, so -p selects the server package. The flag is after -- so
+          # proc-macros are not rebuilt with +crt-static. The private script is not in this repo.
+          cargo rustc -p chatmail --release --locked --bin madmail -- -C target-feature=+crt-static
+          git diff --exit-code -- Cargo.lock
+          bin=target/release/madmail
+          test -f "$bin"
+          ldd_out=$(ldd "$bin" 2>&1 || true)
+          printf '%s\n' "$ldd_out"
+          if printf '%s\n' "$ldd_out" | grep -q '=>'; then
+            echo "legacy binary is dynamically linked"
+            exit 1
+          fi
+          case "$ldd_out" in
+            *"statically linked"*|*"not a dynamic executable"*) ;;
+            *) echo "legacy binary was not reported static"; exit 1 ;;
+          esac
+          python3 scripts/unstable_assets.py verify-server \
+            --name madmail-linux-amd64-legacy --path "$bin" \
+            --version "$VERSION" --generation "$GENERATION" \
+            --relay "${RUNNER_TEMP}/iroh-relay"
+          # Build-host smoke only. This is not a Debian 12 boot.
+          "$bin" version | grep -F "madmail-v2 ${VERSION}"
+          mkdir -p dist
+          cp "$bin" dist/madmail-linux-amd64-legacy
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unstable-bin-linux-amd64-legacy
+          path: dist/madmail-linux-amd64-legacy
+          if-no-files-found: error
+
+  unstable-linux-amd64-musl:
+    name: Unsigned linux amd64 musl
+    runs-on: ubuntu-latest
+    needs: unstable-admin-web
+    steps:
+      - name: Check out the selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - id: source
+        uses: ./.github/actions/unstable-prepare
+        with:
+          mode: ${{ inputs.mode }}
+          sha: ${{ inputs.sha }}
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          expect-version: ${{ needs.unstable-admin-web.outputs.version }}
+          expect-generation: ${{ needs.unstable-admin-web.outputs.generation }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: unstable-admin-web
+          path: admin-web
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config perl
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: unstable-linux-amd64-musl
+      - name: Build madmail-linux-amd64-musl
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+          GENERATION: ${{ steps.source.outputs.generation }}
+        run: |
+          set -euo pipefail
+          test -f admin-web/index.html
+          zig=$(python3 scripts/unstable_assets.py install-zig --dest "${RUNNER_TEMP}/zig")
+          czb=$(python3 scripts/unstable_assets.py install-cargo-zigbuild --dest "${RUNNER_TEMP}/cargo-zigbuild")
+          export PATH="$(dirname "$zig"):$(dirname "$czb"):$PATH"
+          rustup target add x86_64-unknown-linux-musl
+          python3 scripts/unstable_assets.py fetch-relay --triple x86_64-unknown-linux-musl --dest "${RUNNER_TEMP}/iroh-relay"
+          export CHATMAIL_REQUIRE_IROH=1
+          export CHATMAIL_IROH_RELAY_BIN="${RUNNER_TEMP}/iroh-relay"
+          export CHATMAIL_REQUIRE_ADMIN_WEB=1
+          export CHATMAIL_ADMIN_WEB_BUILD="${GITHUB_WORKSPACE}/admin-web"
+          export CHATMAIL_ADMIN_WEB_GENERATION="$GENERATION"
+          cargo zigbuild --release --locked --target x86_64-unknown-linux-musl --bin madmail
+          git diff --exit-code -- Cargo.lock
+          bin=target/x86_64-unknown-linux-musl/release/madmail
+          test -f "$bin"
+          python3 scripts/unstable_assets.py verify-server \
+            --name madmail-linux-amd64-musl --path "$bin" \
+            --version "$VERSION" --generation "$GENERATION" \
+            --relay "${RUNNER_TEMP}/iroh-relay"
+          "$bin" version | grep -F "madmail-v2 ${VERSION}"
+          mkdir -p dist
+          cp "$bin" dist/madmail-linux-amd64-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unstable-bin-linux-amd64-musl
+          path: dist/madmail-linux-amd64-musl
+          if-no-files-found: error
+
+  unstable-linux-arm64:
+    name: Unsigned linux arm64
+    runs-on: ubuntu-latest
+    needs: unstable-admin-web
+    steps:
+      - name: Check out the selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - id: source
+        uses: ./.github/actions/unstable-prepare
+        with:
+          mode: ${{ inputs.mode }}
+          sha: ${{ inputs.sha }}
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          expect-version: ${{ needs.unstable-admin-web.outputs.version }}
+          expect-generation: ${{ needs.unstable-admin-web.outputs.generation }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: unstable-admin-web
+          path: admin-web
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config perl
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: unstable-linux-arm64
+      - name: Build madmail-linux-arm64
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+          GENERATION: ${{ steps.source.outputs.generation }}
+        run: |
+          set -euo pipefail
+          test -f admin-web/index.html
+          rustup target add aarch64-unknown-linux-gnu
+          python3 scripts/unstable_assets.py fetch-relay --triple aarch64-unknown-linux-musl --dest "${RUNNER_TEMP}/iroh-relay"
+          export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+          export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar
+          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+          export CHATMAIL_REQUIRE_IROH=1
+          export CHATMAIL_IROH_RELAY_BIN="${RUNNER_TEMP}/iroh-relay"
+          export CHATMAIL_REQUIRE_ADMIN_WEB=1
+          export CHATMAIL_ADMIN_WEB_BUILD="${GITHUB_WORKSPACE}/admin-web"
+          export CHATMAIL_ADMIN_WEB_GENERATION="$GENERATION"
+          cargo build --release --locked --target aarch64-unknown-linux-gnu --bin madmail
+          git diff --exit-code -- Cargo.lock
+          bin=target/aarch64-unknown-linux-gnu/release/madmail
+          test -f "$bin"
+          python3 scripts/unstable_assets.py verify-server \
+            --name madmail-linux-arm64 --path "$bin" \
+            --version "$VERSION" --generation "$GENERATION" \
+            --relay "${RUNNER_TEMP}/iroh-relay"
+          mkdir -p dist
+          cp "$bin" dist/madmail-linux-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unstable-bin-linux-arm64
+          path: dist/madmail-linux-arm64
+          if-no-files-found: error
+
+  unstable-linux-arm64-musl:
+    name: Unsigned linux arm64 musl
+    runs-on: ubuntu-latest
+    needs: unstable-admin-web
+    steps:
+      - name: Check out the selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - id: source
+        uses: ./.github/actions/unstable-prepare
+        with:
+          mode: ${{ inputs.mode }}
+          sha: ${{ inputs.sha }}
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          expect-version: ${{ needs.unstable-admin-web.outputs.version }}
+          expect-generation: ${{ needs.unstable-admin-web.outputs.generation }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: unstable-admin-web
+          path: admin-web
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config perl
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: unstable-linux-arm64-musl
+      - name: Build madmail-linux-arm64-musl
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+          GENERATION: ${{ steps.source.outputs.generation }}
+        run: |
+          set -euo pipefail
+          test -f admin-web/index.html
+          zig=$(python3 scripts/unstable_assets.py install-zig --dest "${RUNNER_TEMP}/zig")
+          czb=$(python3 scripts/unstable_assets.py install-cargo-zigbuild --dest "${RUNNER_TEMP}/cargo-zigbuild")
+          export PATH="$(dirname "$zig"):$(dirname "$czb"):$PATH"
+          rustup target add aarch64-unknown-linux-musl
+          python3 scripts/unstable_assets.py fetch-relay --triple aarch64-unknown-linux-musl --dest "${RUNNER_TEMP}/iroh-relay"
+          export CHATMAIL_REQUIRE_IROH=1
+          export CHATMAIL_IROH_RELAY_BIN="${RUNNER_TEMP}/iroh-relay"
+          export CHATMAIL_REQUIRE_ADMIN_WEB=1
+          export CHATMAIL_ADMIN_WEB_BUILD="${GITHUB_WORKSPACE}/admin-web"
+          export CHATMAIL_ADMIN_WEB_GENERATION="$GENERATION"
+          cargo zigbuild --release --locked --target aarch64-unknown-linux-musl --bin madmail
+          git diff --exit-code -- Cargo.lock
+          bin=target/aarch64-unknown-linux-musl/release/madmail
+          test -f "$bin"
+          python3 scripts/unstable_assets.py verify-server \
+            --name madmail-linux-arm64-musl --path "$bin" \
+            --version "$VERSION" --generation "$GENERATION" \
+            --relay "${RUNNER_TEMP}/iroh-relay"
+          mkdir -p dist
+          cp "$bin" dist/madmail-linux-arm64-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unstable-bin-linux-arm64-musl
+          path: dist/madmail-linux-arm64-musl
+          if-no-files-found: error
+
+  unstable-windows:
+    name: Unsigned Windows server, tray, and testing installer
+    runs-on: windows-latest
+    needs: unstable-admin-web
+    steps:
+      - name: Check out the selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - id: source
+        uses: ./.github/actions/unstable-prepare
+        with:
+          mode: ${{ inputs.mode }}
+          sha: ${{ inputs.sha }}
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          expect-version: ${{ needs.unstable-admin-web.outputs.version }}
+          expect-generation: ${{ needs.unstable-admin-web.outputs.generation }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: unstable-admin-web
+          path: admin-web
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: unstable-windows
+      - name: Build unsigned Windows server, tray, and testing installer
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+          GENERATION: ${{ steps.source.outputs.generation }}
+          CARGO_PROFILE_RELEASE_DEBUG: "0"
+          RUSTFLAGS: "-D warnings -C link-arg=/IGNORE:4099"
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not (Test-Path admin-web\index.html)) { throw "admin web index is missing" }
+          python scripts/unstable_assets.py fetch-relay --triple x86_64-pc-windows-msvc --dest "$env:RUNNER_TEMP\iroh-relay.exe"
+          $env:CHATMAIL_REQUIRE_IROH = "1"
+          $env:CHATMAIL_IROH_RELAY_BIN = "$env:RUNNER_TEMP\iroh-relay.exe"
+          $env:CHATMAIL_REQUIRE_ADMIN_WEB = "1"
+          $env:CHATMAIL_ADMIN_WEB_BUILD = "$env:GITHUB_WORKSPACE\admin-web"
+          $env:CHATMAIL_ADMIN_WEB_GENERATION = $env:GENERATION
+          cargo build --release --locked --bin madmail --bin madmail-tray
+          if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+          git diff --exit-code -- Cargo.lock
+          if ($LASTEXITCODE -ne 0) { throw "Cargo.lock changed" }
+          $versionText = & .\target\release\madmail.exe version
+          if ($LASTEXITCODE -ne 0) { throw "madmail version failed" }
+          $joined = $versionText -join "`n"
+          if ($joined -notlike "*madmail-v2 $($env:VERSION)*") { throw "version text mismatch: $joined" }
+          & .\target\release\madmail-tray.exe --smoke-exit
+          if ($LASTEXITCODE -ne 0) { throw "tray smoke failed" }
+          New-Item -ItemType Directory -Force -Path build, dist | Out-Null
+          Copy-Item -Force target\release\madmail.exe build\madmail-windows-amd64.exe
+          Copy-Item -Force target\release\madmail-tray.exe build\madmail-tray-windows-amd64.exe
+          # Inno Setup 6. Its setup launcher is x86. verify-installer expects machine 0x14c.
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw "innosetup install failed" }
+          & .\packaging\windows\build-setup.ps1 -Arch amd64 -RequireTray -Testing -Version $env:VERSION
+          python scripts/unstable_assets.py verify-server --name madmail-windows-amd64.exe --path build\madmail-windows-amd64.exe --version $env:VERSION --generation $env:GENERATION --relay "$env:RUNNER_TEMP\iroh-relay.exe"
+          if ($LASTEXITCODE -ne 0) { throw "server verification failed" }
+          python scripts/unstable_assets.py verify-tray --path build\madmail-tray-windows-amd64.exe --version $env:VERSION
+          if ($LASTEXITCODE -ne 0) { throw "tray verification failed" }
+          python scripts/unstable_assets.py verify-installer --path build\madmail-windows-amd64-setup.exe --version $env:VERSION
+          if ($LASTEXITCODE -ne 0) { throw "installer verification failed" }
+          Copy-Item -Force build\madmail-windows-amd64.exe dist\
+          Copy-Item -Force build\madmail-tray-windows-amd64.exe dist\
+          Copy-Item -Force build\madmail-windows-amd64-setup.exe dist\
+      - name: Refuse testing install when stable markers exist
+        if: inputs.mode == 'build-only'
+        run: |
+          $ErrorActionPreference = "Stop"
+          & .\packaging\windows\test-testing-refusal.ps1 -SetupPath build\madmail-windows-amd64-setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unstable-bin-windows
+          path: |
+            dist/madmail-windows-amd64.exe
+            dist/madmail-tray-windows-amd64.exe
+            dist/madmail-windows-amd64-setup.exe
+          if-no-files-found: error
+
+  unstable-validate:
+    name: Validate build-only matrix
+    runs-on: ubuntu-latest
+    needs:
+      - unstable-admin-web
+      - unstable-linux-amd64
+      - unstable-linux-amd64-legacy
+      - unstable-linux-amd64-musl
+      - unstable-linux-arm64
+      - unstable-linux-arm64-musl
+      - unstable-windows
+    if: always() && inputs.mode == 'build-only'
+    steps:
+      - name: Check out the selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - id: source
+        uses: ./.github/actions/unstable-prepare
+        with:
+          mode: ${{ inputs.mode }}
+          sha: ${{ inputs.sha }}
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          expect-version: ${{ needs.unstable-admin-web.outputs.version }}
+          expect-generation: ${{ needs.unstable-admin-web.outputs.generation }}
+      - name: Require every matrix role
+        env:
+          MATRIX_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/unstable_matrix.py require-roles
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unstable-bin-*
+          path: dist
+          merge-multiple: true
+      - name: Stage the 16-asset set without publishing
+        env:
+          MATRIX_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/unstable_matrix.py stage-build-only \
+            --sha "$MATRIX_SHA" --assets dist --dest validated
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unstable-build-only-validated
+          path: validated
+          if-no-files-found: error
+          retention-days: 14

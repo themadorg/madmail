@@ -20,7 +20,7 @@ Madmail is a **server relay** for the **[Delta Chat](https://delta.chat)** app, 
 A Rust rewrite of Madmail v1: SMTP, IMAP, encryption enforcement, and real-time relay built in.
 
 ## Project status
- 
+
 Madmail v2 is stable and actively maintained.
 
 Our current focus is on:

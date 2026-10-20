@@ -53,6 +53,17 @@ mod iroh_embedded {
     include!(concat!(env!("OUT_DIR"), "/iroh_embedded.rs"));
 }
 
+/// Contiguous `madmail-iroh-relay:<version>:<triple>` identity, or `absent`.
+pub const IROH_RELAY_IDENTITY: &str = env!("MADMAIL_IROH_RELAY_MARKER");
+
+/// Keep [`IROH_RELAY_IDENTITY`] reachable so the linker retains those bytes.
+pub fn retain_iroh_identity() {
+    let marker = IROH_RELAY_IDENTITY;
+    if std::hint::black_box(marker.as_ptr()).is_null() {
+        std::process::abort();
+    }
+}
+
 /// Embedded release tag (e.g. `v0.35.0`).
 pub fn embedded_version() -> Option<&'static str> {
     #[cfg(embed_iroh)]
@@ -109,6 +120,7 @@ pub fn resolve_binary(state_dir: &Path) -> Result<PathBuf> {
 
 /// Write config and spawn `iroh-relay --config-path`.
 pub async fn spawn_iroh_relay(state_dir: &Path, opts: IrohSpawnOpts) -> Result<IrohRelayHandle> {
+    retain_iroh_identity();
     let binary = resolve_binary(state_dir)?;
     let config_path = state_dir.join("iroh-relay.toml");
     write_config(&config_path, &opts).await?;

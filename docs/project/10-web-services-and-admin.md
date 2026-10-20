@@ -149,3 +149,7 @@ All of the above ultimately write to the `settings` table or other DB tables and
 The web and admin layers sit on top of everything. The final major piece of the core server is **storage + persistence + the in-memory caches**.
 
 → [11-proxy-services-turn-iroh-ss.md](./11-proxy-services-turn-iroh-ss.md)
+
+## Raw IMAP/SMTP WebSocket transport
+
+See [the bridge TDD](../TDD/26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.

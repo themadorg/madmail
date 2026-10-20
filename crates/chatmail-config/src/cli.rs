@@ -301,6 +301,9 @@ pub enum Command {
     /// Enable, disable, or inspect WebSMTP HTTP send API.
     #[command(subcommand)]
     Websmtp(ServiceToggleCommand),
+    /// Raw IMAP/SMTP over secure WebSocket (disabled by default).
+    #[command(subcommand)]
+    WebsocketBridge(ServiceToggleCommand),
     /// Browser CORS origins for WebIMAP, WebSMTP, and `/new` (`__WEBMAIL_CORS_ORIGINS__`).
     #[command(
         name = "webmail-cors",

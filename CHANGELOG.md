@@ -1,3 +1,42 @@
+# [2.38.0](https://github.com/themadorg/madmail/compare/v2.37.0-unstable...v2.38.0-unstable) (2026-10-20)
+
+### Features
+
+* **transport:** add opt-in IMAP and SMTP WebSocket bridge ([50350e9](https://github.com/themadorg/madmail/commit/50350e9a324a904a365d5977318c8dad6579e7db)), [#224](https://github.com/themadorg/madmail/issues/224)
+
+### Bug Fixes
+
+* **transport:** harden WebSocket bridge lifecycle and auth limits ([44e74dd](https://github.com/themadorg/madmail/commit/44e74dd6ec0b95ef1cb35a015fba12726d17de84))
+
+# [2.37.0](https://github.com/themadorg/madmail/compare/v2.36.0-unstable...v2.37.0-unstable) (2026-10-17)
+
+### Features
+
+* **release:** restore full prerelease coverage for ARM64, static legacy Linux, and Windows ([de0a701](https://github.com/themadorg/madmail/commit/de0a70160df3f6129101df9ffec535e2cc8dc283))
+
+### Bug Fixes
+
+* **ci:** build the static server package and expand the testing label ([e09c075](https://github.com/themadorg/madmail/commit/e09c075178f2081960bda8f828a2d4ce6d334106))
+* **ci:** check out the selected commit before the local prepare action ([5583fc4](https://github.com/themadorg/madmail/commit/5583fc4af22e11f988181dc0e47b3a88fcce9706))
+* **ci:** pass Inno silent switches as one raw command line ([1c98063](https://github.com/themadorg/madmail/commit/1c980634a54d8f9413c853c18eb4385a1ffa2f0d))
+* **ci:** suppress the testing installer's refusal dialog ([5cd8f49](https://github.com/themadorg/madmail/commit/5cd8f49d230c2118e77287b77e5271d03cd519c5))
+
+# [2.36.0](https://github.com/themadorg/madmail/compare/v2.35.2...v2.36.0-unstable) (2026-10-16)
+
+### Features
+
+* **ci:** add a standalone Conventional Commit release script ([1486d8e](https://github.com/themadorg/madmail/commit/1486d8e172a0a8529f1acf725543165192807959))
+* **ci:** publish unsigned unstable builds separately from stable images ([d156152](https://github.com/themadorg/madmail/commit/d15615286820dfd307b30819803b35a5266159b7))
+
+### Bug Fixes
+
+* **ci:** build stable images from the Git tag ([d4ccfb2](https://github.com/themadorg/madmail/commit/d4ccfb20047b39991fa96b62c1f55f8378a5faf3))
+* **ci:** package Windows installers with current tooling ([22ec595](https://github.com/themadorg/madmail/commit/22ec595704278eb5933c7d7ecdef3ca696ace5ab))
+* **ci:** package stable Windows installers from the signed release binary ([44970a9](https://github.com/themadorg/madmail/commit/44970a9b5e8b2948689122e1099863ae52e8e42f))
+* **ci:** package stable Windows installers without the smoke build ([1806eef](https://github.com/themadorg/madmail/commit/1806eefc68b74b675391c783b7f5053e99418f79))
+* **ci:** publish unstable images only after the testing prerelease ([c1f927f](https://github.com/themadorg/madmail/commit/c1f927fc3adb315f1c2214645aabf0522397a2c5))
+* **ci:** require the published Windows tray in stable installers ([9eed6cc](https://github.com/themadorg/madmail/commit/9eed6cc327fa51a86c48dd4e48a9b1d44203db3f))
+
 ## [2.35.2](https://github.com/themadorg/madmail/compare/v2.35.1...v2.35.2) (2026-10-15)
 
 

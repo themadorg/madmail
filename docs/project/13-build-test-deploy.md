@@ -60,6 +60,12 @@ Because the admin SPA is a separate SvelteKit project:
 
 If you forget step 3, the binary will still run but `/admin` will show a placeholder telling you to build the UI.
 
+## Public release automation
+
+Pushes to `main` run `scripts/release.py`. Release-worthy Conventional Commits bump `.version`, `Cargo.toml`, and `Cargo.lock`, then tag `vX.Y.Z-unstable`. CI then publishes an unsigned GitHub prerelease with six server builds, their archives, a Windows tray, and an unsigned testing installer, plus the `X.Y.Z-unstable` / `unstable` container tags. That publish waits until those builds and the tests pass. A pull request runs the same six recipes and stages the same files without a tag or a release upload. `docs`, `chore`, `ci`, and `test` commits do not bump the version. The `madmail-linux-amd64-legacy` prerelease file is built with the public static-pie recipe below. `scripts/build-release-static.sh` is not in this repository; CI passes `-C target-feature=+crt-static` to `cargo rustc` directly and rejects a dynamic binary.
+
+Stable binaries are built, signed and published using owner-maintained tooling kept outside this repository. Stable container tags are published only after that tooling publishes a stable GitHub Release. Details: [release automation](../TDD/release-automation.md).
+
 ## Release Static Binary
 
 `scripts/build-release-static.sh`:
@@ -69,7 +75,7 @@ If you forget step 3, the binary will still run but `/admin` will show a placeho
 - Verifies with `ldd` that the binary is fully static
 - Result can be copied to a plain Debian 12 box (or similar) and will run without matching glibc
 
-This is the artifact that gets signed and `scp`'d in production deploys.
+That script is not in this repository. Unsigned prereleases publish a binary built with the same public `cargo rustc -- -C target-feature=+crt-static` recipe and checked for a static ELF. They do not run the absent script, and the workflow does not boot that binary on Debian 12.
 
 ## Testing Pyramid
 

@@ -23,8 +23,20 @@ use super::output::CtlOut;
 /// Product name printed by `madmail version` (Madmail parity: `madmail-v2 2.4.0`).
 pub const VERSION_PRODUCT: &str = "madmail-v2";
 
+/// Contiguous package identity retained in the server binary. Not part of CLI text.
+pub const BUILD_VERSION_MARKER: &str = concat!("madmail-build-version:", env!("CARGO_PKG_VERSION"));
+
+/// Keep [`BUILD_VERSION_MARKER`] reachable so the linker retains those bytes.
+pub fn retain_build_version_marker() {
+    let marker = BUILD_VERSION_MARKER;
+    if std::hint::black_box(marker.as_ptr()).is_null() {
+        std::process::abort();
+    }
+}
+
 /// Print package version (Madmail `maddy version`).
 pub fn print_version(args: &Args) -> Result<()> {
+    retain_build_version_marker();
     // Old `maddy update` (through 2.20.0) chmods the live path to 0700 then
     // runs `version` as root. Restore 0755 so systemd User= can exec (#147).
     crate::upgrade::heal_current_exe_permissions();
@@ -51,6 +63,14 @@ mod tests {
         assert_eq!(
             format!("{VERSION_PRODUCT} {version}"),
             format!("madmail-v2 {version}")
+        );
+    }
+
+    #[test]
+    fn build_version_marker_names_the_package_version() {
+        assert_eq!(
+            BUILD_VERSION_MARKER,
+            concat!("madmail-build-version:", env!("CARGO_PKG_VERSION"))
         );
     }
 }

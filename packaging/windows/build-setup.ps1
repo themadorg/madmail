@@ -3,15 +3,23 @@
 #
 # Usage (from repo root or this directory):
 #   .\packaging\windows\build-setup.ps1 -Arch amd64
+#   .\packaging\windows\build-setup.ps1 -Arch amd64 -Version 2.35.0
+#   .\packaging\windows\build-setup.ps1 -Arch amd64 -Version 2.35.0 -RequireTray
+#   .\packaging\windows\build-setup.ps1 -Arch amd64 -Version 2.35.0 -RequireTray -Testing
 #   .\packaging\windows\build-setup.ps1 -Arch arm64
 #   .\packaging\windows\build-setup.ps1 -Arch all
 #
+# -Version is numeric X.Y.Z. When omitted, the repo .version file is used.
 # Does NOT publish GitHub Releases.
 
 param(
     [ValidateSet("amd64", "arm64", "all")]
     [string]$Arch = "amd64",
-    [string]$IsccPath = ""
+    [string]$IsccPath = "",
+    [string]$Version = "",
+    [switch]$PrintVersion,
+    [switch]$RequireTray,
+    [switch]$Testing
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,16 +50,53 @@ function Ensure-Binary([string]$Name) {
     }
 }
 
-function Build-One([string]$A) {
-    Write-Host "==> Inno Setup Arch=$A"
+function Resolve-AppVersion {
+    $pattern = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+    if ($Version) {
+        if ($Version -notmatch $pattern) { throw "Version must be numeric X.Y.Z" }
+        return $Version
+    }
+    $versionFile = Join-Path $Root ".version"
+    if (-not (Test-Path $versionFile)) { throw "Pass -Version X.Y.Z or provide .version" }
+    $fromFile = (Get-Content -Raw $versionFile).Trim()
+    if ($fromFile -notmatch $pattern) { throw ".version is not numeric X.Y.Z" }
+    return $fromFile
+}
+
+function Build-One([string]$A, [string]$AppVersion, [bool]$RequireTrayApp) {
+    Write-Host "==> Inno Setup Arch=$A version=$AppVersion"
     if ($A -eq "amd64") {
         Ensure-Binary "madmail-windows-amd64.exe"
+        $trayName = "madmail-tray-windows-amd64.exe"
     } else {
         Ensure-Binary "madmail-windows-arm64.exe"
+        $trayName = "madmail-tray-windows-arm64.exe"
+    }
+    if ($RequireTrayApp) {
+        Ensure-Binary $trayName
     }
     $iscc = Find-Iscc
     Write-Host "    ISCC: $iscc"
-    & $iscc "/DArch=$A" $Iss
+    $defines = @("/DArch=$A", "/DMyAppVersion=$AppVersion")
+    if ($RequireTrayApp) { $defines += "/DRequireTray=1" }
+    if ($Testing) {
+        if (-not $RequireTrayApp) { throw "-Testing requires -RequireTray" }
+        $serverPath = Join-Path $Build "madmail-windows-$A.exe"
+        $trayPath = Join-Path $Build $trayName
+        $serverHash = (Get-FileHash -Algorithm SHA256 $serverPath).Hash.ToLowerInvariant()
+        $trayHash = (Get-FileHash -Algorithm SHA256 $trayPath).Hash.ToLowerInvariant()
+        $note = @"
+TESTING ONLY - NOT FOR PRODUCTION USE
+version:$AppVersion
+server-sha256:$serverHash
+tray-sha256:$trayHash
+"@
+        $notePath = Join-Path $Build "UNSTABLE.txt"
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($notePath, $note.Trim() + "`n", $utf8)
+        $defines += "/DTestingBuild=1"
+    }
+    & $iscc @defines $Iss
     if ($LASTEXITCODE -ne 0) { throw "ISCC failed for Arch=$A (exit $LASTEXITCODE)" }
     $out = Join-Path $Build "madmail-windows-$A-setup.exe"
     if (Test-Path $out) {
@@ -61,16 +106,22 @@ function Build-One([string]$A) {
     }
 }
 
+$AppVersion = Resolve-AppVersion
+if ($PrintVersion) {
+    Write-Output $AppVersion
+    exit 0
+}
+
 New-Item -ItemType Directory -Force -Path $Build | Out-Null
 # Do not leave the caller's cwd changed (GHA steps share the process with &).
 Push-Location $Here
 try {
     switch ($Arch) {
-        "amd64" { Build-One "amd64" }
-        "arm64" { Build-One "arm64" }
+        "amd64" { Build-One "amd64" $AppVersion ([bool]$RequireTray) }
+        "arm64" { Build-One "arm64" $AppVersion ([bool]$RequireTray) }
         "all" {
-            Build-One "amd64"
-            Build-One "arm64"
+            Build-One "amd64" $AppVersion ([bool]$RequireTray)
+            Build-One "arm64" $AppVersion ([bool]$RequireTray)
         }
     }
 } finally {

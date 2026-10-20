@@ -29,6 +29,20 @@ pub use serve::{admin_web_router, AdminWebState};
 /// Default mount path when `admin-web enable` is used and no path is configured.
 pub const DEFAULT_ADMIN_WEB_PATH: &str = "/admin";
 
+/// Contiguous `madmail-admin-web-generation:<gitlink>` identity baked into servers.
+pub const ADMIN_WEB_GENERATION_MARKER: &str = concat!(
+    "madmail-admin-web-generation:",
+    env!("MADMAIL_ADMIN_WEB_GENERATION")
+);
+
+/// Keep [`ADMIN_WEB_GENERATION_MARKER`] reachable so the linker retains it.
+pub fn retain_admin_web_generation() {
+    let marker = ADMIN_WEB_GENERATION_MARKER;
+    if std::hint::black_box(marker.as_ptr()).is_null() {
+        std::process::abort();
+    }
+}
+
 /// Normalize an admin-web mount path (`/xxx`, trims trailing slash). Returns `None` if empty.
 pub fn normalize_admin_web_path(path: &str) -> Option<String> {
     chatmail_config::settings_policy::validate("admin_web_path", path).ok()
@@ -69,6 +83,7 @@ pub async fn router_if_configured(
     file_config: &AppConfig,
     pool: DbPool,
 ) -> Result<Option<axum::Router>> {
+    retain_admin_web_generation();
     let Some(prefix) = resolve_admin_web_path(file_config, &pool).await else {
         return Ok(None);
     };

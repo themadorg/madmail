@@ -169,3 +169,8 @@ PGP policy, MIME, TLS, and certificate automation. Index: [`RFC/README.md`](RFC/
 ## Deployment configuration diagnostics
 
 Startup emits source-only protected-setting warnings to stderr (and the systemd journal), even when routine logging is disabled. This explicit No-Log exception contains setting names and source identifiers only, never values, mail data, tokens, or passwords. See [configuration safeguards](26-configuration-precedence.md).
+
+
+## Raw IMAP/SMTP WebSocket transport
+
+See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.

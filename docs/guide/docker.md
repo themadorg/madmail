@@ -1,6 +1,6 @@
 # Docker deployment guide
 
-Madmail publishes official container images to **GitHub Container Registry (GHCR)**. Images are built automatically on every push to `main` and tagged with `latest` and the release version (for example `2.3.1`).
+Madmail publishes container images to **GitHub Container Registry (GHCR)**. Stable and unstable builds use different tags. `latest` is the newest published stable release. `unstable` is the newest testing build and is not for production.
 
 ## Table of contents
 
@@ -52,10 +52,14 @@ To pin a specific release:
 docker pull ghcr.io/themadorg/madmail:2.3.1
 ```
 
-| Tag | Description |
-|-----|-------------|
-| `latest` | Most recent release from `main` |
-| `X.Y.Z` | Exact semver from [releases](https://github.com/themadorg/madmail/releases) |
+| Tag | Channel | Description |
+|-----|---------|-------------|
+| `latest` | Stable | Newest published stable release. Never an unstable build. |
+| `X.Y.Z` | Stable | Immutable stable image for that version. |
+| `unstable` | Testing | Newest successful unstable build. Not for production. |
+| `X.Y.Z-unstable` | Testing | Immutable unsigned test image. Not for production. |
+
+Ordinary pushes to `main` do not move `latest` or replace an existing version tag. See [release automation](../TDD/release-automation.md).
 
 GHCR packages are public; no login is required to pull.
 

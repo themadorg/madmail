@@ -48,7 +48,7 @@ Putting archives next to the PATH command is the wrong place: PATH is for the **
 
 - Multi-arch side-by-side on one host (one primary arch per install tree).
 - Storing full multi-platform release tarballs in the version tree (store **this host’s** extracted binary only: `madmail` or `madmail.exe`).
-- Replacing GitHub Releases / `publish.sh` as the distribution channel.
+- Replacing GitHub Releases as the distribution channel.
 - Per-user non-admin installs as the default (system install remains elevated: root / Administrator). Optional later: per-user root under `%LOCALAPPDATA%\Madmail`.
 
 ---
@@ -113,7 +113,7 @@ Paths are resolved by a single helper, e.g. `install_root()` → env override or
 | Symlinks | Creating symlinks often requires Administrator or Developer Mode; **directory junctions** (`mklink /J`) or **replace-file** of a stable `bin\madmail.exe` copy are acceptable if symlink fails — document chosen strategy in implementation. Prefer **atomic replace** of the active pointer. |
 | Locked exe | Windows may lock the running `madmail.exe`; upgrade must stop the Windows service (and any other holders) before replace, same as stop-systemd-before-replace on Linux. |
 | Binary name | Always `madmail.exe` in version dirs; CLI still invoked as `madmail` when on PATH. |
-| `update latest` asset | Host-matching Windows asset (e.g. `madmail-windows-amd64.zip` / `.tar.gz` / signed exe — follow whatever `publish.sh` ships); same size + signature rules as Linux. |
+| `update latest` asset | Host-matching Windows asset (e.g. `madmail-windows-amd64.zip` / `.tar.gz` / signed exe — follow the asset names on the stable GitHub Release); same size + signature rules as Linux. |
 | Archive formats | If Windows releases use `.zip`, either allow `.zip` **only for Windows builds** in the download helper or ship `.tar.gz` for both; document in PR that implements `update latest`. |
 
 ### Version directory naming
@@ -461,7 +461,7 @@ Do **not** store mailboxes or `chatmail.db` under the install/version root. Stat
 3. **Should `current` under install root be required**, or only the stable PATH entry (`/usr/local/bin/madmail` / `bin\madmail.exe`)?
 4. **Import policy for `madmail.prev`:** always import, or only when version string is recoverable?
 5. **Multi-instance hosts:** one install root vs `Madmail-<instance>` (out of scope unless needed).
-6. **`update latest` asset selection:** auto-detect OS/arch (required) vs hardcode; Linux musl vs gnu; Windows asset naming from `publish.sh`.
+6. **`update latest` asset selection:** auto-detect OS/arch (required) vs hardcode; Linux musl vs gnu; Windows asset naming from the stable GitHub Release.
 7. **`update latest` vs Releases API:** redirect URL only (v1) vs API for tag display / multi-asset pick. Note: `versions list --remote` **needs** the Releases API (or equivalent) even if `update latest` uses the redirect URL.
 8. **`list --remote` depth:** all releases vs last N (e.g. 20) vs only latest; default suggest last **20** non-prerelease unless `--all`.
 9. **Windows active pointer:** symlink vs junction vs replace-file for `bin\madmail.exe` when symlinks are restricted.

@@ -38,6 +38,7 @@ pub const MESSAGE_RETENTION: &str = "__MESSAGE_RETENTION__";
 pub const HTTP_PROXY_ENABLED: &str = "__HTTP_PROXY_ENABLED__";
 pub const ADMIN_WEB_ENABLED: &str = "__ADMIN_WEB_ENABLED__";
 pub const WEBIMAP_ENABLED: &str = "__WEBIMAP_ENABLED__";
+pub const WEBSOCKET_BRIDGE_ENABLED: &str = "__WEBSOCKET_BRIDGE_ENABLED__";
 pub const WEBSMTP_ENABLED: &str = "__WEBSMTP_ENABLED__";
 /// Comma/newline-separated browser origins allowed for WebIMAP/WebSMTP CORS (e.g. `http://127.0.0.1:5173`).
 pub const WEBMAIL_CORS_ORIGINS: &str = "__WEBMAIL_CORS_ORIGINS__";

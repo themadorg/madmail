@@ -22,6 +22,8 @@ defaults**. CLI writes and resets fail with `configuration_locked` when a deploy
 source protects the setting. Change that source and restart the service to unlock
 it. See [configuration sources and examples](../configuration.md).
 
+Raw mail over WSS: [`websocket-bridge`](websocket-bridge.md) (disabled by default).
+
 ## Global flags
 
 Every subcommand accepts:
@@ -250,6 +252,10 @@ IMAP / submission on the HTTPS port (443). Alias: `madmail alpn`.
 - [`disable`](webimap-disable.md)
 - [`enable`](webimap-enable.md)
 - [`status`](webimap-status.md)
+
+### [`websocket-bridge`](websocket-bridge.md)
+
+`enable`, `disable`, `status` — raw IMAP/SMTP over WSS; disabled by default.
 
 ### [`websmtp`](websmtp.md)
 

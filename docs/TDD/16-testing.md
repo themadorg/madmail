@@ -103,6 +103,10 @@ Replicate and extend the existing Python test suite (`tests/deltachat-test/`).
 - Federation policy bypass attempts (subdomains, IP literals, case)
 - PGP structure fuzzing / malformed messages
 
+## Release automation
+
+`python3 -m unittest discover -s scripts -p 'test_*.py'` covers Conventional Commit version selection, manifest and changelog updates, dry runs, reruns, rejected Git pushes, unsigned prerelease retries, and registry checks. The tests use temporary repositories and fake GitHub or registry responses. They do not publish tags, images, or releases. See [release automation](release-automation.md).
+
 ## 6. Network-Condition Smoke Test (manual, off-CI)
 
 The shared-port demux (443 serving HTTPS + IMAP + submission) exists for networks
@@ -242,3 +246,7 @@ the image from the current source first. The script reads the actual examples fr
 [the configuration guide](../guide/configuration.md), seeds conflicting DB values,
 and checks precedence, explicit false, CLI/API protections, restart, restored DB
 values, and invalid inputs. Containers and volumes are isolated and removed.
+
+## Raw IMAP/SMTP WebSocket transport
+
+See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.

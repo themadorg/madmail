@@ -13,66 +13,22 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  semantic-release:
-    name: Semantic Release
+  release-script:
+    name: Release script
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-    outputs:
-      version: ${{ steps.version.outputs.VERSION }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
+      - name: Require Python 3.11+
+        run: python3 -c 'import sys; assert sys.version_info >= (3, 11)'
 
-      - name: Configure git for semantic-release
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install root dependencies (semantic-release)
-        run: npm ci
+      - name: Test release tooling
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
 
-      - name: Run semantic-release (bump, commit, tag, push)
-        run: npx semantic-release --extends ./.github/releaserc.ci.json
-
-      - name: Ensure .version exists when no release is cut
-        run: |
-          if [ ! -f .version ]; then
-            sed -n '/^\[workspace\.package\]/,/^\[/p' Cargo.toml \
-              | awk -F'"' '/^version[[:space:]]*=/ { print $2; exit }' > .version
-          fi
-
-      - name: Read version
-        id: version
-        run: echo "VERSION=$(cat .version)" >> "$GITHUB_OUTPUT"
-
-      - name: Verify Cargo.lock matches release version
-        run: |
-          v=$(cat .version)
-          lock_v=$(grep -A1 '^name = "chatmail"$' Cargo.lock | awk -F'"' '/^version =/ { print $2; exit }')
-          test -n "$lock_v" || { echo "Could not read chatmail version from Cargo.lock"; exit 1; }
-          test "$lock_v" = "$v" || { echo "Cargo.lock version mismatch: $lock_v != $v"; exit 1; }
-          # Workspace path crates (chatmail*, madmail*) must match the release version.
-          mismatched=$(awk -v v="$v" '/^name = "(chatmail|madmail)/ { n=$0; getline; if ($0 !~ "^version = \"" v "\"$") print n, $0 }' Cargo.lock)
-          if [ -n "$mismatched" ]; then
-            echo "Cargo.lock workspace crate versions do not all match $v:"
-            echo "$mismatched"
-            exit 1
-          fi
-
-      - name: Upload version artifact for downstream jobs
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-versions
-          path: .version
-          retention-days: 7
+      - name: Check manifest versions
+        run: python3 scripts/release.py --check
 
   lint:
     name: Lint
@@ -112,28 +68,78 @@ jobs:
       - name: cargo audit
         run: cargo audit
 
-  build:
-    name: Build
+  release:
+    name: Prepare unstable release
     runs-on: ubuntu-latest
-    needs: [lint, semantic-release]
-    if: always() && needs.lint.result == 'success' && (needs.semantic-release.result == 'success' || needs.semantic-release.result == 'skipped')
+    needs: [release-script, lint, test, audit]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: release-main
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.release.outputs.version || '' }}
+      sha: ${{ steps.release.outputs.sha || '' }}
+      tag: ${{ steps.release.outputs.tag || '' }}
+      released: ${{ steps.release.outputs.released || 'false' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: recursive
 
-      - name: Sync version bump commit from semantic-release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: git pull origin main
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Download computed version files
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/download-artifact@v4
-        continue-on-error: true
+      - name: Release only the current main tip
+        id: tip
+        run: |
+          git fetch origin main --tags
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+            if git merge-base --is-ancestor HEAD origin/main; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "This push is no longer the tip of main."
+              exit 0
+            fi
+            echo "main diverged from this run; refusing to rewrite history."
+            exit 1
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare and push release
+        id: release
+        if: steps.tip.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          if python3 scripts/release.py --write --push \
+            --name "Madmail-CI" --email "ci@madmail.chat" \
+            --github-output "$GITHUB_OUTPUT"; then
+            exit 0
+          fi
+          git fetch origin main
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ] \
+            && git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "main advanced during release; a later workflow will publish."
+            {
+              echo "released=false"
+              echo "tag="
+              echo "version="
+              echo "sha="
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit 1
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, release]
+    if: always() && needs.lint.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: release-versions
-          path: .
+          ref: ${{ needs.release.outputs.sha || github.sha }}
+          fetch-depth: 0
+          submodules: recursive
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev pkg-config perl
@@ -198,33 +204,144 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
-  docker-build-push:
-    name: Build and Push Docker Images
+  unstable-matrix-pr:
+    name: Unsigned matrix build-only
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    concurrency:
+      group: unstable-matrix-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/unstable-matrix.yml
+    with:
+      mode: build-only
+      sha: ${{ github.event.pull_request.head.sha }}
+
+  unstable-matrix:
+    name: Unsigned matrix for publication
+    needs: release
+    if: needs.release.result == 'success' && needs.release.outputs.tag != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/unstable-matrix.yml
+    with:
+      mode: publish
+      sha: ${{ needs.release.outputs.sha }}
+      version: ${{ needs.release.outputs.version }}
+      tag: ${{ needs.release.outputs.tag }}
+
+  unstable-prerelease:
+    name: Publish testing prerelease
     runs-on: ubuntu-latest
-    needs: [build, semantic-release]
+    needs:
+      - release
+      - build
+      - test
+      - unstable-matrix
     if: >-
       always() &&
+      needs.release.result == 'success' &&
+      needs.release.outputs.tag != '' &&
       needs.build.result == 'success' &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
+      needs.test.result == 'success' &&
+      needs.unstable-matrix.result == 'success'
+    permissions:
+      contents: write
+    concurrency:
+      group: unstable-prerelease
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Fetch the release tag
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+          SHA: ${{ needs.release.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          test "$(git rev-parse "${TAG}^{commit}")" = "$SHA"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unstable-bin-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish testing-only prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag }}
+          SHA: ${{ needs.release.outputs.sha }}
+          VERSION: ${{ needs.release.outputs.version }}
+          GENERATION: ${{ needs.unstable-matrix.outputs.generation }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          MATRIX_RESULT: ${{ needs.unstable-matrix.result }}
+        run: |
+          set -euo pipefail
+          python3 scripts/unstable_matrix.py assert-publish \
+            --event "$GITHUB_EVENT_NAME" \
+            --ref "$GITHUB_REF" \
+            --tag "$TAG" \
+            --release "$RELEASE_RESULT" \
+            --build "$BUILD_RESULT" \
+            --test "$TEST_RESULT" \
+            --matrix "$MATRIX_RESULT"
+          recorded=$(python3 scripts/unstable_assets.py check-source --version "$VERSION" --sha "$SHA")
+          test "$recorded" = "$GENERATION"
+          python3 scripts/unstable_release.py --write \
+            --tag "$TAG" --sha "$SHA" --version "$VERSION" \
+            --generation "$GENERATION" \
+            --changelog CHANGELOG.md --assets dist
+
+  docker-build-push:
+    name: Publish unstable Docker image
+    runs-on: ubuntu-latest
+    # The image is published only after the GitHub prerelease exists.
+    # A skipped or failed prerelease does not publish.
+    needs: [release, build, test, unstable-prerelease]
+    if: >-
+      always() &&
+      needs.release.result == 'success' &&
+      needs.release.outputs.tag != '' &&
+      needs.build.result == 'success' &&
+      needs.test.result == 'success' &&
+      needs.unstable-prerelease.result == 'success'
+    concurrency:
+      group: docker-unstable
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.release.outputs.sha }}
           fetch-depth: 0
           submodules: recursive
 
-      - name: Sync version bump commit from semantic-release
-        run: git pull origin main
-
-      - name: Download computed version files
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: release-versions
-          path: .
+      - name: Confirm the unstable tag commit
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+          SHA: ${{ needs.release.outputs.sha }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          tag = os.environ["TAG"]
+          sha = os.environ["SHA"]
+          if not re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-unstable", tag):
+              sys.exit("unexpected unstable tag")
+          if not re.fullmatch(r"[0-9a-f]{40}", sha):
+              sys.exit("unexpected unstable commit")
+          PY
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          test "$(git rev-parse "${TAG}^{commit}")" = "$SHA"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -236,33 +353,44 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Read app version
-        id: version
-        run: |
-          if [ -f .version ]; then
-            echo "VERSION=$(cat .version)" >> "$GITHUB_OUTPUT"
-          else
-            echo "VERSION=$(sed -n '/^\[workspace\.package\]/,/^\[/p' Cargo.toml | awk -F'"' '/^version[[:space:]]*=/ { print $2; exit }')" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Check immutable unstable image
+        id: image
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.release.outputs.sha }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: python3 scripts/registry_image.py --repository "$GITHUB_REPOSITORY" --tag "$VERSION-unstable" --sha "$SOURCE_SHA"
 
-      - name: Docker meta (Madmail)
-        id: meta-madmail
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ steps.version.outputs.VERSION }}
-
-      - name: Build and Push Madmail Backend
+      - name: Build immutable unstable image
+        if: steps.image.outputs.exists != 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta-madmail.outputs.tags }}
-          labels: ${{ steps.meta-madmail.outputs.labels }}
+          tags: ghcr.io/${{ github.repository }}:${{ needs.release.outputs.version }}-unstable
+          labels: |
+            org.opencontainers.image.revision=${{ needs.release.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.release.outputs.version }}-unstable
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Advance unstable alias only for the newest unstable version
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          VERSION: ${{ needs.release.outputs.version }}
+          CANDIDATE: ${{ needs.release.outputs.tag }}
+        run: |
+          git fetch origin main --tags
+          newest=$(python3 scripts/release.py --channel-tip unstable --revision origin/main)
+          if [ -z "$newest" ]; then
+            echo "No unstable tag found on main."
+            exit 1
+          fi
+          if [ "$newest" = "$CANDIDATE" ]; then
+            docker buildx imagetools create --tag "$IMAGE:unstable" "$IMAGE:$VERSION-unstable"
+          else
+            echo "Leaving the unstable tag at $newest; this candidate is $CANDIDATE."
+          fi
 
   landing:
     name: Landing site
