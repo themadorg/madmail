@@ -93,6 +93,7 @@ struct SupervisorInner {
     primary_domain: String,
     local_domains: Vec<String>,
     http_extra: Mutex<Option<Router>>,
+    bridge_shutdown: CancellationToken,
     bootstrap_admin_token: String,
     listeners: Mutex<Option<ActiveListeners>>,
     reload_tx: mpsc::Sender<ReloadRequest>,
@@ -110,6 +111,7 @@ pub struct ServerSupervisor {
 
 impl Drop for ServerSupervisor {
     fn drop(&mut self) {
+        self.inner.bridge_shutdown.cancel();
         if let Ok(mut guard) = self.inner.maintenance.try_lock() {
             if let Some(handle) = guard.take() {
                 handle.shutdown();
@@ -229,6 +231,7 @@ impl ServerSupervisor {
             primary_domain,
             local_domains,
             http_extra: Mutex::new(None),
+            bridge_shutdown: CancellationToken::new(),
             bootstrap_admin_token: admin_token.to_string(),
             listeners: Mutex::new(None),
             reload_tx: reload_tx.clone(),
@@ -776,7 +779,11 @@ impl SupervisorInner {
             imap: self.imap_cfg.lock().await.clone(),
             submission: self.submission_cfg.clone(),
         };
-        *self.http_extra.lock().await = http_extra.map(|r| r.layer(axum::Extension(sessions)));
+        *self.http_extra.lock().await = http_extra.map(|r| {
+            r.layer(axum::Extension(sessions)).layer(axum::Extension(
+                chatmail_www::bridge::BridgeShutdown(self.bridge_shutdown.clone()),
+            ))
+        });
         Ok(())
     }
 

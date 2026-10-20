@@ -351,7 +351,6 @@ pub async fn run_shared_listener(
 ) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
     let mail = Arc::new(mail);
-    let router = router.layer(axum::Extension(cancel.clone()));
     info!(
         %addr,
         alpn_imap = mail.flags.imap(),

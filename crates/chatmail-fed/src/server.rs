@@ -97,8 +97,7 @@ pub async fn run_http_listener(
     local_domains: Vec<String>,
     extra: Option<Router>,
 ) -> Result<()> {
-    let router = build_router(pool, app, primary_domain, local_domains, extra)
-        .layer(axum::Extension(cancel.clone()));
+    let router = build_router(pool, app, primary_domain, local_domains, extra);
 
     let listener = TcpListener::bind(addr).await?;
     let tls_acceptor = tls.map(TlsAcceptor::from);

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use chatmail_db::{set_setting, settings_keys};
-use chatmail_www::bridge::BridgeSessions;
+use chatmail_www::bridge::{BridgeSessions, BridgeShutdown};
 use futures_util::{SinkExt, StreamExt};
 use rustls::pki_types::ServerName;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -484,14 +484,16 @@ async fn websocket_bridge_native_protocols() {
         },
     };
     let cancel = CancellationToken::new();
+    let listener_cancel = CancellationToken::new();
     let router = chatmail_www::www_router(chatmail_www::WwwState::new(
         native.pool.clone(),
         native.ctx.clone(),
         cfg,
         dir.path(),
     ))
+    .layer(axum::Extension(listener_cancel.clone()))
     .layer(axum::Extension(sessions))
-    .layer(axum::Extension(cancel.clone()));
+    .layer(axum::Extension(BridgeShutdown(cancel.clone())));
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     let tls = tls_config(&cert.cert.pem());
     let server = Arc::new(
@@ -505,9 +507,13 @@ async fn websocket_bridge_native_protocols() {
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
+    let listener_shutdown = listener_cancel.clone();
     let task = tokio::spawn(async move {
         loop {
-            let (tcp, peer) = listener.accept().await.unwrap();
+            let (tcp, peer) = tokio::select! {
+                accepted = listener.accept() => accepted.unwrap(),
+                _ = listener_shutdown.cancelled() => break,
+            };
             let acceptor = tokio_rustls::TlsAcceptor::from(server.clone());
             let router = router.clone();
             tokio::spawn(async move {
@@ -551,7 +557,7 @@ async fn websocket_bridge_native_protocols() {
     req.headers_mut()
         .insert("X-Forwarded-Proto", "https".parse().unwrap());
     match client_async(req, tcp).await {
-        Err(tokio_tungstenite::tungstenite::Error::Http(res)) => assert_eq!(res.status(), 403),
+        Err(tokio_tungstenite::tungstenite::Error::Http(res)) => assert_eq!(res.status(), 404),
         _ => panic!("plaintext bridge accepted"),
     }
     exercise(&addr, tls.clone()).await;
@@ -600,22 +606,27 @@ async fn websocket_bridge_native_protocols() {
         .await;
     let mut silent = MailClient::open(&addr, "/transport/imap", tls_config(&cert.cert.pem())).await;
     silent.until(b"ready\r\n").await;
+    let mut silent_smtp =
+        MailClient::open(&addr, "/transport/smtp", tls_config(&cert.cert.pem())).await;
+    silent_smtp.until(b"\r\n").await;
     tokio::time::pause();
-    tokio::time::advance(Duration::from_secs(61)).await;
-    assert!(!matches!(
-        timeout(Duration::from_secs(5), silent.ws.next())
-            .await
-            .unwrap(),
-        Some(Ok(Message::Binary(_)))
+    tokio::time::advance(Duration::from_secs(21)).await;
+    assert!(matches!(
+        timeout(Duration::from_secs(5), silent.ws.next()).await.unwrap(),
+        Some(Ok(Message::Binary(bytes))) if bytes == b"* BYE Authentication timeout\r\n"[..]
+    ));
+    assert!(matches!(
+        timeout(Duration::from_secs(5), silent_smtp.ws.next()).await.unwrap(),
+        Some(Ok(Message::Binary(bytes))) if bytes == b"421 Authentication timeout\r\n"[..]
     ));
     tokio::time::resume();
     active
         .command("j NOOP\r\n", b"j OK NOOP completed\r\n")
         .await;
-    // The process-wide cap includes every upgraded session, and closing releases it.
+    // Unauthenticated sockets cannot consume the authenticated session budget.
     let cap_tls = tls_config(&cert.cert.pem());
     let mut held = Vec::new();
-    for _ in 0..255 {
+    for _ in 0..32 {
         let mut connection = MailClient::open(&addr, "/transport/imap", cap_tls.clone()).await;
         connection.until(b"ready\r\n").await;
         held.push(connection);
@@ -624,6 +635,9 @@ async fn websocket_bridge_native_protocols() {
         Err(tokio_tungstenite::tungstenite::Error::Http(res)) => assert_eq!(res.status(), 503),
         _ => panic!("bridge connection limit not enforced"),
     }
+    active
+        .command("k NOOP\r\n", b"k OK NOOP completed\r\n")
+        .await;
     drop(held);
     timeout(Duration::from_secs(5), async {
         loop {
@@ -636,6 +650,12 @@ async fn websocket_bridge_native_protocols() {
     })
     .await
     .unwrap();
+    // Stopping the HTTP accept loop during a route reload preserves upgraded sessions.
+    listener_cancel.cancel();
+    task.await.unwrap();
+    active
+        .command("l NOOP\r\n", b"l OK NOOP completed\r\n")
+        .await;
     cancel.cancel();
     assert!(!matches!(
         timeout(Duration::from_secs(5), active.ws.next())
@@ -643,7 +663,6 @@ async fn websocket_bridge_native_protocols() {
             .unwrap(),
         Some(Ok(Message::Binary(_)))
     ));
-    task.abort();
 }
 
 #[tokio::test]

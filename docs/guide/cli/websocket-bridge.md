@@ -55,17 +55,20 @@ Non-browser clients can omit Origin. For browsers, explicitly allow the client:
 madmail webmail-cors add https://client.example
 ```
 
-The shared origin list is used, but the bridge does **not** accept `*` or implicit
+Adding an origin to `webmail-cors` grants that origin access to both WebIMAP CORS
+and raw IMAP/SMTP WebSocket connections. The bridge does **not** accept `*` or implicit
 WebIMAP origin reflection. A browser can forward native protocol bytes; no mail
 credentials need to be sent in the upgrade URL or headers.
 
 ## Limits and troubleshooting
 
-- Disabled → HTTP 404; HTTP or disallowed Origin → 403; any query string → 400.
+- Disabled or plain HTTP → 404; disallowed Origin → 403; any query string → 400.
 - 503 → connection capacity reached or native session configuration unavailable.
-- 256 active/pending bridge connections per process; 60 seconds to authenticate.
+- 256 active/pending bridge connections per process, with at most 32 unauthenticated;
+  20 seconds to authenticate. Timeout sends IMAP `* BYE` or SMTP `421` before closing.
 - 35 minutes of read inactivity; writes stall out after 30 seconds.
-- Socket closure, protocol failure or listener shutdown releases the session.
+- Socket closure, protocol failure or process shutdown releases the session.
+  HTTP route reloads preserve existing sessions.
 
 For failed upgrades, check the service status, backend HTTPS, exact Origin and
 proxy upgrade support. Large payloads must be split into messages no larger than

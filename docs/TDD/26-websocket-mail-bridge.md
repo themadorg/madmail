@@ -39,19 +39,20 @@ routes return 404. Changes affect new connections; existing sessions finish norm
 ## Resource limits and lifecycle
 
 A process-wide maximum of 256 bridge connections includes pending upgrades.
+At most 32 may be unauthenticated; authentication releases that smaller budget.
 Binary messages and frames are limited to 64 KiB; the client must chunk larger protocol data. A 64 KiB duplex buffer bounds
 in-process flow, with 16 KiB outbound chunks. Writes time out after 30 seconds;
 read inactivity after 35 minutes accommodates IMAP IDLE. Authentication must finish
-within 60 seconds regardless of ping traffic. Ping/pong is handled separately from
-mail bytes. Closing either side cancels the other, drops the session and releases
-the permit. Listener shutdown cancels active bridge sessions. No detached mail task
+within 20 seconds regardless of ping traffic. Ping/pong is handled separately from
+mail bytes. Authentication timeout sends IMAP `* BYE` or SMTP `421` before closing. Closing either side cancels the other, drops the session and releases
+the permit. Process shutdown cancels active bridge sessions; HTTP listener reloads preserve them. No detached mail task
 survives a socket. Existing native parser and message-size limits still apply.
 
 ## Verification
 
 Unit/integration tests exercise default-off and overrides, plaintext/forwarded
 header rejection, origin and query restrictions, binary framing and byte integrity,
-normal auth and submission policy, timeout/close cleanup and listener shutdown.
+normal auth and submission policy, timeout/close cleanup and process shutdown.
 `tests/websocket-bridge-docker.sh` runs a Rust WebSocket client against an isolated
 Docker server with generated TLS, then cleans up all containers and temporary state.
 The client exercises SMTP-to-IMAP delivery, fragmented commands, literals, IDLE,

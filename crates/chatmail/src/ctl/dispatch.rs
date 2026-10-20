@@ -85,6 +85,8 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::WebsocketBridge(cmd)) => {
             service_toggle::run(
                 &cli.args,
+                "websocket-bridge",
+                |config| config.websocket_bridge_enabled,
                 settings_keys::WEBSOCKET_BRIDGE_ENABLED,
                 "WebSocket mail bridge",
                 cmd,
@@ -94,6 +96,8 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::Webimap(cmd)) => {
             service_toggle::run(
                 &cli.args,
+                "webimap",
+                |_| false,
                 settings_keys::WEBIMAP_ENABLED,
                 "WebIMAP HTTP API",
                 cmd,
@@ -103,6 +107,8 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::Websmtp(cmd)) => {
             service_toggle::run(
                 &cli.args,
+                "websmtp",
+                |_| false,
                 settings_keys::WEBSMTP_ENABLED,
                 "WebSMTP HTTP send API",
                 cmd,
