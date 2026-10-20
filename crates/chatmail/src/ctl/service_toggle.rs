@@ -27,21 +27,26 @@ use super::output::CtlOut;
 
 pub async fn run(
     args: &Args,
+    command: &'static str,
+    default: fn(&chatmail_config::AppConfig) -> bool,
     setting_key: &str,
     service_label: &str,
     cmd: &ServiceToggleCommand,
 ) -> Result<()> {
     let ctx = CtlContext::from_args(args)?;
     let pool = ctx.open_pool().await?;
-    let command = if service_label.contains("WebIMAP") {
-        "webimap"
-    } else {
-        "websmtp"
-    };
 
     match cmd {
         ServiceToggleCommand::Status => {
-            status(args, command, &pool, setting_key, service_label).await
+            status(
+                args,
+                command,
+                &pool,
+                setting_key,
+                service_label,
+                default(&ctx.config),
+            )
+            .await
         }
         ServiceToggleCommand::Enable => {
             set_flag(args, command, &pool, setting_key, service_label, true).await
@@ -58,9 +63,10 @@ async fn status(
     pool: &DbPool,
     key: &str,
     label: &str,
+    default: bool,
 ) -> Result<()> {
     let out = CtlOut::from_args(args, command);
-    let on = get_bool_setting(pool, key, false).await?;
+    let on = get_bool_setting(pool, key, default).await?;
     if out.is_json() {
         return out.emit(serde_json::json!({ "enabled": on }));
     }

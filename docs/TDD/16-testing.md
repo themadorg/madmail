@@ -233,3 +233,7 @@ to one domain and verifies existing accounts continue authenticating through
 both database fallback and the hydrated cache, incorrect passwords stay
 rejected, and unknown accounts on retired domains are never created. Explicit
 admin provisioning remains independent of the first-login JIT allowlist.
+
+## Raw IMAP/SMTP WebSocket transport
+
+See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.

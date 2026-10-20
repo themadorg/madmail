@@ -15,6 +15,8 @@ Practical configuration recipes: multi-domain addresses, selective JIT
 registration, and CLI provisioning ([English](../recipes/server-domains_en.md) /
 [فارسی](../recipes/server-domains_fa.md)).
 
+Raw mail over WSS: [`websocket-bridge`](websocket-bridge.md) (disabled by default).
+
 ## Global flags
 
 Every subcommand accepts:
@@ -243,6 +245,10 @@ IMAP / submission on the HTTPS port (443). Alias: `madmail alpn`.
 - [`disable`](webimap-disable.md)
 - [`enable`](webimap-enable.md)
 - [`status`](webimap-status.md)
+
+### [`websocket-bridge`](websocket-bridge.md)
+
+`enable`, `disable`, `status` — raw IMAP/SMTP over WSS; disabled by default.
 
 ### [`websmtp`](websmtp.md)
 

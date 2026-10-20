@@ -118,6 +118,21 @@ pub async fn all_settings(st: &AdminState, method: &str) -> AdminResult {
         json!(get_toggle_disabled_default(pool, settings_keys::ADMIN_WEB_ENABLED).await?),
     );
     body.insert(
+        "websocket_bridge_enabled".into(),
+        json!(if get_bool_setting(
+            pool,
+            settings_keys::WEBSOCKET_BRIDGE_ENABLED,
+            st.file_config.websocket_bridge_enabled
+        )
+        .await
+        .map_err(db_err)?
+        {
+            "enabled"
+        } else {
+            "disabled"
+        }),
+    );
+    body.insert(
         "webimap_enabled".into(),
         json!(get_toggle_disabled_default(pool, settings_keys::WEBIMAP_ENABLED).await?),
     );
