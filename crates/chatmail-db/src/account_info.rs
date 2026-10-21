@@ -70,7 +70,7 @@ mod tests {
     #[tokio::test]
     async fn list_account_quota_info_excludes_global_default() {
         let pool = init_memory_db().await.unwrap();
-        let DbPool::Sqlite(p) = &pool else {
+        let crate::pool::DbConnection::Sqlite(p) = pool.connection() else {
             panic!("memory db is sqlite");
         };
         sqlx::query(

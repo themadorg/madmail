@@ -1,5 +1,7 @@
 # 10 — Web Services and Admin API (chatmail-www + chatmail-admin)
 
+Configuration precedence is **environment → file → database → defaults**. Explicit environment/file settings are read-only through database-backed commands. File/environment changes require restart. See [configuration sources and migration](../guide/configuration.md).
+
 This layer is what normal users, Delta Chat desktop, and operators interact with over HTTP.
 
 ## Public Surface: `chatmail-www`

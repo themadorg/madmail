@@ -1,5 +1,7 @@
 # Admin Interface and Command Line Tools
 
+Configuration precedence is **environment → file → database → defaults**. Explicit environment/file settings are read-only through database-backed commands. File/environment changes require restart. See [configuration sources and migration](../../guide/configuration.md).
+
 Once your chatmail server is running, you will spend most of your time in the admin tools.
 
 There are two main ways to manage a server:

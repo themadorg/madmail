@@ -1023,6 +1023,116 @@ async fn p9_auth_gate_bearer() {
 }
 
 #[tokio::test]
+async fn deployment_policy_metadata_and_compound_write_guard() {
+    let (mut st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let mut policy = chatmail_config::SettingsPolicy::default();
+    policy
+        .insert(
+            "admin_web_enabled",
+            "false",
+            "environment:CHATMAIL_ADMIN_WEB_ENABLED",
+        )
+        .unwrap();
+    policy
+        .insert("max_message_size", "10M", "file:madmail.conf")
+        .unwrap();
+    st.pool = st.pool.clone().with_policy(policy);
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/admin_web_path",
+        &json!({"action":"set", "value":"/new-panel"}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 409);
+    assert!(chatmail_db::settings::get_stored_setting(
+        &st.pool,
+        chatmail_db::settings_keys::ADMIN_WEB_PATH
+    )
+    .await
+    .unwrap()
+    .is_none());
+    let before = chatmail_db::settings::get_stored_setting(
+        &st.pool,
+        chatmail_db::settings_keys::APPENDLIMIT,
+    )
+    .await
+    .unwrap();
+    let err = resources::dispatch(&st, "PUT", "/admin/message-size", &json!({"size":"20M"}))
+        .await
+        .unwrap_err();
+    assert_eq!(err.0, 409);
+    assert_eq!(
+        before,
+        chatmail_db::settings::get_stored_setting(
+            &st.pool,
+            chatmail_db::settings_keys::APPENDLIMIT
+        )
+        .await
+        .unwrap()
+    );
+    let (_, body) = resources::dispatch(&st, "GET", "/admin/settings", &json!({}))
+        .await
+        .unwrap();
+    let body = body.unwrap();
+    assert_eq!(
+        body["configuration_sources"]["admin_web_enabled"]["locked"],
+        true
+    );
+    assert_eq!(
+        body["configuration_sources"]["admin_web_enabled"]["source"],
+        "environment:CHATMAIL_ADMIN_WEB_ENABLED"
+    );
+    assert_eq!(body["admin_web_enabled"], "disabled");
+}
+
+#[tokio::test]
+async fn invalid_admin_paths_do_not_enable_or_persist() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let long_path = format!("/{}", "a".repeat(253));
+    for path in [
+        "/panel+1",
+        &long_path,
+        "/",
+        "/api/admin",
+        "/api/admin/child",
+        "/bad/{capture}",
+        "/bad?query=yes",
+    ] {
+        let err = resources::dispatch(
+            &st,
+            "POST",
+            "/admin/settings/admin_web_path",
+            &json!({"action":"set", "value":path}),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.0, 400, "{path}");
+    }
+    assert!(
+        chatmail_db::get_setting(&st.pool, chatmail_db::settings_keys::ADMIN_WEB_ENABLED)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        chatmail_db::get_setting(&st.pool, chatmail_db::settings_keys::ADMIN_WEB_PATH)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn websocket_bridge_config_fallback_and_api_override() {
     for configured in [false, true] {
         let cfg = AppConfig {

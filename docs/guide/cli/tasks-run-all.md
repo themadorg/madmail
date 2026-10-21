@@ -2,7 +2,7 @@
 
 Parent: [`tasks`](tasks.md)
 
-Run all jobs enabled by `storage.imapsql` retention settings in config
+Run all jobs enabled by the resolved maintenance settings
 
 ## Synopsis
 

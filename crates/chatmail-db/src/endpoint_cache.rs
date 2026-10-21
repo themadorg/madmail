@@ -105,13 +105,15 @@ pub async fn set_endpoint_override(
 }
 
 pub async fn remove_endpoint_override(pool: &DbPool, lookup_key: &str) -> Result<bool> {
-    let affected = match pool {
-        DbPool::Sqlite(p) => sqlx::query("DELETE FROM dns_overrides WHERE lookup_key = ?")
-            .bind(lookup_key)
-            .execute(p)
-            .await?
-            .rows_affected(),
-        DbPool::Postgres(p) => {
+    let affected = match pool.connection() {
+        crate::pool::DbConnection::Sqlite(p) => {
+            sqlx::query("DELETE FROM dns_overrides WHERE lookup_key = ?")
+                .bind(lookup_key)
+                .execute(p)
+                .await?
+                .rows_affected()
+        }
+        crate::pool::DbConnection::Postgres(p) => {
             sqlx::query(&pg_sql("DELETE FROM dns_overrides WHERE lookup_key = ?"))
                 .bind(lookup_key)
                 .execute(p)

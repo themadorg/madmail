@@ -43,7 +43,8 @@ Twenty-three library crates under `crates/` plus integration tests in `tests/`. 
 | `10-webimap.md` | WebIMAP REST + WebSocket + WebSMTP |
 | `11-proxy-services.md` | TURN, Iroh, Shadowsocks |
 | `12-security.md` | PGP-only, No-Log, federation policy, TLS |
-| `13-configuration.md` | `maddy.conf` + settings DB |
+| `13-configuration.md` | `.conf` / TOML configuration and settings registry |
+| `26-configuration-precedence.md` | Environment/file safeguards, source metadata, migration, and verification |
 | `14-cli-tools.md` | CLI subcommands — Madmail parity matrix; links [`../guide/cli/`](../guide/cli/README.md) |
 | `16-testing.md` | Unit, integration, Delta Chat E2E |
 | `17-data-models.md` | SQLite schema |

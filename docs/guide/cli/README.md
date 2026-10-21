@@ -15,6 +15,13 @@ Practical configuration recipes: multi-domain addresses, selective JIT
 registration, and CLI provisioning ([English](../recipes/server-domains_en.md) /
 [فارسی](../recipes/server-domains_fa.md)).
 
+## Configuration sources
+
+Operational settings resolve as **environment > explicit config file > database >
+defaults**. CLI writes and resets fail with `configuration_locked` when a deployment
+source protects the setting. Change that source and restart the service to unlock
+it. See [configuration sources and examples](../configuration.md).
+
 Raw mail over WSS: [`websocket-bridge`](websocket-bridge.md) (disabled by default).
 
 ## Global flags

@@ -29,10 +29,15 @@ use chatmail_types::Result;
 
 /// Whether TURN is active: static `turn_enable` + secret **and** admin `__TURN_ENABLED__` (default on).
 pub async fn turn_runtime_enabled(pool: &DbPool, file_config: &AppConfig) -> Result<bool> {
-    if !file_config.turn_configured() {
+    if effective_turn_secret(pool, file_config)
+        .await?
+        .as_deref()
+        .is_none_or(str::is_empty)
+    {
         return Ok(false);
     }
-    let admin_on = get_bool_setting(pool, settings_keys::TURN_ENABLED, true).await?;
+    let admin_on =
+        get_bool_setting(pool, settings_keys::TURN_ENABLED, file_config.turn_enable).await?;
     Ok(admin_on)
 }
 
@@ -74,7 +79,11 @@ pub async fn start_turn_server(
         .await?
         .filter(|s| !s.is_empty())
         .ok_or_else(|| chatmail_types::ChatmailError::config("turn_secret required"))?;
-    let listen = turn_listen_addr(file_config)?;
+    let mut listen = turn_listen_addr(file_config)?;
+    listen.set_port(effective_turn_port(pool, file_config).await?);
+    if get_bool_setting(pool, settings_keys::TURN_LOCAL_ONLY, false).await? {
+        listen.set_ip(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+    }
     let external = turn_external_addr(pool, file_config, listen, hostname).await?;
     let realm = effective_turn_realm(pool, file_config, hostname).await?;
     let turn_port = effective_turn_port(pool, file_config).await?;

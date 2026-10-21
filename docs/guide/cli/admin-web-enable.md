@@ -1,5 +1,7 @@
 # `madmail admin-web enable`
 
+Configuration precedence is **environment → file → database → defaults**. Explicit environment/file settings are read-only through database-backed commands. File/environment changes require restart. See [configuration sources and migration](../configuration.md).
+
 Parent: [`admin-web`](admin-web.md)
 
 Enable the admin web dashboard

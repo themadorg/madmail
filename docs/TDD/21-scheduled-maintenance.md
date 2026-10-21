@@ -23,13 +23,15 @@ In `storage.imapsql local_mailboxes { … }` (see [`13-configuration.md`](13-con
 
 | Directive | Field | Job |
 |-----------|-------|-----|
-| `retention 24h` | `AppConfig.retention` | Parsed for install/docs parity; **runtime** `prune-old-messages` uses DB settings below |
+| `retention 24h` | `AppConfig.retention` | File alias for `message_retention`; purging also requires `message_retention_enabled true` |
 | `unused_account_retention 720h` | `AppConfig.unused_account_retention` | `prune-unused-accounts` — delete accounts with `first_login_at = 1` and `created_at` before cutoff |
 | `0` or omitted | — | Job disabled |
 
 Durations use Go-style suffixes: `s`, `m`, `h`, `d` (parsed by `chatmail_config::parse_duration`).
 
-**Database toggles (runtime):**
+**Runtime settings (environment → file → database → defaults):**
+
+Use top-level TOML or a `.conf` `settings` block; see [configuration](../guide/configuration.md).
 
 | Setting key | Admin API | Job |
 |-------------|-----------|-----|
@@ -99,7 +101,7 @@ flowchart TB
 
 | Task ID | CLI aliases | Config / trigger | Effect |
 |---------|-------------|------------------|--------|
-| `prune-old-messages` | `retention`, `prune-messages` | `__MESSAGE_RETENTION_ENABLED__` + `__MESSAGE_RETENTION__` in DB | `purge_mail_blobs_older` |
+| `prune-old-messages` | `retention`, `prune-messages` | Resolved `message_retention_enabled` + `message_retention` | `purge_mail_blobs_older` |
 | `prune-unused-accounts` | `prune-unused`, `unused-accounts` | `unused_account_retention` | Remove credentials + quota + maildir; **no** blocklist |
 | `purge-seen` | `purge-read`, `auto-purge-seen` | Manual CLI; or DB + 15s loop | `purge_read_messages` (`cur/`) |
 | `prune-unread-older` | `purge-unread-older` | `--retention` required if not in config | `prune_unread_older` (`new/`) |
@@ -135,7 +137,7 @@ Global flags: `--config`, `--state-dir` (same as other ctl commands). Requires `
 
 | Loop | Interval | When skipped |
 |------|----------|--------------|
-| Periodic (retention + unused accounts) | 1 hour | Message retention disabled in DB and no `unused_account_retention` in config |
+| Periodic (retention + unused accounts) | 1 hour | Effective message retention disabled and no `unused_account_retention` in config |
 | Auto-purge seen | 15 seconds | `__AUTO_PURGE_SEEN__` not `enabled` |
 | Certificate renewal | 24 hours | `tls_mode` ≠ `autocert` or cert still valid (≥30d DNS / ≥4d IP) |
 

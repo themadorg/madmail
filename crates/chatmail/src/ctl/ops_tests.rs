@@ -105,7 +105,7 @@ async fn dispatch_openrelay_enable_disable_status() {
 
 /// File `allow_inbound_remote_rcpt true` + CLI disable must force-deny via DB.
 #[tokio::test]
-async fn dispatch_openrelay_disable_overrides_file_true() {
+async fn dispatch_openrelay_cannot_override_file_true() {
     let (dir, _args, _db, pool) = setup_ctl_env().await;
     let config = dir.path().join("openrelay_file_true.conf");
     std::fs::write(
@@ -113,39 +113,18 @@ async fn dispatch_openrelay_disable_overrides_file_true() {
         "hostname mail.example.org\nallow_inbound_remote_rcpt true\n",
     )
     .unwrap();
-
-    // No DB key yet — file default is true.
-    let cli = parse_cli_with_config(dir.path(), &config, &["openrelay", "status"]);
-    dispatch(&cli).await.unwrap();
+    let cli = parse_cli_with_config(dir.path(), &config, &["openrelay", "disable"]);
+    assert!(dispatch(&cli)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("configuration_locked"));
     assert!(get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
         .await
         .unwrap()
         .is_none());
-
-    let cli = parse_cli_with_config(dir.path(), &config, &["openrelay", "disable"]);
-    dispatch(&cli).await.unwrap();
-    assert_eq!(
-        get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
-            .await
-            .unwrap()
-            .as_deref(),
-        Some("false")
-    );
-
-    // Runtime flag hydrate must match CLI/DB (deny despite file true).
-    let cfg = chatmail_config::AppConfig {
-        allow_inbound_remote_rcpt: true,
-        ..Default::default()
-    };
-    let flag = chatmail_state::InboundRemoteRcptFlag::new(&cfg);
-    flag.hydrate(&pool, &cfg).await.unwrap();
-    assert!(
-        !flag.allowed(),
-        "DB disable must win over file allow_inbound_remote_rcpt true"
-    );
 }
 
-/// CLI enable must turn on the live flag after hydrate even when file default is false.
 #[tokio::test]
 async fn dispatch_openrelay_enable_hydrates_allowed() {
     let (dir, _args, _db, pool) = setup_ctl_env().await;
@@ -560,43 +539,23 @@ async fn dispatch_proxy_configured_toggle_and_settings() {
         .await
         .unwrap());
 
-    let cli = parse_cli_with_config(
-        dir.path(),
-        &config,
-        &["proxy", "cipher", "set", "chacha20-ietf-poly1305"],
-    );
-    dispatch(&cli).await.unwrap();
-    assert_eq!(
-        get_setting(&pool, settings_keys::SS_CIPHER)
+    for args in [
+        vec!["proxy", "cipher", "set", "chacha20-ietf-poly1305"],
+        vec!["proxy", "cipher", "reset"],
+        vec!["proxy", "password", "set", "new-pass"],
+        vec!["proxy", "password", "reset"],
+    ] {
+        let cli = parse_cli_with_config(dir.path(), &config, &args);
+        assert!(dispatch(&cli)
             .await
-            .unwrap()
-            .as_deref(),
-        Some("chacha20-ietf-poly1305")
-    );
-
-    let cli = parse_cli_with_config(dir.path(), &config, &["proxy", "cipher", "reset"]);
-    dispatch(&cli).await.unwrap();
+            .unwrap_err()
+            .to_string()
+            .contains("configuration_locked"));
+    }
     assert!(get_setting(&pool, settings_keys::SS_CIPHER)
         .await
         .unwrap()
         .is_none());
-
-    let cli = parse_cli_with_config(
-        dir.path(),
-        &config,
-        &["proxy", "password", "set", "new-pass"],
-    );
-    dispatch(&cli).await.unwrap();
-    assert_eq!(
-        get_setting(&pool, settings_keys::SS_PASSWORD)
-            .await
-            .unwrap()
-            .as_deref(),
-        Some("new-pass")
-    );
-
-    let cli = parse_cli_with_config(dir.path(), &config, &["proxy", "password", "reset"]);
-    dispatch(&cli).await.unwrap();
     assert!(get_setting(&pool, settings_keys::SS_PASSWORD)
         .await
         .unwrap()
@@ -890,6 +849,42 @@ fn cli_language_and_registration_parse() {
             })
         }) if value == "aes-256-gcm"
     ));
+}
+
+#[tokio::test]
+async fn deployment_file_blocks_admin_enable_and_compound_size_without_partial_write() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+    let config = dir.path().join("protected.toml");
+    std::fs::write(
+        &config,
+        "admin_web_enabled = false\nmax_message_size = \"10M\"\n",
+    )
+    .unwrap();
+    let cli = parse_cli_with_config(dir.path(), &config, &["admin-web", "enable"]);
+    assert!(dispatch(&cli)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("configuration_locked"));
+    let before = get_setting(&pool, settings_keys::APPENDLIMIT)
+        .await
+        .unwrap();
+    let cli = parse_cli_with_config(dir.path(), &config, &["message-size", "set", "20M"]);
+    assert!(dispatch(&cli)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("configuration_locked"));
+    assert_eq!(
+        before,
+        get_setting(&pool, settings_keys::APPENDLIMIT)
+            .await
+            .unwrap()
+    );
+    assert!(get_setting(&pool, settings_keys::ADMIN_WEB_ENABLED)
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]

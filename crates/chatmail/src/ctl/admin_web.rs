@@ -59,6 +59,7 @@ async fn status(args: &Args, ctx: &CtlContext) -> Result<()> {
         return out.emit(serde_json::json!({
             "enabled": enabled,
             "path": effective_path,
+            "configuration_sources": pool.policy().sources(),
         }));
     }
 
@@ -69,6 +70,14 @@ async fn status(args: &Args, ctx: &CtlContext) -> Result<()> {
         .unwrap_or("(default)");
 
     out.blank();
+    for (key, source) in pool.policy().sources() {
+        if key == ADMIN_WEB_PATH || key == ADMIN_WEB_ENABLED {
+            out.line(format!(
+                "  Protected: {} ({source})",
+                chatmail_config::settings_policy::setting_name(&key)
+            ));
+        }
+    }
     out.line(format!(
         "  Admin Web Dashboard:  {}",
         if enabled { "enabled" } else { "disabled" }
@@ -90,9 +99,6 @@ async fn set_flag(args: &Args, ctx: &CtlContext, on: bool) -> Result<()> {
     let out = CtlOut::from_args(args, "admin-web");
     let pool = ctx.open_pool().await?;
     set_setting(&pool, ADMIN_WEB_ENABLED, if on { "true" } else { "false" }).await?;
-    if on {
-        chatmail_admin_web::ensure_default_admin_web_path(&ctx.config, &pool).await?;
-    }
     let path = resolve_admin_web_path(&ctx.config, &pool)
         .await
         .unwrap_or_else(|| DEFAULT_ADMIN_WEB_PATH.into());
@@ -117,6 +123,13 @@ async fn path_cmd(args: &Args, ctx: &CtlContext, path: Option<&str>, reset: bool
     let pool = ctx.open_pool().await?;
 
     if reset {
+        pool.check_settings_writable(&[ADMIN_WEB_PATH])?;
+        let effective = ctx
+            .config
+            .admin_web_path
+            .as_deref()
+            .unwrap_or(DEFAULT_ADMIN_WEB_PATH);
+        validate_web_path(&pool, &ctx.config, effective).await?;
         delete_setting(&pool, ADMIN_WEB_PATH).await?;
         let effective = resolve_admin_web_path(&ctx.config, &pool)
             .await
@@ -140,14 +153,87 @@ async fn path_cmd(args: &Args, ctx: &CtlContext, path: Option<&str>, reset: bool
         return Ok(());
     };
 
-    let normalized = normalize_admin_web_path(new_path)
-        .ok_or_else(|| ChatmailError::config("admin web path must not be empty"))?;
+    let enable_needed = !chatmail_db::get_bool_setting(&pool, ADMIN_WEB_ENABLED, false).await?;
+    pool.check_settings_writable(if enable_needed {
+        &[ADMIN_WEB_PATH, ADMIN_WEB_ENABLED]
+    } else {
+        &[ADMIN_WEB_PATH]
+    })?;
+    let normalized = validate_web_path(&pool, &ctx.config, new_path).await?;
     set_setting(&pool, ADMIN_WEB_PATH, &normalized).await?;
-    set_setting(&pool, ADMIN_WEB_ENABLED, "true").await?;
+    if enable_needed {
+        set_setting(&pool, ADMIN_WEB_ENABLED, "true").await?;
+    }
     notify_http_routes_changed(ctx, &normalized).await?;
     out.done_msg(
         format!("✅ Admin web dashboard enabled at {normalized}"),
         serde_json::json!({ "enabled": true, "path": normalized }),
         format!("Admin web dashboard enabled at {normalized}"),
     )
+}
+
+/// Validate against the effective API path before changing either setting.
+async fn validate_web_path(
+    pool: &chatmail_db::DbPool,
+    config: &chatmail_config::AppConfig,
+    path: &str,
+) -> Result<String> {
+    let path = chatmail_config::settings_policy::validate("admin_web_path", path)?;
+    let path = normalize_admin_web_path(&path)
+        .ok_or_else(|| ChatmailError::config("admin web path must not be empty"))?;
+    let api = chatmail_db::get_setting(pool, chatmail_db::settings_keys::ADMIN_PATH)
+        .await?
+        .or_else(|| config.admin_path.clone())
+        .unwrap_or_else(|| "/api/admin".into());
+    let api = chatmail_config::settings_policy::validate("admin_path", &api)?;
+    if path == api || path.starts_with(&format!("{api}/")) || api.starts_with(&format!("{path}/")) {
+        return Err(ChatmailError::config(
+            "admin API and web paths must not overlap",
+        ));
+    }
+    Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[tokio::test]
+    async fn overlapping_set_and_reset_leave_settings_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args::try_parse_from([
+            "chatmail",
+            "--state-dir",
+            dir.path().to_str().unwrap(),
+            "--config",
+            dir.path().join("missing.conf").to_str().unwrap(),
+        ])
+        .unwrap();
+        let ctx = CtlContext::from_args(&args).unwrap();
+        let pool = ctx.open_pool().await.unwrap();
+        for path in ["/api/admin", "/api/admin/child", "/api"] {
+            assert!(path_cmd(&args, &ctx, Some(path), false).await.is_err());
+            assert!(chatmail_db::get_setting(&pool, ADMIN_WEB_PATH)
+                .await
+                .unwrap()
+                .is_none());
+            assert!(chatmail_db::get_setting(&pool, ADMIN_WEB_ENABLED)
+                .await
+                .unwrap()
+                .is_none());
+        }
+        set_setting(&pool, ADMIN_WEB_PATH, "/panel").await.unwrap();
+        set_setting(&pool, chatmail_db::settings_keys::ADMIN_PATH, "/admin/api")
+            .await
+            .unwrap();
+        assert!(path_cmd(&args, &ctx, None, true).await.is_err());
+        assert_eq!(
+            chatmail_db::get_setting(&pool, ADMIN_WEB_PATH)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("/panel")
+        );
+    }
 }

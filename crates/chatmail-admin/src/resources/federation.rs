@@ -63,6 +63,20 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
         "POST" => {
             let req: FederationPost =
                 serde_json::from_value(body.clone()).map_err(|e| (400, e.to_string()))?;
+            let mut keys = Vec::new();
+            if req.enabled.is_some() {
+                keys.push(settings_keys::FEDERATION_ENABLED);
+            }
+            if let Some(policy) = &req.policy {
+                keys.push(settings_keys::FEDERATION_POLICY);
+                if !matches!(
+                    policy.trim().to_ascii_uppercase().as_str(),
+                    "ACCEPT" | "REJECT"
+                ) {
+                    return Err((400, "policy must be ACCEPT or REJECT".into()));
+                }
+            }
+            st.pool.check_settings_writable(&keys).map_err(db_err)?;
             if let Some(en) = req.enabled {
                 set_setting(
                     &st.pool,

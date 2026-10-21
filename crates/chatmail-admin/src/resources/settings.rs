@@ -418,6 +418,22 @@ pub async fn all_settings(st: &AdminState, method: &str) -> AdminResult {
         json!(federation_effective),
     );
 
+    let mut sources = serde_json::Map::new();
+    for (name, key) in chatmail_config::settings_policy::SETTINGS {
+        let stored = chatmail_db::settings::get_stored_setting(pool, key)
+            .await
+            .map_err(db_err)?;
+        let protected = pool.policy().0.get(*key);
+        let source = protected
+            .map(|p| p.source.as_str())
+            .unwrap_or(if stored.is_some() {
+                "database"
+            } else {
+                "default"
+            });
+        sources.insert((*name).into(), json!({ "source": source, "locked": protected.is_some(), "database_value_present": stored.is_some() }));
+    }
+    body.insert("configuration_sources".into(), Value::Object(sources));
     Ok((200, Some(Value::Object(body))))
 }
 
@@ -712,22 +728,60 @@ pub(crate) async fn generic_setting(
                     if value.is_empty() {
                         return Err((400, "value is required for action 'set'".into()));
                     }
+                    if db_key == settings_keys::ADMIN_PATH
+                        || db_key == settings_keys::ADMIN_WEB_PATH
+                    {
+                        value = chatmail_config::settings_policy::validate(
+                            chatmail_config::settings_policy::setting_name(db_key),
+                            &value,
+                        )
+                        .map_err(|e| (400, e.to_string()))?;
+                        let (other_key, default) = if db_key == settings_keys::ADMIN_PATH {
+                            (settings_keys::ADMIN_WEB_PATH, "/admin")
+                        } else {
+                            (settings_keys::ADMIN_PATH, "/api/admin")
+                        };
+                        let other = get_setting(&st.pool, other_key)
+                            .await
+                            .map_err(db_err)?
+                            .unwrap_or_else(|| default.into());
+                        if value == other
+                            || value.starts_with(&format!("{other}/"))
+                            || other.starts_with(&format!("{value}/"))
+                        {
+                            return Err((400, "admin API and web paths must not overlap".into()));
+                        }
+                    }
+                    let mut enable_web = false;
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
                         value = chatmail_admin_web::normalize_admin_web_path(&value)
                             .ok_or((400, "admin web path must not be empty".into()))?;
-                        set_setting(
-                            &st.pool,
-                            chatmail_db::settings_keys::ADMIN_WEB_ENABLED,
-                            "true",
-                        )
-                        .await
-                        .map_err(db_err)?;
+                        let needs_enable =
+                            !get_bool_setting(&st.pool, settings_keys::ADMIN_WEB_ENABLED, false)
+                                .await
+                                .map_err(db_err)?;
+                        st.pool
+                            .check_settings_writable(if needs_enable {
+                                &[
+                                    settings_keys::ADMIN_WEB_PATH,
+                                    settings_keys::ADMIN_WEB_ENABLED,
+                                ]
+                            } else {
+                                &[settings_keys::ADMIN_WEB_PATH]
+                            })
+                            .map_err(db_err)?;
+                        enable_web = needs_enable;
                     }
                     validate_setting_value(db_key, &value)?;
                     validate_turn_relay_port_setting(st, db_key, &value).await?;
                     set_setting(&st.pool, db_key, &value)
                         .await
                         .map_err(db_err)?;
+                    if enable_web {
+                        set_setting(&st.pool, settings_keys::ADMIN_WEB_ENABLED, "true")
+                            .await
+                            .map_err(db_err)?;
+                    }
                     super::message_size::refresh_message_size_after_setting(st, db_key).await;
                     super::federation_size::refresh_federation_size_after_setting(st, db_key).await;
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
@@ -736,6 +790,30 @@ pub(crate) async fn generic_setting(
                     Ok((200, Some(setting_response(db_key, &value, true, true))))
                 }
                 "reset" => {
+                    if db_key == settings_keys::ADMIN_PATH
+                        || db_key == settings_keys::ADMIN_WEB_PATH
+                    {
+                        st.pool.check_settings_writable(&[db_key]).map_err(db_err)?;
+                        let (default, other_key, other_default) =
+                            if db_key == settings_keys::ADMIN_PATH {
+                                ("/api/admin", settings_keys::ADMIN_WEB_PATH, "/admin")
+                            } else {
+                                ("/admin", settings_keys::ADMIN_PATH, "/api/admin")
+                            };
+                        let other = get_setting(&st.pool, other_key)
+                            .await
+                            .map_err(db_err)?
+                            .unwrap_or_else(|| other_default.into());
+                        if default == other
+                            || default.starts_with(&format!("{other}/"))
+                            || other.starts_with(&format!("{default}/"))
+                        {
+                            return Err((
+                                400,
+                                "reset would overlap the admin API and web paths".into(),
+                            ));
+                        }
+                    }
                     delete_setting(&st.pool, db_key).await.map_err(db_err)?;
                     super::message_size::refresh_message_size_after_setting(st, db_key).await;
                     super::federation_size::refresh_federation_size_after_setting(st, db_key).await;

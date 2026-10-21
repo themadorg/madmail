@@ -236,6 +236,19 @@ both database fallback and the hydrated cache, incorrect passwords stay
 rejected, and unknown accounts on retired domains are never created. Explicit
 admin provisioning remains independent of the first-login JIT allowlist.
 
+## Configuration safeguards (#217)
+
+See [the test matrix](26-configuration-precedence.md#verification-plan). Coverage includes parser parity, explicit false, invalid input, single/batch/list resolution, protected set/reset, compound mutation preflight, service snapshot isolation, retention consumers, admin path/auth routing, and UI source metadata.
+
+### Live configuration-source matrix
+
+`python3 tests/configuration-sources-docker.py --image madmail-local:test-docker`
+checks the shipping image with both file formats and environment overrides. Build
+the image from the current source first. The script reads the actual examples from
+[the configuration guide](../guide/configuration.md), seeds conflicting DB values,
+and checks precedence, explicit false, CLI/API protections, restart, restored DB
+values, and invalid inputs. Containers and volumes are isolated and removed.
+
 ## Raw IMAP/SMTP WebSocket transport
 
 See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.

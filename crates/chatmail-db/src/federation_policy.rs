@@ -70,7 +70,7 @@ mod tests {
     #[tokio::test]
     async fn policy_reads_from_passwords_kv_when_settings_empty() {
         let pool = init_memory_db().await.unwrap();
-        let DbPool::Sqlite(p) = &pool else {
+        let crate::pool::DbConnection::Sqlite(p) = pool.connection() else {
             panic!("memory db is sqlite");
         };
         sqlx::query("DROP TABLE passwords")

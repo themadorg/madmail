@@ -233,9 +233,9 @@ async fn open_sqlite(path: &Path) -> Result<DbPool> {
 }
 
 fn pg_pool(pool: &DbPool) -> Result<&PgPool> {
-    match pool {
-        DbPool::Postgres(p) => Ok(p),
-        DbPool::Sqlite(_) => Err(ChatmailError::config(
+    match pool.connection() {
+        crate::pool::DbConnection::Postgres(p) => Ok(p),
+        crate::pool::DbConnection::Sqlite(_) => Err(ChatmailError::config(
             "internal error: expected Postgres pool",
         )),
     }
@@ -243,12 +243,12 @@ fn pg_pool(pool: &DbPool) -> Result<&PgPool> {
 
 async fn count_rows(pool: &DbPool, table: &str) -> Result<u64> {
     let sql = format!("SELECT COUNT(*) FROM {table}");
-    let n: i64 = match pool {
-        DbPool::Sqlite(p) => sqlx::query_scalar(&sql)
+    let n: i64 = match pool.connection() {
+        crate::pool::DbConnection::Sqlite(p) => sqlx::query_scalar(&sql)
             .fetch_one(p)
             .await
             .map_err(ChatmailError::from)?,
-        DbPool::Postgres(p) => sqlx::query_scalar(&sql)
+        crate::pool::DbConnection::Postgres(p) => sqlx::query_scalar(&sql)
             .fetch_one(p)
             .await
             .map_err(ChatmailError::from)?,
@@ -507,7 +507,7 @@ async fn copy_push_tokens(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
 }
 
 async fn copy_federation_rules(src: &DbPool, dst: &mut PgConnection) -> Result<u64> {
-    let DbPool::Sqlite(sp) = src else {
+    let crate::pool::DbConnection::Sqlite(sp) = src.connection() else {
         return Ok(0);
     };
     let cols: Vec<String> = sqlx::query("PRAGMA table_info(federation_rules)")
@@ -857,7 +857,7 @@ mod tests {
                 std::process::id(),
                 N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             );
-            let DbPool::Postgres(pg) = &admin else {
+            let crate::pool::DbConnection::Postgres(pg) = admin.connection() else {
                 panic!("admin DSN is not Postgres");
             };
             sqlx::query(&format!("CREATE DATABASE {dbname}"))
@@ -881,7 +881,7 @@ mod tests {
         }
 
         async fn drop(self) {
-            if let DbPool::Postgres(pg) = &self.admin {
+            if let crate::pool::DbConnection::Postgres(pg) = self.admin.connection() {
                 let _ = sqlx::query(&format!(
                     "DROP DATABASE IF EXISTS {} WITH (FORCE)",
                     self.dbname
