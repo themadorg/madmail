@@ -459,3 +459,53 @@ fn e2e_openrelay_human_status_and_enable() {
         .success()
         .stdout(predicate::str::contains("allowed"));
 }
+
+#[cfg(unix)]
+#[test]
+fn e2e_custom_system_install_dry_run_has_plan_and_no_side_effects() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("etc/madmail");
+    let state = dir.path().join("lib/madmail");
+    let binary = dir.path().join("bin/madmail");
+    chatmail()
+        .args([
+            "install",
+            "--simple",
+            "--system",
+            "--ip",
+            "127.0.0.1",
+            "--tls-mode",
+            "self_signed",
+            "--dry-run",
+        ])
+        .arg("--config-dir")
+        .arg(&config)
+        .arg("--state-dir")
+        .arg(&state)
+        .arg("--binary-path")
+        .arg(&binary)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Install mode:  system"))
+        .stdout(predicate::str::contains("create/update service account"))
+        .stdout(predicate::str::contains(
+            "install and daemon-reload systemd unit",
+        ))
+        .stdout(predicate::str::contains(binary.to_string_lossy().as_ref()));
+    assert!(!config.exists() && !state.exists() && !binary.exists());
+    chatmail()
+        .args([
+            "install",
+            "--simple",
+            "--local",
+            "--ip",
+            "127.0.0.1",
+            "--tls-mode",
+            "self_signed",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Install mode:  local"))
+        .stdout(predicate::str::contains("skip host account"));
+}

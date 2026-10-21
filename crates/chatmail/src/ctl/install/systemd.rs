@@ -34,22 +34,53 @@ pub fn install_unit(cfg: &InstallConfig) -> Result<()> {
     Ok(())
 }
 
+// Escape unit specifiers everywhere and command environment expansion in ExecStart.
+fn unit_path(path: &Path, command: bool) -> String {
+    let mut value = path.to_string_lossy().replace('%', "%%");
+    if command {
+        value = value.replace('$', "$$");
+    }
+    if value
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '"' | '\\'))
+    {
+        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        value
+    }
+}
+
 /// Build the `.service` unit body. Default FHS paths use `StateDirectory` /
 /// `ConfigurationDirectory`; explicit `--config-dir` / `--state-dir` are reflected
-/// in `ExecStart`, `WorkingDirectory`, and `ReadWritePaths` only.
+/// in `ExecStart`, `WorkingDirectory`, and `ReadWritePaths`. Both layouts retain
+/// `RuntimeDirectory`. Home protection is disabled when a required path needs it.
 pub fn render_systemd_unit(cfg: &InstallConfig) -> String {
     let managed_dirs = if cfg.use_default_systemd_paths {
         format!(
             r#"
 StateDirectory={name}
 ConfigurationDirectory={name}
-RuntimeDirectory={name}
 LogsDirectory={name}"#,
             name = cfg.binary_name,
         )
     } else {
         String::new()
     };
+
+    let protect_home = ![
+        &cfg.state_dir,
+        &cfg.config_dir,
+        &cfg.config_path,
+        &cfg.binary_path,
+        &cfg.cert_path,
+        &cfg.key_path,
+    ]
+    .iter()
+    .any(|path| {
+        ["/home", "/root", "/run/user"]
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+    });
 
     format!(
         r#"[Unit]
@@ -66,11 +97,12 @@ TimeoutStartSec=120
 User={user}
 Group={group}
 WorkingDirectory={state_dir}
+RuntimeDirectory={name}
 {managed_dirs}
 ReadWritePaths={state_dir} {config_dir}
 
 PrivateTmp=true
-ProtectHome=true
+ProtectHome={protect_home}
 ProtectSystem=full
 NoNewPrivileges=true
 
@@ -81,7 +113,7 @@ UMask=0007
 LimitNOFILE=131072
 LimitNPROC=512
 
-ExecStart={binary} --config {config} run --libexec {state_dir}
+ExecStart={binary} --config {config} run --libexec {exec_state_dir}
 Restart=on-failure
 TimeoutStopSec=7s
 KillMode=mixed
@@ -93,11 +125,12 @@ WantedBy=multi-user.target
         name = cfg.binary_name,
         user = cfg.maddy_user,
         group = cfg.maddy_group,
-        state_dir = cfg.state_dir.display(),
+        state_dir = unit_path(&cfg.state_dir, false),
+        exec_state_dir = unit_path(&cfg.state_dir, true),
         managed_dirs = managed_dirs,
-        config_dir = cfg.config_dir.display(),
-        binary = cfg.binary_path.display(),
-        config = cfg.config_path.display(),
+        config_dir = unit_path(&cfg.config_dir, false),
+        binary = unit_path(&cfg.binary_path, true),
+        config = unit_path(&cfg.config_path, true),
     )
 }
 
@@ -164,6 +197,49 @@ mod tests {
     }
 
     #[test]
+    fn home_protection_matches_required_paths() {
+        assert!(render_systemd_unit(&sample_cfg()).contains("ProtectHome=true"));
+        for prefix in ["/home", "/root", "/run/user"] {
+            for field in 0..6 {
+                let mut cfg = sample_cfg();
+                let path = PathBuf::from(format!("{prefix}/custom/mail"));
+                match field {
+                    0 => cfg.state_dir = path,
+                    1 => cfg.config_dir = path,
+                    2 => cfg.config_path = path,
+                    3 => cfg.binary_path = path,
+                    4 => cfg.cert_path = path,
+                    _ => cfg.key_path = path,
+                }
+                assert!(render_systemd_unit(&cfg).contains("ProtectHome=false"));
+            }
+        }
+        let mut cfg = sample_cfg();
+        cfg.state_dir = PathBuf::from("/home-other/mail");
+        assert!(render_systemd_unit(&cfg).contains("ProtectHome=true"));
+    }
+
+    #[test]
+    fn paths_are_escaped_for_systemd_not_interpreted() {
+        assert_eq!(
+            unit_path(Path::new("/srv/mail data"), false),
+            "\"/srv/mail data\""
+        );
+        assert_eq!(
+            unit_path(Path::new("/srv/%n/$HOME"), false),
+            "/srv/%%n/$HOME"
+        );
+        assert_eq!(
+            unit_path(Path::new("/srv/%n/$HOME"), true),
+            "/srv/%%n/$$HOME"
+        );
+        assert_eq!(
+            unit_path(Path::new("/srv/\"mail"), true),
+            "\"/srv/\\\"mail\""
+        );
+    }
+
+    #[test]
     fn default_paths_use_state_and_configuration_directory() {
         let unit = render_systemd_unit(&sample_cfg());
         assert!(unit.contains("StateDirectory=madmail"));
@@ -186,6 +262,7 @@ mod tests {
 
         let unit = render_systemd_unit(&cfg);
         assert!(!unit.contains("StateDirectory="));
+        assert!(unit.contains("RuntimeDirectory=madmail"));
         assert!(!unit.contains("ConfigurationDirectory="));
         assert!(unit.contains("WorkingDirectory=/tmp/sd"));
         assert!(unit.contains("ReadWritePaths=/tmp/sd /tmp/mm"));

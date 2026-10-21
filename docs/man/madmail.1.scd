@@ -62,7 +62,10 @@ Extended documentation:
 	Write configuration, TLS material, databases, optional systemd unit,
 	service user, system\-wide binary, manual page, and shell tab
 	completion scripts.
-	See EXAMPLES and NOTES.
+	Use *--system* for a Unix host service with custom paths, or *--local*
+	for bootstrap without host changes. *--dry-run* reports the selected
+	mode and planned actions. *--skip-user* and *--skip-systemd* remain
+	independent opt-outs. See EXAMPLES and NOTES.
 
 *uninstall*
 	Remove the service, configuration, and data.

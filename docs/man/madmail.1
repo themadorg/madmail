@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "madmail" "1" "2026-10-07" "2.31.3" "User Commands"
+.TH "madmail" "1" "2026-10-17" "2.36.0" "User Commands"
 .PP
 .SH NAME
 .PP
@@ -72,7 +72,10 @@ Read configuration from \fB--config\fR and persistent state from
 Write configuration, TLS material, databases, optional systemd unit,
 service user, system-wide binary, manual page, and shell tab
 completion scripts.\&
-See EXAMPLES and NOTES.\&
+Use \fB--system\fR for a Unix host service with custom paths, or \fB--local\fR
+for bootstrap without host changes.\& \fB--dry-run\fR reports the selected
+mode and planned actions.\& \fB--skip-user\fR and \fB--skip-systemd\fR remain
+independent opt-outs.\& See EXAMPLES and NOTES.\&
 .PP
 .RE
 \fBuninstall\fR

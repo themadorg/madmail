@@ -32,6 +32,14 @@ pub struct InstallArgs {
     #[arg(long, short = 's')]
     pub simple: bool,
 
+    /// Unix system install: create service account, install binary and systemd unit, even with custom paths.
+    #[arg(long, conflicts_with = "local")]
+    pub system: bool,
+
+    /// Local bootstrap only; do not install host users, binary, docs or systemd unit.
+    #[arg(long, conflicts_with = "system")]
+    pub local: bool,
+
     #[arg(long)]
     pub domain: Option<String>,
 

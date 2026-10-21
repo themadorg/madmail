@@ -250,3 +250,20 @@ Operator webhooks are configured through the Services dashboard or authenticated
 supplies API credentials. See [the operator guide](../guide/operator-webhooks.md)
 for the complete API and delivery contract. The maintained man page source also
 documents this workflow.
+
+## Explicit Unix installation mode (issue #216)
+
+Directory choice and installation intent are independent. `install --system`
+requests root-only service-account creation, ownership setup, binary installation,
+and systemd unit installation even with custom paths. `--local` requests only local
+configuration/certificate/database bootstrap; no host docs, binary, account or unit
+changes. Flags conflict. Without either flag, preserve the legacy FHS/default-path
+heuristic and explain local selection with a hint to use `--system`.
+
+`--skip-user` and `--skip-systemd` remain independent opt-outs within system mode.
+Explicit Unix system mode is rejected on Windows (use Windows service flags).
+System paths must be absolute. Custom systemd units retain RuntimeDirectory while
+avoiding StateDirectory/ConfigurationDirectory aliases for custom persistent paths.
+Dry-run lists planned actions without creating files, accounts or invoking systemctl.
+Tests cover CLI conflicts, default/auto/explicit modes, custom unit paths, dry-run
+side-effect absence, root enforcement and isolated installation/idempotence.

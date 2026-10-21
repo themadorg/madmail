@@ -236,6 +236,53 @@ both database fallback and the hydrated cache, incorrect passwords stay
 rejected, and unknown accounts on retired domains are never created. Explicit
 admin provisioning remains independent of the first-login JIT allowlist.
 
+## Custom-path installer regression (#216)
+
+Cover mutually exclusive `--system`/`--local`, legacy automatic selection, explicit
+custom-path system mode, skip flags, absolute-path validation, Windows rejection of
+Unix system mode, custom systemd paths and RuntimeDirectory. CLI dry-run integration
+tests assert action reporting and absence of filesystem writes. Verify real account,
+ownership, binary and unit installation in an isolated container; never exercise
+host provisioning against the developer machine as a test.
+
+Run the provisioning regression with `cargo build -p chatmail`, followed by
+`bash tests/install-system-docker.sh`. The script builds a disposable Debian 13
+image and mounts only the test binary read-only. It validates real account creation,
+config/DB ownership, binary installation, unit syntax (`systemd-analyze verify`),
+boot as the service user, repeated installation and independent skip flags. It
+stubs only `systemctl daemon-reload` because systemd is not PID 1; it does not verify
+an actual systemd service start.
+
+Verification for #216: full workspace 1,067 passed / zero failed / three ignored;
+final installer subset 17 passed, plus the CLI dry-run integration test; strict
+workspace clippy, fmt, man-page generation/groff, and the Docker provisioning
+regression passed. Windows-specific behavior is covered by a cfg-gated regression
+for the Windows CI runner; it was not executed locally.
+
+### Expanded installer E2E matrix
+
+`make test-install-docker` builds the installer with dev debug symbols and incremental
+compilation disabled and two build jobs, then runs the isolated Debian test. This
+limits local build storage and memory without changing release or normal dev profiles.
+The image receives only its Dockerfile as build context; source/build directories
+are not uploaded to Docker. The binary is mounted read-only for the test.
+
+Coverage includes flag conflicts; automatic FHS/custom and explicit modes; JSON
+plans (including certificate-only and skip flags); rejected relative/control-character
+paths; dry-run side-effect absence; root enforcement; root and non-root local
+bootstrap; real account, ownership, binary and host-doc installation; generated-unit
+verification; boot as the service user; repeated installation; each skip flag
+independently and combined; an escaped binary path; and propagation of daemon-reload
+failure. Negative assertions explicitly fail the suite when an unexpected user or
+unit directive is present. An actual systemd PID-1 start remains outside this test;
+only daemon-reload is stubbed. Windows service installation remains a separate flow.
+
+Expanded matrix verification: `make test-install-docker` passed after a clean
+compact build, and all 17 installer unit tests passed with the same compact
+profiles. The test Docker build context was 2 KiB. No production/release profile
+settings were changed. Failure-path checks include invalid mode/path input,
+non-root system installation, and a nonzero daemon-reload result.
+
 ## Raw IMAP/SMTP WebSocket transport
 
 See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.

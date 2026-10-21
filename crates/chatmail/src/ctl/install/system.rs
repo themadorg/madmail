@@ -49,6 +49,12 @@ pub fn create_service_user(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
+    if !dry_run {
+        if let Some(parent) = cfg.state_dir.parent() {
+            fs::create_dir_all(parent).map_err(|e| io_error("mkdir", parent, e))?;
+        }
+    }
+
     let exists = Command::new("id")
         .arg(&cfg.maddy_user)
         .output()
@@ -124,6 +130,19 @@ fn ensure_service_account(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
         }
     }
 
+    let passwd = Command::new("getent")
+        .args(["passwd", &cfg.maddy_user])
+        .output()
+        .map_err(|e| ChatmailError::config(format!("getent passwd: {e}")))?;
+    let passwd_text = String::from_utf8_lossy(&passwd.stdout);
+    let previous_home = passwd_text
+        .lines()
+        .next()
+        .filter(|_| passwd.status.success())
+        .and_then(|line| line.split(':').nth(5))
+        .filter(|home| !home.is_empty())
+        .ok_or_else(|| ChatmailError::config(format!("cannot read home for {}", cfg.maddy_user)))?;
+
     let status = Command::new("usermod")
         .args([
             "-d",
@@ -138,8 +157,19 @@ fn ensure_service_account(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
         .status()
         .map_err(|e| ChatmailError::config(format!("usermod: {e}")))?;
     if !status.success() {
+        // A failed move can still update passwd. Restore only the account entry:
+        // using -m again could move or overwrite data left by the failed command.
+        let rollback = Command::new("usermod")
+            .args(["-d", previous_home, &cfg.maddy_user])
+            .status();
+        let recovery = match rollback {
+            Ok(status) if status.success() => format!("previous home restored to {previous_home}"),
+            result => format!(
+                "could not restore previous home {previous_home}: {result:?}; repair the account manually"
+            ),
+        };
         return Err(ChatmailError::config(format!(
-            "usermod failed for {} (home must be absolute, e.g. {})",
+            "usermod failed for {} while moving home to {}; {recovery}",
             cfg.maddy_user,
             cfg.state_dir.display()
         )));
