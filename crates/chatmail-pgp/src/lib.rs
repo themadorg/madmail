@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use chatmail_types::{ChatmailError, Result};
-use mail_parser::{Message, MessageParser, MimeHeaders};
+use mail_parser::{Message, MessageParser, MessagePart, MimeHeaders, PartType};
 
 #[derive(Debug, Clone, Default)]
 pub struct EnforceOptions {
@@ -25,14 +25,16 @@ pub struct EnforceOptions {
 }
 
 /// PGP-only policy gate (Madmail `pgp_verify.EnforceEncryption`).
+///
+/// Accepts:
+/// - Well-formed PGP/MIME (`multipart/encrypted` root with an
+///   `application/pgp-encrypted` control part — not a raw substring anywhere)
+/// - Secure-Join handshake MIME
+/// - Allowed bounce reports (`mailer-daemon` + `multipart/report`)
+///
+/// Rejects unencrypted mail, including messages that only mention
+/// `application/pgp-encrypted` in headers, body text, or MIME parameters.
 pub fn enforce_encryption(raw: &[u8], opts: &EnforceOptions) -> Result<()> {
-    if raw
-        .windows(b"application/pgp-encrypted".len())
-        .any(|w| w == b"application/pgp-encrypted")
-    {
-        return Ok(());
-    }
-
     if is_allowed_bounce_raw(raw, &opts.mail_from) {
         return Ok(());
     }
@@ -47,32 +49,53 @@ pub fn enforce_encryption(raw: &[u8], opts: &EnforceOptions) -> Result<()> {
         return Ok(());
     }
 
-    let ct = msg
-        .content_type()
-        .map(|c| c.ctype().to_ascii_lowercase())
-        .unwrap_or_default();
-    let raw_lc = std::str::from_utf8(raw)
-        .map(|s| s.to_ascii_lowercase())
-        .unwrap_or_default();
+    if is_valid_pgp_mime(&msg) {
+        return Ok(());
+    }
 
-    if ct.contains("multipart/encrypted") || raw_lc.contains("multipart/encrypted") {
+    // Declared as multipart/encrypted but missing the control part.
+    if is_multipart_encrypted_root(&msg) {
         return Err(ChatmailError::EncryptionNeeded(
             "invalid PGP/MIME structure".into(),
         ));
     }
 
-    if ct.contains("multipart/mixed") || raw_lc.contains("multipart/mixed") {
-        if validate_secure_join_mime(&msg, raw) {
-            return Ok(());
-        }
-        return Err(ChatmailError::EncryptionNeeded(
-            "Invalid Unencrypted Mail".into(),
-        ));
+    if validate_secure_join_mime(&msg, raw) {
+        return Ok(());
     }
 
     Err(ChatmailError::EncryptionNeeded(
         "Invalid Unencrypted Mail".into(),
     ))
+}
+
+/// Root Content-Type is `multipart/encrypted`.
+fn is_multipart_encrypted_root(msg: &Message<'_>) -> bool {
+    msg.is_content_type("multipart", "encrypted")
+}
+
+/// Real PGP/MIME: root is `multipart/encrypted` and some part is
+/// `Content-Type: application/pgp-encrypted` (RFC 3156 control part).
+fn is_valid_pgp_mime(msg: &Message<'_>) -> bool {
+    is_multipart_encrypted_root(msg) && has_pgp_encrypted_control_part(msg)
+}
+
+fn has_pgp_encrypted_control_part(msg: &Message<'_>) -> bool {
+    for part in &msg.parts {
+        if part_is_pgp_encrypted_control(part) {
+            return true;
+        }
+        if let PartType::Message(nested) = &part.body {
+            if has_pgp_encrypted_control_part(nested) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn part_is_pgp_encrypted_control(part: &MessagePart<'_>) -> bool {
+    part.is_content_type("application", "pgp-encrypted")
 }
 
 /// Delta Chat Secure-Join handshake (Madmail `isSecureJoinHeader` + `streamValidateSecureJoinMIME`).
@@ -84,7 +107,54 @@ fn validate_secure_join_mime(msg: &Message<'_>, raw: &[u8]) -> bool {
     if !step.starts_with("vc-") && !step.starts_with("vg-") {
         return false;
     }
+
+    // Require multipart/mixed (parsed Content-Type, or Content-Type header only —
+    // not a bare body substring).
+    let is_mixed = msg.is_content_type("multipart", "mixed")
+        || std::str::from_utf8(raw)
+            .map(header_content_type_is_multipart_mixed)
+            .unwrap_or(false);
+    if !is_mixed {
+        return false;
+    }
+
     secure_join_body_prefix(msg) || secure_join_body_raw(raw)
+}
+
+/// `Content-Type:` header (not body) is multipart/mixed.
+fn header_content_type_is_multipart_mixed(text: &str) -> bool {
+    let Some((headers, _)) = split_headers_body(text) else {
+        return false;
+    };
+    let mut continued = String::new();
+    for line in headers.lines() {
+        if line.starts_with([' ', '\t']) {
+            continued.push(' ');
+            continued.push_str(line.trim());
+            continue;
+        }
+        if !continued.is_empty() {
+            if content_type_line_is_multipart_mixed(&continued) {
+                return true;
+            }
+            continued.clear();
+        }
+        if line.to_ascii_lowercase().starts_with("content-type:") {
+            continued = line.to_string();
+        }
+    }
+    if !continued.is_empty() && content_type_line_is_multipart_mixed(&continued) {
+        return true;
+    }
+    false
+}
+
+fn content_type_line_is_multipart_mixed(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("content-type:").map(str::trim) else {
+        return false;
+    };
+    rest.starts_with("multipart/mixed")
 }
 
 fn secure_join_step_raw(raw: &[u8]) -> Option<String> {
@@ -162,11 +232,17 @@ fn is_allowed_bounce(msg: &Message<'_>, mail_from: &str) -> bool {
     if !mail_from.to_ascii_lowercase().contains("mailer-daemon") {
         return false;
     }
-    let ct = msg
-        .content_type()
-        .map(|c| c.ctype().to_ascii_lowercase())
-        .unwrap_or_default();
-    ct.contains("multipart/report")
+    msg.is_content_type("multipart", "report")
+        || msg
+            .content_type()
+            .map(|c| {
+                let t = c.ctype().to_ascii_lowercase();
+                t.contains("multipart/report")
+                    || (t == "multipart"
+                        && c.subtype()
+                            .is_some_and(|s| s.eq_ignore_ascii_case("report")))
+            })
+            .unwrap_or(false)
 }
 
 /// Build an unencrypted `vc-request` like relay-ping / Delta Chat Bob step 2.
@@ -255,5 +331,273 @@ mod tests {
     fn test_multipart_encrypted_without_pgp_part_rejected() {
         let raw = b"From: a@b.test\r\nTo: c@d.test\r\nContent-Type: multipart/encrypted; boundary=x\r\n\r\n--x\r\nContent-Type: text/plain\r\n\r\nnope\r\n--x--\r\n";
         assert!(enforce_encryption(raw, &EnforceOptions::default()).is_err());
+    }
+
+    // --- Substring-bypass regression (correct policy) ---
+    //
+    // Reject unencrypted mail when `application/pgp-encrypted` appears only in
+    // headers, body text, MIME params, etc. Accept only real PGP/MIME, Secure-Join,
+    // or bounce.
+
+    const MARKER: &str = "application/pgp-encrypted";
+
+    fn assert_encryption_needed(raw: &[u8], why: &str) {
+        assert!(
+            matches!(
+                enforce_encryption(raw, &EnforceOptions::default()),
+                Err(ChatmailError::EncryptionNeeded(_))
+            ),
+            "{why}"
+        );
+    }
+
+    fn plain_with(extra_headers: &str, body: &str) -> Vec<u8> {
+        format!(
+            "From: a@b.test\r\nTo: c@d.test\r\n\
+MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\
+{extra_headers}\
+\r\n\
+{body}"
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_body_only() {
+        assert_encryption_needed(
+            &plain_with("Subject: hi\r\n", &format!("not encrypted\r\n{MARKER}\r\n")),
+            "marker only in body",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_subject_only() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: {MARKER} subject-only\r\n"),
+                "plain body without token\r\n",
+            ),
+            "marker only in Subject",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_subject_and_body() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: {MARKER}\r\n"),
+                &format!("hello\r\n{MARKER}\r\n"),
+            ),
+            "marker in subject+body",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_from_header() {
+        let raw = format!(
+            "From: \"{MARKER}\" <a@b.test>\r\nTo: c@d.test\r\n\
+MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\
+Subject: hi\r\n\r\nplain body\r\n"
+        );
+        assert_encryption_needed(raw.as_bytes(), "marker only in From display-name");
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_to_header() {
+        let raw = format!(
+            "From: a@b.test\r\nTo: \"{MARKER}\" <c@d.test>\r\n\
+MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\
+Subject: hi\r\n\r\nplain body\r\n"
+        );
+        assert_encryption_needed(raw.as_bytes(), "marker only in To");
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_reply_to() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: hi\r\nReply-To: {MARKER}@evil.test\r\n"),
+                "plain\r\n",
+            ),
+            "marker only in Reply-To",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_message_id() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: hi\r\nMessage-ID: <{MARKER}@b.test>\r\n"),
+                "plain\r\n",
+            ),
+            "marker only in Message-ID",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_user_agent() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: hi\r\nUser-Agent: FakeClient ({MARKER})\r\n"),
+                "plain\r\n",
+            ),
+            "marker only in User-Agent",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_x_header() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: hi\r\nX-Bypass: {MARKER}\r\n"),
+                "plain\r\n",
+            ),
+            "marker only in X-Bypass",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_as_content_type_name_param() {
+        let raw = format!(
+            "From: a@b.test\r\nTo: c@d.test\r\nSubject: hi\r\n\
+Content-Type: text/plain; name=\"{MARKER}\"\r\n\r\nplain body\r\n"
+        );
+        assert_encryption_needed(raw.as_bytes(), "marker only as Content-Type name=");
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_as_content_disposition_filename() {
+        let raw = format!(
+            "From: a@b.test\r\nTo: c@d.test\r\nSubject: hi\r\n\
+Content-Type: text/plain\r\n\
+Content-Disposition: inline; filename=\"{MARKER}\"\r\n\r\nplain body\r\n"
+        );
+        assert_encryption_needed(raw.as_bytes(), "marker only as filename=");
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_html_body() {
+        let raw = format!(
+            "From: a@b.test\r\nTo: c@d.test\r\nSubject: hi\r\n\
+Content-Type: text/html; charset=utf-8\r\n\r\n\
+<html><body><p>hello {MARKER}</p></body></html>\r\n"
+        );
+        assert_encryption_needed(raw.as_bytes(), "marker mid HTML body");
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_mid_sentence_body() {
+        assert_encryption_needed(
+            &plain_with(
+                "Subject: hi\r\n",
+                &format!("please ignore: prefix {MARKER} suffix, still cleartext\r\n"),
+            ),
+            "marker mid-sentence in body",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_multipart_alternative() {
+        let raw = format!(
+            "From: a@b.test\r\nTo: c@d.test\r\nSubject: hi\r\n\
+Content-Type: multipart/alternative; boundary=\"alt\"\r\n\r\n\
+--alt\r\nContent-Type: text/plain\r\n\r\n{MARKER}\r\n\
+--alt\r\nContent-Type: text/html\r\n\r\n<html>hi</html>\r\n\
+--alt--\r\n"
+        );
+        assert_encryption_needed(raw.as_bytes(), "marker inside multipart/alternative");
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_as_mime_boundary() {
+        let raw = format!(
+            "From: a@b.test\r\nTo: c@d.test\r\nSubject: hi\r\n\
+Content-Type: multipart/mixed; boundary=\"{MARKER}\"\r\n\r\n\
+--{MARKER}\r\nContent-Type: text/plain\r\n\r\nhello\r\n\
+--{MARKER}--\r\n"
+        );
+        assert_encryption_needed(raw.as_bytes(), "marker used only as MIME boundary");
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_comments_header() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: hi\r\nComments: {MARKER}\r\n"),
+                "plain\r\n",
+            ),
+            "marker only in Comments",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_keywords_header() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: hi\r\nKeywords: foo, {MARKER}, bar\r\n"),
+                "plain\r\n",
+            ),
+            "marker only in Keywords",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_references() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: hi\r\nReferences: <{MARKER}@b.test>\r\n"),
+                "plain\r\n",
+            ),
+            "marker only in References",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_received() {
+        assert_encryption_needed(
+            &plain_with(
+                &format!("Subject: hi\r\nReceived: from x ({MARKER}); date\r\n"),
+                "plain\r\n",
+            ),
+            "marker only in Received",
+        );
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_in_headerless_style_body() {
+        // Still has minimal routing headers (SMTP always has them); no Content-Type.
+        let raw = format!("From: a@b.test\r\nTo: c@d.test\r\nSubject: hi\r\n\r\n{MARKER}\r\n");
+        assert_encryption_needed(raw.as_bytes(), "marker-only body without Content-Type");
+    }
+
+    #[test]
+    fn test_reject_pgp_encrypted_marker_with_noise_prefix_suffix() {
+        assert_encryption_needed(
+            &plain_with("Subject: hi\r\n", &format!("XXX{MARKER}YYY\r\n")),
+            "marker with surrounding noise in body",
+        );
+    }
+
+    /// Control: near-miss strings without the exact marker must still reject (already does).
+    #[test]
+    fn test_reject_near_miss_without_exact_marker() {
+        for body in [
+            "application/pgp-signature\r\n",
+            "application/pgp-keys\r\n",
+            "multipart/encrypted\r\n",
+            "pgp-encrypted\r\n",
+            "application/pgp\r\n",
+        ] {
+            assert_encryption_needed(
+                &plain_with("Subject: hi\r\n", body),
+                &format!("near-miss body {body:?} must remain rejected"),
+            );
+        }
+    }
+
+    /// Control: real PGP/MIME still accepted (gate must not become total reject).
+    #[test]
+    fn test_still_accept_real_pgp_mime_after_flaw_cases() {
+        assert!(enforce_encryption(PGP_MIME, &EnforceOptions::default()).is_ok());
     }
 }
