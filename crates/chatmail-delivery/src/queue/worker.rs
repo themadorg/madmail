@@ -22,6 +22,7 @@ use chatmail_types::Result;
 use tokio::sync::{mpsc, Semaphore};
 use tracing::{info, warn};
 
+use crate::dsn::{deliver_failure_notice, FailureKind, FailureNotice};
 use crate::router::{DeliveryContext, OutboundJob};
 use crate::transport::{deliver_remote, DeliveryOutcome};
 
@@ -143,7 +144,13 @@ impl OutboundQueue {
                 continue;
             }
             if self.config.is_expired(&meta) {
-                self.fail_expired(&id, &meta).await;
+                let data = self
+                    .store
+                    .load(&id)
+                    .await
+                    .map(|(_, data)| data)
+                    .unwrap_or_default();
+                self.fail_expired(&id, &meta, &data).await;
                 continue;
             }
             let run_at = meta.next_attempt_unix.max(min_start);
@@ -208,7 +215,7 @@ impl OutboundQueue {
         };
 
         if self.config.is_expired(&meta) {
-            self.fail_expired(id, &meta).await;
+            self.fail_expired(id, &meta, &data).await;
             return;
         }
 
@@ -235,6 +242,8 @@ impl OutboundQueue {
                     error = %reason,
                     "outbound delivery permanent failure"
                 );
+                self.tell_sender(&meta, &job.data, &reason, FailureKind::Permanent)
+                    .await;
                 self.store.remove(id).await;
             }
             DeliveryOutcome::Temporary { reason } => {
@@ -247,6 +256,8 @@ impl OutboundQueue {
                         error = %reason,
                         "outbound delivery exceeded max_tries, dropping"
                     );
+                    self.tell_sender(&meta, &job.data, &reason, FailureKind::GaveUp)
+                        .await;
                     self.store.remove(id).await;
                     return;
                 }
@@ -268,7 +279,7 @@ impl OutboundQueue {
         }
     }
 
-    async fn fail_expired(&self, id: &str, meta: &super::store::QueueMeta) {
+    async fn fail_expired(&self, id: &str, meta: &super::store::QueueMeta, data: &[u8]) {
         let age_secs = now_unix().saturating_sub(meta.effective_queued_at());
         warn!(
             %id,
@@ -278,6 +289,32 @@ impl OutboundQueue {
             last_error = ?meta.last_error,
             "outbound delivery expired (max_delivery_time), marking failed and removing from queue"
         );
+        let reason = meta
+            .last_error
+            .clone()
+            .unwrap_or_else(|| "delivery time expired".into());
+        self.tell_sender(meta, data, &reason, FailureKind::Expired)
+            .await;
         self.store.remove(id).await;
+    }
+
+    async fn tell_sender(
+        &self,
+        meta: &super::store::QueueMeta,
+        data: &[u8],
+        reason: &str,
+        kind: FailureKind,
+    ) {
+        deliver_failure_notice(
+            &self.ctx,
+            FailureNotice {
+                mail_from: &meta.mail_from,
+                rcpt_to: &meta.rcpt_to,
+                reason,
+                original: data,
+                kind,
+            },
+        )
+        .await;
     }
 }
