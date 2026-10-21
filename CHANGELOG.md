@@ -1,3 +1,9 @@
+# [2.38.1](https://github.com/themadorg/madmail/compare/v2.38.0-unstable...v2.38.1-unstable) (2026-10-21)
+
+### Bug Fixes
+
+* upgrade webpki crates flagged by cargo audit ([5e9842a](https://github.com/themadorg/madmail/commit/5e9842aa013249fb73dcf3a16291e9ed7f0f3e2c))
+
 # [2.38.0](https://github.com/themadorg/madmail/compare/v2.37.0-unstable...v2.38.0-unstable) (2026-10-20)
 
 ### Features
