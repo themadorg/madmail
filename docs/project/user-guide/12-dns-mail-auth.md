@@ -74,7 +74,7 @@ Scripts can use `madmail dkim show --json` and read `data.txt` / `data.dns_fqdn`
 
 ## Federation vs SMTP authentication
 
-Chatmail servers prefer **HTTP federation**, then SMTP on port 25.
+Chatmail servers prefer **HTTP federation**, then SMTP on port 25. `madmail federation transport` can block `https`, plain `http`, or `smtp` individually. A missing setting stays allowed. `smtp` here is port 25, including STARTTLS when the peer offers it.
 
 **Madmail outbound** (you → them) posts to the **address domain** (`user@this-name`):
 

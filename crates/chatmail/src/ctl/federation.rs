@@ -17,10 +17,13 @@
 
 //! `chatmail federation` — Madmail `ctl/federation.go`.
 
-use chatmail_config::cli::FederationCommand;
+use chatmail_config::cli::{FederationCommand, FederationTransportCommand};
 use chatmail_config::Args;
-use chatmail_db::{federation_policy_label, set_federation_policy_label};
-use chatmail_state::{FederationPolicyCache, FederationSilentDismissCache, FederationTracker};
+use chatmail_db::{federation_policy_label, set_federation_policy_label, DbPool};
+use chatmail_state::{
+    load_transport_policy, parse_transport_mode, set_transport_mode, FederationPolicyCache,
+    FederationSilentDismissCache, FederationTracker, TransportName,
+};
 use chatmail_types::{ChatmailError, Result};
 
 use super::context::CtlContext;
@@ -242,8 +245,58 @@ pub async fn federation(args: &Args, cmd: &FederationCommand) -> Result<()> {
                 ));
             }
         }
+        FederationCommand::Transport { cmd } => {
+            return transport_cmd(args, &pool, cmd.as_ref()).await;
+        }
     }
     Ok(())
+}
+
+async fn transport_cmd(
+    args: &Args,
+    pool: &DbPool,
+    cmd: Option<&FederationTransportCommand>,
+) -> Result<()> {
+    match cmd {
+        None | Some(FederationTransportCommand::Status) => {
+            let policy = load_transport_policy(pool).await?;
+            let out = CtlOut::from_args(args, "federation transport status");
+            if out.is_json() {
+                return out.emit(serde_json::json!({
+                    "https": policy.mode(TransportName::Https),
+                    "http": policy.mode(TransportName::Http),
+                    "smtp": policy.mode(TransportName::Smtp),
+                }));
+            }
+            out.line("[ FEDERATION TRANSPORT ]");
+            out.line(format!("HTTPS: {}", policy.mode(TransportName::Https)));
+            out.line(format!("HTTP:  {}", policy.mode(TransportName::Http)));
+            out.line(format!("SMTP:  {}", policy.mode(TransportName::Smtp)));
+            out.blank();
+            out.line("Unset transports stay allowed.");
+            out.line("Apply to a running server: madmail reload");
+            Ok(())
+        }
+        Some(FederationTransportCommand::Set { transport, mode }) => {
+            let name = TransportName::parse(transport)?;
+            let allow = parse_transport_mode(mode)?;
+            set_transport_mode(pool, name, allow).await?;
+            let out = CtlOut::from_args(args, "federation transport set");
+            let label = if allow { "allowed" } else { "blocked" };
+            out.done_msg(
+                format!(
+                    "Success: outbound {} {label}. Apply to a running server: madmail reload",
+                    name.as_str().to_ascii_uppercase()
+                ),
+                serde_json::json!({
+                    "transport": name.as_str(),
+                    "mode": if allow { "allow" } else { "block" },
+                    "reload_required": true,
+                }),
+                format!("Outbound {} {label}", name.as_str().to_ascii_uppercase()),
+            )
+        }
+    }
 }
 
 fn rule_action(policy: &str) -> &'static str {

@@ -702,6 +702,39 @@ Does not create a key (`generated` is always `false`). Missing key or IP-literal
 }
 ```
 
+### `federation transport status`
+
+```json
+{
+  "ok": true,
+  "command": "federation transport status",
+  "data": {
+    "https": "allow",
+    "http": "block",
+    "smtp": "allow"
+  }
+}
+```
+
+`allow` and `block` are the only stored modes. A missing key is reported as `allow`.
+
+### `federation transport set`
+
+```json
+{
+  "ok": true,
+  "command": "federation transport set",
+  "message": "Outbound HTTP blocked",
+  "data": {
+    "transport": "http",
+    "mode": "block",
+    "reload_required": true
+  }
+}
+```
+
+`reload_required` means a running server needs `madmail reload` before the worker sees the CLI change.
+
 ### `federation policy` / `block` / `allow` / `remove` / `flush`
 
 ```json

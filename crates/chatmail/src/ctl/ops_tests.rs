@@ -18,9 +18,10 @@
 //! In-process tests for operator CLI commands.
 
 use chatmail_config::cli::{
-    DkimCommand, EndpointCacheCommand, FederationCommand, IrohCommand, LanguageCommand,
-    OpenrelayCommand, PortCommand, PortServiceCommand, ProxyCommand, ProxySettingCommand,
-    RegistrationCommand, RegistrationTokensCommand, ServiceToggleCommand, SharingCommand,
+    DkimCommand, EndpointCacheCommand, FederationCommand, FederationTransportCommand, IrohCommand,
+    LanguageCommand, OpenrelayCommand, PortCommand, PortServiceCommand, ProxyCommand,
+    ProxySettingCommand, RegistrationCommand, RegistrationTokensCommand, ServiceToggleCommand,
+    SharingCommand,
 };
 use chatmail_config::{Cli, Command};
 use chatmail_db::{
@@ -703,6 +704,40 @@ async fn dispatch_endpoint_cache_crud() {
 }
 
 #[tokio::test]
+async fn dispatch_federation_transport_set_persists() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+
+    let cli = parse_cli(
+        dir.path(),
+        &["federation", "transport", "set", "http", "block"],
+    );
+    dispatch(&cli).await.unwrap();
+    assert_eq!(
+        get_setting(&pool, settings_keys::FEDERATION_TRANSPORT_HTTP)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("block")
+    );
+    assert!(
+        get_setting(&pool, settings_keys::FEDERATION_TRANSPORT_HTTPS)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let cli = parse_cli(
+        dir.path(),
+        &["federation", "transport", "set", "smtp", "nope"],
+    );
+    let err = dispatch(&cli).await.unwrap_err().to_string();
+    assert!(err.contains("allow") || err.contains("block"), "{err}");
+
+    let cli = parse_cli(dir.path(), &["federation", "transport"]);
+    dispatch(&cli).await.unwrap();
+}
+
+#[tokio::test]
 async fn dispatch_status_shows_registered_users() {
     let (dir, _args, _db, pool) = setup_ctl_env().await;
     chatmail_db::passwords::create_user(&pool, "u@x.org", "bcrypt:test")
@@ -744,6 +779,17 @@ fn cli_language_and_registration_parse() {
         Some(Command::Federation(FederationCommand::Policy {
             policy
         })) if policy == "accept"
+    ));
+
+    let cli = parse_cli(
+        std::path::Path::new("/tmp"),
+        &["federation", "transport", "set", "http", "block"],
+    );
+    assert!(matches!(
+        cli.command,
+        Some(Command::Federation(FederationCommand::Transport {
+            cmd: Some(FederationTransportCommand::Set { transport, mode })
+        })) if transport == "http" && mode == "block"
     ));
 
     let cli = parse_cli(

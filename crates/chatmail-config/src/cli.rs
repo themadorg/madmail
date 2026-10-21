@@ -766,6 +766,30 @@ pub enum FederationCommand {
     /// Remove all silent-dismiss domains.
     #[command(name = "dismiss-flush")]
     DismissFlush,
+    /// Allow or block outbound HTTPS, plain HTTP, and SMTP.
+    ///
+    /// With no subcommand, shows the current mode. Unset transports stay allowed.
+    #[command(name = "transport", subcommand_required = false)]
+    Transport {
+        #[command(subcommand)]
+        cmd: Option<FederationTransportCommand>,
+    },
+}
+
+/// `madmail federation transport` — outbound HTTPS / HTTP / SMTP.
+#[derive(Debug, Subcommand, Clone)]
+pub enum FederationTransportCommand {
+    /// Show whether each outbound transport is allowed.
+    Status,
+    /// Allow or block one outbound transport.
+    Set {
+        /// `https`, `http`, or `smtp`.
+        #[arg(value_name = "https|http|smtp")]
+        transport: String,
+        /// `allow` or `block`.
+        #[arg(value_name = "allow|block")]
+        mode: String,
+    },
 }
 
 /// `chatmail registration-tokens` — invite tokens for `/new`.

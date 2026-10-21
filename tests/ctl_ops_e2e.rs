@@ -1,4 +1,4 @@
-//! E2E: language, registration, webimap, html-export, openrelay.
+//! E2E: language, registration, webimap, html-export, openrelay, federation transport.
 
 use std::process::Command;
 
@@ -458,4 +458,58 @@ fn e2e_openrelay_human_status_and_enable() {
         .assert()
         .success()
         .stdout(predicate::str::contains("allowed"));
+}
+
+#[test]
+fn e2e_federation_transport_set_and_status_json() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    let out = chatmail()
+        .args(base.clone())
+        .args(["federation", "transport", "status", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("transport status");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "federation transport status");
+    assert_eq!(envelope["data"]["https"], "allow");
+    assert_eq!(envelope["data"]["http"], "allow");
+    assert_eq!(envelope["data"]["smtp"], "allow");
+
+    chatmail()
+        .args(base.clone())
+        .args(["federation", "transport", "set", "http", "block", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"reload_required\":true"));
+
+    let db_path = effective_app_db_path(dir.path(), &AppConfig::default());
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let pool = init_db(&db_path).await.unwrap();
+        assert_eq!(
+            get_setting(&pool, settings_keys::FEDERATION_TRANSPORT_HTTP)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("block")
+        );
+    });
+
+    let out = chatmail()
+        .args(base)
+        .args(["federation", "transport", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("transport default status");
+    assert_eq!(envelope["data"]["http"], "block");
+    assert_eq!(envelope["data"]["https"], "allow");
 }

@@ -24,12 +24,23 @@ use chatmail_db::{
     federation_policy_label, get_bool_setting, get_setting, set_federation_policy_label,
     set_setting, settings_keys,
 };
-use chatmail_state::PolicyMode;
+use chatmail_state::{
+    load_transport_policy, parse_transport_mode, set_transport_mode, PolicyMode, TransportName,
+    TransportPolicy,
+};
+
+#[derive(Deserialize)]
+struct TransportPost {
+    https: Option<String>,
+    http: Option<String>,
+    smtp: Option<String>,
+}
 
 #[derive(Deserialize)]
 struct FederationPost {
     enabled: Option<bool>,
     policy: Option<String>,
+    transports: Option<TransportPost>,
 }
 
 #[derive(Deserialize)]
@@ -48,13 +59,48 @@ async fn federation_settings_body(st: &AdminState) -> Result<Value, (u16, String
         .await
         .map_err(db_err)?;
     let federation_effective = st.app.federation_size.effective();
+    let transports = load_transport_policy(&st.pool).await.map_err(db_err)?;
     Ok(json!({
         "enabled": enabled,
         "policy": policy,
         "max_federation_size": max_federation_size,
         "federation_size_effective": format_data_size(federation_effective),
         "federation_size_effective_bytes": federation_effective,
+        "transports": transport_json(transports),
     }))
+}
+
+fn transport_json(policy: TransportPolicy) -> Value {
+    json!({
+        "https": policy.mode(TransportName::Https),
+        "http": policy.mode(TransportName::Http),
+        "smtp": policy.mode(TransportName::Smtp),
+    })
+}
+
+async fn apply_transport_post(st: &AdminState, body: TransportPost) -> Result<(), (u16, String)> {
+    let updates = [
+        (TransportName::Https, body.https),
+        (TransportName::Http, body.http),
+        (TransportName::Smtp, body.smtp),
+    ];
+    let mut parsed = Vec::with_capacity(updates.len());
+    for (name, mode) in updates {
+        let Some(mode) = mode else { continue };
+        let allow = parse_transport_mode(&mode).map_err(|e| (400, e.to_string()))?;
+        parsed.push((name, allow));
+    }
+    for (name, allow) in parsed {
+        set_transport_mode(&st.pool, name, allow)
+            .await
+            .map_err(db_err)?;
+    }
+    st.app
+        .federation_transport
+        .hydrate(&st.pool)
+        .await
+        .map_err(db_err)?;
+    Ok(())
 }
 
 pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult {
@@ -79,6 +125,9 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
                 st.app
                     .federation_policy
                     .set_global_mode(PolicyMode::from_label(&p));
+            }
+            if let Some(transports) = req.transports {
+                apply_transport_post(st, transports).await?;
             }
             Ok((200, Some(federation_settings_body(st).await?)))
         }

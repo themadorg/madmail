@@ -22,6 +22,7 @@ pub struct SecureHttp;
 pub mod auth;
 pub mod events;
 pub mod federation_size;
+pub mod federation_transport;
 pub mod flusher;
 pub mod inbound_remote_rcpt;
 pub mod listener_ports;
@@ -47,6 +48,10 @@ use tokio::sync::Mutex;
 pub use auth::AuthCache;
 pub use events::{EventBus, NewMessageEvent};
 pub use federation_size::FederationSizeLimit;
+pub use federation_transport::{
+    load_transport_policy, parse_transport_mode, set_transport_mode, FederationTransportPolicy,
+    TransportName, TransportPolicy, ALL_BLOCKED_REASON,
+};
 pub use flusher::{flush_federation_stats, flush_modseq, start_flusher, FlusherHandle};
 pub use inbound_remote_rcpt::InboundRemoteRcptFlag;
 pub use listener_ports::{ListenerPorts, ListenerPortsStore};
@@ -67,6 +72,8 @@ pub struct AppState {
     pub quota: Arc<QuotaCache>,
     pub federation_tracker: Arc<FederationTracker>,
     pub federation_policy: Arc<FederationPolicyCache>,
+    /// Outbound HTTPS / plain HTTP / SMTP allow-block. Default allows all three.
+    pub federation_transport: Arc<FederationTransportPolicy>,
     pub federation_silent_dismiss: Arc<FederationSilentDismissCache>,
     /// When true, inbound port 25 may accept non-local RCPT (open-relay-class). Default off.
     pub inbound_remote_rcpt: Arc<InboundRemoteRcptFlag>,
@@ -119,6 +126,7 @@ impl AppState {
             quota: Arc::new(QuotaCache::new(default_quota_bytes)),
             federation_tracker: Arc::new(FederationTracker::new()),
             federation_policy: Arc::new(FederationPolicyCache::new()),
+            federation_transport: Arc::new(FederationTransportPolicy::new()),
             federation_silent_dismiss: Arc::new(FederationSilentDismissCache::new()),
             inbound_remote_rcpt: Arc::new(InboundRemoteRcptFlag::new(config)),
             shared_port: Arc::new(SharedPortFlags::new(config)),
@@ -185,6 +193,7 @@ impl AppState {
         self.federation_size.hydrate(pool, config).await?;
         self.quota.hydrate(pool, &self.mailbox_store).await?;
         self.federation_policy.hydrate(pool).await?;
+        self.federation_transport.hydrate(pool).await?;
         self.federation_silent_dismiss.hydrate(pool).await?;
         self.inbound_remote_rcpt.hydrate(pool, config).await?;
         self.shared_port.hydrate(pool, config).await?;
