@@ -170,8 +170,9 @@ Allow or deny non-local RCPT on unauthenticated inbound SMTP
 .RS 4
 Federation policy, domain rules, silent-dismiss lists, and outbound
 transport allow/block (\fBtransport status\fR, \fBtransport set\fR).\& Unset
-transports stay allowed.\& Run \fBreload\fR after a CLI change on a running
-server.\&
+transports stay allowed.\& \fBtransport set --domain\fR overrides one
+destination; a missing override inherits the global mode.\& Run \fBreload\fR
+after a CLI change on a running server.\&
 .PP
 .RE
 \fBdkim\fR

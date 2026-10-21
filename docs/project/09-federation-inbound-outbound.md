@@ -19,7 +19,7 @@ The `chatmail-delivery` queue tries, unless that transport is blocked:
 2. Plain HTTP
 3. Traditional SMTP (MX lookup + STARTTLS when the peer advertises it)
 
-Each of those can be set to `block` with `madmail federation transport` or `POST /admin/settings/federation`. The default is allow for all three.
+Each of those can be set to `block` with `madmail federation transport` or `POST /admin/settings/federation`. The default is allow for all three. `madmail federation transport set smtp block --domain evil.test` (or the same POST with `"domain": "evil.test"`) blocks SMTP only toward that destination. Other domains keep the global mode.
 
 All paths are tracked for latency and failure rate.
 

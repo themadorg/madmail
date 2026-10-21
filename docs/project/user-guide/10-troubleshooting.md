@@ -67,7 +67,7 @@ Set reasonable default quotas and consider enabling automatic deletion of old re
 
 **cmdeploy / `554 5.7.1 No DKIM signature found`:** Madmail must sign outbound federation (fixed in #146). Run **`madmail dkim show`**, publish the printed TXT at `default._domainkey`, then **`madmail dkim check`**. Same-stack Madmail↔Madmail does not require that TXT. See [DNS and Mail Authentication](./12-dns-mail-auth.md).
 
-In most cases messages will eventually go through via the SMTP fallback if HTTPS is blocked — but fixing **443** is the right first step between chatmail relays. That fallback is the default. `madmail federation transport set smtp block` (then `madmail reload`) turns the port 25 fallback off, and `set http block` skips plain HTTP. Those switches are outbound federation only. They leave the port 443 IMAP/SMTP listener (`madmail shared-port`) alone, and outbound delivery still does not open SMTP to port 443.
+In most cases messages will eventually go through via the SMTP fallback if HTTPS is blocked — but fixing **443** is the right first step between chatmail relays. That fallback is the default. `madmail federation transport set smtp block` (then `madmail reload`) turns the port 25 fallback off, and `set http block` skips plain HTTP. Add `--domain example.org` to apply one of those blocks only toward that destination; other domains keep the global mode. Those switches are outbound federation only. They leave the port 443 IMAP/SMTP listener (`madmail shared-port`) alone, and outbound delivery still does not open SMTP to port 443.
 
 ## Calls (Voice/Video) Don’t Work
 

@@ -62,7 +62,7 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
         };
     }
 
-    let transports = ctx.state.federation_transport.get();
+    let transports = ctx.state.federation_transport.effective(&domain);
     if !transports.any_allowed() {
         return DeliveryOutcome::Permanent {
             reason: chatmail_state::ALL_BLOCKED_REASON.into(),
@@ -537,5 +537,49 @@ mod tests {
             }
             other => panic!("expected permanent policy failure, got {other:?}"),
         }
+        assert!(ctx.state.federation_tracker.snapshot().is_empty());
+    }
+
+    #[tokio::test]
+    async fn domain_override_blocks_before_dialing() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        chatmail_state::update_domain_transports(
+            &pool,
+            "Other.ORG",
+            &[
+                (chatmail_state::TransportName::Https, Some(false)),
+                (chatmail_state::TransportName::Http, Some(false)),
+                (chatmail_state::TransportName::Smtp, Some(false)),
+            ],
+        )
+        .await
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(chatmail_state::AppState::new(dir.path(), pool.clone()));
+        state.federation_transport.hydrate(&pool).await.unwrap();
+        assert!(state.federation_transport.get().any_allowed());
+        let ctx = DeliveryContext {
+            pool,
+            state,
+            primary_domain: "example.org".into(),
+            local_domains: vec!["example.org".into()],
+            dkim: None,
+        };
+        let outcome = deliver_remote(
+            &ctx,
+            &OutboundJob {
+                mail_from: "a@example.org".into(),
+                rcpt_to: "b@other.org".into(),
+                data: b"test".to_vec(),
+            },
+        )
+        .await;
+        match outcome {
+            DeliveryOutcome::Permanent { reason } => {
+                assert_eq!(reason, chatmail_state::ALL_BLOCKED_REASON);
+            }
+            other => panic!("expected permanent policy failure, got {other:?}"),
+        }
+        assert!(ctx.state.federation_tracker.snapshot().is_empty());
     }
 }

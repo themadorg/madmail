@@ -9,6 +9,8 @@ Chatmail uses **HTTP-based federation** as the primary delivery method between s
 
 Outbound transports are individually allow/block (`__FEDERATION_TRANSPORT_HTTPS__`, `__FEDERATION_TRANSPORT_HTTP__`, `__FEDERATION_TRANSPORT_SMTP__`). Missing keys stay allowed, so an untouched server still tries HTTPS `/mxdeliv`, then plain HTTP, then SMTP. `madmail federation transport` and `POST /admin/settings/federation` (`transports`) write the same keys. Blocking all three fails that delivery with `federation transport blocked by policy` and does not dial.
 
+`__FEDERATION_TRANSPORT_DOMAINS__` is a JSON object of destination-domain overrides (`{"evil.test":{"smtp":"block"}}`). A missing transport key inherits the global mode. Delivery uses the recipient domain. Corrupt JSON is ignored and the global modes apply. The value lives in `settings`, so the existing sqlite-to-postgres copy carries it.
+
 ## Wire Protocol
 
 ### Sending (Outbound)
