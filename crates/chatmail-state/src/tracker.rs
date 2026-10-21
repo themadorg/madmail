@@ -182,7 +182,11 @@ impl FederationTracker {
             cols.failed_https, cols.success_https
         );
         let rows: Vec<FederationStatTuple> =
-            chatmail_db::db_fetch_all!(pool, FederationStatTuple, &sql)?;
+            chatmail_db::db_fetch_all!(pool, FederationStatTuple, &sql).map_err(|error| {
+                chatmail_types::ChatmailError::storage(format!(
+                    "hydrating federation_server_stats at startup: {error}"
+                ))
+            })?;
 
         for (
             domain,

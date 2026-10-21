@@ -559,3 +559,7 @@ help:
 	@echo ""
 	@echo "Defaults: STATE_DIR=$(STATE_DIR) CONFIG=$(CONFIG)"
 	@echo "Push uses: BINARY_PUSH=$(BINARY_PUSH) (remote paths: scripts/deploy.sh)"
+
+.PHONY: test-postgres-restart-docker
+test-postgres-restart-docker:
+	bash tests/postgres-restart-docker.sh
