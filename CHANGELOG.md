@@ -1,3 +1,9 @@
+# [2.38.2](https://github.com/themadorg/madmail/compare/v2.38.1-unstable...v2.38.2-unstable) (2026-10-21)
+
+### Bug Fixes
+
+* **db:** preserve PostgreSQL federation statistics across restarts ([86ea64a](https://github.com/themadorg/madmail/commit/86ea64a105b2ab3310d34f05f76fe3670d27e587))
+
 # [2.38.1](https://github.com/themadorg/madmail/compare/v2.38.0-unstable...v2.38.1-unstable) (2026-10-21)
 
 ### Bug Fixes
