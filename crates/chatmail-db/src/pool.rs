@@ -305,6 +305,15 @@ pub(crate) async fn run_migrations(pool: &DbPool) -> Result<()> {
             "skipping madmail-v2 sqlx migrations (existing Madmail / go-imap-sql schema); ensuring application tables"
         );
         apply_legacy_schema_tables(pool).await?;
+        if let DbPool::Postgres(p) = pool {
+            // Legacy databases skip sqlx migrations, but existing INT4 counters
+            // still need widening before FederationTracker hydrates them.
+            sqlx::query(include_str!(
+                "../migrations/postgres/20240701000000_federation_stats_bigint.sql"
+            ))
+            .execute(p)
+            .await?;
+        }
         return Ok(());
     }
 

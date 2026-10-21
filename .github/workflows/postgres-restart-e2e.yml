@@ -1,0 +1,40 @@
+name: PostgreSQL restart E2E
+
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'external/madmail-admin-web'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile'
+      - 'tests/postgres-restart-docker.sh'
+      - '.github/workflows/postgres-restart-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: postgres-restart-e2e
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev pkg-config perl openssl curl
+      - name: Test PostgreSQL cold start, upgrade, and restart
+        run: bash tests/postgres-restart-docker.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: postgres-restart-logs
+          path: |
+            target/postgres-restart-tests/**/server.log
+            target/postgres-restart-tests/**/postgres.log
