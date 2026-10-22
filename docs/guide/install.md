@@ -6,6 +6,7 @@ The command is **Madmail-compatible**. The binary name (`madmail`, `chatmail`, â
 
 ## Table of contents
 
+- [Supported operating systems](#supported-operating-systems)
 - [Quick start](#quick-start)
 - [Install modes](#install-modes)
 - [What install creates](#what-install-creates)
@@ -20,6 +21,24 @@ The command is **Madmail-compatible**. The binary name (`madmail`, `chatmail`, â
 - [Related docs](#related-docs)
 
 ---
+
+## Supported operating systems
+
+These x86_64 releases are tested and officially supported. A normal install uses systemd.
+
+| Release | Binary |
+| --- | --- |
+| Debian 13 | `madmail-linux-amd64` |
+| Debian 12 | `madmail-linux-amd64-legacy` |
+| Ubuntu 26.04 | `madmail-linux-amd64` |
+| Ubuntu 24.04 | `madmail-linux-amd64` |
+| Ubuntu 22.04 | `madmail-linux-amd64-legacy` |
+| AlmaLinux 10 | `madmail-linux-amd64` |
+| Rocky Linux 9 | `madmail-linux-amd64-legacy` |
+
+Debian 12, Ubuntu 22.04, and Rocky Linux 9 ship glibc older than 2.38. The default `madmail-linux-amd64` build does not start there (`GLIBC_2.38` not found). Use `madmail-linux-amd64-legacy` from the same release, and keep that variant for later upgrades.
+
+Rocky Linux 9 enables firewalld. Allow ports 80, 443, 25, 465, 587, 143, and 993 before install requests a certificate.
 
 ## Quick start
 

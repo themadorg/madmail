@@ -118,8 +118,8 @@ To obtain a ready-to-use binary without compiling:
 
    | Asset | Use when |
    |-------|----------|
-   | `madmail-linux-amd64` / `.tar.gz` | Default glibc build (newer distros) |
-   | `madmail-linux-amd64-legacy` / `.tar.gz` | Older glibc (e.g. Ubuntu 22.04; `GLIBC_2.38+` errors) |
+   | `madmail-linux-amd64` / `.tar.gz` | Debian 13, Ubuntu 24.04, Ubuntu 26.04, and AlmaLinux 10 |
+   | `madmail-linux-amd64-legacy` / `.tar.gz` | Debian 12, Ubuntu 22.04, and Rocky Linux 9 (`GLIBC_2.38` not found) |
    | `madmail-linux-amd64-musl` / `.tar.gz` | musl alternative |
    | arm64 equivalents (`…-arm64…`, `…-legacy…`, `…-musl…`) | Same matrix for arm64 |
 
