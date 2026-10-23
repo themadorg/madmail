@@ -206,6 +206,7 @@ pub(crate) async fn load_mailbox_entries(
         .await
         .map_err(|e| e.to_string())?;
     Ok(msgs
+        .messages
         .into_iter()
         .map(|m| InboxEntry {
             uid: m.uid,
