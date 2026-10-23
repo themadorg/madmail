@@ -24,7 +24,11 @@ The command is **Madmail-compatible**. The binary name (`madmail`, `chatmail`, â
 
 ## Supported operating systems
 
-These x86_64 releases are tested and officially supported. A normal install uses systemd.
+These releases are officially supported.
+
+### Linux (x86_64)
+
+A normal Linux install uses systemd.
 
 | Release | Binary |
 | --- | --- |
@@ -39,6 +43,12 @@ These x86_64 releases are tested and officially supported. A normal install uses
 Debian 12, Ubuntu 22.04, and Rocky Linux 9 ship glibc older than 2.38. The default `madmail-linux-amd64` build does not start there (`GLIBC_2.38` not found). Use `madmail-linux-amd64-legacy` from the same release, and keep that variant for later upgrades.
 
 Rocky Linux 9 enables firewalld. Allow ports 80, 443, 25, 465, 587, 143, and 993 before install requests a certificate.
+
+### Windows
+
+Windows 10 and Windows 11 (x64) are supported. Prefer `madmail-windows-amd64-setup.exe`.
+
+The Windows build does not bundle the admin panel or Iroh for now, because of technical limitations. The admin API and the token file under `%ProgramData%\Madmail\data\admin_token` still work. Iroh is left out because its relay program is not packaged for Windows, and turning it on keeps the service from starting.
 
 ## Quick start
 

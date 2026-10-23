@@ -33,7 +33,11 @@ We may add new features as needs arise.
 
 ## Supported operating systems
 
-These x86_64 releases are tested and officially supported. A normal install uses systemd.
+These releases are officially supported.
+
+### Linux (x86_64)
+
+A normal Linux install uses systemd.
 
 | Release | Binary |
 | --- | --- |
@@ -48,6 +52,12 @@ These x86_64 releases are tested and officially supported. A normal install uses
 Debian 12, Ubuntu 22.04, and Rocky Linux 9 ship glibc older than 2.38. The default `madmail-linux-amd64` build does not start there. Use the legacy build from the same release.
 
 Rocky Linux 9 enables firewalld. Allow HTTP, HTTPS, SMTP, submission, and IMAP before install requests a certificate.
+
+### Windows
+
+Windows 10 and Windows 11 (x64) are supported. Use `madmail-windows-amd64-setup.exe`.
+
+The Windows build does not bundle the admin panel or Iroh for now, because of technical limitations. The admin API and the admin token still work. Iroh is left out because its relay program is not packaged for Windows, and turning it on keeps the service from starting.
 
 ## Quick Setup
 
