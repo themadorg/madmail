@@ -92,6 +92,17 @@ pub fn maildir_filename(base_id: &str, flags: &MaildirFlags) -> String {
     }
 }
 
+/// Messages currently in a mailbox, plus the next UID that mailbox will assign.
+///
+/// `uid_next` comes from the persistent uidlist and is cached with the message vector.
+/// Recomputing it as `last_uid + 1` (or `1` when the mailbox is empty) reuses UIDs after a
+/// deletion and makes IMAP `UIDNEXT` decrease while `UIDVALIDITY` stays the same.
+#[derive(Debug, Clone)]
+pub struct MailboxListing {
+    pub messages: Vec<StoredMessage>,
+    pub uid_next: u32,
+}
+
 /// List messages in a mailbox, ordered by stable UID (oldest first).
 ///
 /// Backed by the persistent [`crate::uidlist`] index: an unchanged mailbox is served from the
@@ -101,7 +112,7 @@ pub async fn list_mailbox_messages(
     store: &MailboxStore,
     user: &str,
     mailbox: &str,
-) -> Result<Vec<StoredMessage>> {
+) -> Result<MailboxListing> {
     let paths = store.maildir_for_mailbox(user, mailbox);
     if let Some(cached) = store
         .list_cache()
@@ -116,7 +127,7 @@ pub async fn list_mailbox_messages(
     let gen = store.list_cache().generation(user, mailbox);
     let new_mtime = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.new).await;
     let cur_mtime = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.cur).await;
-    let mut messages = store.uidlist().sync(user, mailbox, &paths).await?;
+    let (mut messages, mut uid_next) = store.uidlist().sync(user, mailbox, &paths).await?;
 
     // If the directory changed while we were scanning (or generation advanced), re-sync once
     // so we do not return a half-complete view to IMAP IDLE / FETCH.
@@ -124,25 +135,27 @@ pub async fn list_mailbox_messages(
     let cur_mtime_after = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.cur).await;
     let gen_after = store.list_cache().generation(user, mailbox);
     if gen_after != gen || new_mtime_after != new_mtime || cur_mtime_after != cur_mtime {
-        messages = store.uidlist().sync(user, mailbox, &paths).await?;
+        (messages, uid_next) = store.uidlist().sync(user, mailbox, &paths).await?;
         let gen_final = store.list_cache().generation(user, mailbox);
         let new_final = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.new).await;
         let cur_final = crate::maildir_cache::MaildirListCache::dir_mtime(&paths.cur).await;
+        let listing = MailboxListing { messages, uid_next };
         store.list_cache().store(
             user,
             mailbox,
             gen_final,
             new_final,
             cur_final,
-            messages.clone(),
+            listing.clone(),
         );
-        return Ok(messages);
+        return Ok(listing);
     }
 
+    let listing = MailboxListing { messages, uid_next };
     store
         .list_cache()
-        .store(user, mailbox, gen, new_mtime, cur_mtime, messages.clone());
-    Ok(messages)
+        .store(user, mailbox, gen, new_mtime, cur_mtime, listing.clone());
+    Ok(listing)
 }
 
 async fn locate_message(
@@ -339,14 +352,15 @@ mod tests {
         let first = list_mailbox_messages(&store, "u@test", "INBOX")
             .await
             .unwrap();
-        assert_eq!(first.len(), 1);
+        assert_eq!(first.messages.len(), 1);
 
         // Second call hits cache (same dir mtimes).
         let second = list_mailbox_messages(&store, "u@test", "INBOX")
             .await
             .unwrap();
-        assert_eq!(second.len(), 1);
-        assert_eq!(second[0].base_id, first[0].base_id);
+        assert_eq!(second.messages.len(), 1);
+        assert_eq!(second.messages[0].base_id, first.messages[0].base_id);
+        assert_eq!(second.uid_next, first.uid_next);
     }
 
     /// P11-UT23: listing cache is invalidated after a second write.
@@ -359,6 +373,7 @@ mod tests {
             list_mailbox_messages(&store, "u@test", "INBOX")
                 .await
                 .unwrap()
+                .messages
                 .len(),
             1
         );
@@ -367,7 +382,7 @@ mod tests {
         let after = list_mailbox_messages(&store, "u@test", "INBOX")
             .await
             .unwrap();
-        assert_eq!(after.len(), 2);
+        assert_eq!(after.messages.len(), 2);
     }
 
     /// Issue #115: concurrent delivery while listing must not leave IMAP serving a permanently
@@ -383,6 +398,7 @@ mod tests {
             list_mailbox_messages(&store, "u@test", "INBOX")
                 .await
                 .unwrap()
+                .messages
                 .len(),
             1
         );
@@ -409,13 +425,62 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            final_list.len(),
+            final_list.messages.len(),
             21,
             "all delivered messages must be visible after concurrent list; got {:?}",
             final_list
+                .messages
                 .iter()
                 .map(|m| m.base_id.as_str())
                 .collect::<Vec<_>>()
         );
+    }
+
+    /// Issue #233: UIDNEXT stays above every assigned UID after the highest message is
+    /// deleted and after the mailbox is emptied. The second read of the empty mailbox is a
+    /// listing-cache hit, so the counter has to be stored with the message vector.
+    #[tokio::test]
+    async fn uid_next_survives_deletion_and_cache_hit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = MailboxStore::new(tmp.path());
+        for id in ["m1", "m2", "m3"] {
+            write_blob(&store, "u@test", id, b"body").await.unwrap();
+        }
+        let before = list_mailbox_messages(&store, "u@test", "INBOX")
+            .await
+            .unwrap();
+        assert_eq!(
+            before.messages.iter().map(|m| m.uid).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(before.uid_next, 4);
+
+        let new_dir = store.maildir_for_user("u@test").new;
+        tokio::fs::remove_file(new_dir.join("m3")).await.unwrap();
+        // Directory mtime can stay unchanged within one second; delivery and expunge bump the
+        // listing generation, which is what forces the next read to reconcile the uidlist.
+        store.invalidate_mailbox_listing("u@test", "INBOX");
+        let gapped = list_mailbox_messages(&store, "u@test", "INBOX")
+            .await
+            .unwrap();
+        assert_eq!(
+            gapped.messages.iter().map(|m| m.uid).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(gapped.uid_next, 4);
+
+        tokio::fs::remove_file(new_dir.join("m1")).await.unwrap();
+        tokio::fs::remove_file(new_dir.join("m2")).await.unwrap();
+        store.invalidate_mailbox_listing("u@test", "INBOX");
+        let emptied = list_mailbox_messages(&store, "u@test", "INBOX")
+            .await
+            .unwrap();
+        assert!(emptied.messages.is_empty());
+        assert_eq!(emptied.uid_next, 4);
+        let cached = list_mailbox_messages(&store, "u@test", "INBOX")
+            .await
+            .unwrap();
+        assert!(cached.messages.is_empty());
+        assert_eq!(cached.uid_next, 4);
     }
 }

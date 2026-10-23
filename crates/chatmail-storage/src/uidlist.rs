@@ -110,17 +110,20 @@ impl UidListStore {
             .clone()
     }
 
-    /// Reconcile the persisted index with the maildir and return the listing with stable UIDs.
+    /// Reconcile the persisted index with the maildir and return the listing with stable UIDs
+    /// plus the next UID to assign.
     ///
     /// Reads `chatmail-uidlist`, `readdir`s `new/`+`cur/`, assigns fresh UIDs to never-seen files
     /// (statting only those), drops records for expunged files, and rewrites the index atomically
     /// when anything changed. The returned messages are sorted by UID (i.e. arrival order).
+    /// The next-UID counter is never lowered when files disappear, so IMAP `UIDNEXT` stays
+    /// stable for the life of the mailbox's `UIDVALIDITY`.
     pub(crate) async fn sync(
         &self,
         user: &str,
         mailbox: &str,
         paths: &MaildirPaths,
-    ) -> Result<Vec<StoredMessage>> {
+    ) -> Result<(Vec<StoredMessage>, u32)> {
         let lock = self.lock_for(user, mailbox);
         let _guard = lock.lock().await;
 
@@ -222,7 +225,7 @@ impl UidListStore {
             })
             .collect();
         out.sort_by_key(|m| m.uid);
-        Ok(out)
+        Ok((out, data.next_uid))
     }
 
     /// The mailbox UIDVALIDITY (constant for chatmail; UIDs are globally stable).
@@ -419,7 +422,7 @@ mod tests {
         touch(&paths.new, "bbb").await;
 
         let uidlist = UidListStore::default();
-        let msgs = uidlist.sync("u@test", "INBOX", &paths).await.unwrap();
+        let msgs = uidlist.sync("u@test", "INBOX", &paths).await.unwrap().0;
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0].uid, 1);
         assert_eq!(msgs[1].uid, 2);
@@ -437,7 +440,7 @@ mod tests {
         touch(&paths.new, "ccc").await;
 
         let uidlist = UidListStore::default();
-        let first = uidlist.sync("u@test", "INBOX", &paths).await.unwrap();
+        let first = uidlist.sync("u@test", "INBOX", &paths).await.unwrap().0;
         assert_eq!(
             first.iter().map(|m| m.uid).collect::<Vec<_>>(),
             vec![1, 2, 3]
@@ -445,12 +448,12 @@ mod tests {
 
         // Delete the middle message; its UID (2) must not be reused.
         fs::remove_file(paths.new.join("bbb")).await.unwrap();
-        let after = uidlist.sync("u@test", "INBOX", &paths).await.unwrap();
+        let after = uidlist.sync("u@test", "INBOX", &paths).await.unwrap().0;
         assert_eq!(after.iter().map(|m| m.uid).collect::<Vec<_>>(), vec![1, 3]);
 
         // A new message gets UID 4, never the freed 2.
         touch(&paths.new, "ddd").await;
-        let grown = uidlist.sync("u@test", "INBOX", &paths).await.unwrap();
+        let grown = uidlist.sync("u@test", "INBOX", &paths).await.unwrap().0;
         assert_eq!(
             grown.iter().map(|m| m.uid).collect::<Vec<_>>(),
             vec![1, 3, 4]
@@ -469,14 +472,16 @@ mod tests {
         let first = UidListStore::default()
             .sync("u@test", "INBOX", &paths)
             .await
-            .unwrap();
+            .unwrap()
+            .0;
         let aaa_uid = first.iter().find(|m| m.base_id == "aaa").unwrap().uid;
 
         // Fresh store instance == process restart with a cold in-memory cache.
         let reloaded = UidListStore::default()
             .sync("u@test", "INBOX", &paths)
             .await
-            .unwrap();
+            .unwrap()
+            .0;
         assert_eq!(
             reloaded.iter().find(|m| m.base_id == "aaa").unwrap().uid,
             aaa_uid
@@ -493,14 +498,14 @@ mod tests {
         touch(&paths.new, "msg1").await;
 
         let uidlist = UidListStore::default();
-        let before = uidlist.sync("u@test", "INBOX", &paths).await.unwrap();
+        let before = uidlist.sync("u@test", "INBOX", &paths).await.unwrap().0;
         let uid = before[0].uid;
 
         // Mark \Seen: move new/msg1 -> cur/msg1:2,S (same base id).
         fs::rename(paths.new.join("msg1"), paths.cur.join("msg1:2,S"))
             .await
             .unwrap();
-        let after = uidlist.sync("u@test", "INBOX", &paths).await.unwrap();
+        let after = uidlist.sync("u@test", "INBOX", &paths).await.unwrap().0;
         assert_eq!(after.len(), 1);
         assert_eq!(after[0].uid, uid);
         assert!(after[0].flags.seen);
@@ -546,6 +551,39 @@ mod tests {
             parsed.records.get("id-b").unwrap().internal_secs,
             1_700_000_100
         );
+    }
+
+    /// Issue #233: deleting every message, or only the highest UID, must not rewind next_uid.
+    #[tokio::test]
+    async fn uid_next_does_not_rewind_after_delete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = MailboxStore::new(tmp.path());
+        let paths = store.init_mailbox_dir("u@test", "INBOX").await.unwrap();
+        touch(&paths.new, "aaa").await;
+        touch(&paths.new, "bbb").await;
+        touch(&paths.new, "ccc").await;
+
+        let uidlist = UidListStore::default();
+        let (first, next) = uidlist.sync("u@test", "INBOX", &paths).await.unwrap();
+        assert_eq!(
+            first.iter().map(|m| m.uid).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(next, 4);
+
+        fs::remove_file(paths.new.join("ccc")).await.unwrap();
+        let (after_highest, next) = uidlist.sync("u@test", "INBOX", &paths).await.unwrap();
+        assert_eq!(
+            after_highest.iter().map(|m| m.uid).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(next, 4);
+
+        fs::remove_file(paths.new.join("aaa")).await.unwrap();
+        fs::remove_file(paths.new.join("bbb")).await.unwrap();
+        let (empty, next) = uidlist.sync("u@test", "INBOX", &paths).await.unwrap();
+        assert!(empty.is_empty());
+        assert_eq!(next, 4);
     }
 
     /// P11-UT31: a missing index file is treated as an empty mailbox, not an error.

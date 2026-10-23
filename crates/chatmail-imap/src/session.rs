@@ -95,6 +95,9 @@ pub struct ImapSession {
     /// (any local or remote mutation bumps it), so it never serves stale state.
     cached_inbox_version: u64,
     cached_inbox_messages: Option<Vec<MailMessage>>,
+    /// Predicted next UID captured with `cached_inbox_messages`. A cache hit must return this
+    /// value: deriving it from the last remaining message decreases UIDNEXT after a deletion.
+    cached_inbox_uid_next: u32,
     /// Per-user delivery subscription kept alive for the whole connection so that messages
     /// arriving while the client is *between* IDLE commands (i.e. mid FETCH/STORE/re-IDLE) stay
     /// buffered in the broadcast channel instead of being dropped. Re-subscribing on every IDLE
@@ -131,6 +134,7 @@ impl ImapSession {
             announced_exists: 0,
             cached_inbox_version: 0,
             cached_inbox_messages: None,
+            cached_inbox_uid_next: 1,
             events_rx: None,
         }
     }
@@ -418,9 +422,8 @@ impl ImapSession {
                 if !mailbox_exists(&self.ctx.mailbox_store, &user, &mailbox).await {
                     return Ok(Some(format!("{t} NO Mailbox does not exist\r\n")));
                 }
-                let msgs = list_messages(&self.ctx, &user, &mailbox).await?;
+                let (msgs, uid_next) = list_messages(&self.ctx, &user, &mailbox).await?;
                 let exists = msgs.len();
-                let uid_next = msgs.last().map(|m| m.uid + 1).unwrap_or(1);
                 Ok(Some(format!(
                     "* STATUS \"{mailbox}\" (MESSAGES {exists} UIDNEXT {uid_next} UIDVALIDITY 1 UNSEEN {exists})\r\n{t} OK STATUS completed\r\n"
                 )))
@@ -538,19 +541,26 @@ impl ImapSession {
     /// Load a mailbox listing, serving the INBOX from an in-session cache keyed by the per-user
     /// version counter so repeated re-checks within one client cycle don't re-scan the maildir.
     async fn load_messages(&mut self, user: &str, mailbox: &str) -> Result<Vec<MailMessage>> {
+        Ok(self.load_listing(user, mailbox).await?.0)
+    }
+
+    /// Listing plus the persisted UIDNEXT. The INBOX pair is cached together so a later SELECT
+    /// cannot derive UIDNEXT from `messages.last()` after a message has been removed.
+    async fn load_listing(&mut self, user: &str, mailbox: &str) -> Result<(Vec<MailMessage>, u32)> {
         if !mailbox.eq_ignore_ascii_case("INBOX") {
             return list_messages(&self.ctx, user, mailbox).await;
         }
         let version = self.ctx.events.inbox_version(user);
         if version == self.cached_inbox_version {
             if let Some(cached) = &self.cached_inbox_messages {
-                return Ok(cached.clone());
+                return Ok((cached.clone(), self.cached_inbox_uid_next));
             }
         }
-        let msgs = list_messages(&self.ctx, user, mailbox).await?;
+        let (msgs, uid_next) = list_messages(&self.ctx, user, mailbox).await?;
         self.cached_inbox_version = version;
+        self.cached_inbox_uid_next = uid_next;
         self.cached_inbox_messages = Some(msgs.clone());
-        Ok(msgs)
+        Ok((msgs, uid_next))
     }
 
     /// Mark the INBOX listing changed after a local mutation so the cache (and any IDLE re-check)
@@ -1260,22 +1270,31 @@ impl ImapSession {
             return Ok(format!("{tag} NO [NONEXISTENT] Mailbox does not exist\r\n"));
         }
         self.selected_mailbox = Some(mailbox.clone());
-        self.messages = self.load_messages(user, &mailbox).await?;
+        let (messages, uid_next) = self.load_listing(user, &mailbox).await?;
+        self.messages = messages;
         let exists = self.messages.len();
         self.announced_exists = exists;
-        let uid_next = self.messages.last().map(|m| m.uid + 1).unwrap_or(1);
         Ok(format!(
             "* {exists} EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 1] UIDs valid\r\n* OK [UIDNEXT {uid_next}] Predicted next UID\r\n{tag} OK [{cmd}] completed\r\n"
         ))
     }
 }
 
-async fn list_messages(ctx: &AppState, user: &str, mailbox: &str) -> Result<Vec<MailMessage>> {
-    Ok(list_mailbox_messages(&ctx.mailbox_store, user, mailbox)
-        .await?
-        .into_iter()
-        .map(stored_to_mail_message)
-        .collect())
+async fn list_messages(
+    ctx: &AppState,
+    user: &str,
+    mailbox: &str,
+) -> Result<(Vec<MailMessage>, u32)> {
+    let listing = list_mailbox_messages(&ctx.mailbox_store, user, mailbox).await?;
+    let uid_next = listing.uid_next;
+    Ok((
+        listing
+            .messages
+            .into_iter()
+            .map(stored_to_mail_message)
+            .collect(),
+        uid_next,
+    ))
 }
 
 /// Carry the persistent uidlist UID through to the IMAP layer instead of renumbering by position,
@@ -2039,8 +2058,8 @@ mod tests {
         let msgs = list_mailbox_messages(&store, "u@test", "INBOX")
             .await
             .unwrap();
-        assert_eq!(msgs.len(), 1);
-        assert!(msgs[0].flags.seen);
+        assert_eq!(msgs.messages.len(), 1);
+        assert!(msgs.messages[0].flags.seen);
     }
 
     #[tokio::test]
@@ -2059,11 +2078,13 @@ mod tests {
         assert!(list_mailbox_messages(&store, "u@test", "INBOX")
             .await
             .unwrap()
+            .messages
             .is_empty());
         assert_eq!(
             list_mailbox_messages(&store, "u@test", "DeltaChat")
                 .await
                 .unwrap()
+                .messages
                 .len(),
             1
         );
@@ -2135,9 +2156,10 @@ mod tests {
         write_blob(&store, "u@example.org", "m1", body)
             .await
             .unwrap();
-        let msgs = list_messages(&ctx, "u@example.org", "INBOX").await.unwrap();
+        let (msgs, uid_next) = list_messages(&ctx, "u@example.org", "INBOX").await.unwrap();
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].size, body.len() as u64);
+        assert_eq!(uid_next, 2);
     }
 
     /// APPEND `{N}` larger than message cap is rejected before reading the literal.
@@ -2304,7 +2326,10 @@ mod tests {
         );
         session.authenticated_user = Some("u@example.org".into());
         session.selected_mailbox = Some("INBOX".into());
-        session.messages = list_messages(&ctx, "u@example.org", "INBOX").await.unwrap();
+        session.messages = list_messages(&ctx, "u@example.org", "INBOX")
+            .await
+            .unwrap()
+            .0;
         assert_eq!(session.messages.len(), 1);
         // Simulate SELECT having announced the 1 pre-existing message to the client.
         session.announced_exists = 1;
@@ -2646,6 +2671,91 @@ mod integration_tests {
         assert!(t.contains("STATUS"), "status: {t}");
         assert!(t.contains("RFC822.SIZE"), "fetch: {t}");
         assert!(t.contains("MESSAGE-ID"), "header fetch: {t}");
+    }
+
+    /// Issue #233: deleting the only message must not rewind UIDNEXT to 1 on SELECT or STATUS.
+    /// The same connection covers the session listing cache; a second connection covers the
+    /// maildir listing cache.
+    #[tokio::test]
+    async fn uidnext_stays_stable_after_mailbox_is_emptied() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let hash = hash_password("pw").unwrap();
+        chatmail_db::passwords::create_user(&pool, "u@test", &hash)
+            .await
+            .unwrap();
+
+        let ctx = Arc::new(AppState::new(dir.path(), pool.clone()));
+        write_blob(&ctx.mailbox_store, "u@test", "m1", b"hello")
+            .await
+            .unwrap();
+
+        let first = imap_dialog(
+            pool.clone(),
+            Arc::clone(&ctx),
+            &[
+                "a001 LOGIN u@test pw",
+                "a002 SELECT INBOX",
+                "a003 UID STORE 1 +FLAGS (\\Deleted)",
+                "a004 SELECT INBOX",
+                "a005 STATUS INBOX (MESSAGES UIDNEXT UIDVALIDITY)",
+                "a006 LOGOUT",
+            ],
+        )
+        .await;
+        let before_delete = first.split("a003 OK").next().expect("select before delete");
+        assert!(
+            before_delete.contains("* OK [UIDNEXT 2]"),
+            "first select: {before_delete}"
+        );
+        assert!(
+            before_delete.contains("* 1 EXISTS"),
+            "message present: {before_delete}"
+        );
+        let after_delete = first
+            .split("a003 OK")
+            .nth(1)
+            .expect("responses after delete");
+        assert!(
+            after_delete.contains("* 0 EXISTS"),
+            "mailbox empty: {after_delete}"
+        );
+        assert!(
+            after_delete.contains("* OK [UIDNEXT 2]"),
+            "select uidnext: {after_delete}"
+        );
+        assert!(
+            after_delete.contains("MESSAGES 0 UIDNEXT 2 UIDVALIDITY 1"),
+            "status uidnext: {after_delete}"
+        );
+        assert!(
+            !after_delete.contains("[UIDNEXT 1]") && !after_delete.contains("UIDNEXT 1"),
+            "uidnext decreased: {after_delete}"
+        );
+
+        let second = imap_dialog(
+            pool,
+            ctx,
+            &[
+                "b001 LOGIN u@test pw",
+                "b002 SELECT INBOX",
+                "b003 STATUS INBOX (MESSAGES UIDNEXT UIDVALIDITY)",
+                "b004 LOGOUT",
+            ],
+        )
+        .await;
+        assert!(
+            second.contains("* OK [UIDNEXT 2]"),
+            "fresh session select: {second}"
+        );
+        assert!(
+            second.contains("MESSAGES 0 UIDNEXT 2 UIDVALIDITY 1"),
+            "fresh session status: {second}"
+        );
+        assert!(
+            !second.contains("[UIDNEXT 1]") && !second.contains("UIDNEXT 1"),
+            "fresh session rewound uidnext: {second}"
+        );
     }
 
     /// Login domain validation must return tagged NO, not drop the connection (E2E test #19).
