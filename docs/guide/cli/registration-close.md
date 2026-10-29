@@ -2,7 +2,7 @@
 
 Parent: [`registration`](registration.md)
 
-Block new registrations
+Block new public registrations, including first-login IMAP and SMTP account creation. `POST /new` still accepts a valid invite token. Accounts created with `accounts create` or `create-user` keep logging in. A running server applies this on the next `madmail reload`.
 
 ## Synopsis
 

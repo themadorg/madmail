@@ -1,6 +1,10 @@
 # `registration`
 
-Open or close public account registration at `/new` (`__REGISTRATION_OPEN__`).
+Open or close public account registration (`__REGISTRATION_OPEN__`).
+
+`close` blocks new accounts from `POST /new` unless the request includes a valid invite token, and it blocks a first IMAP or SMTP login from creating an account. `open` allows `POST /new` again. Password-only IMAP and SMTP sign-up also requires JIT registration (`__JIT_REGISTRATION_ENABLED__`) to be enabled. With JIT disabled, the registration page creates the account through `POST /new` instead of a first login.
+
+Accounts created with [`accounts create`](accounts.md) or `create-user` keep logging in. A running server reads both switches at startup and on `madmail reload`. IMAP and SMTP do not accept an invite token; the token is presented to `POST /new`, and that account then logs in as an existing account.
 
 
 ## Synopsis
@@ -21,8 +25,8 @@ madmail registration <open|close|status>
 
 | Subcommand | Description |
 |------------|-------------|
-| `open` | Allow registration when tokens/policy permit |
-| `close` | Block new registrations |
+| `open` | Allow `/new` when tokens and policy permit. Password-only IMAP/SMTP sign-up stays off while JIT is disabled |
+| `close` | Block new public registrations, including IMAP/SMTP first-login creation. A valid invite token still works on `POST /new` |
 | `status` | Show open/closed |
 
 ## Examples

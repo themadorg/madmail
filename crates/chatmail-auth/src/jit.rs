@@ -200,7 +200,10 @@ mod tests {
     use chatmail_db::{init_memory_db, set_setting, settings_keys};
     use chatmail_state::AppState;
 
-    async fn ctx_with_jit(jit: bool) -> (AuthContext, tempfile::TempDir) {
+    async fn ctx_with_flags(
+        jit: bool,
+        registration_open: bool,
+    ) -> (AuthContext, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
         let pool = init_memory_db().await.unwrap();
         set_setting(
@@ -213,7 +216,7 @@ mod tests {
         set_setting(
             &pool,
             settings_keys::REGISTRATION_OPEN,
-            if jit { "true" } else { "false" },
+            if registration_open { "true" } else { "false" },
         )
         .await
         .unwrap();
@@ -227,6 +230,10 @@ mod tests {
             credential_policy: CredentialPolicy::default(),
         };
         (ctx, dir)
+    }
+
+    async fn ctx_with_jit(jit: bool) -> (AuthContext, tempfile::TempDir) {
+        ctx_with_flags(jit, jit).await
     }
 
     /// P3-UT03
@@ -263,6 +270,52 @@ mod tests {
         let (ctx, _dir) = ctx_with_jit(false).await;
         assert!(matches!(
             authenticate(&ctx, "missing@example.org", "pw").await,
+            Err(ChatmailError::AuthFailed)
+        ));
+    }
+
+    /// #235: `registration close` stops IMAP/SMTP sign-up while the JIT row stays true.
+    /// SMTP AUTH uses this same `authenticate` path.
+    #[tokio::test]
+    async fn closed_registration_rejects_unknown_login_while_jit_setting_on() {
+        let (ctx, _dir) = ctx_with_flags(true, false).await;
+        assert!(!ctx.state.auth.jit_registration_enabled());
+        assert!(matches!(
+            authenticate(&ctx, "newuser1@example.org", "longpassword").await,
+            Err(ChatmailError::AuthFailed)
+        ));
+        assert!(!passwords::user_exists(&ctx.pool, "newuser1@example.org")
+            .await
+            .unwrap());
+    }
+
+    /// #235: opening registration must not turn password-only sign-up back on.
+    #[tokio::test]
+    async fn open_registration_does_not_create_account_when_jit_disabled() {
+        let (ctx, _dir) = ctx_with_flags(false, true).await;
+        assert!(!ctx.state.auth.jit_registration_enabled());
+        assert!(matches!(
+            authenticate(&ctx, "newuser1@example.org", "longpassword").await,
+            Err(ChatmailError::AuthFailed)
+        ));
+        assert!(!passwords::user_exists(&ctx.pool, "newuser1@example.org")
+            .await
+            .unwrap());
+    }
+
+    /// #235: `accounts create` still logs in after registration is closed.
+    #[tokio::test]
+    async fn cli_account_logs_in_while_registration_closed() {
+        let (ctx, _dir) = ctx_with_flags(true, false).await;
+        let hash = hash_password("longpassword1").unwrap();
+        passwords::create_user(&ctx.pool, "cliuser1@example.org", &hash)
+            .await
+            .unwrap();
+        authenticate(&ctx, "cliuser1@example.org", "longpassword1")
+            .await
+            .unwrap();
+        assert!(matches!(
+            authenticate(&ctx, "someone1@example.org", "longpassword1").await,
             Err(ChatmailError::AuthFailed)
         ));
     }

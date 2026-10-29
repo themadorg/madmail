@@ -122,7 +122,7 @@ This gives both speed (RAM checks) and durability (disk + DB).
 ### 5. Authentication & Identity
 
 - Passwords stored as hashes in DB (via `chatmail-auth`).
-- **JIT registration**: if no account exists and JIT is enabled (via settings or `registration_open`), first successful password attempt creates the account + Maildir + quota row.
+- **JIT registration**: if no account exists and both JIT and public registration are enabled, the first successful password attempt creates the account + Maildir + quota row. `POST /new` is a separate path and accepts an invite token while registration is closed.
 - `/new` endpoint also creates accounts (optionally with registration tokens).
 - Blocklist checked on every auth and delivery attempt.
 

@@ -111,6 +111,12 @@ impl AuthCache {
         self.blocked.remove(username);
     }
 
+    /// Password-only IMAP/SMTP account creation is allowed.
+    ///
+    /// True only when both `__JIT_REGISTRATION_ENABLED__` and `__REGISTRATION_OPEN__`
+    /// were true at the last hydrate. Closing registration stops first-login
+    /// creation even while the JIT row stays true. Opening registration does not
+    /// override a disabled JIT row (#235).
     pub fn jit_registration_enabled(&self) -> bool {
         *self.jit_enabled.read().unwrap_or_else(|e| e.into_inner())
     }
@@ -196,9 +202,12 @@ impl AuthCache {
             self.blocked.insert(user, ());
         }
 
-        let jit = get_bool_setting(pool, settings_keys::JIT_REGISTRATION_ENABLED, true).await?
-            || get_bool_setting(pool, settings_keys::REGISTRATION_OPEN, true).await?;
-        *self.jit_enabled.write().unwrap_or_else(|e| e.into_inner()) = jit;
+        // Both switches are required (#235). Missing rows keep the historical
+        // default of enabled so an unseeded cache still allows first login.
+        let jit_on = get_bool_setting(pool, settings_keys::JIT_REGISTRATION_ENABLED, true).await?;
+        let registration_open =
+            get_bool_setting(pool, settings_keys::REGISTRATION_OPEN, true).await?;
+        *self.jit_enabled.write().unwrap_or_else(|e| e.into_inner()) = jit_on && registration_open;
 
         self.login_settled.clear();
         for user in chatmail_db::list_login_settled_usernames(pool).await? {
@@ -254,6 +263,40 @@ mod tests {
         cache.hydrate(&pool).await.unwrap();
         assert!(cache.is_blocked("bad@test"));
         assert!(!cache.jit_registration_enabled());
+    }
+
+    /// #235: either switch alone must keep password-only sign-up off.
+    #[tokio::test]
+    async fn hydrate_requires_both_registration_and_jit() {
+        let pool = init_memory_db().await.unwrap();
+        let cache = AuthCache::new();
+
+        chatmail_db::set_setting(&pool, settings_keys::JIT_REGISTRATION_ENABLED, "true")
+            .await
+            .unwrap();
+        chatmail_db::set_setting(&pool, settings_keys::REGISTRATION_OPEN, "false")
+            .await
+            .unwrap();
+        cache.hydrate(&pool).await.unwrap();
+        assert!(!cache.jit_registration_enabled());
+
+        chatmail_db::set_setting(&pool, settings_keys::JIT_REGISTRATION_ENABLED, "false")
+            .await
+            .unwrap();
+        chatmail_db::set_setting(&pool, settings_keys::REGISTRATION_OPEN, "true")
+            .await
+            .unwrap();
+        cache.hydrate(&pool).await.unwrap();
+        assert!(!cache.jit_registration_enabled());
+
+        chatmail_db::set_setting(&pool, settings_keys::JIT_REGISTRATION_ENABLED, "true")
+            .await
+            .unwrap();
+        chatmail_db::set_setting(&pool, settings_keys::REGISTRATION_OPEN, "true")
+            .await
+            .unwrap();
+        cache.hydrate(&pool).await.unwrap();
+        assert!(cache.jit_registration_enabled());
     }
 
     #[test]

@@ -124,6 +124,7 @@
     <script>
         let currentLink = "";
         const registrationOpen = "{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true";
+        const jitEnabled = "{{if .JitRegistrationEnabled}}true{{else}}false{{end}}" === "true";
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         const PAGE_LANG = "{{.Language}}";
 
@@ -159,13 +160,8 @@
             return `dclogin:${email}/?p=${encodeURIComponent(password)}&v=1&ih=${host}&ip=${imap.port}&is=${imap.security}&sh=${host}&sp=${smtp.port}&ss=${smtp.security}&ic=3`;
         }
 
-        function generateAccountRandom() {
-            const username = generateRandomString(12);
-            const password = generateRandomString(24);
-            const email = formatEmail(username, REGISTRATION_DOMAIN);
-
-            currentLink = createDcloginLink(email, password);
-
+        function showCreatedLink(link) {
+            currentLink = link;
             document.getElementById('manual-link').innerText = currentLink;
             document.getElementById('manual-link-ios').innerText = currentLink;
             if (!isIOS) {
@@ -179,8 +175,43 @@
             updateButtonStates();
         }
 
+        function generateAccountRandom() {
+            const username = generateRandomString(12);
+            const password = generateRandomString(24);
+            const email = formatEmail(username, REGISTRATION_DOMAIN);
+            showCreatedLink(createDcloginLink(email, password));
+        }
+
+        function generateAccountViaApi() {
+            document.getElementById('error-message').classList.add('hidden');
+            document.getElementById('loading-indicator').classList.remove('hidden');
+            document.getElementById('generate-btn').disabled = true;
+            fetch('/new', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}'
+            })
+            .then(async (response) => {
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || (t('error_create_account') + response.status));
+                }
+                showCreatedLink(data.dclogin_url || createDcloginLink(data.email, data.password));
+            })
+            .catch((error) => {
+                document.getElementById('loading-indicator').classList.add('hidden');
+                document.getElementById('error-message').classList.remove('hidden');
+                document.getElementById('error-message').innerText = error.message || t('error_server');
+                document.getElementById('generate-btn').disabled = false;
+            });
+        }
+
         function generateAccount() {
-            generateAccountRandom();
+            if (jitEnabled) {
+                generateAccountRandom();
+            } else {
+                generateAccountViaApi();
+            }
         }
 
         function updateButtonStates() {
@@ -252,7 +283,7 @@
                 if (iosCard) iosCard.style.display = 'none';
             }
             updateButtonStates();
-            if (registrationOpen) {
+            if (registrationOpen && jitEnabled) {
                 generateAccount();
             }
         };

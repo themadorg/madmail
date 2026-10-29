@@ -160,7 +160,7 @@ Admin: `GET /admin/settings` (bulk) or `GET|POST /admin/settings/{name}` (`set` 
 | DB key | Default when unset | Admin resource / setting | Usage |
 |--------|---------------------|--------------------------|-------|
 | `__REGISTRATION_OPEN__` | `false` | `/admin/registration` | `POST /new` open/closed; CLI `madmail registration` |
-| `__JIT_REGISTRATION_ENABLED__` | `true` | `/admin/registration/jit` | First-login account create; falls back to registration open in `AuthCache` hydrate |
+| `__JIT_REGISTRATION_ENABLED__` | `true` | `/admin/registration/jit` | First-login account create only when this and `__REGISTRATION_OPEN__` are both true. `AuthCache` loads that gate on soft reload |
 | `__REGISTRATION_TOKEN_REQUIRED__` | `false` | `/admin/settings/registration_token_required` | Require token on `/new` |
 | `__SHARED_PORT_IMAP__` | file `alpn_imap` | `/admin/settings/shared_port_imap` | IMAP on the HTTPS port; CLI `madmail shared-port` |
 | `__SHARED_PORT_SMTP__` | file `alpn_smtp` | `/admin/settings/shared_port_smtp` | Submission on the HTTPS port; CLI `madmail shared-port` |

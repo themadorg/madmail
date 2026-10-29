@@ -63,6 +63,33 @@ async fn www_index_renders() {
     let html = engine.render("index.html", &ctx).unwrap();
     assert!(html.contains("Chat Server"));
     assert!(html.contains("main.css"));
+    assert!(html.contains(r#"const jitEnabled = "true" === "true";"#));
+}
+
+/// #235: with registration open and JIT disabled, the page must create the
+/// account through `POST /new` instead of handing out a password-only login.
+#[tokio::test]
+async fn index_uses_new_api_when_jit_disabled() {
+    let pool = init_memory_db().await.unwrap();
+    set_setting(&pool, settings_keys::REGISTRATION_OPEN, "true")
+        .await
+        .unwrap();
+    set_setting(&pool, settings_keys::JIT_REGISTRATION_ENABLED, "false")
+        .await
+        .unwrap();
+    let cfg = AppConfig::default();
+    let dir = tempfile::tempdir().unwrap();
+    let cache = WwwContextCache::new();
+    let ctx = build_context(&pool, &cfg, None, None, None, dir.path(), &cache)
+        .await
+        .unwrap();
+    assert!(ctx.RegistrationOpen);
+    assert!(!ctx.JitRegistrationEnabled);
+    let html = TemplateEngine::new().render("index.html", &ctx).unwrap();
+    assert!(html.contains(r#"const jitEnabled = "false" === "true";"#));
+    assert!(html.contains("fetch('/new'"));
+    assert!(html.contains("if (registrationOpen && jitEnabled)"));
+    assert!(html.contains("generate-btn"));
 }
 
 #[tokio::test]
