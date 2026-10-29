@@ -23,7 +23,7 @@ Sample keys:
 
 | Key | CLI / admin | Notes |
 |-----|-------------|-------|
-| `__REGISTRATION_OPEN__` | [`registration`](../guide/cli/registration.md) | `/new` gate (default `false`) |
+| `__REGISTRATION_OPEN__` | [`registration`](../guide/cli/registration.md) | `/new` gate (default `false`); with JIT, also the first-login IMAP/SMTP gate |
 | `__MESSAGE_RETENTION_ENABLED__` | admin settings | Hourly maildir purge toggle |
 | `__MESSAGE_RETENTION__` | admin settings | Duration (`30d`, `720h`, …) |
 | `__APPENDLIMIT__` / `__MAX_MESSAGE_SIZE__` | [`message-size`](../guide/cli/message-size.md) | Effective cap (min of both) |

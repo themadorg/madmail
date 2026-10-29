@@ -8,8 +8,9 @@
 
 Core Chatmail feature:
 
-- On first successful IMAP or SMTP login, if user does not exist and JIT is enabled → automatically create account + hash password.
-- Controlled by `__JIT_REGISTRATION_ENABLED__` setting (falls back to `__REGISTRATION_OPEN__`).
+- On first successful IMAP or SMTP login, if the user does not exist and password-only sign-up is enabled → automatically create account + hash password.
+- Password-only sign-up requires both `__JIT_REGISTRATION_ENABLED__` and `__REGISTRATION_OPEN__`. Closing registration stops IMAP/SMTP account creation even while the JIT row stays true. Opening registration does not enable it while JIT is disabled.
+- Invite tokens apply to `POST /new`. A valid token creates an account while registration is closed. IMAP and SMTP do not read the token; that account then logs in as an existing user. `accounts create` and `create-user` keep working.
 
 ## Flow
 
@@ -30,7 +31,7 @@ Madmail `pass_table.credCache` parity. Hot paths (IMAP LOGIN, SMTP AUTH, WebIMAP
 |-----------------|---------------|------------------|
 | Credentials (`username → hash`) | `passwords` table | JIT create, `/new`, admin import, password change |
 | Blocklist (`username`) | `blocklist` table | Admin block/unblock, account delete |
-| JIT enabled flag | `__JIT_REGISTRATION_ENABLED__` ∨ `__REGISTRATION_OPEN__` | Soft reload (`SIGUSR2`) |
+| Password-only sign-up flag | `__JIT_REGISTRATION_ENABLED__` ∧ `__REGISTRATION_OPEN__` | Soft reload (`SIGUSR2`) |
 
 Admin CLI block/unblock updates DB only; running server picks up blocklist on next soft reload unless the change went through Admin API (which updates the cache immediately).
 
@@ -42,9 +43,9 @@ Admin CLI block/unblock updates DB only; running server picks up blocklist on ne
 
 ## CLI / Admin API
 
-- `registration open/close`
-- `jit enable/disable`
-- Exposed via Admin API toggles
+- `registration open/close` writes `__REGISTRATION_OPEN__`
+- JIT on/off is `POST /api/admin` resource `/admin/registration/jit` (`__JIT_REGISTRATION_ENABLED__`). There is no `jit` CLI subcommand.
+- A running server applies both on startup and `madmail reload`
 
 ## Credential length limits (`chatmail` block)
 

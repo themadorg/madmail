@@ -28,7 +28,7 @@ Steps it performs:
    - If found → verify password. On success → `finish_successful_login`.
    - If not found → proceed to JIT path (if allowed).
 5. **JIT path**:
-   - Check that JIT or registration_open is enabled in settings.
+   - Check that both JIT and public registration are enabled in the auth cache.
    - Validate localpart + password policy (`credential_policy`).
    - Hash the password.
    - Create the user row in `passwords` table.
@@ -43,21 +43,18 @@ Steps it performs:
 
 - SMTP `AUTH PLAIN` / `AUTH LOGIN` (submission and sometimes inbound in dev)
 - IMAP `LOGIN` and `AUTHENTICATE`
-- `POST /new` web registration handler (slightly different path that also accepts registration tokens)
 
-All of them end up constructing an `AuthContext` (pool + AppState + primary_domain + jit_domain + credential_policy) and calling the same `authenticate` function.
+Both construct an `AuthContext` (pool + AppState + primary_domain + jit_domain + credential_policy) and call `authenticate`. `POST /new` creates the account itself and does not consult this gate.
 
 ## JIT Enablement Logic
 
 ```rust
-async fn jit_enabled(pool: &DbPool) -> Result<bool> {
-    if get_bool_setting(..., JIT_REGISTRATION_ENABLED, true) { return true; }
-    if get_bool_setting(..., REGISTRATION_OPEN, true) { return true; }
-    Ok(false)
+fn password_jit_allowed(jit_enabled: bool, registration_open: bool) -> bool {
+    jit_enabled && registration_open
 }
 ```
 
-Two separate toggles for historical / policy reasons. Admin UI usually exposes a combined "Allow new registrations" switch.
+The two settings stay independent. `AuthCache::hydrate` stores the AND and IMAP/SMTP consult that flag. `POST /new` does not: a valid invite token creates an account while registration is closed, and an open registration can use `/new` while JIT is disabled. The registration page follows the same split. A running server loads the flag at startup and on soft reload.
 
 ## Password Storage
 
