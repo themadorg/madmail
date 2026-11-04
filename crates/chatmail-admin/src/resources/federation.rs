@@ -25,9 +25,9 @@ use chatmail_db::{
     set_setting, settings_keys,
 };
 use chatmail_state::{
-    domain_overrides_json, load_domain_overrides, load_transport_policy, parse_override_mode,
-    parse_transport_mode, set_transport_mode, update_domain_transports, PolicyMode, TransportName,
-    TransportPolicy,
+    domain_overrides_json, load_domain_overrides, load_transport_policy,
+    normalize_transport_domain, parse_override_mode, parse_transport_mode, set_transport_mode,
+    PolicyMode, TransportName, TransportPolicy,
 };
 use chatmail_types::ChatmailError;
 
@@ -117,6 +117,7 @@ fn parse_transport_post(
         if domain.trim().is_empty() {
             return Err((400, "domain is required".into()));
         }
+        let domain = normalize_transport_domain(&domain).map_err(config_or_db)?;
         let mut updates = Vec::new();
         for (name, mode) in transport_fields(body) {
             let Some(mode) = mode else { continue };
@@ -143,7 +144,10 @@ async fn apply_transport_post(
 ) -> Result<(), (u16, String)> {
     match update {
         TransportUpdate::Domain { domain, updates } => {
-            update_domain_transports(&st.pool, &domain, &updates)
+            // Locked load, change, save and reload of the shared overrides row.
+            st.app
+                .federation_transport
+                .update_domain(&st.pool, &domain, &updates)
                 .await
                 .map_err(config_or_db)?;
         }
@@ -153,13 +157,13 @@ async fn apply_transport_post(
                     .await
                     .map_err(db_err)?;
             }
+            st.app
+                .federation_transport
+                .hydrate(&st.pool)
+                .await
+                .map_err(db_err)?;
         }
     }
-    st.app
-        .federation_transport
-        .hydrate(&st.pool)
-        .await
-        .map_err(db_err)?;
     Ok(())
 }
 
@@ -169,7 +173,10 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
         "POST" => {
             let req: FederationPost =
                 serde_json::from_value(body.clone()).map_err(|e| (400, e.to_string()))?;
-            // Reject a bad `transports` value before `enabled` or `policy` is saved.
+            // Reject a bad `domain` or `transports` value before `enabled` or `policy` is saved.
+            if req.domain.is_some() && req.transports.is_none() {
+                return Err((400, "transports required when domain is set".into()));
+            }
             let transports = req
                 .transports
                 .map(|body| parse_transport_post(body, req.domain.clone()))
@@ -193,8 +200,6 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
             }
             if let Some(update) = transports {
                 apply_transport_post(st, update).await?;
-            } else if req.domain.is_some() {
-                return Err((400, "transports required when domain is set".into()));
             }
             Ok((200, Some(federation_settings_body(st).await?)))
         }

@@ -626,6 +626,10 @@ async fn admin_federation_transport_block_updates_cache() {
     for bad in [
         json!({ "policy": "REJECT", "enabled": true, "transports": { "smtp": "nope" } }),
         json!({ "transports": { "http": "allow", "smtp": "nope" } }),
+        json!({ "policy": "REJECT", "enabled": true, "domain": "evil.test" }),
+        json!({ "enabled": true, "domain": "a@b", "transports": { "smtp": "block" } }),
+        json!({ "enabled": true, "domain": "evil.test", "transports": { "smtp": "nope" } }),
+        json!({ "enabled": true, "domain": "  ", "transports": { "smtp": "block" } }),
     ] {
         let err = resources::dispatch(&st, "POST", "/admin/settings/federation", &bad)
             .await
@@ -639,7 +643,13 @@ async fn admin_federation_transport_block_updates_cache() {
         assert_eq!(after.get("policy"), before.get("policy"), "{bad}");
         assert_eq!(after.get("enabled"), before.get("enabled"), "{bad}");
         assert_eq!(after.get("transports"), before.get("transports"), "{bad}");
+        assert_eq!(
+            after.get("transport_overrides"),
+            before.get("transport_overrides"),
+            "{bad}"
+        );
         assert_eq!(st.app.federation_transport.get(), live, "{bad}");
+        assert!(st.app.federation_transport.overrides().is_empty(), "{bad}");
         assert_eq!(
             st.app.federation_policy.global_mode(),
             PolicyMode::from_label(before["policy"].as_str().unwrap()),

@@ -289,7 +289,7 @@ async fn transport_cmd(
             let policy = load_transport_policy(pool).await?;
             let overrides = load_domain_overrides(pool).await?;
             let ov = overrides.get(&domain).cloned().unwrap_or_default();
-            let effective = effective_policy(policy, &ov);
+            let effective = policy.apply(&ov);
             let out = CtlOut::from_args(args, "federation transport status");
             if out.is_json() {
                 let mut override_body = serde_json::Map::new();
@@ -406,14 +406,6 @@ async fn transport_cmd(
                 ),
             )
         }
-    }
-}
-
-fn effective_policy(global: TransportPolicy, ov: &DomainTransportOverride) -> TransportPolicy {
-    TransportPolicy {
-        https: ov.https.unwrap_or(global.https),
-        http: ov.http.unwrap_or(global.http),
-        smtp: ov.smtp.unwrap_or(global.smtp),
     }
 }
 

@@ -779,7 +779,11 @@ mod tests {
         .await;
         match outcome {
             DeliveryOutcome::Permanent { reason } => {
-                assert_eq!(reason, chatmail_state::ALL_BLOCKED_REASON);
+                assert!(
+                    reason.starts_with(chatmail_state::ALL_BLOCKED_REASON),
+                    "{reason}"
+                );
+                assert!(reason.contains("other.org"), "{reason}");
             }
             other => panic!("expected permanent policy failure, got {other:?}"),
         }
