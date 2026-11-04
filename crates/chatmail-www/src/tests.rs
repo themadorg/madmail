@@ -63,6 +63,120 @@ async fn www_index_renders() {
     let html = engine.render("index.html", &ctx).unwrap();
     assert!(html.contains("Chat Server"));
     assert!(html.contains("main.css"));
+    assert!(ctx.PasswordSignupEnabled);
+    assert!(html.contains(r#"const passwordSignupEnabled = "true" === "true";"#));
+}
+
+/// #235: with registration open and JIT disabled, the page must create the
+/// account through `POST /new` instead of handing out a password-only login.
+#[tokio::test]
+async fn index_uses_new_api_when_jit_disabled() {
+    let pool = init_memory_db().await.unwrap();
+    set_setting(&pool, settings_keys::REGISTRATION_OPEN, "true")
+        .await
+        .unwrap();
+    set_setting(&pool, settings_keys::JIT_REGISTRATION_ENABLED, "false")
+        .await
+        .unwrap();
+    let cfg = AppConfig::default();
+    let dir = tempfile::tempdir().unwrap();
+    let cache = WwwContextCache::new();
+    let ctx = build_context(&pool, &cfg, None, None, None, dir.path(), &cache)
+        .await
+        .unwrap();
+    assert!(ctx.RegistrationOpen);
+    assert!(!ctx.JitRegistrationEnabled);
+    assert!(!ctx.PasswordSignupEnabled);
+    let html = TemplateEngine::new().render("index.html", &ctx).unwrap();
+    assert!(html.contains(r#"const passwordSignupEnabled = "false" === "true";"#));
+    assert!(html.contains("fetch('/new'"));
+    assert!(html.contains("if (registrationOpen && passwordSignupEnabled)"));
+    assert!(html.contains("generate-btn"));
+}
+
+/// Invite-only: the page must not hand out a password-only login that would
+/// skip the token check.
+#[tokio::test]
+async fn index_uses_new_api_when_token_required() {
+    let pool = init_memory_db().await.unwrap();
+    set_setting(&pool, settings_keys::REGISTRATION_OPEN, "true")
+        .await
+        .unwrap();
+    set_setting(&pool, settings_keys::JIT_REGISTRATION_ENABLED, "true")
+        .await
+        .unwrap();
+    set_setting(&pool, settings_keys::REGISTRATION_TOKEN_REQUIRED, "true")
+        .await
+        .unwrap();
+    let cfg = AppConfig::default();
+    let dir = tempfile::tempdir().unwrap();
+    let cache = WwwContextCache::new();
+    let ctx = build_context(&pool, &cfg, None, None, None, dir.path(), &cache)
+        .await
+        .unwrap();
+    assert!(ctx.RegistrationOpen);
+    assert!(ctx.JitRegistrationEnabled);
+    assert!(!ctx.PasswordSignupEnabled);
+}
+
+/// #235: the settings snapshot follows the database within seconds, but IMAP
+/// and SMTP read the sign-up gate from the auth cache until reload. Reopening
+/// registration (or enabling JIT) without a reload must not make the live page
+/// hand out credentials that the first login would refuse.
+#[tokio::test]
+async fn live_index_follows_auth_cache_gate_not_db() {
+    use axum::body::to_bytes;
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    let pool = init_memory_db().await.unwrap();
+    set_setting(&pool, settings_keys::JIT_REGISTRATION_ENABLED, "true")
+        .await
+        .unwrap();
+    set_setting(&pool, settings_keys::REGISTRATION_OPEN, "false")
+        .await
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let app_state = Arc::new(AppState::new(dir.path(), pool.clone()));
+    app_state.auth.hydrate(&pool).await.unwrap();
+    assert!(!app_state.auth.jit_registration_enabled());
+
+    // `madmail registration open` without `madmail reload`.
+    set_setting(&pool, settings_keys::REGISTRATION_OPEN, "true")
+        .await
+        .unwrap();
+
+    let get_index = |app: axum::Router| async move {
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        String::from_utf8(body.to_vec()).unwrap()
+    };
+
+    let www = crate::WwwState::new(
+        pool.clone(),
+        Arc::clone(&app_state),
+        AppConfig::default(),
+        dir.path(),
+    );
+    let html = get_index(crate::www_router(www)).await;
+    assert!(html.contains(r#"const registrationOpen = "true" === "true";"#));
+    assert!(html.contains(r#"const passwordSignupEnabled = "false" === "true";"#));
+
+    // After reload the auth cache allows first login, and the page may make
+    // credentials in the browser again.
+    app_state.auth.hydrate(&pool).await.unwrap();
+    let www = crate::WwwState::new(pool, app_state, AppConfig::default(), dir.path());
+    let html = get_index(crate::www_router(www)).await;
+    assert!(html.contains(r#"const passwordSignupEnabled = "true" === "true";"#));
 }
 
 #[tokio::test]

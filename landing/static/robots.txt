@@ -1,5 +1,47 @@
-# allow crawling everything by default
+# Madmail website: everything is public documentation, so every crawler is welcome,
+# including search engines and AI assistants (answer engines, LLM training and retrieval).
 User-agent: *
-Disallow:
+Allow: /
 
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+# Machine-readable summaries for LLMs: https://madmail.chat/llms.txt and https://madmail.chat/llms-full.txt
+# Every docs and blog page also has a Markdown copy at the same URL plus ".md".
 Sitemap: https://madmail.chat/sitemap.xml
