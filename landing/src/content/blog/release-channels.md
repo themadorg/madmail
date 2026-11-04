@@ -65,7 +65,7 @@ The unsigned installer is labelled `Madmail TESTING` and is intended for a fresh
 
 Stable server binaries go through a separate build and digital signing process, using the selected source and separately maintained owner tooling. Production signing keys stay outside the public repository and public CI.
 
-The ordinary updater continues to follow this signed stable path. Both `madmail update` and `madmail upgrade` skip GitHub drafts and prereleases and still require the existing Ed25519 signature verification. Publishing an unsigned testing build doesn't make it available through those commands.
+The ordinary updater continues to follow this signed stable path. `madmail update latest` and `madmail upgrade latest` download from GitHub's latest stable release, which skips drafts and prereleases. Every update or upgrade, including one from an explicit path or URL, still requires the existing Ed25519 signature verification, so publishing an unsigned testing build doesn't make it installable through those commands.
 
 Stable Windows packaging uses the signed server binary and matching tray attached to that stable release.
 
