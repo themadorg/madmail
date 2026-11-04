@@ -8,8 +8,11 @@
 
 Core Chatmail feature:
 
-- On first successful IMAP or SMTP login, if user does not exist and JIT is enabled → automatically create account + hash password.
-- Controlled by `__JIT_REGISTRATION_ENABLED__` setting (falls back to `__REGISTRATION_OPEN__`).
+- On first successful IMAP or SMTP login, if the user does not exist and password-only sign-up is enabled → automatically create account + hash password.
+- Password-only sign-up requires `__JIT_REGISTRATION_ENABLED__` and `__REGISTRATION_OPEN__` to be true and `__REGISTRATION_TOKEN_REQUIRED__` to be false. Closing registration stops IMAP/SMTP account creation even while the JIT row stays true. Opening registration does not enable it while JIT is disabled. IMAP and SMTP cannot carry an invite token, so requiring a token also turns this path off.
+- The rule and the missing-row defaults (`true`, `true`, `false`, the same values `seed_install_defaults` writes) live in `chatmail_db::SignupSettings`. The auth cache, `POST /new`, the registration page, the admin API and the CLI all read them from there.
+- The registration page makes credentials in the browser only when the running server's auth cache allows first-login sign-up. Otherwise it calls `POST /new`. This keeps the page correct between a settings change and the next reload.
+- Invite tokens apply to `POST /new`. A valid token creates an account while registration is closed. IMAP and SMTP do not read the token; that account then logs in as an existing user. `accounts create` and `create-user` keep working.
 
 ## Flow
 
@@ -30,7 +33,7 @@ Madmail `pass_table.credCache` parity. Hot paths (IMAP LOGIN, SMTP AUTH, WebIMAP
 |-----------------|---------------|------------------|
 | Credentials (`username → hash`) | `passwords` table | JIT create, `/new`, admin import, password change |
 | Blocklist (`username`) | `blocklist` table | Admin block/unblock, account delete |
-| JIT enabled flag | `__JIT_REGISTRATION_ENABLED__` ∨ `__REGISTRATION_OPEN__` | Soft reload (`SIGUSR2`) |
+| Password-only sign-up flag | `__JIT_REGISTRATION_ENABLED__` ∧ `__REGISTRATION_OPEN__` ∧ ¬`__REGISTRATION_TOKEN_REQUIRED__` | Soft reload (`SIGUSR2`) |
 
 Admin CLI block/unblock updates DB only; running server picks up blocklist on next soft reload unless the change went through Admin API (which updates the cache immediately).
 
@@ -42,9 +45,9 @@ Admin CLI block/unblock updates DB only; running server picks up blocklist on ne
 
 ## CLI / Admin API
 
-- `registration open/close`
-- `jit enable/disable`
-- Exposed via Admin API toggles
+- `registration open/close` writes `__REGISTRATION_OPEN__`
+- JIT on/off is `POST /api/admin` resource `/admin/registration/jit` (`__JIT_REGISTRATION_ENABLED__`). There is no `jit` CLI subcommand.
+- A running server applies both on startup and `madmail reload`
 
 ## Credential length limits (`chatmail` block)
 

@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { loadDocModule } from '$lib/docModules.js';
-import { docMetaForRoute } from '$lib/docPageMeta.js';
+import { docMetaForRoute, docSeoData } from '$lib/docPageMeta.js';
 import { loadRawDoc } from '$lib/rawDocModules.js';
 import { renderMarkdown } from '$lib/renderMarkdown.js';
 
@@ -13,12 +13,14 @@ const HREF = '/docs/quick-setup';
 export async function load() {
 	const compiled = await loadDocModule(ROUTE);
 	const meta = await docMetaForRoute(ROUTE);
+	const seo = docSeoData({ route: ROUTE, href: HREF, ...meta });
 
 	if (compiled) {
 		return {
 			href: HREF,
 			title: meta.title,
 			description: meta.description,
+			...seo,
 			Content: compiled.default,
 			html: null
 		};
@@ -33,6 +35,7 @@ export async function load() {
 		href: HREF,
 		title: meta.title,
 		description: meta.description,
+		...seo,
 		Content: null,
 		html: renderMarkdown(markdown, ROUTE)
 	};

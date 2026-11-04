@@ -40,7 +40,14 @@ pub struct WwwContext {
     pub PublicIP: String,
     pub Version: String,
     pub RegistrationOpen: bool,
+    /// Stored `__JIT_REGISTRATION_ENABLED__` row (not the combined gate).
     pub JitRegistrationEnabled: bool,
+    /// Whether a first IMAP/SMTP login may create the account right now. The
+    /// registration page makes credentials in the browser only when this is
+    /// true and otherwise calls `POST /new`. [`build_context`] fills it from the
+    /// database; the live handler replaces it with the auth cache value, which
+    /// is what IMAP and SMTP enforce until the next reload.
+    pub PasswordSignupEnabled: bool,
     pub Language: String,
     /// HTTP Host clients used to open the registration page (for dclogin `ih`/`sh`).
     pub ClientHost: String,
@@ -305,8 +312,9 @@ pub async fn build_context(
         WebDomain: web_domain,
         PublicIP: public_ip,
         Version: env!("CARGO_PKG_VERSION").to_string(),
-        RegistrationOpen: cached.registration_open,
-        JitRegistrationEnabled: cached.jit_registration_enabled,
+        RegistrationOpen: cached.signup.registration_open,
+        JitRegistrationEnabled: cached.signup.jit_enabled,
+        PasswordSignupEnabled: cached.signup.password_signup_allowed(),
         Language: cached.language,
         ClientHost: mail.client_host,
         ImapPortTLS: mail.imap_port_tls,
