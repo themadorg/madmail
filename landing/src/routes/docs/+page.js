@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { loadDocModule } from '$lib/docModules.js';
-import { docMetaForRoute } from '$lib/docPageMeta.js';
+import { docMetaForRoute, docSeoData } from '$lib/docPageMeta.js';
 
 /** @type {import('./$types').PageLoad} */
 export async function load() {
@@ -16,6 +16,7 @@ export async function load() {
 		href: '/docs',
 		title: meta.title,
 		description: meta.description,
+		...docSeoData({ route: 'project/user-guide/README', href: '/docs', ...meta }),
 		Content: mod.default
 	};
 }
