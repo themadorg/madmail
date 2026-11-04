@@ -27,7 +27,7 @@ The layout (`+layout.svelte`) is shared across all federation sub-routes and sho
 | Switch ACCEPT ↔ REJECT | `POST` | `/admin/settings/federation` — `{ "policy": "ACCEPT" \| "REJECT" }` |
 | Outbound transports | `POST` | `/admin/settings/federation` — `{ "transports": { "https": "allow" \| "block", "http": "...", "smtp": "..." } }` |
 
-GET returns `transports` with the effective mode of each path. Omitted keys in POST stay unchanged. A missing stored key means `allow` (HTTPS, then plain HTTP, then SMTP). The POST updates the running server immediately. The same keys are `madmail federation transport`, which needs `madmail reload`. The web UI does not draw these switches yet.
+GET returns `transports` with the stored mode of each path, read from the database like `enabled` and `policy`. A CLI change shows up there at once but takes effect only after `madmail reload` or the next POST with `transports` (which reloads all three keys). Omitted keys in POST stay unchanged. A missing stored key means `allow` (HTTPS, then plain HTTP, then SMTP). The POST updates the running server immediately. The same keys are `madmail federation transport`, which needs `madmail reload`. The web UI does not draw these switches yet.
 
 ### Policy semantics
 

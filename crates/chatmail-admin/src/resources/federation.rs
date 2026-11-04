@@ -78,7 +78,8 @@ fn transport_json(policy: TransportPolicy) -> Value {
     })
 }
 
-async fn apply_transport_post(st: &AdminState, body: TransportPost) -> Result<(), (u16, String)> {
+/// Validate every transport mode before anything is written.
+fn parse_transport_post(body: TransportPost) -> Result<Vec<(TransportName, bool)>, (u16, String)> {
     let updates = [
         (TransportName::Https, body.https),
         (TransportName::Http, body.http),
@@ -90,6 +91,13 @@ async fn apply_transport_post(st: &AdminState, body: TransportPost) -> Result<()
         let allow = parse_transport_mode(&mode).map_err(|e| (400, e.to_string()))?;
         parsed.push((name, allow));
     }
+    Ok(parsed)
+}
+
+async fn apply_transport_post(
+    st: &AdminState,
+    parsed: Vec<(TransportName, bool)>,
+) -> Result<(), (u16, String)> {
     for (name, allow) in parsed {
         set_transport_mode(&st.pool, name, allow)
             .await
@@ -109,6 +117,8 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
         "POST" => {
             let req: FederationPost =
                 serde_json::from_value(body.clone()).map_err(|e| (400, e.to_string()))?;
+            // Reject a bad `transports` value before `enabled` or `policy` is saved.
+            let transports = req.transports.map(parse_transport_post).transpose()?;
             if let Some(en) = req.enabled {
                 set_setting(
                     &st.pool,
@@ -126,8 +136,8 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
                     .federation_policy
                     .set_global_mode(PolicyMode::from_label(&p));
             }
-            if let Some(transports) = req.transports {
-                apply_transport_post(st, transports).await?;
+            if let Some(parsed) = transports {
+                apply_transport_post(st, parsed).await?;
             }
             Ok((200, Some(federation_settings_body(st).await?)))
         }

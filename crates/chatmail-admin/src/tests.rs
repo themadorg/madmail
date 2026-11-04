@@ -26,7 +26,7 @@ use chatmail_db::{
     seed_install_defaults, settings_keys,
 };
 use chatmail_push::{push_stats_snapshot, record_successful_delivery};
-use chatmail_state::{AppState, ReloadRequest, ReloadScope};
+use chatmail_state::{AppState, PolicyMode, ReloadRequest, ReloadScope};
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -615,6 +615,37 @@ async fn admin_federation_transport_block_updates_cache() {
     .await
     .unwrap_err();
     assert_eq!(err.0, 400);
+
+    // A 400 must leave policy, enabled and transports untouched, even when other
+    // fields or other transports in the same body are valid.
+    let before = resources::dispatch(&st, "GET", "/admin/settings/federation", &json!({}))
+        .await
+        .unwrap()
+        .1
+        .unwrap();
+    for bad in [
+        json!({ "policy": "REJECT", "enabled": true, "transports": { "smtp": "nope" } }),
+        json!({ "transports": { "http": "allow", "smtp": "nope" } }),
+    ] {
+        let err = resources::dispatch(&st, "POST", "/admin/settings/federation", &bad)
+            .await
+            .unwrap_err();
+        assert_eq!(err.0, 400, "{bad}");
+        let after = resources::dispatch(&st, "GET", "/admin/settings/federation", &json!({}))
+            .await
+            .unwrap()
+            .1
+            .unwrap();
+        assert_eq!(after.get("policy"), before.get("policy"), "{bad}");
+        assert_eq!(after.get("enabled"), before.get("enabled"), "{bad}");
+        assert_eq!(after.get("transports"), before.get("transports"), "{bad}");
+        assert_eq!(st.app.federation_transport.get(), live, "{bad}");
+        assert_eq!(
+            st.app.federation_policy.global_mode(),
+            PolicyMode::from_label(before["policy"].as_str().unwrap()),
+            "{bad}"
+        );
+    }
 }
 
 #[tokio::test]

@@ -21,6 +21,8 @@ The `chatmail-delivery` queue tries, unless that transport is blocked:
 
 Each of those can be set to `block` with `madmail federation transport` or `POST /admin/settings/federation`. The default is allow for all three.
 
+A delivery that the transport policy blocks fails the queue entry **permanently** (like an MTA 5.7.x policy reject): the entry is removed and not retried. This happens when all three are blocked, or when `smtp` is blocked (no SMTP fallback left) and the HTTP step fails permanently: an `http://` endpoint rewrite meets a blocked `http`, a redirect to `http://` is refused, or `/mxdeliv` answers with a 4xx. The failure reason says it was blocked by the outbound transport policy and names the transport and the recipient domain. With `http` blocked, an HTTPS redirect to plain `http://` is refused. The sender is not told yet: the sender report comes from the follow-up PR #191, stacked on this one.
+
 All paths are tracked for latency and failure rate.
 
 ## Inbound: `POST /mxdeliv` Handler

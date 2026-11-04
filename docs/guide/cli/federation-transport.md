@@ -4,7 +4,7 @@ Parent: [`federation`](federation.md)
 
 Allow or block outbound federation transports. With no subcommand, this shows the current mode.
 
-Unset keys stay **allow**, which is the historical order: HTTPS `/mxdeliv`, then plain HTTP, then SMTP. Blocking a transport skips it. Blocking all three makes outbound delivery to that recipient fail immediately with `federation transport blocked by policy`.
+Unset keys stay **allow**, which is the historical order: HTTPS `/mxdeliv`, then plain HTTP, then SMTP. Blocking a transport skips it. Blocking all three makes outbound delivery to that recipient fail without dialing, with `delivery blocked by outbound transport policy: https, http and smtp are all blocked (recipient domain <domain>)`. A delivery blocked by this policy is a permanent failure: the queue drops the entry and does not retry it, so unblocking later does not bring it back. With `smtp` blocked, a 4xx from `/mxdeliv` is permanent too. With `http` blocked, an HTTPS redirect to `http://` is refused.
 
 A running server picks up CLI changes after `madmail reload`. `POST /admin/settings/federation` with a `transports` object applies in the same process.
 
