@@ -1,3 +1,14 @@
+# [2.39.0](https://github.com/themadorg/madmail/compare/v2.38.2-unstable...v2.39.0-unstable) (2026-11-04)
+
+### Features
+
+* **landing:** SEO, AEO and GEO overhaul for madmail.chat ([bdbf57b](https://github.com/themadorg/madmail/commit/bdbf57bae92d79dc8c688d221e638fc6754a7525))
+
+### Bug Fixes
+
+* **deps:** bump ctutils to 0.4.4 for RUSTSEC-2026-0385 ([6679a77](https://github.com/themadorg/madmail/commit/6679a7710d4a5a38205fcf0ac4f29a942a210883))
+* **landing:** fail the build when a page crashes during prerender ([b63609a](https://github.com/themadorg/madmail/commit/b63609a1719ddb68940d98b520eb8f6c3d50b394))
+
 # [2.38.2](https://github.com/themadorg/madmail/compare/v2.38.1-unstable...v2.38.2-unstable) (2026-10-21)
 
 ### Bug Fixes

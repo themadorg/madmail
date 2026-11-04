@@ -8,7 +8,7 @@ import {
 	listingEntriesForDir
 } from '$lib/docTreeData.js';
 import { hrefFromRoute, isTxtRoute } from '$lib/docs.js';
-import { docMetaForRoute, dirMetaForDir } from '$lib/docPageMeta.js';
+import { dirMetaForDir, dirSeoData, docMetaForRoute, docSeoData } from '$lib/docPageMeta.js';
 import { getAllDocRoutes, loadRawDoc } from '$lib/rawDocModules.js';
 import { renderMarkdown } from '$lib/renderMarkdown.js';
 import { renderPlainText } from '$lib/renderPlainText.js';
@@ -31,11 +31,13 @@ export async function load({ params }) {
 
 	if (compiled) {
 		const meta = await docMetaForRoute(route);
+		const href = hrefFromRoute(route);
 		return {
 			kind: 'doc',
-			href: hrefFromRoute(route),
+			href,
 			title: meta.title,
 			description: meta.description,
+			...docSeoData({ route, href, ...meta }),
 			Content: compiled.default,
 			html: null
 		};
@@ -46,11 +48,13 @@ export async function load({ params }) {
 		const dir = findDirById(docTreeNodes, route);
 		if (dir) {
 			const meta = await dirMetaForDir(dir);
+			const href = hrefForDirId(route);
 			return {
 				kind: 'dir',
-				href: hrefForDirId(route),
+				href,
 				title: meta.title,
 				description: meta.description,
+				...dirSeoData(dir, href, meta.title, meta.description),
 				entries: listingEntriesForDir(dir)
 			};
 		}
@@ -59,12 +63,14 @@ export async function load({ params }) {
 	}
 
 	const meta = await docMetaForRoute(route);
+	const href = hrefFromRoute(route);
 
 	return {
 		kind: 'doc',
-		href: hrefFromRoute(route),
+		href,
 		title: meta.title,
 		description: meta.description,
+		...docSeoData({ route, href, ...meta }),
 		Content: null,
 		html: isTxtRoute(route) ? renderPlainText(markdown, route) : renderMarkdown(markdown, route)
 	};
