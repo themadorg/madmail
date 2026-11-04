@@ -122,7 +122,7 @@ To obtain a ready-to-use binary without compiling:
    | `madmail-linux-amd64-legacy` / `.tar.gz` | Debian 12, Ubuntu 22.04, and Rocky Linux 9 (`GLIBC_2.38` not found) |
    | `madmail-linux-amd64-musl` / `.tar.gz` | musl alternative |
    | arm64 equivalents (`…-arm64…`, `…-legacy…`, `…-musl…`) | Same matrix for arm64 |
-   | `madmail-windows-amd64-setup.exe` | Windows 10 and 11 (x64). The admin panel and Iroh are not bundled for now |
+   | `madmail-windows-amd64-setup.exe` | Windows 10 and 11 (x64). Iroh is not available on Windows. The stable installer has no admin web panel for now; prerelease `Madmail TESTING` installers differ ([details](../../guide/install.md#supported-operating-systems)) |
 
    Example with `wget` (default amd64):
 

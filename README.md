@@ -51,13 +51,13 @@ A normal Linux install uses systemd.
 
 Debian 12, Ubuntu 22.04, and Rocky Linux 9 ship glibc older than 2.38. The default `madmail-linux-amd64` build does not start there. Use the legacy build from the same release.
 
-Rocky Linux 9 enables firewalld. Allow HTTP, HTTPS, SMTP, submission, and IMAP before install requests a certificate.
+RHEL-family hosts often enable firewalld (Rocky Linux 9 does by default). `madmail install` does not open ports there. Before install requests a certificate, allow HTTP, HTTPS, SMTP, submission, and IMAP. Also allow TURN for calls (3478/udp, 3478/tcp, 49152-65535/udp) and Shadowsocks when on (8388/tcp). See [the port list and `firewall-cmd` commands](docs/guide/install.md#supported-operating-systems).
 
 ### Windows
 
-Windows 10 and Windows 11 (x64) are supported. Use `madmail-windows-amd64-setup.exe`.
+Windows 10 and Windows 11 (x64) are supported. Use `madmail-windows-amd64-setup.exe` from a stable release.
 
-The Windows build does not bundle the admin panel or Iroh for now, because of technical limitations. The admin API and the admin token still work. Iroh is left out because its relay program is not packaged for Windows, and turning it on keeps the service from starting.
+Iroh is not available on Windows for now: the installer does not offer it, and turning it on can keep the service from starting. The admin API and the admin token work. The stable installer does not include the admin web panel for now. Prerelease installers with the same file name are `Madmail TESTING` builds and differ; see [Supported operating systems](docs/guide/install.md#supported-operating-systems).
 
 ## Quick Setup
 
@@ -67,6 +67,9 @@ Download the release binary for your architecture, then install and start the se
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -fsSL "https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-${ARCH}" \
   -o madmail
+# Debian 12, Ubuntu 22.04, Rocky Linux 9 (x86_64, glibc older than 2.38): use the legacy build instead
+# curl -fsSL "https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64-legacy" \
+#   -o madmail
 chmod +x madmail
 ```
 
