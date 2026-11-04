@@ -358,11 +358,13 @@ imap tls://0.0.0.0:993 tcp://0.0.0.0:143 {{
 {turn_block}
 {chatmail_http}
 
-# Prometheus / OpenMetrics (scrape http://127.0.0.1:9749/metrics; read by `madmail monitor`).
-# Loopback only: the endpoint has no authentication. 9749 rather than 9100 so it does not
+# Prometheus / OpenMetrics is disabled by default.
+# Enable with `madmail monitor enable`, then restart the server.
+# Loopback by default; use `monitor enable --ip ... --port ... --password ...` to customize.
+# Port 9749 rather than 9100 so it does not
 # collide with node_exporter - a port already in use here fails the boot preflight.
-openmetrics tcp://127.0.0.1:9749 {{
-}}
+# openmetrics tcp://127.0.0.1:9749 {{
+# }}
 "##,
         generated = c.generated,
         hostname = c.hostname,

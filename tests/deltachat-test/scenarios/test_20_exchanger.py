@@ -30,6 +30,7 @@ import time
 import json
 import subprocess
 import urllib.request
+from utils.accounts import account_addr
 
 # For running inside the test suite or standalone
 TEST_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -442,8 +443,8 @@ def run(rpc, dc, remote1, remote2, test_dir, timestamp,
         print("\n── Step 2: Creating accounts ──")
         acc1 = test_01_account_creation.run(dc, s1_ip)
         acc2 = test_01_account_creation.run(dc, s2_ip)
-        acc1_email = acc1.get_config("addr")
-        acc2_email = acc2.get_config("addr")
+        acc1_email = account_addr(acc1)
+        acc2_email = account_addr(acc2)
         print(f"    acc1: {acc1_email}")
         print(f"    acc2: {acc2_email}")
 

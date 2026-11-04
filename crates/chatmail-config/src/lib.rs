@@ -21,6 +21,7 @@ pub mod cli;
 pub mod client_mail;
 pub mod config_autocert;
 pub mod config_iroh;
+pub mod config_monitor;
 pub mod config_www;
 pub mod credential_policy;
 pub mod data_size;
@@ -144,6 +145,8 @@ pub struct AppConfig {
     pub www_dir: Option<PathBuf>,
     /// `enable_contact_sharing` — Delta Chat `/share` pages and slug URLs.
     pub enable_contact_sharing: bool,
+    /// Raw IMAP/SMTP over WSS. DB override takes precedence; disabled by default.
+    pub websocket_bridge_enabled: bool,
     /// `allow_inbound_remote_rcpt` — when true, unauthenticated inbound SMTP
     /// (port 25) accepts non-local RCPT (open-relay-class). **Default false.**
     /// Overridable at runtime via admin `__ALLOW_INBOUND_REMOTE_RCPT__`.
@@ -181,6 +184,8 @@ pub struct AppConfig {
 
     /// `openmetrics tcp://…` — Prometheus scrape bind (`/metrics`).
     pub openmetrics_listen: Option<String>,
+    pub openmetrics_username: Option<String>,
+    pub openmetrics_password: Option<String>,
 
     /// `target.queue remote_queue` — outbound retry queue (Madmail defaults).
     pub queue: QueueSettings,

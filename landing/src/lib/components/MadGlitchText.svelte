@@ -4,7 +4,9 @@
 	/** @type {{ text: string, class?: string }} */
 	let { text, class: className = '' } = $props();
 
-	let displayLetters = $state(/** @type {string[]} */ ([]));
+	// Seeded from `text` so the letters are in the prerendered HTML, not only after hydration.
+	// svelte-ignore state_referenced_locally
+	let displayLetters = $state([...text]);
 	let scrambling = $state(false);
 
 	$effect(() => {
@@ -44,8 +46,8 @@
 	{#each displayLetters as letter, i}
 		<span class="mad-letter" style="--mad-letter-i: {i}">
 			<span class="mad-letter__ghost" aria-hidden="true">
-				<span class="mad-letter__layer mad-letter__layer--r">{letter}</span>
-				<span class="mad-letter__layer mad-letter__layer--g">{letter}</span>
+				<span class="mad-letter__layer mad-letter__layer--r" data-letter={letter}></span>
+				<span class="mad-letter__layer mad-letter__layer--g" data-letter={letter}></span>
 			</span>
 			<span class="mad-letter__main" aria-hidden="true">{letter}</span>
 		</span>
@@ -91,6 +93,11 @@
 		display: block;
 		width: 100%;
 		text-align: center;
+	}
+
+	/* Ghost copies come from CSS so crawlers read the word once, not three times. */
+	.mad-letter__layer::before {
+		content: attr(data-letter);
 	}
 
 	.mad-letter__layer {

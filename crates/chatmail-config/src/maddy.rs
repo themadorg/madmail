@@ -160,6 +160,15 @@ fn apply_endpoint_block(node: &Node, cfg: &mut AppConfig) {
             }
         }
         "openmetrics" => {
+            if let Some(children) = &node.children {
+                for child in children {
+                    match child.name.as_str() {
+                        "username" => cfg.openmetrics_username = child.args.first().cloned(),
+                        "password" => cfg.openmetrics_password = child.args.first().cloned(),
+                        _ => {}
+                    }
+                }
+            }
             for addr in endpoint_addrs(&node.args) {
                 if cfg.openmetrics_listen.is_none() {
                     cfg.openmetrics_listen = Some(addr);
@@ -358,6 +367,7 @@ fn apply_directive(name: &str, args: &[String], block_path: &[&str], cfg: &mut A
             "www_dir" if has_value => {
                 cfg.www_dir = Some(PathBuf::from(strip_quotes(&value)));
             }
+            "websocket_bridge_enabled" => cfg.websocket_bridge_enabled = parse_bool(arg0),
             "enable_contact_sharing" => cfg.enable_contact_sharing = parse_bool(arg0),
             "sharing_dsn" if has_value => {
                 cfg.sharing_dsn = Some(strip_quotes(&value));

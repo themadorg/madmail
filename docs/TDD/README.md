@@ -55,6 +55,7 @@ Twenty-three library crates under `crates/` plus integration tests in `tests/`. 
 | `23-push-notifications.md` | XDELTAPUSH, `notifications.delta.chat`, modes, CLI `madmail push` |
 | `24-version-manager.md` | **Plan:** versioned binaries (`/opt/madmail` Unix, `%ProgramFiles%\Madmail` Windows), stable PATH entry, upgrade/rollback |
 | `25-operator-webhooks.md` | Admin-only account/quota event delivery, HMAC, bounded retries |
+| [`26-websocket-mail-bridge.md`](26-websocket-mail-bridge.md) | Raw IMAP/SMTP over WSS, controls and resource limits |
 
 ## RFC reference library
 

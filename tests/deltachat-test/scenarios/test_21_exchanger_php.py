@@ -11,6 +11,7 @@ import time
 import json
 import subprocess
 import urllib.request
+from utils.accounts import account_addr
 
 # For running inside the test suite or standalone
 TEST_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -188,7 +189,7 @@ def run(rpc, dc, remote1, remote2, test_dir, timestamp, madmail_bin=None, php_di
 
         print("\n── Step 4: Send S1 → S2 via PHP Exchanger ──")
         msg = f"PHP Exchanger Relay Test [{timestamp}]"
-        acc1.get_contact_by_addr(acc2.get_config("addr")).create_chat().send_text(msg)
+        acc1.get_contact_by_addr(account_addr(acc2)).create_chat().send_text(msg)
         wait_for_message(acc2, msg, "acc2")
 
         print("\n── Step 5: Verify PHP Exchanger log ──")

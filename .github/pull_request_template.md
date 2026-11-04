@@ -58,7 +58,7 @@
 
 ## Commits
 
-<!-- Main uses semantic-release with conventional commits. Squash or rebase so merge commits follow: -->
+<!-- Main uses scripts/release.py with Conventional Commits. Squash or rebase so merge commits follow: -->
 
 - `feat:` new feature
 - `fix:` bug fix

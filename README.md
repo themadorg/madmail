@@ -19,7 +19,17 @@ Madmail is a **server relay** for the **[Delta Chat](https://delta.chat)** app, 
 
 A Rust rewrite of Madmail v1: SMTP, IMAP, encryption enforcement, and real-time relay built in.
 
+## Project status
 
+Madmail v2 is stable and actively maintained.
+
+Our current focus is on:
+
+- Finding and fixing bugs, including security issues.
+- Improving reliability and maintaining existing features.
+- Reducing external dependencies.
+
+We may add new features as needs arise.
 
 ## Quick Setup
 
@@ -120,7 +130,7 @@ This codebase was also developed with **[Cursor](https://cursor.com)** (coding a
 
 The product vision, architecture, phase plan, and acceptance criteria were defined and reviewed by **humans**. **Most of the Rust (and related) source in this repository was written with AI assistance** under that direction, not as an unattended dump of generated code, but as an iterative, human-guided process.
 
-**Use at your own risk.** Madmail v2 is AGPL software under active development; run it on production systems only after you have validated it for your threat model and workload.
+**Use at your own risk.** Madmail v2 is AGPL software; validate it for your threat model and workload before deploying it in production.
 
 We always welcome criticism, bug reports, and discussion, please use **[GitHub Discussions](https://github.com/themadorg/madmail/discussions)**.
 

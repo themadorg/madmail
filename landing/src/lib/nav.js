@@ -6,6 +6,7 @@ export const docPages = [
 
 export const heroNav = [
 	...docPages,
+	{ label: 'Blog', href: '/blog' },
 	{ label: 'Madmail Admin', href: 'https://admin.madmail.chat' }
 ];
 

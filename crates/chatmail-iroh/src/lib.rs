@@ -24,4 +24,4 @@ mod discovery;
 mod runner;
 
 pub use discovery::IrohDiscovery;
-pub use runner::{spawn_iroh_relay, IrohRelayHandle, IrohSpawnOpts};
+pub use runner::{retain_iroh_identity, spawn_iroh_relay, IrohRelayHandle, IrohSpawnOpts};

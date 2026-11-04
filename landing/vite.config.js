@@ -54,10 +54,24 @@ export default defineConfig({
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
 				runes: ({ filename }) => filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter(),
+			adapter: adapter({ fallback: '404.html' }),
 			prerender: {
-				handleHttpError: 'ignore',
-				handleMissingId: 'ignore'
+				// Links to missing pages are tolerated, but a page that crashes while
+				// prerendering must fail the build instead of silently 404ing in production.
+				handleHttpError: ({ status, message }) => {
+					if (status === 404) return;
+					throw new Error(message);
+				},
+				handleMissingId: 'ignore',
+				// An empty blog has no /blog/[slug] pages yet. Once a post exists,
+				// entries() prerenders it and this route is no longer unseen.
+				handleUnseenRoutes: ({ routes }) => {
+					const unexpected = routes.filter((id) => id !== '/blog/[slug]');
+					if (unexpected.length === 0) return;
+					throw new Error(
+						`Routes were not prerendered:\n${unexpected.map((id) => `  - ${id}`).join('\n')}`
+					);
+				}
 			},
 			preprocess: [
 				mdsvex({

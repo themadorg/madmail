@@ -115,7 +115,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `version` | [version.md](../guide/cli/version.md) | `maddy.go` | **done** |
 | `reload` | [reload.md](../guide/cli/reload.md) | `ctl/reload_config.go` | **done** |
 | `status` | [status.md](../guide/cli/status.md) | `ctl/online.go` | **done** (`--details`) |
-| `monitor` | [monitor.md](../guide/cli/monitor.md) | — (v2; #19) | **done** (`--interval`, `--count`, `--addr`) |
+| `monitor` | [monitor.md](../guide/cli/monitor.md) | — (v2; #19) | **done** (`--interval`, `--count`, `--addr`; `status`, `enable`, `disable`) |
 | `certificate` | [certificate.md](../guide/cli/certificate.md) | — (instant-acme) | **done** — `get`, `regenerate`, `status`, [`autocert`](../guide/cli/certificate-autocert.md) |
 | `db` | [db.md](../guide/cli/db.md) | — | **done** — `sqlite-to-postgres` |
 

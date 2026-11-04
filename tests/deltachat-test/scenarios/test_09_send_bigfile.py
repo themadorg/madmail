@@ -7,7 +7,7 @@ import time
 import shutil
 from deltachat_rpc_client.const import MessageState, EventType
 
-from utils.accounts import restart_accounts_io, wait_accounts_idle
+from utils.accounts import restart_accounts_io, wait_accounts_idle, account_addr
 from utils.remote_service import MAD_SERVICE
 from utils.server_ctl import disable_logging, enable_logging, set_message_limits
 from utils.ssh import journal_cursor_command, run_ssh_command
@@ -102,7 +102,7 @@ def run(sender, receiver, test_dir, remotes, extra_accounts=()):
         sizes_mb = [10, 20, 30, 40, 50, 60, 70]
         results = []
         
-        receiver_email = receiver.get_config("addr")
+        receiver_email = account_addr(receiver)
         receiver_contact = sender.get_contact_by_addr(receiver_email)
         if receiver_contact:
             chat = receiver_contact.create_chat()

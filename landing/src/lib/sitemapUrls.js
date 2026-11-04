@@ -1,6 +1,8 @@
-import { hrefFromRoute } from '$lib/docs.js';
+import { posts } from '$lib/blog.js';
+import { DOC_HREF_ALIASES, hrefFromRoute } from '$lib/docs.js';
 import { getAllDirRoutes, hrefForDirId } from '$lib/docTreeData.js';
 import { getAllDocRoutes } from '$lib/rawDocModules.js';
+import { releases } from '$lib/releases.js';
 import { siteOrigin } from '$lib/siteMeta.js';
 
 /**
@@ -9,7 +11,13 @@ import { siteOrigin } from '$lib/siteMeta.js';
  * @returns {string[]}
  */
 export function getSitemapPathnames() {
-	const paths = new Set(['/', '/docs', '/docs/quick-setup']);
+	const paths = new Set(['/', '/docs', '/docs/quick-setup', '/blog', '/releases']);
+	for (const post of posts) {
+		paths.add(`/blog/${post.slug}`);
+	}
+	for (const release of releases) {
+		paths.add(`/releases/${encodeURIComponent(release.tag_name)}`);
+	}
 
 	for (const route of getAllDocRoutes()) {
 		paths.add(hrefFromRoute(route));
@@ -21,11 +29,30 @@ export function getSitemapPathnames() {
 		paths.add(hrefForDirId(dirId));
 	}
 
+	// Alias targets render the same page as their short URL, which is the canonical one.
+	for (const target of Object.values(DOC_HREF_ALIASES)) paths.delete(target);
+
 	return [...paths].sort((a, b) => {
 		if (a === '/') return -1;
 		if (b === '/') return 1;
 		return a.localeCompare(b);
 	});
+}
+
+/**
+ * hreflang links between translations of one blog post.
+ * @param {string} pathname
+ */
+function blogAlternates(pathname) {
+	const post = posts.find((candidate) => `/blog/${candidate.slug}` === pathname);
+	if (!post) return [];
+	const translations = posts.filter((other) => other.translation === post.translation);
+	if (translations.length < 2) return [];
+	const original = translations.find((other) => other.slug === post.translation) ?? translations[0];
+	return [
+		...translations.map((other) => ({ hreflang: other.language, href: `/blog/${other.slug}` })),
+		{ hreflang: 'x-default', href: `/blog/${original.slug}` }
+	];
 }
 
 /** @param {string} value */
@@ -43,15 +70,31 @@ function escapeXml(value) {
  * @returns {string}
  */
 export function buildSitemapXml() {
+	/** @type {Map<string, string>} only real dates; docs have none in a shallow CI checkout */
+	const lastmod = new Map();
+	for (const post of posts) lastmod.set(`/blog/${post.slug}`, post.date);
+	if (posts[0]) lastmod.set('/blog', posts[0].date);
+	for (const release of releases) {
+		if (release.published_at) lastmod.set(`/releases/${encodeURIComponent(release.tag_name)}`, release.published_at);
+	}
+	if (releases[0]?.published_at) lastmod.set('/releases', releases[0].published_at);
+
 	const urls = getSitemapPathnames()
 		.map((pathname) => {
 			const loc = `${siteOrigin}${pathname === '/' ? '/' : pathname}`;
-			return `  <url>\n    <loc>${escapeXml(loc)}</loc>\n  </url>`;
+			const lines = [`    <loc>${escapeXml(loc)}</loc>`];
+			if (lastmod.has(pathname)) lines.push(`    <lastmod>${lastmod.get(pathname)}</lastmod>`);
+			for (const alternate of blogAlternates(pathname)) {
+				lines.push(
+					`    <xhtml:link rel="alternate" hreflang="${alternate.hreflang}" href="${escapeXml(`${siteOrigin}${alternate.href}`)}"/>`
+				);
+			}
+			return `  <url>\n${lines.join('\n')}\n  </url>`;
 		})
 		.join('\n');
 
 	return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
 ${urls}
 </urlset>
 `;
