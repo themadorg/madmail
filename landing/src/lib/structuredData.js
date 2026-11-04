@@ -151,8 +151,8 @@ export function blogPostJsonLd(post) {
 	};
 }
 
-/** @param {{ title: string, href: string, description: string }} page */
-export function collectionJsonLd({ title, href, description }) {
+/** @param {{ title: string, href: string, description: string, crumbs?: { label: string, href: string }[] }} page */
+export function collectionJsonLd({ title, href, description, crumbs = [{ label: title, href }] }) {
 	return {
 		'@context': 'https://schema.org',
 		'@graph': [
@@ -164,10 +164,7 @@ export function collectionJsonLd({ title, href, description }) {
 				isPartOf: { '@id': websiteId },
 				about: { '@id': softwareId }
 			},
-			breadcrumbList([
-				{ label: 'Madmail', href: '/' },
-				{ label: title, href }
-			])
+			breadcrumbList([{ label: 'Madmail', href: '/' }, ...crumbs])
 		]
 	};
 }

@@ -56,7 +56,12 @@ export default defineConfig({
 			},
 			adapter: adapter({ fallback: '404.html' }),
 			prerender: {
-				handleHttpError: 'ignore',
+				// Links to missing pages are tolerated, but a page that crashes while
+				// prerendering must fail the build instead of silently 404ing in production.
+				handleHttpError: ({ status, message }) => {
+					if (status === 404) return;
+					throw new Error(message);
+				},
 				handleMissingId: 'ignore',
 				// An empty blog has no /blog/[slug] pages yet. Once a post exists,
 				// entries() prerenders it and this route is no longer unseen.

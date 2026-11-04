@@ -11,7 +11,7 @@ import { DOC_HREF_ALIASES, hrefFromRoute, isTxtRoute, labelFromRoute, routeFromH
 import { isMarkdownDocRoute, markdownUrlForRoute } from './markdownPages.js';
 import { loadRawDoc } from './rawDocModules.js';
 import { defaultDescription } from './siteMeta.js';
-import { docJsonLd } from './structuredData.js';
+import { collectionJsonLd, docJsonLd } from './structuredData.js';
 
 /** @param {string} href */
 export function canonicalDocHref(href) {
@@ -107,7 +107,7 @@ export function dirSeoData(dir, href, title, description) {
 		href: parent.readmeHref ?? hrefForDirId(parent.id)
 	}));
 	return {
-		jsonLd: docJsonLd({
+		jsonLd: collectionJsonLd({
 			title,
 			description,
 			href,
