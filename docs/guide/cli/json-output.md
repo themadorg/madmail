@@ -337,6 +337,7 @@ Dry-run / completed uninstall returns paths and flags in `data`. When nothing to
     "registration_open": false,
     "token_required": true,
     "jit_enabled": true,
+    "password_signup": false,
     "blocklisted": 2,
     "mail_directories": 12,
     "state_dir": "/var/lib/madmail",
