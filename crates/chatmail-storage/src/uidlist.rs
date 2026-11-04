@@ -116,8 +116,8 @@ impl UidListStore {
     /// Reads `chatmail-uidlist`, `readdir`s `new/`+`cur/`, assigns fresh UIDs to never-seen files
     /// (statting only those), drops records for expunged files, and rewrites the index atomically
     /// when anything changed. The returned messages are sorted by UID (i.e. arrival order).
-    /// The next-UID counter is never lowered when files disappear, so IMAP `UIDNEXT` stays
-    /// stable for the life of the mailbox's `UIDVALIDITY`.
+    /// The next-UID counter is never lowered when files are expunged, so IMAP `UIDNEXT` does
+    /// not go backwards after deletions.
     pub(crate) async fn sync(
         &self,
         user: &str,
