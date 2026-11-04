@@ -44,6 +44,7 @@ sys.path.append(TEST_DIR)
 from deltachat_rpc_client import DeltaChat, Rpc, EventType
 from scenarios import test_01_account_creation, test_03_secure_join
 from utils.lxc import LXCManager
+from utils.accounts import account_addr
 
 class StressTestResult:
     def __init__(self):
@@ -178,7 +179,7 @@ class StressTest:
                 print("🔹 Phase 2: Establishing PGP Connections (Sequentially for 1-Core reliability)...")
                 successful_members = []
                 def do_secure_join(member):
-                    addr = member.get_config('addr')
+                    addr = account_addr(member)
                     try:
                         with contextlib.redirect_stdout(io.StringIO()):
                             test_03_secure_join.run(self.rpc, admin, member)
@@ -214,7 +215,7 @@ class StressTest:
                 print(f"🔹 Phase 3: Setup Group '{group_name}'...")
                 final_members = []
                 for i, member in enumerate(members):
-                    member_addr = member.get_config("addr")
+                    member_addr = account_addr(member)
                     contact = admin.get_contact_by_addr(member_addr)
                     if not contact:
                         contact = admin.create_contact(member_addr)

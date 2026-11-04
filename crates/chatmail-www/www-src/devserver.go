@@ -69,6 +69,7 @@ type TemplateData struct {
 	MaxMessageSize         string
 	RegistrationOpen       bool
 	JitRegistrationEnabled bool
+	PasswordSignupEnabled  bool
 	TurnEnabled            bool
 	ImapPortTLS            string
 	ImapPortStartTLS       string
@@ -283,6 +284,7 @@ func buildTemplateData(cfg map[string]string) TemplateData {
 		MaxMessageSize:         "40M",
 		RegistrationOpen:       true,
 		JitRegistrationEnabled: jitEnabled,
+		PasswordSignupEnabled:  jitEnabled,
 		TurnEnabled:            turnEnabled,
 		ImapPortTLS:            imapTLS,
 		ImapPortStartTLS:       imapPlain,

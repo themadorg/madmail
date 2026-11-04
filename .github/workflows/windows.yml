@@ -1,7 +1,8 @@
 # Windows pipeline
 #
 # - Merges / pushes to main (+ Windows-related PRs): lint, amd64 smoke, arm64 compile
-# - GitHub Releases (published): amd64 smoke → Inno setup → attach assets to the Release
+# - Stable GitHub Releases: packaging tools come from the default branch.
+#   The signed server and the tray are assets already on that release, not rebuilds.
 # - workflow_dispatch: same as main (validate only); use a Release for setup.exe assets
 name: Windows
 
@@ -61,9 +62,10 @@ jobs:
           test -f packaging/windows/README.md
           test -f scripts/build-windows.sh
 
-  # ── amd64 smoke (main, PRs, release, manual) ───────────────────────────────
+  # ── amd64 smoke (main, PRs, manual) — not on Release ──────────────────────
   windows-amd64-smoke:
     name: Windows amd64 smoke
+    if: github.event_name != 'release'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -155,39 +157,61 @@ jobs:
           cargo check -p chatmail -p madmail-tray --target aarch64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  # ── Inno setup + attach to GitHub Release (Release events only) ────────────
+  # ── Inno setup from the signed release executable (stable releases only) ─
   windows-amd64-setup:
     name: Windows amd64 Inno setup
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' && github.event.release.prerelease == false
     runs-on: windows-latest
-    needs: windows-amd64-smoke
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Download madmail + tray binaries
-        uses: actions/download-artifact@v4
+      # Tools and the release commit are different checkouts. An older stable
+      # tag does not contain these scripts. The signed executable is downloaded
+      # from the release; nothing is built from either checkout.
+      - name: Check out the release Git history
+        uses: actions/checkout@v4
         with:
-          name: madmail-windows-amd64-ci
-          path: ci-bin
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          path: source
 
-      - name: Stage build/ names expected by Madmail.iss
+      - name: Check out current packaging tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: tools
+          sparse-checkout: |
+            scripts/windows_release.py
+            scripts/verify_signed_binary.py
+            packaging/windows/Madmail.iss
+            packaging/windows/build-setup.ps1
+            packaging/windows/license.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Put OpenSSL on PATH
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path build | Out-Null
-          $madmail = Get-ChildItem -Path ci-bin -Recurse -Filter madmail.exe | Select-Object -First 1
-          if (-not $madmail) { throw "madmail.exe not found under ci-bin" }
-          Copy-Item -Force $madmail.FullName build\madmail-windows-amd64.exe
-          Write-Host "staged $($madmail.FullName) -> build\madmail-windows-amd64.exe"
-          $tray = Get-ChildItem -Path ci-bin -Recurse -Filter madmail-tray.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($tray) {
-            Copy-Item -Force $tray.FullName build\madmail-tray-windows-amd64.exe
-            Write-Host "staged $($tray.FullName) -> build\madmail-tray-windows-amd64.exe"
-          } else {
-            Write-Host "madmail-tray.exe not in artifact; setup will omit tray (skipifsourcedoesntexist)"
+          $ErrorActionPreference = "Stop"
+          if (Get-Command openssl -ErrorAction SilentlyContinue) { exit 0 }
+          $git = "C:\Program Files\Git\usr\bin"
+          if (-not (Test-Path (Join-Path $git "openssl.exe"))) {
+            throw "openssl is required to verify the signed executable"
           }
-          Get-ChildItem build | Format-Table Name, Length
+          Add-Content -Path $env:GITHUB_PATH -Value $git
+
+      - name: Verify the signed executable already on the release
+        id: signed
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $python = Join-Path $env:GITHUB_WORKSPACE "tools\scripts\windows_release.py"
+          $repo = Join-Path $env:GITHUB_WORKSPACE "source"
+          $dest = Join-Path $env:GITHUB_WORKSPACE "tools\build\madmail-windows-amd64.exe"
+          python $python stage --repo $repo --tag $env:TAG --dest $dest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install Inno Setup 6
         shell: pwsh
@@ -205,9 +229,11 @@ jobs:
       - name: Compile setup.exe
         shell: pwsh
         run: |
-          & .\packaging\windows\build-setup.ps1 -Arch amd64
+          $ErrorActionPreference = "Stop"
+          $setupScript = Join-Path $env:GITHUB_WORKSPACE "tools\packaging\windows\build-setup.ps1"
+          & $setupScript -Arch amd64 -RequireTray -Version "${{ steps.signed.outputs.version }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $setup = Join-Path $env:GITHUB_WORKSPACE "build\madmail-windows-amd64-setup.exe"
+          $setup = Join-Path $env:GITHUB_WORKSPACE "tools\build\madmail-windows-amd64-setup.exe"
           if (-not (Test-Path $setup)) { throw "missing $setup" }
           Get-Item $setup | Format-List FullName, Length, LastWriteTime
 
@@ -215,27 +241,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: madmail-windows-amd64-setup
-          path: ${{ github.workspace }}/build/madmail-windows-amd64-setup.exe
+          path: ${{ github.workspace }}/tools/build/madmail-windows-amd64-setup.exe
           retention-days: 14
 
-      - name: Attach Windows assets to GitHub Release
+      - name: Upload the installer when it is new or identical
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
         shell: pwsh
         run: |
-          $tag = "${{ github.event.release.tag_name }}"
-          if ([string]::IsNullOrWhiteSpace($tag)) { throw "missing release tag_name" }
-          $root = $env:GITHUB_WORKSPACE
-          $files = @(
-            (Join-Path $root "build\madmail-windows-amd64.exe"),
-            (Join-Path $root "build\madmail-windows-amd64-setup.exe")
-          )
-          $tray = Join-Path $root "build\madmail-tray-windows-amd64.exe"
-          if (Test-Path $tray) { $files += $tray }
-          foreach ($f in $files) {
-            if (-not (Test-Path $f)) { throw "missing release asset: $f" }
-          }
-          Write-Host "Uploading to release $tag :"
-          $files | ForEach-Object { Get-Item $_ | Format-List FullName, Length }
-          # --clobber replaces assets if the workflow is re-run on the same release
-          gh release upload $tag @files --clobber
+          $ErrorActionPreference = "Stop"
+          $python = Join-Path $env:GITHUB_WORKSPACE "tools\scripts\windows_release.py"
+          $repo = Join-Path $env:GITHUB_WORKSPACE "source"
+          $installer = Join-Path $env:GITHUB_WORKSPACE "tools\build\madmail-windows-amd64-setup.exe"
+          python $python plan-upload --repo $repo --tag $env:TAG --installer $installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

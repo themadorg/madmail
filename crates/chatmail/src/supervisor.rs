@@ -93,6 +93,7 @@ struct SupervisorInner {
     primary_domain: String,
     local_domains: Vec<String>,
     http_extra: Mutex<Option<Router>>,
+    bridge_shutdown: CancellationToken,
     bootstrap_admin_token: String,
     listeners: Mutex<Option<ActiveListeners>>,
     reload_tx: mpsc::Sender<ReloadRequest>,
@@ -110,6 +111,7 @@ pub struct ServerSupervisor {
 
 impl Drop for ServerSupervisor {
     fn drop(&mut self) {
+        self.inner.bridge_shutdown.cancel();
         if let Ok(mut guard) = self.inner.maintenance.try_lock() {
             if let Some(handle) = guard.take() {
                 handle.shutdown();
@@ -229,6 +231,7 @@ impl ServerSupervisor {
             primary_domain,
             local_domains,
             http_extra: Mutex::new(None),
+            bridge_shutdown: CancellationToken::new(),
             bootstrap_admin_token: admin_token.to_string(),
             listeners: Mutex::new(None),
             reload_tx: reload_tx.clone(),
@@ -559,8 +562,19 @@ impl SupervisorInner {
         let cancel = CancellationToken::new();
         let addr_owned = addr.to_string();
         let cancel_metrics = cancel.clone();
+        let username = self
+            .file_config
+            .openmetrics_username
+            .clone()
+            .unwrap_or_else(|| "metrics".into());
+        let password = self.file_config.openmetrics_password.clone();
         let metrics_task = async move {
-            let _ = chatmail_metrics::run_openmetrics_listener(&addr_owned, cancel_metrics).await;
+            let _ = chatmail_metrics::run_openmetrics_listener_with_auth(
+                &addr_owned,
+                password.as_deref().map(|p| (username.as_str(), p)),
+                cancel_metrics,
+            )
+            .await;
         };
         let cancel_queue = cancel.clone();
         let queue_task = async move {
@@ -761,7 +775,15 @@ impl SupervisorInner {
             Some(self.reload_tx.clone()),
         )
         .await?;
-        *self.http_extra.lock().await = http_extra;
+        let sessions = chatmail_www::bridge::BridgeSessions {
+            imap: self.imap_cfg.lock().await.clone(),
+            submission: self.submission_cfg.clone(),
+        };
+        *self.http_extra.lock().await = http_extra.map(|r| {
+            r.layer(axum::Extension(sessions)).layer(axum::Extension(
+                chatmail_www::bridge::BridgeShutdown(self.bridge_shutdown.clone()),
+            ))
+        });
         Ok(())
     }
 

@@ -1,3 +1,108 @@
+# [2.39.1](https://github.com/themadorg/madmail/compare/v2.39.0-unstable...v2.39.1-unstable) (2026-11-04)
+
+### Bug Fixes
+
+* upgrade ctutils to 0.4.7 ([9fece62](https://github.com/themadorg/madmail/commit/9fece628d927889823ee9e7b0ff92c881ec5c849))
+* **auth:** require open registration and JIT for password sign-up ([40be1af](https://github.com/themadorg/madmail/commit/40be1af8f3a3f2ce962e2d9dcd4cff16ca810929)), [#235](https://github.com/themadorg/madmail/issues/235)
+* **auth:** share the sign-up gate and keep the page in step with it ([7b4f513](https://github.com/themadorg/madmail/commit/7b4f5138ae7ac7a90dd4911a0c6a22baceedeee7)), [#235](https://github.com/themadorg/madmail/issues/235)
+
+# [2.39.0](https://github.com/themadorg/madmail/compare/v2.38.2-unstable...v2.39.0-unstable) (2026-11-04)
+
+### Features
+
+* **landing:** SEO, AEO and GEO overhaul for madmail.chat ([bdbf57b](https://github.com/themadorg/madmail/commit/bdbf57bae92d79dc8c688d221e638fc6754a7525))
+
+### Bug Fixes
+
+* **deps:** bump ctutils to 0.4.4 for RUSTSEC-2026-0385 ([6679a77](https://github.com/themadorg/madmail/commit/6679a7710d4a5a38205fcf0ac4f29a942a210883))
+* **landing:** fail the build when a page crashes during prerender ([b63609a](https://github.com/themadorg/madmail/commit/b63609a1719ddb68940d98b520eb8f6c3d50b394))
+
+# [2.38.2](https://github.com/themadorg/madmail/compare/v2.38.1-unstable...v2.38.2-unstable) (2026-10-21)
+
+### Bug Fixes
+
+* **db:** preserve PostgreSQL federation statistics across restarts ([86ea64a](https://github.com/themadorg/madmail/commit/86ea64a105b2ab3310d34f05f76fe3670d27e587))
+
+# [2.38.1](https://github.com/themadorg/madmail/compare/v2.38.0-unstable...v2.38.1-unstable) (2026-10-21)
+
+### Bug Fixes
+
+* upgrade webpki crates flagged by cargo audit ([5e9842a](https://github.com/themadorg/madmail/commit/5e9842aa013249fb73dcf3a16291e9ed7f0f3e2c))
+
+# [2.38.0](https://github.com/themadorg/madmail/compare/v2.37.0-unstable...v2.38.0-unstable) (2026-10-20)
+
+### Features
+
+* **transport:** add opt-in IMAP and SMTP WebSocket bridge ([50350e9](https://github.com/themadorg/madmail/commit/50350e9a324a904a365d5977318c8dad6579e7db)), [#224](https://github.com/themadorg/madmail/issues/224)
+
+### Bug Fixes
+
+* **transport:** harden WebSocket bridge lifecycle and auth limits ([44e74dd](https://github.com/themadorg/madmail/commit/44e74dd6ec0b95ef1cb35a015fba12726d17de84))
+
+# [2.37.0](https://github.com/themadorg/madmail/compare/v2.36.0-unstable...v2.37.0-unstable) (2026-10-17)
+
+### Features
+
+* **release:** restore full prerelease coverage for ARM64, static legacy Linux, and Windows ([de0a701](https://github.com/themadorg/madmail/commit/de0a70160df3f6129101df9ffec535e2cc8dc283))
+
+### Bug Fixes
+
+* **ci:** build the static server package and expand the testing label ([e09c075](https://github.com/themadorg/madmail/commit/e09c075178f2081960bda8f828a2d4ce6d334106))
+* **ci:** check out the selected commit before the local prepare action ([5583fc4](https://github.com/themadorg/madmail/commit/5583fc4af22e11f988181dc0e47b3a88fcce9706))
+* **ci:** pass Inno silent switches as one raw command line ([1c98063](https://github.com/themadorg/madmail/commit/1c980634a54d8f9413c853c18eb4385a1ffa2f0d))
+* **ci:** suppress the testing installer's refusal dialog ([5cd8f49](https://github.com/themadorg/madmail/commit/5cd8f49d230c2118e77287b77e5271d03cd519c5))
+
+# [2.36.0](https://github.com/themadorg/madmail/compare/v2.35.2...v2.36.0-unstable) (2026-10-16)
+
+### Features
+
+* **ci:** add a standalone Conventional Commit release script ([1486d8e](https://github.com/themadorg/madmail/commit/1486d8e172a0a8529f1acf725543165192807959))
+* **ci:** publish unsigned unstable builds separately from stable images ([d156152](https://github.com/themadorg/madmail/commit/d15615286820dfd307b30819803b35a5266159b7))
+
+### Bug Fixes
+
+* **ci:** build stable images from the Git tag ([d4ccfb2](https://github.com/themadorg/madmail/commit/d4ccfb20047b39991fa96b62c1f55f8378a5faf3))
+* **ci:** package Windows installers with current tooling ([22ec595](https://github.com/themadorg/madmail/commit/22ec595704278eb5933c7d7ecdef3ca696ace5ab))
+* **ci:** package stable Windows installers from the signed release binary ([44970a9](https://github.com/themadorg/madmail/commit/44970a9b5e8b2948689122e1099863ae52e8e42f))
+* **ci:** package stable Windows installers without the smoke build ([1806eef](https://github.com/themadorg/madmail/commit/1806eefc68b74b675391c783b7f5053e99418f79))
+* **ci:** publish unstable images only after the testing prerelease ([c1f927f](https://github.com/themadorg/madmail/commit/c1f927fc3adb315f1c2214645aabf0522397a2c5))
+* **ci:** require the published Windows tray in stable installers ([9eed6cc](https://github.com/themadorg/madmail/commit/9eed6cc327fa51a86c48dd4e48a9b1d44203db3f))
+
+## [2.35.2](https://github.com/themadorg/madmail/compare/v2.35.1...v2.35.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* upgrade rustls to 0.23.46 ([480d400](https://github.com/themadorg/madmail/commit/480d4003daec5c95cb2fdde4a829fbae2a3e8cea))
+
+## [2.35.1](https://github.com/themadorg/madmail/compare/v2.35.0...v2.35.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **deps:** resolve cargo audit vulnerabilities and bump to 2.35.1 ([4b7f79f](https://github.com/themadorg/madmail/commit/4b7f79fd7b1b4d98ccbf1b2370437595cf654084))
+
+# [2.35.0](https://github.com/themadorg/madmail/compare/v2.34.0...v2.35.0) (2026-10-12)
+
+
+### Bug Fixes
+
+* **monitor:** preserve credentials and validate config literals ([cb557de](https://github.com/themadorg/madmail/commit/cb557de85761c86a2eff64b65395c70835bbd0b3))
+
+
+### Features
+
+* **monitor:** make metrics opt-in with authentication and listener controls ([6218769](https://github.com/themadorg/madmail/commit/6218769aacaf6e4d7097551ac91538889d1123c8))
+
+# [2.34.0](https://github.com/themadorg/madmail/compare/v2.33.0...v2.34.0) (2026-10-11)
+
+
+### Features
+
+* **landing:** add a static blog ([7c6749e](https://github.com/themadorg/madmail/commit/7c6749e8d9a458165fb85efcf11d4bd51975b7f8))
+* **landing:** add blog social previews and sharing options ([3b7957a](https://github.com/themadorg/madmail/commit/3b7957a75cb65f580ebb526be6d956c43c299d2a))
+* **landing:** polish blog cards and add language navigation ([d7c3e2e](https://github.com/themadorg/madmail/commit/d7c3e2ed625fc153538f437e3f5f1051de839fd8))
+
 # [2.33.0](https://github.com/themadorg/madmail/compare/v2.32.1...v2.33.0) (2026-10-10)
 
 

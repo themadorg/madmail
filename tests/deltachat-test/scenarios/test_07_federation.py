@@ -23,6 +23,7 @@ Parts:
 import os
 import time
 import subprocess
+from utils.accounts import account_addr
 
 # Journal: chatmail `maddy install` may use `madmail.service` or `maddy.service` — query both.
 _JOURNAL_MADDY = "journalctl -u maddy.service -u madmail.service"
@@ -221,8 +222,8 @@ def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp, server_info=None):
     """
     from scenarios import test_01_account_creation, test_03_secure_join
 
-    acc1_email = acc1.get_config("addr")
-    acc2_email = acc2.get_config("addr")
+    acc1_email = account_addr(acc1)
+    acc2_email = account_addr(acc2)
 
     # ==================================================================
     # Part A: Cross-Server Federation (server1 <-> server2)
@@ -274,7 +275,7 @@ def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp, server_info=None):
 
     print("\nStep 4: Creating third account on server 2...")
     acc3 = test_01_account_creation.run(dc, remote2)
-    acc3_email = acc3.get_config("addr")
+    acc3_email = account_addr(acc3)
     print(f"  Acc2: {acc2_email}  |  Acc3: {acc3_email}")
 
     print(f"\nStep 5: Secure join between acc2 and acc3 (both on server 2)...")
@@ -497,7 +498,7 @@ def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp, server_info=None):
             while time.time() - start_t < 30:
                 ev = acct.wait_for_event()
                 if ev and ev.kind == EventType.IMAP_INBOX_IDLE:
-                    addr = acct.get_config("addr")
+                    addr = account_addr(acct)
                     print(f"    ✓ {label}: {addr}")
                     return acct
                 elif ev and ev.kind == EventType.ERROR:
@@ -526,8 +527,8 @@ def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp, server_info=None):
                     continue
                 src = accts[src_label]
                 dst = accts[dst_label]
-                src_addr = src.get_config("addr")
-                dst_addr = dst.get_config("addr")
+                src_addr = account_addr(src)
+                dst_addr = account_addr(dst)
                 msg = f"FmtTest {src_label}→{dst_label} [{timestamp}]"
                 print(f"  [{step}] {src_addr} → {dst_addr}")
                 ok = _try_deliver(src, dst, msg, max_wait=45)
@@ -543,8 +544,8 @@ def run(rpc, dc, acc1, acc2, remote1, remote2, timestamp, server_info=None):
                     continue
                 src = accts[src_label]
                 dst = accts[dst_label]
-                src_addr = src.get_config("addr")
-                dst_addr = dst.get_config("addr")
+                src_addr = account_addr(src)
+                dst_addr = account_addr(dst)
                 msg = f"FmtTest {src_label}→{dst_label} [{timestamp}]"
                 print(f"  [{step}] {src_addr} → {dst_addr}")
                 ok = _try_deliver(src, dst, msg, max_wait=45)

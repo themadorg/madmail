@@ -6,7 +6,7 @@
 	"scripts": {
 		"docs:tree": "node scripts/generate-documentation-tree.mjs",
 		"fonts:sync": "node scripts/sync-fonts.mjs",
-		"test": "node --test src/lib/docLinks.test.js src/lib/mdsvexHighlight.test.js",
+		"test": "node --test src/lib/docLinks.test.js src/lib/mdsvexHighlight.test.js src/lib/blogSource.test.js src/lib/articleWebxdc.test.js",
 		"dev": "node scripts/generate-documentation-tree.mjs && vite dev",
 		"build": "node scripts/generate-documentation-tree.mjs && vite build",
 		"preview": "vite preview",
@@ -24,6 +24,7 @@
 		"vite": "^8.0.16"
 	},
 	"dependencies": {
+		"fflate": "^0.8.3",
 		"marked": "^18.0.5"
 	}
 }

@@ -30,8 +30,10 @@ use chatmail_db::{
 use chatmail_types::{ChatmailError, Result};
 use serde_json::{Map, Value};
 
-/// Permanent failure when https, http, and smtp are all blocked.
-pub const ALL_BLOCKED_REASON: &str = "federation transport blocked by policy";
+/// Permanent failure when https, http, and smtp are all blocked (delivery appends the
+/// recipient domain).
+pub const ALL_BLOCKED_REASON: &str =
+    "delivery blocked by outbound transport policy: https, http and smtp are all blocked";
 
 pub const ALLOW: &str = "allow";
 pub const BLOCK: &str = "block";

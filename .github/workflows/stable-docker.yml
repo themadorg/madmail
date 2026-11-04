@@ -1,0 +1,123 @@
+# Build the stable GHCR image only after a stable GitHub Release is published.
+# Unstable prereleases do not update X.Y.Z or latest. No production signing
+# keys are available to this workflow.
+
+name: Stable Docker
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable tag vX.Y.Z
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    name: Publish stable Docker image
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    concurrency:
+      group: docker-stable
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: source
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: tools
+          sparse-checkout: |
+            scripts/registry_image.py
+            scripts/release.py
+            scripts/stable_source.py
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve the stable Git tag
+        id: source
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+        run: python3 "${GITHUB_WORKSPACE}/tools/scripts/stable_source.py" --repo . --tag "$TAG" --checkout
+
+      - name: Check out submodules at the stable commit
+        working-directory: source
+        run: git submodule update --init --recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check immutable stable image
+        id: image
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.source.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: python3 tools/scripts/registry_image.py --repository "$GITHUB_REPOSITORY" --tag "$VERSION" --sha "$SOURCE_SHA"
+
+      - name: Build immutable stable image
+        if: steps.image.outputs.exists != 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: source
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ steps.source.outputs.version }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.source.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Advance latest only when this is the highest stable version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/${{ github.repository }}
+          VERSION: ${{ steps.source.outputs.version }}
+          PYTHONPATH: ${{ github.workspace }}/tools/scripts
+        run: |
+          python3 - <<'PY'
+          import os, subprocess, sys
+          sys.path.insert(0, os.environ["PYTHONPATH"])
+          import stable_source
+          raw = subprocess.check_output([
+              "gh", "api", "--paginate",
+              f"repos/{os.environ['GITHUB_REPOSITORY']}/releases?per_page=100",
+              "--jq",
+              ".[] | select(.draft==false and .prerelease==false) | .tag_name",
+          ], text=True)
+          versions = []
+          for tag in raw.splitlines():
+              if stable_source.TAG.fullmatch(tag):
+                  versions.append(tag[1:])
+              elif stable_source.TAG.fullmatch("v" + tag):
+                  versions.append(tag)
+          try:
+              advance = stable_source.should_advance_latest(versions, os.environ["VERSION"])
+          except stable_source.StableSourceError as exc:
+              raise SystemExit(str(exc)) from exc
+          if not advance:
+              print("Not the highest stable version; leaving latest unchanged.")
+              sys.exit(0)
+          subprocess.check_call([
+              "docker", "buildx", "imagetools", "create",
+              "--tag", os.environ["IMAGE"] + ":latest",
+              os.environ["IMAGE"] + ":" + os.environ["VERSION"],
+          ])
+          PY

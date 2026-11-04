@@ -83,3 +83,209 @@ async fn monitor_reads_a_live_openmetrics_listener() {
     cancel.cancel();
     server.await.expect("server task");
 }
+
+#[test]
+fn monitor_configuration_commands_are_opt_in() {
+    let dir = TempDir::new().unwrap();
+    for (name, contents) in [
+        ("madmail.conf", "hostname mail.example.org\n"),
+        ("chatmail.toml", "hostname = \"mail.example.org\"\n"),
+    ] {
+        let config = dir.path().join(name);
+        std::fs::write(&config, contents).unwrap();
+        for (action, enabled, changed) in [
+            ("status", false, false),
+            ("enable", true, true),
+            ("enable", true, false),
+            ("status", true, false),
+            ("disable", false, true),
+            ("disable", false, false),
+        ] {
+            let output = Command::new(cargo_bin("madmail"))
+                .arg("--config")
+                .arg(&config)
+                .arg("--state-dir")
+                .arg(dir.path())
+                .args(["--json", "monitor", action])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(value["data"]["enabled"], enabled);
+            assert_eq!(value["data"]["changed"], changed);
+            assert_eq!(value["data"]["restart_required"], changed);
+            assert_eq!(
+                chatmail_config::load_config(&config)
+                    .unwrap()
+                    .openmetrics_listen
+                    .is_some(),
+                enabled
+            );
+        }
+    }
+}
+
+#[test]
+fn monitor_rejects_disabled_missing_and_invalid_configuration() {
+    let dir = TempDir::new().unwrap();
+    for (name, contents) in [
+        ("disabled.conf", Some("hostname mail.example.org\n")),
+        ("missing.conf", None),
+        ("invalid.toml", Some("hostname = [\n")),
+    ] {
+        let config = dir.path().join(name);
+        if let Some(contents) = contents {
+            std::fs::write(&config, contents).unwrap();
+        }
+        let output = Command::new(cargo_bin("madmail"))
+            .arg("--config")
+            .arg(&config)
+            .arg("--state-dir")
+            .arg(dir.path())
+            .args(["--json", "monitor", "--count", "1"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{name} unexpectedly succeeded");
+        let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(value["ok"], false);
+        if name != "invalid.toml" {
+            assert!(String::from_utf8_lossy(&output.stderr).contains("madmail monitor enable"));
+        }
+        for action in ["enable", "disable"] {
+            if name == "disabled.conf" {
+                continue;
+            }
+            let before = std::fs::read(&config).ok();
+            let output = Command::new(cargo_bin("madmail"))
+                .arg("--config")
+                .arg(&config)
+                .arg("--state-dir")
+                .arg(dir.path())
+                .args(["monitor", action])
+                .output()
+                .unwrap();
+            assert!(
+                !output.status.success(),
+                "{name}: {action} unexpectedly succeeded"
+            );
+            assert_eq!(std::fs::read(&config).ok(), before);
+        }
+    }
+}
+
+#[test]
+fn monitor_reports_unreachable_endpoint() {
+    let addr = reserve_addr();
+    let dir = TempDir::new().unwrap();
+    let output = Command::new(cargo_bin("madmail"))
+        .arg("--config")
+        .arg(dir.path().join("missing.conf"))
+        .arg("--state-dir")
+        .arg(dir.path())
+        .args(["--json", "monitor", "--addr", &addr, "--count", "1"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(value["ok"], false);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("GET http://"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn monitor_uses_saved_credentials_and_rejects_wrong_password() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("madmail.conf");
+    std::fs::write(&config, "hostname mail.example.org\n").unwrap();
+    let listen = reserve_addr();
+    let port = listen.rsplit_once(':').unwrap().1;
+    let output = Command::new(cargo_bin("madmail"))
+        .arg("--config")
+        .arg(&config)
+        .args([
+            "--json",
+            "monitor",
+            "enable",
+            "--ip",
+            "127.0.0.1",
+            "--port",
+            port,
+            "--username",
+            "exporter",
+            "--password",
+            "integration-secret",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["listen"], listen);
+    assert_eq!(value["data"]["authentication_required"], true);
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("integration-secret"));
+    let saved = chatmail_config::load_config(&config).unwrap();
+    let cancel = CancellationToken::new();
+    let child_cancel = cancel.clone();
+    let server = tokio::spawn(async move {
+        chatmail_metrics::run_openmetrics_listener_with_auth(
+            saved.openmetrics_listen.as_deref().unwrap(),
+            Some((
+                saved.openmetrics_username.as_deref().unwrap(),
+                saved.openmetrics_password.as_deref().unwrap(),
+            )),
+            child_cancel,
+        )
+        .await
+        .unwrap();
+    });
+    for _ in 0..100 {
+        if tokio::net::TcpStream::connect(&listen).await.is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    for password in [None, Some("wrong-password")] {
+        let mut command = Command::new(cargo_bin("madmail"));
+        command
+            .arg("--config")
+            .arg(&config)
+            .args(["--json", "monitor", "--count", "1"]);
+        if let Some(password) = password {
+            command.args(["--password", password]);
+        }
+        let output = command.output().unwrap();
+        assert_eq!(output.status.success(), password.is_none());
+        if password.is_some() {
+            assert!(String::from_utf8_lossy(&output.stderr).contains("401"));
+        }
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("integration-secret"));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("integration-secret"));
+    }
+    for flags in [
+        vec!["--ip", "invalid-ip"],
+        vec!["--port", "0"],
+        vec!["--port", "65536"],
+    ] {
+        let before = std::fs::read(&config).unwrap();
+        let output = Command::new(cargo_bin("madmail"))
+            .arg("--config")
+            .arg(&config)
+            .args(["monitor", "enable"])
+            .args(flags)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert_eq!(std::fs::read(&config).unwrap(), before);
+    }
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(3), server)
+        .await
+        .unwrap()
+        .unwrap();
+}

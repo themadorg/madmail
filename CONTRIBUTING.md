@@ -49,7 +49,7 @@ CI enforces **fmt**, **clippy (`-D warnings`)**, **tests**, and **cargo audit** 
 1. Prefer **small, reviewable** changes (vertical slices over large mixed PRs).
 2. Use the [pull request template](.github/pull_request_template.md).
 3. Write a clear summary: what changed, why, and how you tested it.
-4. Use [Conventional Commits](https://www.conventionalcommits.org/) when practical (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, …). Releases use semantic-release from these messages.
+4. Use [Conventional Commits](https://www.conventionalcommits.org/) when practical (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, …). Release-worthy commits on `main` (`feat`, `fix`, `perf`, and breaking changes) bump the numeric version through `scripts/release.py`. `docs`, `chore`, `ci`, and `test` commits do not. See [release automation](docs/TDD/release-automation.md).
 5. Do **not** commit secrets, `data/`, `target/`, or `node_modules/`.
 
 ### Tests

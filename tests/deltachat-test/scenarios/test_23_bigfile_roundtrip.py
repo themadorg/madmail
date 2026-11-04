@@ -17,6 +17,7 @@ import time
 from deltachat_rpc_client.const import MessageState
 
 from utils.server_ctl import enable_logging
+from utils.accounts import account_addr
 
 _DOWNLOAD_LIMIT = "268435456"
 _MAX_WAIT_S = 60
@@ -68,7 +69,7 @@ def run(sender, receiver, test_dir) -> bool:
     with open(file_path, "wb") as f:
         f.write(data)
 
-    receiver_email = receiver.get_config("addr")
+    receiver_email = account_addr(receiver)
     rc = sender.get_contact_by_addr(receiver_email)
     if rc is None:
         raise Exception(

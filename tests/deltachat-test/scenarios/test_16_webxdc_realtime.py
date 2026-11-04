@@ -4,6 +4,7 @@ import zipfile
 import tempfile
 from deltachat_rpc_client.const import EventType, ViewType
 from scenarios.test_01_account_creation import run as create_account
+from utils.accounts import account_addr
 
 def create_dummy_xdc():
     tmpdir = tempfile.mkdtemp()
@@ -30,8 +31,8 @@ def run(dc, domain):
     print("Creating Acc2...")
     acc2 = create_account(dc, domain)
     
-    addr1 = acc1.get_config("addr")
-    addr2 = acc2.get_config("addr")
+    addr1 = account_addr(acc1)
+    addr2 = account_addr(acc2)
     
     print(f"Acc1: {addr1}")
     print(f"Acc2: {addr2}")

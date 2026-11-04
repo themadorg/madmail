@@ -137,6 +137,28 @@ Not applicable — server mode does not use ctl JSON output.
 
 ### `monitor`
 
+`monitor status`, `monitor enable`, and `monitor disable` return `enabled`,
+`listen` (null when disabled), `authentication_required`, `username`, `changed`, and `restart_required` in `data`.
+`enabled` reflects saved configuration. `restart_required` is true when the
+command changed the configuration; apply changes by restarting the server.
+A false value does not establish that the running server matches the saved configuration.
+
+```json
+{
+  "ok": true,
+  "command": "monitor",
+  "data": {
+    "enabled": false,
+    "listen": null,
+    "authentication_required": false,
+    "username": "metrics",
+    "changed": false,
+    "restart_required": false
+  }
+}
+```
+
+
 One envelope per sample (newline-delimited when `--count` is not 1):
 
 ```json
@@ -315,6 +337,7 @@ Dry-run / completed uninstall returns paths and flags in `data`. When nothing to
     "registration_open": false,
     "token_required": true,
     "jit_enabled": true,
+    "password_signup": false,
     "blocklisted": 2,
     "mail_directories": 12,
     "state_dir": "/var/lib/madmail",

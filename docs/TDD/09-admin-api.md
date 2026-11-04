@@ -53,7 +53,7 @@ Madmail-compatible JSON-RPC admin API. Full operator reference: [`context/madmai
 | `/admin/services/webimap` | GET, POST | Implemented (`__WEBIMAP_ENABLED__`, default disabled) |
 | `/admin/services/websmtp` | GET, POST | Implemented (`__WEBSMTP_ENABLED__`, default disabled) |
 | `/admin/services/push` | GET, POST | Implemented — `__PUSH_MODE__` (`auto`/`on`/`off`, **default `off`**); POSTs device tokens to `notifications.delta.chat` when enabled; GET returns `successful_notifications`, `consecutive_failures`; POST `enable`/`disable`/`auto` → soft reload. See [23-push-notifications.md](23-push-notifications.md) |
-| `/admin/settings/federation` | GET, POST | Implemented — includes `max_federation_size`, `federation_size_effective` |
+| `/admin/settings/federation` | GET, POST | Implemented — includes `max_federation_size`, `federation_size_effective`, `transports` (`{ "https", "http", "smtp" }` = `allow` \| `block`, stored mode). POST accepts `transports` and validates it before saving `enabled` / `policy` |
 | `/admin/federation/rules` | GET, POST, DELETE | Implemented |
 | `/admin/federation/silent-dismiss` | GET, POST, DELETE | Implemented — outbound domains accepted but not delivered (`federation_silent_dismiss` table) |
 | `/admin/federation/servers` | GET | Implemented (`FederationTracker`) |
@@ -211,6 +211,7 @@ crates/chatmail-fed/src/server.rs
 | `admin_message_size_get_put_delete` | `/admin/message-size` effective cap |
 | `admin_federation_size_get_put_delete` | `/admin/federation-size` effective cap (default 70M) |
 | `admin_federation_settings_includes_size` | `GET /admin/settings/federation` exposes federation size |
+| `admin_federation_transport_block_updates_cache` | `transports` POST updates the live policy; a bad mode returns 400 and leaves `policy`, `enabled` and transports unchanged |
 | `admin_settings_max_federation_size_updates_effective` | `POST /admin/settings/max_federation_size` |
 | `p9_auth_gate_bearer` | constant-time Bearer check |
 | `p9_notice_post_delivers` | POST `/admin/notice` → local maildir |

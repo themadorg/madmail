@@ -8,17 +8,13 @@ sys.path.append(os.path.dirname(__file__))
 
 from deltachat_rpc_client import EventType
 from test_01_account_creation import run as create_account
+from utils.accounts import account_addr, account_password
 
 def run(dc, domain):
     print(f"--- Running Iroh Discovery Test on {domain} ---")
     account = create_account(dc, domain)
-    addr = account.get_config("addr")
-    # For deltachat-core-rust, mail_pw is the config key for IMAP password
-    password = account.get_config("mail_pw")
-    
-    if not password:
-        print("✗ Could not retrieve IMAP password from account config.")
-        raise Exception("IMAP password missing in config")
+    addr = account_addr(account)
+    password = account_password(account)
 
     print(f"Verifying Iroh discovery via IMAP for {addr}...")
     

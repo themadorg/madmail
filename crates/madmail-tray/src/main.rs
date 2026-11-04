@@ -64,7 +64,18 @@ enum Commands {
     UninstallAutostart,
 }
 
+/// Contiguous package identity retained in the tray binary. Not part of CLI text.
+const BUILD_VERSION_MARKER: &str = concat!("madmail-build-version:", env!("CARGO_PKG_VERSION"));
+
+fn retain_build_version_marker() {
+    let marker = BUILD_VERSION_MARKER;
+    if std::hint::black_box(marker.as_ptr()).is_null() {
+        std::process::abort();
+    }
+}
+
 fn main() {
+    retain_build_version_marker();
     let cli = Cli::parse();
     let (def_cfg, def_state) = paths::default_layout();
     let config = cli.config.unwrap_or(def_cfg);

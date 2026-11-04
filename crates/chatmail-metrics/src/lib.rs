@@ -25,4 +25,4 @@ pub use metrics::{
     record_smtp_failed_command, record_smtp_failed_login, record_smtp_started, sample_value,
     samples, set_queue_length, ConnGuard,
 };
-pub use server::run_openmetrics_listener;
+pub use server::{run_openmetrics_listener, run_openmetrics_listener_with_auth};

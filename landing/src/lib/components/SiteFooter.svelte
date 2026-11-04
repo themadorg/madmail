@@ -42,6 +42,7 @@
 		{#each resources as link}
 			<a href={link.href}>{link.label}</a>
 		{/each}
+		<a href="/blog/rss.xml">RSS</a>
 	</nav>
 	<p class="license">
 		<a href="{repo}/blob/main/LICENCE">AGPL-3.0-or-later</a> · Use at your own risk. Validate for your
@@ -87,5 +88,28 @@
 		font-size: 0.8rem;
 		line-height: 1.5;
 		color: var(--color-text-faint);
+	}
+	@media (max-width: 480px) {
+		footer {
+			padding: 2.5rem 1.25rem;
+		}
+		nav {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 0.25rem 1rem;
+			text-align: left;
+			padding-top: 1rem;
+			border-top: 1px solid var(--color-border);
+			margin-bottom: 1.5rem;
+		}
+		nav a {
+			display: flex;
+			align-items: center;
+			min-height: 2.75rem;
+			font-size: 0.85rem;
+		}
+		.license {
+			font-size: 0.75rem;
+		}
 	}
 </style>

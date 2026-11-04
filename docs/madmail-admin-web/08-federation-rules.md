@@ -28,7 +28,7 @@ The layout (`+layout.svelte`) is shared across all federation sub-routes and sho
 | Outbound transports | `POST` | `/admin/settings/federation` — `{ "transports": { "https": "allow" \| "block", "http": "...", "smtp": "..." } }` |
 | Per-domain transport override | `POST` | `/admin/settings/federation` — `{ "domain": "evil.test", "transports": { "smtp": "allow" \| "block" \| "inherit" } }` |
 
-GET returns `transports` with the global mode of each path, and `transport_overrides` as a list of `{ "domain", ...modes }`. Omitted keys in POST stay unchanged. A missing stored key means `allow` (HTTPS, then plain HTTP, then SMTP). A missing key inside one domain override inherits that global mode. `inherit` removes one override. The POST updates the running server immediately. The same keys are `madmail federation transport`, which needs `madmail reload`. The web UI does not draw these switches yet.
+GET returns `transports` with the stored global mode of each path, and `transport_overrides` as a list of `{ "domain", ...modes }`. Both are read from the database like `enabled` and `policy`. A CLI change shows up there at once but takes effect only after `madmail reload` or the next POST with `transports` (which reloads the global keys and the overrides). Omitted keys in POST stay unchanged. A missing stored key means `allow` (HTTPS, then plain HTTP, then SMTP). A missing key inside one domain override inherits that global mode. `inherit` removes one override. The POST updates the running server immediately. The same keys are `madmail federation transport`, which needs `madmail reload`. The web UI does not draw these switches yet.
 
 ### Policy semantics
 
