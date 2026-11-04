@@ -1,4 +1,5 @@
 <script>
+	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import DocHeader from '$lib/components/DocHeader.svelte';
 	import SiteFooter from '$lib/components/SiteFooter.svelte';
@@ -8,7 +9,9 @@
 
 	/** @type {{ posts: { slug: string, title: string, date: string, author?: string, language?: string, translation?: string, description: string, body: string }[], selected?: { slug: string, title: string, date: string, author?: string, language?: string, translation?: string, description: string, body: string } | null }} */
 	let { posts, selected = null } = $props();
-	const indexLanguage = $derived(['en', 'fa', 'ru'].includes(page.url.searchParams.get('lang')) ? page.url.searchParams.get('lang') : 'en');
+	// Query strings don't exist at prerender time; the static page is English and ?lang= applies after hydration.
+	const requestedLanguage = $derived(browser ? page.url.searchParams.get('lang') : null);
+	const indexLanguage = $derived(['en', 'fa', 'ru'].includes(requestedLanguage) ? requestedLanguage : 'en');
 	const groups = $derived([...new Set(posts.map((post) => post.translation))].map((key) => {
 		const variants = posts.filter((post) => post.translation === key);
 		return variants.find((post) => post.language === indexLanguage) ?? variants.find((post) => post.language === 'en') ?? variants[0];
@@ -16,15 +19,6 @@
 	const visible = $derived(selected ? [selected] : groups);
 	const languages = $derived(selected ? allPosts.filter((post) => post.translation === selected.translation).map((post) => ({ label: post.language === 'fa' ? 'فارسی' : post.language === 'en' ? 'English' : post.language === 'ru' ? 'Русский' : post.language, href: `/blog/${post.slug}`, current: post.slug === selected.slug })) : [...new Set(allPosts.map((post) => post.language))].map((language) => ({ label: language === 'fa' ? 'فارسی' : language === 'en' ? 'English' : language === 'ru' ? 'Русский' : language, href: `/blog?lang=${language}`, current: language === indexLanguage })));
 </script>
-
-<svelte:head>
-	<title>{selected ? `${selected.title} · madmail` : 'Blog · madmail'}</title>
-	<meta
-		name="description"
-		content={selected?.description || 'Notes from the Madmail project.'}
-	/>
-	<link rel="alternate" type="application/rss+xml" title="Madmail blog" href="/blog/rss.xml" />
-</svelte:head>
 
 <DocHeader section="Blog" {languages} article={selected} blogLanguage={selected?.language ?? indexLanguage} />
 
