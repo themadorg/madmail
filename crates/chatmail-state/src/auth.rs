@@ -6,9 +6,7 @@
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
-use chatmail_db::{
-    blocklist, get_bool_setting, is_federation_rcpt_blocked, passwords, settings_keys, DbPool,
-};
+use chatmail_db::{blocklist, is_federation_rcpt_blocked, passwords, DbPool};
 use chatmail_types::{domain_forms, Result};
 use dashmap::DashMap;
 
@@ -113,10 +111,11 @@ impl AuthCache {
 
     /// Password-only IMAP/SMTP account creation is allowed.
     ///
-    /// True only when both `__JIT_REGISTRATION_ENABLED__` and `__REGISTRATION_OPEN__`
-    /// were true at the last hydrate. Closing registration stops first-login
-    /// creation even while the JIT row stays true. Opening registration does not
-    /// override a disabled JIT row (#235).
+    /// Value of [`chatmail_db::SignupSettings::password_signup_allowed`] at the
+    /// last hydrate: registration open, JIT enabled and no invite token
+    /// required. Closing registration stops first-login creation even while the
+    /// JIT row stays true. Opening registration does not override a disabled JIT
+    /// row (#235).
     pub fn jit_registration_enabled(&self) -> bool {
         *self.jit_enabled.read().unwrap_or_else(|e| e.into_inner())
     }
@@ -202,12 +201,11 @@ impl AuthCache {
             self.blocked.insert(user, ());
         }
 
-        // Both switches are required (#235). Missing rows keep the historical
-        // default of enabled so an unseeded cache still allows first login.
-        let jit_on = get_bool_setting(pool, settings_keys::JIT_REGISTRATION_ENABLED, true).await?;
-        let registration_open =
-            get_bool_setting(pool, settings_keys::REGISTRATION_OPEN, true).await?;
-        *self.jit_enabled.write().unwrap_or_else(|e| e.into_inner()) = jit_on && registration_open;
+        // Registration open, JIT on and no required token (#235). Missing rows
+        // take the install defaults, so an unseeded cache still allows first login.
+        let signup = chatmail_db::SignupSettings::load(pool).await?;
+        *self.jit_enabled.write().unwrap_or_else(|e| e.into_inner()) =
+            signup.password_signup_allowed();
 
         self.login_settled.clear();
         for user in chatmail_db::list_login_settled_usernames(pool).await? {
@@ -227,7 +225,7 @@ impl Default for AuthCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chatmail_db::{init_memory_db, passwords};
+    use chatmail_db::{init_memory_db, passwords, settings_keys};
 
     #[tokio::test]
     async fn hydrate_loads_all_users() {
@@ -297,6 +295,13 @@ mod tests {
             .unwrap();
         cache.hydrate(&pool).await.unwrap();
         assert!(cache.jit_registration_enabled());
+
+        // Invite-only: IMAP/SMTP cannot present a token, so first login stays off.
+        chatmail_db::set_setting(&pool, settings_keys::REGISTRATION_TOKEN_REQUIRED, "true")
+            .await
+            .unwrap();
+        cache.hydrate(&pool).await.unwrap();
+        assert!(!cache.jit_registration_enabled());
     }
 
     #[test]

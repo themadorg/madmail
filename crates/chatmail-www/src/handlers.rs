@@ -289,18 +289,26 @@ pub async fn new_account(
                 &cors,
             );
         }
-    } else if get_bool_setting(&st.pool, settings_keys::REGISTRATION_TOKEN_REQUIRED, false)
-        .await
-        .unwrap_or(false)
+    } else if get_bool_setting(
+        &st.pool,
+        settings_keys::REGISTRATION_TOKEN_REQUIRED,
+        chatmail_db::REGISTRATION_TOKEN_REQUIRED_DEFAULT,
+    )
+    .await
+    .unwrap_or(false)
     {
         return cors_json(
             StatusCode::FORBIDDEN,
             json!({"error": "Registration token is required"}),
             &cors,
         );
-    } else if !get_bool_setting(&st.pool, settings_keys::REGISTRATION_OPEN, true)
-        .await
-        .unwrap_or(false)
+    } else if !get_bool_setting(
+        &st.pool,
+        settings_keys::REGISTRATION_OPEN,
+        chatmail_db::REGISTRATION_OPEN_DEFAULT,
+    )
+    .await
+    .unwrap_or(false)
     {
         return cors_json(
             StatusCode::FORBIDDEN,
@@ -817,7 +825,7 @@ async fn render_template(
         alpn_imap_on_https: st.app.shared_port.imap(),
         alpn_smtp_on_https: st.app.shared_port.smtp(),
     };
-    let ctx = match build_context(
+    let mut ctx = match build_context(
         &st.pool,
         &st.config,
         custom,
@@ -834,6 +842,11 @@ async fn render_template(
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
+    // The settings snapshot follows the database within seconds, but IMAP and
+    // SMTP only pick up a changed sign-up gate on reload. Advertise what the auth
+    // cache enforces so the page never hands out credentials that the first
+    // login would refuse (#235).
+    ctx.PasswordSignupEnabled = st.app.auth.jit_registration_enabled();
     match st.templates.render(name, &ctx) {
         Ok(html) => {
             let mut resp = Html(html).into_response();

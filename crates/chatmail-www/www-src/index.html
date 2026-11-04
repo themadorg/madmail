@@ -124,7 +124,9 @@
     <script>
         let currentLink = "";
         const registrationOpen = "{{if .RegistrationOpen}}true{{else}}false{{end}}" === "true";
-        const jitEnabled = "{{if .JitRegistrationEnabled}}true{{else}}false{{end}}" === "true";
+        // True only while a first IMAP/SMTP login would create the account. Otherwise
+        // the account is created by POST /new before the link is shown.
+        const passwordSignupEnabled = "{{if .PasswordSignupEnabled}}true{{else}}false{{end}}" === "true";
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         const PAGE_LANG = "{{.Language}}";
 
@@ -207,7 +209,7 @@
         }
 
         function generateAccount() {
-            if (jitEnabled) {
+            if (passwordSignupEnabled) {
                 generateAccountRandom();
             } else {
                 generateAccountViaApi();
@@ -283,7 +285,7 @@
                 if (iosCard) iosCard.style.display = 'none';
             }
             updateButtonStates();
-            if (registrationOpen && jitEnabled) {
+            if (registrationOpen && passwordSignupEnabled) {
                 generateAccount();
             }
         };

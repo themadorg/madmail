@@ -303,6 +303,29 @@ mod tests {
             .unwrap());
     }
 
+    /// Invite-only server: IMAP/SMTP cannot present a token, so an unknown login
+    /// must not create an account even with registration open and JIT on.
+    #[tokio::test]
+    async fn token_required_rejects_unknown_login() {
+        let (ctx, _dir) = ctx_with_flags(true, true).await;
+        set_setting(
+            &ctx.pool,
+            settings_keys::REGISTRATION_TOKEN_REQUIRED,
+            "true",
+        )
+        .await
+        .unwrap();
+        ctx.state.auth.hydrate(&ctx.pool).await.unwrap();
+        assert!(!ctx.state.auth.jit_registration_enabled());
+        assert!(matches!(
+            authenticate(&ctx, "newuser1@example.org", "longpassword").await,
+            Err(ChatmailError::AuthFailed)
+        ));
+        assert!(!passwords::user_exists(&ctx.pool, "newuser1@example.org")
+            .await
+            .unwrap());
+    }
+
     /// #235: `accounts create` still logs in after registration is closed.
     #[tokio::test]
     async fn cli_account_logs_in_while_registration_closed() {

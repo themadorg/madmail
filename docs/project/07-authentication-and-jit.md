@@ -28,7 +28,7 @@ Steps it performs:
    - If found → verify password. On success → `finish_successful_login`.
    - If not found → proceed to JIT path (if allowed).
 5. **JIT path**:
-   - Check that both JIT and public registration are enabled in the auth cache.
+   - Check the sign-up gate in the auth cache: JIT enabled, public registration open, and no invite token required.
    - Validate localpart + password policy (`credential_policy`).
    - Hash the password.
    - Create the user row in `passwords` table.
@@ -49,12 +49,15 @@ Both construct an `AuthContext` (pool + AppState + primary_domain + jit_domain +
 ## JIT Enablement Logic
 
 ```rust
-fn password_jit_allowed(jit_enabled: bool, registration_open: bool) -> bool {
-    jit_enabled && registration_open
+// chatmail_db::SignupSettings
+pub fn password_signup_allowed(&self) -> bool {
+    self.registration_open && self.jit_enabled && !self.token_required
 }
 ```
 
-The two settings stay independent. `AuthCache::hydrate` stores the AND and IMAP/SMTP consult that flag. `POST /new` does not: a valid invite token creates an account while registration is closed, and an open registration can use `/new` while JIT is disabled. The registration page follows the same split. A running server loads the flag at startup and on soft reload.
+The settings stay independent. `AuthCache::hydrate` stores this value and IMAP/SMTP consult that flag. IMAP and SMTP cannot carry an invite token, so a required token turns the path off. `POST /new` does not use the flag: a valid invite token creates an account while registration is closed, and an open registration can use `/new` while JIT is disabled. A running server loads the flag at startup and on soft reload.
+
+`SignupSettings` also holds the missing-row defaults, so the auth cache, `/new`, the registration page, the admin API and the CLI agree. The registration page reads the auth cache value, not the database, when it decides whether to make credentials in the browser. Between a settings change and the next reload it therefore falls back to `POST /new` instead of showing a login that IMAP would refuse.
 
 ## Password Storage
 
