@@ -1,3 +1,41 @@
+# [2.41.0](https://github.com/themadorg/madmail/compare/v2.40.0-unstable...v2.41.0-unstable) (2026-11-05)
+
+### Features
+
+* **install:** add isolated user and systemd repair modes ([b0f4fdb](https://github.com/themadorg/madmail/commit/b0f4fdb06f400cd364fbd74e6f1daf930698eaff))
+
+### Bug Fixes
+
+* **install:** accept a half-made state directory madmail created ([56e1cf6](https://github.com/themadorg/madmail/commit/56e1cf65006243227c0b1b7ecb8e1cc1ec5dd81e))
+* **install:** check and change files through descriptors as root ([2a6f228](https://github.com/themadorg/madmail/commit/2a6f2287007e648e5f24c378d7cf41edd9a295a2))
+* **install:** chown hard-linked mail files in the state walk ([a7689dc](https://github.com/themadorg/madmail/commit/a7689dc4a249777dc165d87377f61eb3594f54f6))
+* **install:** chown the state tree by file descriptor ([4e14921](https://github.com/themadorg/madmail/commit/4e1492155a921307fed6b0aa5ce663d6bcb5885a))
+* **install:** escape service-controlled paths and print safe manual steps ([e8f0ddb](https://github.com/themadorg/madmail/commit/e8f0ddbb67c4e83f95102dda3f735137b121d299))
+* **install:** fail closed on account lookups and refuse system trees ([8b0cfb0](https://github.com/themadorg/madmail/commit/8b0cfb0952e0a16daff71cf3c6d283c2d5d207d4))
+* **install:** fail closed when getent answers another question ([c512be3](https://github.com/themadorg/madmail/commit/c512be3fcf8c21c68326462de0cc34a680bdfd7d))
+* **install:** follow link hops when deciding a path is in the state tree ([13b3d4f](https://github.com/themadorg/madmail/commit/13b3d4f8f1e983d0e11a0bc4927c5f3d83ed3182))
+* **install:** give in-tree files their owner on creation, drop the walk allowlist ([18bc144](https://github.com/themadorg/madmail/commit/18bc14455a97d0e7b7a54c499b7f357b2b4b9f80))
+* **install:** handle home paths and failed account migrations ([e453db9](https://github.com/themadorg/madmail/commit/e453db950f5cfbaa50fac843d2ff95460095a6b5))
+* **install:** keep full installs safe on existing homes and links ([ed9f90c](https://github.com/themadorg/madmail/commit/ed9f90c04e48706aac7041e10c6cf6f8369cac95)), [#222](https://github.com/themadorg/madmail/issues/222)
+* **install:** leave service-tree TLS files to the descriptor walk ([b80b860](https://github.com/themadorg/madmail/commit/b80b860567139d72bcb2ce0c36b2186a7e0aa407))
+* **install:** make account and unit repair safe on live installs ([e5b0f14](https://github.com/themadorg/madmail/commit/e5b0f14bf60345fc77b5e1eb6af55948acc89ec2)), [#222](https://github.com/themadorg/madmail/issues/222)
+* **install:** never hand another account's files to the service ([f774200](https://github.com/themadorg/madmail/commit/f7742008da6ebf89edd6ba0b822b96d2e7bebf07))
+* **install:** quote account names and complete the stop steps ([c0ce482](https://github.com/themadorg/madmail/commit/c0ce482832c301fadd76d732a4c15c03bb35d29e))
+* **install:** refuse a state directory that is not madmail's own ([e90f9c3](https://github.com/themadorg/madmail/commit/e90f9c356f03276fc77ca0121c44e9b284de60cf))
+* **install:** see NSS accounts and refuse more state directories ([599d74d](https://github.com/themadorg/madmail/commit/599d74db511f825fd2c441edccd413c6fc0fd625))
+* **install:** support explicit system installs with custom paths ([b2d2960](https://github.com/themadorg/madmail/commit/b2d29601b7734d425623db4bd14fcb371f950461)), [#216](https://github.com/themadorg/madmail/issues/216)
+* **install:** treat any ancestor resolving into the state tree as in-tree ([3421197](https://github.com/themadorg/madmail/commit/342119752172746db593e6b8d751a6955e7f5011))
+* **install:** use the DKIM imports on every target ([9178ce1](https://github.com/themadorg/madmail/commit/9178ce1eec632c47e824d1794fcaefa3f3130cc3))
+* **install:** write WorkingDirectory= verbatim and guard test binary ([c6df78e](https://github.com/themadorg/madmail/commit/c6df78ec5ace4ebfcee97250bbc373b669798726)), [#220](https://github.com/themadorg/madmail/issues/220)
+* **uninstall:** apply the dedicated-directory rule to every source ([ac2524f](https://github.com/themadorg/madmail/commit/ac2524fa75a737f34835a33b75a99c91a89aae58))
+* **uninstall:** fail closed on untrusted groups and remove trees through descriptors ([848c668](https://github.com/themadorg/madmail/commit/848c6685fac5826cda8749abe76b4aa84ec8ef4b))
+* **uninstall:** find custom config dirs from the unit's --config ([d1c87e4](https://github.com/themadorg/madmail/commit/d1c87e4adb2c14bbed1c9059413174d9124cbaff)), [#220](https://github.com/themadorg/madmail/issues/220)
+* **uninstall:** keep raw JSON paths and share the trust account list ([c76fa13](https://github.com/themadorg/madmail/commit/c76fa13812413c591b6e7e619e24a9a979904f37))
+* **uninstall:** leave an untrusted path in place and go on ([298b9f8](https://github.com/themadorg/madmail/commit/298b9f86ae40c36183d865759e0c8365f1fac41c))
+* **uninstall:** let config paths inside a state directory go with it ([768b898](https://github.com/themadorg/madmail/commit/768b89870e309c8277171bf09b247aa4aca541a5))
+* **uninstall:** never remove shared directories named in a unit ([46856db](https://github.com/themadorg/madmail/commit/46856db87b13d313876f1e5ec76434f2e1708e08))
+* **uninstall:** refuse group-writable files in the root-only check ([d21e671](https://github.com/themadorg/madmail/commit/d21e671823295b7d62af8bc25139af0ba78b66fb))
+
 # [2.40.0](https://github.com/themadorg/madmail/compare/v2.39.2-unstable...v2.40.0-unstable) (2026-11-05)
 
 ### Features
