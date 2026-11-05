@@ -36,7 +36,7 @@ use std::time::SystemTime;
 
 use dashmap::DashMap;
 
-use crate::maildir_message::StoredMessage;
+use crate::maildir_message::{MailboxListing, StoredMessage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DirMtime {
@@ -61,6 +61,9 @@ struct CachedListing {
     new_mtime: Option<DirMtime>,
     cur_mtime: Option<DirMtime>,
     messages: Vec<StoredMessage>,
+    /// Next UID snapshotted with `messages`. A cache hit must not recompute this from the
+    /// highest remaining UID: deletions leave gaps, and an empty mailbox is not UID 1 again.
+    uid_next: u32,
 }
 
 /// Per-mailbox listing cache invalidated when `new/` or `cur/` change (or on explicit bump).
@@ -110,7 +113,7 @@ impl MaildirListCache {
         mailbox: &str,
         new_dir: &Path,
         cur_dir: &Path,
-    ) -> Option<Vec<StoredMessage>> {
+    ) -> Option<MailboxListing> {
         // Read mtimes before locking the shard: never hold a DashMap guard across `.await`.
         let new_mtime = Self::dir_mtime(new_dir).await;
         let cur_mtime = Self::dir_mtime(cur_dir).await;
@@ -121,13 +124,16 @@ impl MaildirListCache {
             && cached.new_mtime == new_mtime
             && cached.cur_mtime == cur_mtime
         {
-            Some(cached.messages.clone())
+            Some(MailboxListing {
+                messages: cached.messages.clone(),
+                uid_next: cached.uid_next,
+            })
         } else {
             None
         }
     }
 
-    /// Cache `messages` only if `expected_generation` is still the live generation for this
+    /// Cache `listing` only if `expected_generation` is still the live generation for this
     /// mailbox. Callers snapshot the generation *before* a slow `uidlist::sync` so a concurrent
     /// delivery's invalidate discards the incomplete listing.
     pub(crate) fn store(
@@ -137,7 +143,7 @@ impl MaildirListCache {
         expected_generation: u64,
         new_mtime: Option<DirMtime>,
         cur_mtime: Option<DirMtime>,
-        messages: Vec<StoredMessage>,
+        listing: MailboxListing,
     ) {
         if self.generation(user, mailbox) != expected_generation {
             return;
@@ -148,7 +154,8 @@ impl MaildirListCache {
                 generation: expected_generation,
                 new_mtime,
                 cur_mtime,
-                messages,
+                messages: listing.messages,
+                uid_next: listing.uid_next,
             },
         );
     }
@@ -157,7 +164,7 @@ impl MaildirListCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::maildir_message::{MaildirFlags, StoredMessage};
+    use crate::maildir_message::{MailboxListing, MaildirFlags, StoredMessage};
     use std::time::SystemTime;
 
     fn sample_msg(id: &str) -> StoredMessage {
@@ -168,6 +175,13 @@ mod tests {
             size: 1,
             internal_date: SystemTime::now(),
             flags: MaildirFlags::default(),
+        }
+    }
+
+    fn listed(msgs: Vec<StoredMessage>, uid_next: u32) -> MailboxListing {
+        MailboxListing {
+            messages: msgs,
+            uid_next,
         }
     }
 
@@ -185,14 +199,22 @@ mod tests {
         let new_mtime = MaildirListCache::dir_mtime(&new_dir).await;
         let cur_mtime = MaildirListCache::dir_mtime(&cur_dir).await;
         let msgs = vec![sample_msg("a")];
-        cache.store("u@test", "INBOX", gen, new_mtime, cur_mtime, msgs.clone());
+        cache.store(
+            "u@test",
+            "INBOX",
+            gen,
+            new_mtime,
+            cur_mtime,
+            listed(msgs.clone(), 7),
+        );
 
         let hit = cache
             .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
             .await
             .unwrap();
-        assert_eq!(hit.len(), 1);
-        assert_eq!(hit[0].base_id, "a");
+        assert_eq!(hit.messages.len(), 1);
+        assert_eq!(hit.messages[0].base_id, "a");
+        assert_eq!(hit.uid_next, 7);
     }
 
     /// P11-UT05: cache miss after a new message changes `new/` mtime.
@@ -214,7 +236,7 @@ mod tests {
             gen,
             new_mtime,
             cur_mtime,
-            vec![sample_msg("old")],
+            listed(vec![sample_msg("old")], 2),
         );
 
         tokio::fs::write(new_dir.join("msg"), b"x").await.unwrap();
@@ -254,7 +276,7 @@ mod tests {
             gen_before,
             new_mtime,
             cur_mtime,
-            vec![sample_msg("stale-only")],
+            listed(vec![sample_msg("stale-only")], 2),
         );
         assert!(
             cache
@@ -272,14 +294,15 @@ mod tests {
             gen_after,
             new_mtime,
             cur_mtime,
-            vec![sample_msg("fresh")],
+            listed(vec![sample_msg("fresh")], 4),
         );
         let hit = cache
             .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
             .await
             .expect("fresh listing should hit");
-        assert_eq!(hit.len(), 1);
-        assert_eq!(hit[0].base_id, "fresh");
+        assert_eq!(hit.messages.len(), 1);
+        assert_eq!(hit.messages[0].base_id, "fresh");
+        assert_eq!(hit.uid_next, 4);
     }
 
     /// Same-second mtime: invalidate alone must force a miss even when dir mtime is unchanged.
@@ -301,7 +324,7 @@ mod tests {
             gen,
             new_mtime,
             cur_mtime,
-            vec![sample_msg("a")],
+            listed(vec![sample_msg("a")], 2),
         );
         assert!(cache
             .get_if_fresh("u@test", "INBOX", &new_dir, &cur_dir)
@@ -336,7 +359,14 @@ mod tests {
                 let cache = std::sync::Arc::new(MaildirListCache::default());
                 let m = MaildirListCache::dir_mtime(&new_dir).await;
                 let gen = cache.generation("u@test", "INBOX");
-                cache.store("u@test", "INBOX", gen, m, m, vec![sample_msg("a")]);
+                cache.store(
+                    "u@test",
+                    "INBOX",
+                    gen,
+                    m,
+                    m,
+                    listed(vec![sample_msg("a")], 2),
+                );
 
                 let reader = {
                     let cache = cache.clone();
@@ -353,7 +383,14 @@ mod tests {
                     tokio::spawn(async move {
                         for i in 0..50 {
                             let g = cache.generation("u@test", "INBOX");
-                            cache.store("u@test", "INBOX", g, None, None, vec![sample_msg("b")]);
+                            cache.store(
+                                "u@test",
+                                "INBOX",
+                                g,
+                                None,
+                                None,
+                                listed(vec![sample_msg("b")], 3),
+                            );
                             cache.invalidate("u@test", "INBOX");
                             if i % 7 == 0 {
                                 tokio::task::yield_now().await;
@@ -381,7 +418,14 @@ mod tests {
     async fn p11_ut06_invalidate_clears_entry() {
         let cache = MaildirListCache::default();
         let gen = cache.generation("u@test", "INBOX");
-        cache.store("u@test", "INBOX", gen, None, None, vec![sample_msg("x")]);
+        cache.store(
+            "u@test",
+            "INBOX",
+            gen,
+            None,
+            None,
+            listed(vec![sample_msg("x")], 2),
+        );
         cache.invalidate("u@test", "INBOX");
         assert!(cache
             .entries
