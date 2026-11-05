@@ -70,11 +70,11 @@ async fn status(args: &Args, ctx: &CtlContext) -> Result<()> {
         .unwrap_or("(default)");
 
     out.blank();
-    for (key, source) in pool.policy().sources() {
-        if key == ADMIN_WEB_PATH || key == ADMIN_WEB_ENABLED {
+    for key in [ADMIN_WEB_ENABLED, ADMIN_WEB_PATH] {
+        if let Some(source) = pool.protection_source(key) {
             out.line(format!(
                 "  Protected: {} ({source})",
-                chatmail_config::settings_policy::setting_name(&key)
+                chatmail_config::settings_policy::setting_name(key)
             ));
         }
     }
@@ -159,7 +159,10 @@ async fn path_cmd(args: &Args, ctx: &CtlContext, path: Option<&str>, reset: bool
     } else {
         &[ADMIN_WEB_PATH]
     })?;
-    let normalized = validate_web_path(&pool, &ctx.config, new_path).await?;
+    // Same character set and length limit as the admin API, before any write.
+    let new_path =
+        chatmail_config::settings_policy::validate_admin_path_write("admin_web_path", new_path)?;
+    let normalized = validate_web_path(&pool, &ctx.config, &new_path).await?;
     set_setting(&pool, ADMIN_WEB_PATH, &normalized).await?;
     if enable_needed {
         set_setting(&pool, ADMIN_WEB_ENABLED, "true").await?;
@@ -183,10 +186,11 @@ async fn validate_web_path(
         .ok_or_else(|| ChatmailError::config("admin web path must not be empty"))?;
     let api = chatmail_db::get_setting(pool, chatmail_db::settings_keys::ADMIN_PATH)
         .await?
+        .filter(|v| !v.is_empty())
         .or_else(|| config.admin_path.clone())
         .unwrap_or_else(|| "/api/admin".into());
     let api = chatmail_config::settings_policy::validate("admin_path", &api)?;
-    if path == api || path.starts_with(&format!("{api}/")) || api.starts_with(&format!("{path}/")) {
+    if chatmail_config::settings_policy::admin_paths_overlap(&api, &path) {
         return Err(ChatmailError::config(
             "admin API and web paths must not overlap",
         ));
@@ -235,5 +239,41 @@ mod tests {
                 .as_deref(),
             Some("/panel")
         );
+    }
+
+    /// The CLI applies the admin API's character set and length limit, and checks
+    /// against an unprotected file `admin_path`, before writing anything.
+    #[tokio::test]
+    async fn rejected_paths_write_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("madmail.conf");
+        std::fs::write(
+            &config,
+            "chatmail tcp://0.0.0.0:80 {\n    admin_path /panel/api\n}\n",
+        )
+        .unwrap();
+        let args = Args::try_parse_from([
+            "chatmail",
+            "--state-dir",
+            dir.path().to_str().unwrap(),
+            "--config",
+            config.to_str().unwrap(),
+        ])
+        .unwrap();
+        let ctx = CtlContext::from_args(&args).unwrap();
+        let pool = ctx.open_pool().await.unwrap();
+        let long = format!("/{}", "a".repeat(253));
+        for path in ["/panel+1", long.as_str(), "/panel"] {
+            assert!(
+                path_cmd(&args, &ctx, Some(path), false).await.is_err(),
+                "{path}"
+            );
+            for key in [ADMIN_WEB_PATH, ADMIN_WEB_ENABLED] {
+                assert!(chatmail_db::settings::get_stored_setting(&pool, key)
+                    .await
+                    .unwrap()
+                    .is_none());
+            }
+        }
     }
 }

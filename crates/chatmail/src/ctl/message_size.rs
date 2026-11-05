@@ -44,8 +44,13 @@ async fn status(args: &Args, ctx: &CtlContext, pool: &chatmail_db::DbPool) -> Re
     let effective =
         chatmail_config::resolve_max_message_bytes(config_eff, append.as_deref(), max.as_deref())?;
 
+    let protected = pool
+        .protection_source(settings_keys::APPENDLIMIT)
+        .or_else(|| pool.protection_source(settings_keys::MAX_MESSAGE_SIZE));
     if out.is_json() {
-        let source = if append.is_some() || max.is_some() {
+        let source = if protected.is_some() {
+            "protected"
+        } else if append.is_some() || max.is_some() {
             "db"
         } else {
             "config"
@@ -69,6 +74,9 @@ async fn status(args: &Args, ctx: &CtlContext, pool: &chatmail_db::DbPool) -> Re
         format_data_size(config_eff),
         config_eff
     ));
+    if let Some(source) = &protected {
+        out.line(format!("  Protected by:      {source}"));
+    }
     match (&append, &max) {
         (Some(a), Some(b)) if a == b => {
             out.line(format!("  DB override:       {a}"));

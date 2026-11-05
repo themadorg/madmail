@@ -19,6 +19,7 @@
 
 use chatmail_config::cli::OpenrelayCommand;
 use chatmail_config::{parse_bool_str, Args};
+use chatmail_db::settings::get_stored_setting;
 use chatmail_db::{get_setting, set_setting, settings_keys};
 use chatmail_types::Result;
 
@@ -33,19 +34,19 @@ pub async fn openrelay(args: &Args, cmd: &OpenrelayCommand) -> Result<()> {
         OpenrelayCommand::Status => {
             let out = CtlOut::from_args(args, "openrelay status");
             let file_default = ctx.config.allow_inbound_remote_rcpt;
-            let (db_override, allowed) =
-                match get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT).await? {
-                    Some(v) => {
-                        let on = parse_bool_str(&v);
-                        (Some(on), on)
-                    }
-                    None => (None, file_default),
-                };
+            let allowed = get_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
+                .await?
+                .map_or(file_default, |v| parse_bool_str(&v));
+            let db_override = get_stored_setting(&pool, settings_keys::ALLOW_INBOUND_REMOTE_RCPT)
+                .await?
+                .map(|v| parse_bool_str(&v));
+            let protected = pool.protection_source(settings_keys::ALLOW_INBOUND_REMOTE_RCPT);
             if out.is_json() {
                 return out.emit(serde_json::json!({
                     "allowed": allowed,
                     "file_default": file_default,
                     "db_override": db_override,
+                    "protected_by": protected,
                     "reload_required": false,
                 }));
             }
@@ -58,6 +59,9 @@ pub async fn openrelay(args: &Args, cmd: &OpenrelayCommand) -> Result<()> {
                 "  File default (allow_inbound_remote_rcpt): {}",
                 if file_default { "true" } else { "false" }
             ));
+            if let Some(source) = &protected {
+                out.line(format!("  Protected by: {source}"));
+            }
             match db_override {
                 Some(on) => out.line(format!(
                     "  DB override (__ALLOW_INBOUND_REMOTE_RCPT__): {}",

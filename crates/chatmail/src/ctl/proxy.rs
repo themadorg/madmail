@@ -19,6 +19,7 @@
 
 use chatmail_config::cli::{ProxyCommand, ProxySettingCommand};
 use chatmail_config::Args;
+use chatmail_db::settings::get_stored_setting;
 use chatmail_db::{delete_setting, get_setting, set_setting, settings_keys};
 use chatmail_shadowsocks::{parse_cipher, resolve_runtime};
 use chatmail_types::{ChatmailError, Result};
@@ -224,33 +225,31 @@ async fn password_status(args: &Args, ctx: &CtlContext, pool: &chatmail_db::DbPo
     let out = CtlOut::from_args(args, "proxy password status");
     require_ss_configured(&ctx.config)?;
 
-    let db_override = get_setting(pool, settings_keys::SS_PASSWORD).await?;
+    let db_override = get_stored_setting(pool, settings_keys::SS_PASSWORD).await?;
+    let protected = pool.protection_source(settings_keys::SS_PASSWORD);
     let configured = ctx
         .config
         .ss_password
         .as_ref()
         .is_some_and(|s| !s.is_empty());
-    let source = if db_override.is_some() {
-        "db"
-    } else {
-        "config"
-    };
+    let source = setting_source(protected.as_deref(), db_override.is_some());
 
     if out.is_json() {
         return out.emit(json!({
             "configured": configured,
             "db_override": db_override.is_some(),
             "source": source,
+            "protected_by": protected,
         }));
     }
 
     out.blank();
     out.line(format!(
         "  Password source: {}",
-        if db_override.is_some() {
-            "DB override (value hidden)"
-        } else {
-            "config file (value hidden)"
+        match (&protected, db_override.is_some()) {
+            (Some(p), _) => format!("protected by {p} (value hidden)"),
+            (None, true) => "DB override (value hidden)".into(),
+            (None, false) => "config file (value hidden)".into(),
         }
     ));
     out.blank();
@@ -271,27 +270,29 @@ async fn setting_status(
     let out = CtlOut::from_args(args, command);
     require_ss_configured(&ctx.config)?;
 
-    let db_override = get_setting(pool, key).await?;
-    let effective = db_override
+    let resolved = get_setting(pool, key).await?;
+    let db_override = get_stored_setting(pool, key).await?;
+    let protected = pool.protection_source(key);
+    let effective = resolved
         .as_deref()
         .filter(|s| !s.is_empty())
         .unwrap_or(config_default);
-    let source = if db_override.is_some() {
-        "db"
-    } else {
-        "config"
-    };
+    let source = setting_source(protected.as_deref(), db_override.is_some());
 
     if out.is_json() {
         return out.emit(json!({
             label: effective,
             "db_override": db_override,
             "source": source,
+            "protected_by": protected,
         }));
     }
 
     out.blank();
     out.line(format!("  Effective {label}: {effective}"));
+    if let Some(p) = &protected {
+        out.line(format!("  Protected by:      {p}"));
+    }
     match db_override {
         Some(v) => out.line(format!("  DB override:       {v}")),
         None => out.line("  DB override:       (none — using config file)"),
@@ -364,8 +365,9 @@ async fn proxy_status_data(ctx: &CtlContext, pool: &chatmail_db::DbPool) -> Resu
 
     let mail_domain = mail_domain(ctx);
     let rt = resolve_runtime(pool, &ctx.config, &mail_domain, &ctx.state_dir).await?;
-    let cipher_db = get_setting(pool, settings_keys::SS_CIPHER).await?;
-    let password_db = get_setting(pool, settings_keys::SS_PASSWORD).await?;
+    let cipher_db = get_stored_setting(pool, settings_keys::SS_CIPHER).await?;
+    let password_db = get_stored_setting(pool, settings_keys::SS_PASSWORD).await?;
+    let cipher_protected = pool.protection_source(settings_keys::SS_CIPHER);
     let (_, port) = rt.listen_addr.rsplit_once(':').unwrap_or(("", ""));
     let urls = rt.urls(&mail_domain);
 
@@ -374,12 +376,21 @@ async fn proxy_status_data(ctx: &CtlContext, pool: &chatmail_db::DbPool) -> Resu
         "enabled": rt.enabled,
         "port": port,
         "cipher": rt.cipher,
-        "cipher_source": if cipher_db.is_some() { "db" } else { "config" },
+        "cipher_source": setting_source(cipher_protected.as_deref(), cipher_db.is_some()),
         "password_db_override": password_db.is_some(),
         "shadowsocks_url": urls.shadowsocks_url,
         "ws_enabled": rt.ws_enabled,
         "grpc_enabled": rt.grpc_enabled,
     }))
+}
+
+/// `protected` (file/environment lock), `db` (stored row), or `config` (file default).
+fn setting_source(protected: Option<&str>, stored: bool) -> &'static str {
+    match (protected, stored) {
+        (Some(_), _) => "protected",
+        (None, true) => "db",
+        (None, false) => "config",
+    }
 }
 
 fn mail_domain(ctx: &CtlContext) -> String {

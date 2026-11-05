@@ -477,26 +477,62 @@ async fn get_toggle_disabled_default(pool: &DbPool, key: &str) -> Result<String,
     }
 }
 
-/// `settingValueResponse` — `is_set` true only when stored in DB.
+/// Effective path of the other admin mount (protected value, DB row, file
+/// directive, then default), normalized the way the router mounts it.
+async fn effective_other_admin_path(
+    st: &AdminState,
+    db_key: &str,
+) -> Result<String, (u16, String)> {
+    let (name, other_key, field, default) = if db_key == settings_keys::ADMIN_PATH {
+        (
+            "admin_web_path",
+            settings_keys::ADMIN_WEB_PATH,
+            &st.file_config.admin_web_path,
+            "/admin",
+        )
+    } else {
+        (
+            "admin_path",
+            settings_keys::ADMIN_PATH,
+            &st.file_config.admin_path,
+            "/api/admin",
+        )
+    };
+    let raw = get_setting(&st.pool, other_key)
+        .await
+        .map_err(db_err)?
+        .filter(|v| !v.is_empty())
+        .or_else(|| field.clone())
+        .unwrap_or_else(|| default.into());
+    chatmail_config::settings_policy::validate(name, &raw).map_err(|e| (400, e.to_string()))
+}
+
+/// Whether a database row exists for `key`, ignoring deployment-protected values.
+async fn stored_setting_present(pool: &DbPool, key: &str) -> Result<bool, (u16, String)> {
+    Ok(chatmail_db::settings::get_stored_setting(pool, key)
+        .await
+        .map_err(db_err)?
+        .is_some())
+}
+
+/// `settingValueResponse` — `value` is the effective value (a protected file or
+/// environment value first); `is_set` is true only when a row is stored in the DB.
 async fn setting_value(
     pool: &DbPool,
     key: &str,
     active_default: &str,
 ) -> Result<Value, (u16, String)> {
-    match get_setting(pool, key).await.map_err(db_err)? {
-        None => Ok(json!({
-            "key": key,
-            "value": active_default,
-            "is_set": false,
-            "restart_required": false
-        })),
-        Some(v) => Ok(json!({
-            "key": key,
-            "value": v,
-            "is_set": true,
-            "restart_required": false
-        })),
-    }
+    let is_set = stored_setting_present(pool, key).await?;
+    let value = get_setting(pool, key)
+        .await
+        .map_err(db_err)?
+        .unwrap_or_else(|| active_default.to_string());
+    Ok(json!({
+        "key": key,
+        "value": value,
+        "is_set": is_set,
+        "restart_required": false
+    }))
 }
 
 /// `"public"` unless `__*_LOCAL_ONLY__` is `"true"`.
@@ -720,11 +756,11 @@ pub(crate) async fn generic_setting(
 ) -> AdminResult {
     match method {
         "GET" => {
-            let stored = get_setting(&st.pool, db_key).await.map_err(db_err)?;
-            let (value, is_set) = match stored {
-                None => (String::new(), false),
-                Some(v) => (v, true),
-            };
+            let value = get_setting(&st.pool, db_key)
+                .await
+                .map_err(db_err)?
+                .unwrap_or_default();
+            let is_set = stored_setting_present(&st.pool, db_key).await?;
             Ok((200, Some(setting_response(db_key, &value, is_set, false))))
         }
         "POST" => {
@@ -744,19 +780,8 @@ pub(crate) async fn generic_setting(
                             &value,
                         )
                         .map_err(|e| (400, e.to_string()))?;
-                        let (other_key, default) = if db_key == settings_keys::ADMIN_PATH {
-                            (settings_keys::ADMIN_WEB_PATH, "/admin")
-                        } else {
-                            (settings_keys::ADMIN_PATH, "/api/admin")
-                        };
-                        let other = get_setting(&st.pool, other_key)
-                            .await
-                            .map_err(db_err)?
-                            .unwrap_or_else(|| default.into());
-                        if value == other
-                            || value.starts_with(&format!("{other}/"))
-                            || other.starts_with(&format!("{value}/"))
-                        {
+                        let other = effective_other_admin_path(st, db_key).await?;
+                        if chatmail_config::settings_policy::admin_paths_overlap(&value, &other) {
                             return Err((400, "admin API and web paths must not overlap".into()));
                         }
                     }
@@ -802,19 +827,19 @@ pub(crate) async fn generic_setting(
                         || db_key == settings_keys::ADMIN_WEB_PATH
                     {
                         st.pool.check_settings_writable(&[db_key]).map_err(db_err)?;
-                        let (default, other_key, other_default) =
-                            if db_key == settings_keys::ADMIN_PATH {
-                                ("/api/admin", settings_keys::ADMIN_WEB_PATH, "/admin")
-                            } else {
-                                ("/admin", settings_keys::ADMIN_PATH, "/api/admin")
-                            };
-                        let other = get_setting(&st.pool, other_key)
-                            .await
-                            .map_err(db_err)?
-                            .unwrap_or_else(|| other_default.into());
-                        if default == other
-                            || default.starts_with(&format!("{other}/"))
-                            || other.starts_with(&format!("{default}/"))
+                        // After a reset the file directive (or built-in default) applies.
+                        let (field, default) = if db_key == settings_keys::ADMIN_PATH {
+                            (&st.file_config.admin_path, "/api/admin")
+                        } else {
+                            (&st.file_config.admin_web_path, "/admin")
+                        };
+                        let fallback = chatmail_config::settings_policy::validate(
+                            chatmail_config::settings_policy::setting_name(db_key),
+                            field.as_deref().unwrap_or(default),
+                        )
+                        .map_err(|e| (400, e.to_string()))?;
+                        let other = effective_other_admin_path(st, db_key).await?;
+                        if chatmail_config::settings_policy::admin_paths_overlap(&fallback, &other)
                         {
                             return Err((
                                 400,

@@ -79,6 +79,15 @@ impl DbPool {
     pub fn policy(&self) -> &chatmail_config::SettingsPolicy {
         &self.policy
     }
+    /// Source that protects `key` (file, environment, or the service's published
+    /// lock snapshot), if any.
+    pub fn protection_source(&self, key: &str) -> Option<String> {
+        self.policy
+            .0
+            .get(key)
+            .map(|v| v.source.clone())
+            .or_else(|| self.mutation_locks.get(key).cloned())
+    }
     pub fn check_settings_writable(&self, keys: &[&str]) -> Result<()> {
         self.policy.check_writable(keys)?;
         for key in keys {

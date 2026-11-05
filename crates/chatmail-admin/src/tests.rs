@@ -1393,3 +1393,104 @@ async fn websocket_bridge_config_fallback_and_api_override() {
         .is_err());
     }
 }
+
+/// `is_set` reports a stored row only; a protected value with no row is not "set".
+#[tokio::test]
+async fn protected_setting_without_row_is_not_reported_as_set() {
+    let (mut st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let mut policy = chatmail_config::SettingsPolicy::default();
+    policy
+        .insert("smtp_port", "2525", "file:/etc/madmail/madmail.conf")
+        .unwrap();
+    st.pool = st.pool.clone().with_policy(policy);
+    let (_, body) = resources::dispatch(&st, "GET", "/admin/settings/smtp_port", &json!({}))
+        .await
+        .unwrap();
+    let body = body.unwrap();
+    assert_eq!(body["value"], "2525");
+    assert_eq!(body["is_set"], false);
+    let (_, body) = resources::dispatch(&st, "GET", "/admin/settings", &json!({}))
+        .await
+        .unwrap();
+    let body = body.unwrap();
+    assert_eq!(body["smtp_port"]["value"], "2525");
+    assert_eq!(body["smtp_port"]["is_set"], false);
+    assert_eq!(body["configuration_sources"]["smtp_port"]["locked"], true);
+    assert_eq!(
+        body["configuration_sources"]["smtp_port"]["database_value_present"],
+        false
+    );
+    // An unprotected key with a stored row is still reported as set.
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/smtp_port",
+        &json!({"action":"set", "value":"2526"}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 409);
+    resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/imap_port",
+        &json!({"action":"set", "value":"1143"}),
+    )
+    .await
+    .unwrap();
+    let (_, body) = resources::dispatch(&st, "GET", "/admin/settings/imap_port", &json!({}))
+        .await
+        .unwrap();
+    assert_eq!(body.unwrap()["is_set"], true);
+}
+
+/// The overlap check uses the effective other path, including a legacy
+/// `chatmail { admin_path ... }` directive that is not protected.
+#[tokio::test]
+async fn admin_web_path_overlap_uses_file_api_path() {
+    let cfg = AppConfig {
+        admin_path: Some("/panel/api".into()),
+        ..AppConfig::default()
+    };
+    let (st, _dir) = test_state("secret-token-01234567890123456789012345678901", cfg).await;
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/admin_web_path",
+        &json!({"action":"set", "value":"/panel"}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400);
+    for key in [
+        chatmail_db::settings_keys::ADMIN_WEB_PATH,
+        chatmail_db::settings_keys::ADMIN_WEB_ENABLED,
+    ] {
+        assert!(chatmail_db::settings::get_stored_setting(&st.pool, key)
+            .await
+            .unwrap()
+            .is_none());
+    }
+    // A non-overlapping path is stored (the route reload needs a live server).
+    let _ = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/admin_web_path",
+        &json!({"action":"set", "value":"/dashboard"}),
+    )
+    .await;
+    assert_eq!(
+        chatmail_db::settings::get_stored_setting(
+            &st.pool,
+            chatmail_db::settings_keys::ADMIN_WEB_PATH
+        )
+        .await
+        .unwrap()
+        .as_deref(),
+        Some("/dashboard")
+    );
+}
