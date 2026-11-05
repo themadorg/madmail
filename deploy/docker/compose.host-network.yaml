@@ -8,8 +8,10 @@
 
 services:
   bootstrap:
-    network_mode: host
-    ports: !reset []
+    environment:
+      # Keep madmail's default TURN relay range (49152-65535).
+      MADMAIL_RELAY_PORT_MIN: ""
+      MADMAIL_RELAY_PORT_MAX: ""
 
   madmail:
     network_mode: host

@@ -10,7 +10,9 @@ spec:
   # SQLite state and directly bound mail ports: exactly one pod.
   replicas: 1
   serviceName: {{ $fullname }}-headless
-  podManagementPolicy: OrderedReady
+  # Parallel lets `helm upgrade` replace a pod stuck in a failing bootstrap
+  # (OrderedReady would wait for it to become Ready first).
+  podManagementPolicy: Parallel
   updateStrategy:
     type: RollingUpdate
   selector:
@@ -58,7 +60,7 @@ spec:
             {{- toYaml (mergeOverwrite (deepCopy .Values.securityContext) (dict "readOnlyRootFilesystem" false)) | nindent 12 }}
           env:
             {{- include "madmail.bootstrapEnv" . | nindent 12 }}
-          {{- if eq $m.tls.mode "autocert" }}
+          {{- if eq (include "madmail.tlsMode" .) "autocert" }}
           ports:
             # Let's Encrypt HTTP-01 during the first install.
             - name: http

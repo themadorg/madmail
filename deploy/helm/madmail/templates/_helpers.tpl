@@ -6,17 +6,19 @@ Expand the name of the chart.
 {{- end }}
 
 {{/*
-Fully qualified app name (truncated to 63 chars for DNS labels).
+Fully qualified app name. Truncated to 42 chars so suffixed names
+(-headless, -bootstrap, -udp) stay valid and the StatefulSet name stays under
+the 52-char limit of its controller-revision-hash label.
 */}}
 {{- define "madmail.fullname" -}}
 {{- if .Values.fullnameOverride }}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- .Values.fullnameOverride | trunc 42 | trimSuffix "-" }}
 {{- else }}
 {{- $name := default .Chart.Name .Values.nameOverride }}
 {{- if contains $name .Release.Name }}
-{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- .Release.Name | trunc 42 | trimSuffix "-" }}
 {{- else }}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- printf "%s-%s" .Release.Name $name | trunc 42 | trimSuffix "-" }}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -54,6 +56,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Effective TLS mode, mirroring `madmail install`: an empty mode means autocert
+for a DNS domain and self_signed for an IP relay. bootstrap.sh always passes
+this explicitly so the chart and install never disagree.
+*/}}
+{{- define "madmail.tlsMode" -}}
+{{- if .Values.madmail.tls.mode }}{{ .Values.madmail.tls.mode }}
+{{- else if .Values.madmail.domain }}autocert
+{{- else }}self_signed
+{{- end }}
+{{- end }}
+
+{{/*
 Effective TURN relay range. hostNetwork keeps madmail's default range.
 */}}
 {{- define "madmail.relayPortMin" -}}
@@ -80,8 +94,11 @@ Validate values that would otherwise only fail at runtime.
 {{- if and .Values.madmail.tls.existingSecret (ne $mode "file") }}
 {{- fail "madmail.tls.existingSecret is only used with madmail.tls.mode=file" }}
 {{- end }}
-{{- if and (eq $mode "autocert") (not .Values.madmail.domain) }}
+{{- if and (eq (include "madmail.tlsMode" .) "autocert") (not .Values.madmail.domain) }}
 {{- fail "madmail.tls.mode=autocert needs madmail.domain (Let's Encrypt for bare IPs is not supported by this chart; use self_signed or file)" }}
+{{- end }}
+{{- if and .Values.hostNetwork .Values.madmail.metrics.enabled (not .Values.madmail.metrics.existingSecret) }}
+{{- fail "madmail.metrics with hostNetwork=true listens on the node's public interfaces and NetworkPolicy does not apply to host-network pods; set madmail.metrics.existingSecret (HTTP Basic credentials)" }}
 {{- end }}
 {{- if not .Values.hostNetwork }}
 {{- $min := int .Values.madmail.turn.relayPortMin }}
@@ -154,7 +171,7 @@ Environment for templates/configmap.yaml bootstrap.sh.
 - name: MADMAIL_LANG
   value: {{ $m.lang | quote }}
 - name: MADMAIL_TLS_MODE
-  value: {{ $m.tls.mode | quote }}
+  value: {{ include "madmail.tlsMode" . | quote }}
 - name: MADMAIL_ACME_EMAIL
   value: {{ $m.tls.acmeEmail | quote }}
 - name: MADMAIL_ENABLE_IROH

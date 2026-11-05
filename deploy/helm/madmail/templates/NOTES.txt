@@ -16,10 +16,19 @@ is that node's public IP and open the mail, web and TURN ports in its firewall.
 Wait for the LoadBalancer address and check that it equals madmail.publicIp ({{ $m.publicIp }}):
 
   kubectl -n {{ .Release.Namespace }} get svc {{ $fullname }} -w
+{{- if .Values.service.separateUdpService }}
+  kubectl -n {{ .Release.Namespace }} get svc {{ $fullname }}-udp -w    # must get the same IP
 {{- end }}
+
+Outbound mail and TURN relay traffic leave through the node's egress IP.
+For deliverability (SPF, PTR) that IP must also be {{ $m.publicIp }}; see
+docs/guide/kubernetes.md#outbound-traffic.
+{{- end }}
+{{- if or $m.domain $m.hostname }}
 
 DNS: point A/AAAA for {{ $host }} at {{ $m.publicIp }}{{ if $m.domain }} and MX for {{ $m.domain }} at {{ $host }}{{ end }}.
 DKIM/SPF/DMARC records: kubectl -n {{ .Release.Namespace }} exec {{ $fullname }}-0 -- madmail dkim show
+{{- end }}
 
 Registration page (Delta Chat): https://{{ $host }}/
 

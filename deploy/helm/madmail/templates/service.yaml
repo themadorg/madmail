@@ -43,7 +43,7 @@ spec:
   ipFamilies:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- if eq $.Values.madmail.tls.mode "autocert" }}
+  {{- if eq (include "madmail.tlsMode" $) "autocert" }}
   # Route the first Let's Encrypt HTTP-01 challenge to the pod while the
   # bootstrap init container runs (the pod is not Ready yet).
   publishNotReadyAddresses: true

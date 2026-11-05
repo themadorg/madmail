@@ -6,8 +6,10 @@
 
 image:
   repository: ghcr.io/themadorg/madmail
-  # Defaults to the chart appVersion.
-  tag: ""
+  # `latest` is the newest stable release. Pin an immutable stable version
+  # (X.Y.Z) for production; testing builds are tagged X.Y.Z-unstable. Stable
+  # images are currently published for linux/amd64 only. Empty = appVersion.
+  tag: latest
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -32,8 +34,8 @@ madmail:
   lang: en
 
   tls:
-    # "" = install default (autocert for a domain, self_signed for an IP),
-    # or autocert | self_signed | file.
+    # "" = autocert when `domain` is set, else self_signed (same default as
+    # `madmail install`), or one of autocert | self_signed | file.
     #  - autocert: madmail obtains and renews Let's Encrypt certs itself. Port 80
     #    of `publicIp` must reach the pod (the Service publishes not-ready
     #    addresses so the first HTTP-01 challenge reaches the bootstrap container).
@@ -72,7 +74,9 @@ madmail:
     # Use a hard-to-guess path on public servers.
     path: /admin
 
-  # Prometheus metrics (`madmail monitor enable`). Applied on every pod start.
+  # Prometheus metrics (`madmail monitor enable`). Applied on every pod start;
+  # false disables a listener enabled earlier. With hostNetwork the listener
+  # binds on the node, so existingSecret is required.
   metrics:
     enabled: false
     port: 9749
@@ -96,7 +100,9 @@ madmail:
 hostNetwork: false
 
 service:
-  # LoadBalancer (default), NodePort or ClusterIP.
+  # LoadBalancer (default) or ClusterIP (behind your own L4 balancer that
+  # keeps the standard ports). NodePort remaps ports into 30000-32767, which
+  # breaks standard mail ports and TURN.
   type: LoadBalancer
   # Static IP for the LoadBalancer (cloud-specific; some providers use an
   # annotation instead). Should equal madmail.publicIp.

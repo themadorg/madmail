@@ -49,35 +49,63 @@ data:
       # install obtains TLS before it writes madmail.conf, so a failed ACME
       # challenge leaves no config behind and is retried on the next start.
       mm "$@"
-
-      # Pin the TURN relay range to the ports this chart publishes.
-      if [ -n "${MADMAIL_RELAY_PORT_MIN:-}" ] && ! grep -q 'relay_port_min' "$CONF"; then
-        awk -v min="$MADMAIL_RELAY_PORT_MIN" -v max="$MADMAIL_RELAY_PORT_MAX" '
-          { print }
-          /^turn[[:space:]]/ { in_turn = 1 }
-          in_turn && /^[[:space:]]*relay_ip[[:space:]]/ {
-            print "    relay_port_min " min
-            print "    relay_port_max " max
-            in_turn = 0
-          }
-        ' "$CONF" > "$CONF.tmp"
-        mv "$CONF.tmp" "$CONF"
-        echo "bootstrap: TURN relay range set to $MADMAIL_RELAY_PORT_MIN-$MADMAIL_RELAY_PORT_MAX"
-      fi
     fi
 
-    if [ "${MADMAIL_ADMIN_WEB_ENABLED:-false}" = "true" ]; then
-      mm admin-web path "$MADMAIL_ADMIN_WEB_PATH"
-      mm admin-web enable
-    else
-      mm admin-web disable
+    # Pin the TURN relay range to the ports this chart publishes. Runs on every
+    # start (guarded) so an install interrupted after writing madmail.conf
+    # still gets it.
+    if [ -n "${MADMAIL_RELAY_PORT_MIN:-}" ] && ! grep -q 'relay_port_min' "$CONF"; then
+      awk -v min="$MADMAIL_RELAY_PORT_MIN" -v max="$MADMAIL_RELAY_PORT_MAX" '
+        { print }
+        /^turn[[:space:]]/ { in_turn = 1 }
+        in_turn && /^[[:space:]]*relay_ip[[:space:]]/ {
+          print "    relay_port_min " min
+          print "    relay_port_max " max
+          in_turn = 0
+        }
+      ' "$CONF" > "$CONF.tmp"
+      mv "$CONF.tmp" "$CONF"
+      echo "bootstrap: TURN relay range set to $MADMAIL_RELAY_PORT_MIN-$MADMAIL_RELAY_PORT_MAX"
     fi
 
+    # admin-web writes the settings DB and then tries to soft-reload a running
+    # server through the public admin URL. Nothing is running yet, so only
+    # call it when the state differs, and bound the reload attempt.
+    admin_web() {
+      rc=0
+      timeout 60 /bin/madmail admin-web "$@" || rc=$?
+      case "$rc" in
+        0) ;;
+        124|143) echo "bootstrap: admin-web $1 applied; reload attempt timed out" ;;
+        *) return "$rc" ;;
+      esac
+    }
+    status="$(mm --json admin-web status)"
+    want_enabled="${MADMAIL_ADMIN_WEB_ENABLED:-false}"
+    case "$status" in
+      *'"enabled":true'*) have_enabled=true ;;
+      *) have_enabled=false ;;
+    esac
+    if [ "$want_enabled" = "true" ]; then
+      case "$status" in
+        *"\"path\":\"$MADMAIL_ADMIN_WEB_PATH\""*) ;;
+        *) admin_web path "$MADMAIL_ADMIN_WEB_PATH" ;;
+      esac
+      [ "$have_enabled" = "true" ] || admin_web enable
+    elif [ "$have_enabled" = "true" ]; then
+      admin_web disable
+    fi
+
+    # The chart owns the metrics listener: enforce both states on every start.
     if [ "${MADMAIL_METRICS_ENABLED:-false}" = "true" ]; then
-      set -- monitor
       if [ -n "${MADMAIL_MONITOR_PASSWORD:-}" ]; then
-        set -- "$@" --username "$MADMAIL_METRICS_USERNAME" --password "$MADMAIL_MONITOR_PASSWORD"
+        # The password is read from MADMAIL_MONITOR_PASSWORD, not argv.
+        mm monitor enable --ip 0.0.0.0 --port "$MADMAIL_METRICS_PORT" \
+          --username "$MADMAIL_METRICS_USERNAME"
+      else
+        mm monitor enable --ip 0.0.0.0 --port "$MADMAIL_METRICS_PORT" --clear-password
       fi
-      mm "$@" enable --ip 0.0.0.0 --port "$MADMAIL_METRICS_PORT"
+    else
+      mm monitor disable
     fi
     echo "bootstrap: done"

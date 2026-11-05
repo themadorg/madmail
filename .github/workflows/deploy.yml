@@ -51,6 +51,13 @@ jobs:
       - name: Lint
         run: helm lint --strict deploy/helm/madmail --set madmail.publicIp=203.0.113.50
 
+      - name: A domain without tls.mode must route HTTP-01 to the bootstrap pod
+        working-directory: deploy/helm/madmail
+        run: |
+          out="$(helm template mm . --set madmail.publicIp=1.2.3.4 --set madmail.domain=example.org)"
+          [ "$(grep -c 'publishNotReadyAddresses: true' <<<"$out")" -ge 2 ]
+          grep -A1 'name: MADMAIL_TLS_MODE' <<<"$out" | grep -q '"autocert"'
+
       - name: Render and validate value permutations
         working-directory: deploy/helm/madmail
         run: |
@@ -59,6 +66,8 @@ jobs:
           cases=(
             ""
             "--set hostNetwork=true"
+            "--set hostNetwork=true --set madmail.metrics.enabled=true --set madmail.metrics.existingSecret=mm-metrics"
+            "--set madmail.domain=example.org"
             "--set madmail.domain=example.org --set madmail.tls.mode=autocert --set madmail.iroh.enabled=true"
             "--set madmail.domain=example.org --set madmail.tls.mode=file --set madmail.tls.existingSecret=mm-tls --set madmail.metrics.enabled=true --set madmail.metrics.existingSecret=mm-metrics --set madmail.metrics.serviceMonitor.enabled=true --set networkPolicy.enabled=true"
             "--set service.separateUdpService=true --set madmail.adminWeb.enabled=true --set persistence.state.existingClaim=mm-state --set service.type=NodePort --set madmail.installExtraArgs[0]=--turn-off-tls"
@@ -83,6 +92,7 @@ jobs:
             "--set madmail.publicIp=1.2.3.4 --set madmail.tls.mode=autocert"
             "--set madmail.publicIp=1.2.3.4 --set madmail.tls.mode=nope"
             "--set madmail.publicIp=1.2.3.4 --set madmail.turn.relayPortMax=60000"
+            "--set madmail.publicIp=1.2.3.4 --set hostNetwork=true --set madmail.metrics.enabled=true"
           )
           for c in "${bad[@]}"; do
             # shellcheck disable=SC2086

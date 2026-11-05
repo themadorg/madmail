@@ -13,6 +13,7 @@ The Helm chart in [`deploy/helm/madmail`](../../deploy/helm/madmail/) runs Madma
   - [LoadBalancer (default)](#loadbalancer-default)
   - [Host networking (recommended for calls)](#host-networking-recommended-for-calls)
   - [TURN relay ports](#turn-relay-ports)
+  - [Outbound traffic](#outbound-traffic)
 - [Admin UI, metrics and Iroh](#admin-ui-metrics-and-iroh)
 - [Day-2 operations](#day-2-operations)
 - [Values reference](#values-reference)
@@ -37,6 +38,7 @@ The bootstrap only installs when `madmail.conf` is missing from the config volum
 - A **static public IP** you can assign to the LoadBalancer (or a node with a public IP for `hostNetwork`). Madmail advertises this address for TURN and in client setup, so it must be known before the first install.
 - Inbound TCP 25 from the internet if you want mail from other servers. Many clouds block it by default.
 - A `ReadWriteOnce` storage class.
+- Stable images (`latest`, `X.Y.Z`) are currently published for **linux/amd64** only. On arm64 nodes use an `X.Y.Z-unstable` tag or build the image yourself.
 
 ## Quick start (IP relay)
 
@@ -77,7 +79,9 @@ service:
 helm install madmail ./deploy/helm/madmail -n madmail --create-namespace -f values-domain.yaml
 ```
 
-Before installing, point `A`/`AAAA` for the hostname at the IP and `MX` for the domain at the hostname (see [DNS checklist](docker.md#dns-checklist-domain-production)). The first install answers the HTTP-01 challenge on port 80 from the bootstrap init container. With `tls.mode: autocert` the Service sets `publishNotReadyAddresses: true` so the challenge reaches the pod before it is Ready. If issuance fails, the init container exits without writing `madmail.conf` and Kubernetes retries it; read the log with `kubectl logs madmail-0 -c bootstrap`.
+Before installing, point `A`/`AAAA` for the hostname at the IP and `MX` for the domain at the hostname (see [DNS checklist](docker.md#dns-checklist-domain-production)). The first install answers the HTTP-01 challenge on port 80 from the bootstrap init container. With `tls.mode: autocert` the Service sets `publishNotReadyAddresses: true` so the challenge reaches the pod before it is Ready. `tls.mode` may also be left empty: with a domain the chart (like `madmail install`) then uses `autocert`, and without one `self_signed`.
+
+If issuance fails, the init container exits without writing `madmail.conf` and Kubernetes retries it; read the log with `kubectl logs madmail-0 -c bootstrap`. After fixing the values, `helm upgrade` replaces the stuck pod (the StatefulSet uses `podManagementPolicy: Parallel`).
 
 Madmail renews the certificate itself on port 80, so keep port 80 published.
 
@@ -121,7 +125,7 @@ The Secret is mounted read-only at `/etc/madmail/certs` as `fullchain.pem` / `pr
 
 ### LoadBalancer (default)
 
-One Service publishes every port. `externalTrafficPolicy: Local` preserves client source IPs, which Madmail needs for rate limits, SPF checks and bans. If your load balancer cannot mix TCP and UDP on one Service, set `service.separateUdpService: true`; TURN then moves to a second Service named `<release>-madmail-udp`. Whether both Services can share one IP depends on the provider (MetalLB: `metallb.universe.tf/allow-shared-ip` on both).
+One Service publishes every port. Use `LoadBalancer` (or `ClusterIP` behind your own L4 balancer that maps the standard ports); `NodePort` remaps every port into 30000–32767, which breaks standard mail ports and TURN. `externalTrafficPolicy: Local` preserves client source IPs, which Madmail needs for rate limits, SPF checks and bans. If your load balancer cannot mix TCP and UDP on one Service, set `service.separateUdpService: true`; TURN then moves to a second Service named `<fullname>-udp` (`madmail-udp` for the release name `madmail` used in this guide). Whether both Services can share one IP depends on the provider (MetalLB: `metallb.universe.tf/allow-shared-ip` on both).
 
 ### Host networking (recommended for calls)
 
@@ -139,7 +143,11 @@ Madmail binds directly on the node, so the full TURN relay range (`49152–65535
 
 A Kubernetes Service cannot publish a port range, so without `hostNetwork` the chart lists every relay port on the Service and writes the same range into `madmail.conf` at first install (`relay_port_min` / `relay_port_max` in the `turn` block). The default is `50000–50019` (20 concurrent call legs). Cloud load balancers cap listener counts (AWS NLB: 50 by default), so raise `madmail.turn.relayPortMax` carefully. The chart refuses ranges over 1000 ports.
 
-The range is written only at first install. To change it later, edit both `madmail.conf` (or the admin **Services** page) and the chart values, then upgrade.
+The chart adds the range to `madmail.conf` once (when the file has no `relay_port_min` yet). To change it later, edit both `madmail.conf` (or the admin **Services** page) and the chart values, then upgrade.
+
+### Outbound traffic
+
+The LoadBalancer only handles **inbound** connections. Outbound SMTP delivery and TURN relay packets leave the pod through the node's egress (SNAT) address. Other mail servers check that address against SPF, PTR and blocklists, and Delta Chat clients expect TURN media from `madmail.publicIp`. In LoadBalancer mode, make the cluster's egress IP equal `madmail.publicIp`, for example with a cloud NAT gateway on a static IP, an egress gateway (Cilium, Calico, Antrea), or a provider that uses one IP for both directions. Otherwise use [host networking](#host-networking-recommended-for-calls) on a node whose public IP is `madmail.publicIp`.
 
 ## Admin UI, metrics and Iroh
 
@@ -164,7 +172,9 @@ networkPolicy:
           kubernetes.io/metadata.name: monitoring
 ```
 
-Metrics are served on the headless Service, not the public LoadBalancer. Without a password the endpoint is unauthenticated; enable `networkPolicy` or set `existingSecret`.
+Metrics are served on the headless Service, not the public LoadBalancer. Without a password the endpoint is unauthenticated; enable `networkPolicy` or set `existingSecret`. With `hostNetwork: true` the listener binds on the node's interfaces and NetworkPolicy does not apply to host-network pods, so the chart requires `existingSecret` there; also block the port in the node firewall.
+
+Turning `adminWeb.enabled` or `metrics.enabled` off in a later `helm upgrade` disables them again on the next start.
 
 `madmail.iroh.enabled: true` passes `--enable-iroh` at first install and publishes TCP 3340. On an existing install run `kubectl exec madmail-0 -- madmail iroh install`, set the value, and `helm upgrade`.
 
@@ -172,7 +182,7 @@ Metrics are served on the headless Service, not the public LoadBalancer. Without
 
 | Task | Command |
 |------|---------|
-| Logs | `kubectl -n madmail logs -f madmail-0` |
+| Logs | `kubectl -n madmail logs -f madmail-0` (the config written by `install` contains `log off`; change it to `log stderr` in `madmail.conf` and restart to get server logs) |
 | Bootstrap log | `kubectl -n madmail logs madmail-0 -c bootstrap` |
 | CLI | `kubectl -n madmail exec madmail-0 -- madmail status` |
 | Admin token | `kubectl -n madmail exec madmail-0 -- madmail admin-token` |
@@ -193,18 +203,18 @@ See [`values.yaml`](../../deploy/helm/madmail/values.yaml) for every option with
 |-------|---------|-------------|
 | `madmail.publicIp` | — | **Required.** Public IP for TURN, Iroh, client setup. |
 | `madmail.domain` / `madmail.hostname` | `""` | Mail domain and TLS hostname. Empty domain = IP relay. |
-| `madmail.tls.mode` | `""` | `autocert`, `self_signed`, `file` or install default. |
+| `madmail.tls.mode` | `""` | `autocert`, `self_signed`, `file`; empty = `autocert` with a domain, else `self_signed`. |
 | `madmail.tls.existingSecret` | `""` | `kubernetes.io/tls` Secret for `mode: file`. |
 | `madmail.turn.relayPortMin/Max` | `50000`/`50019` | Published TURN relay range (ignored with `hostNetwork`). |
 | `madmail.adminWeb.enabled` | `false` | Embedded admin UI. |
 | `madmail.metrics.enabled` | `false` | Prometheus endpoint on the headless Service. |
 | `madmail.installExtraArgs` | `[]` | Extra `madmail install` flags (first run). |
 | `hostNetwork` | `false` | Bind on the node network. |
-| `service.type` | `LoadBalancer` | `ClusterIP` when `hostNetwork` is on. |
+| `service.type` | `LoadBalancer` | Forced to `ClusterIP` when `hostNetwork` is on. |
 | `service.loadBalancerIP` | `""` | Static IP, normally equal to `madmail.publicIp`. |
 | `service.separateUdpService` | `false` | Put TURN on its own Service. |
 | `persistence.state.size` / `persistence.config.size` | `10Gi` / `1Gi` | PVC sizes; `existingClaim` reuses a PVC. |
-| `image.tag` | chart `appVersion` | Madmail image version. |
+| `image.tag` | `latest` | Madmail image version; pin `X.Y.Z` in production. |
 
 ## Limitations
 

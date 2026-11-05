@@ -29,11 +29,9 @@ trap cleanup EXIT
 
 mkdir -p "$WORK/lib" "$WORK/etc"
 
-# Remap published ports to 127.0.0.1:<high> and shrink the TURN range.
+# Publish only a few ports on 127.0.0.1:<high> (no TURN range).
 cat >"$OVERRIDE" <<'EOF'
 services:
-  bootstrap:
-    ports: !reset []
   madmail:
     container_name: !reset null
     ports: !override
@@ -65,12 +63,14 @@ echo "-- TLS handshakes"
 for port in 11993 11443; do
 	docker run --rm --network host --entrypoint /bin/sh "$IMAGE" -c \
 		"nc -z -w 5 127.0.0.1 $port"
-	echo | openssl s_client -connect "127.0.0.1:$port" -servername 127.0.0.1 2>/dev/null \
-		| grep -q 'BEGIN CERTIFICATE' || { echo "no TLS on $port" >&2; exit 1; }
+	# Capture first: grep -q closing the pipe early would fail under pipefail.
+	out="$(echo | openssl s_client -connect "127.0.0.1:$port" -servername 127.0.0.1 2>/dev/null || true)"
+	grep -q 'BEGIN CERTIFICATE' <<<"$out" || { echo "no TLS on $port" >&2; exit 1; }
 	echo "   ok: $port"
 done
 
 echo "-- admin token"
-compose exec -T madmail madmail admin-token --raw | grep -qE '^[A-Za-z0-9_-]{16,}$'
+token="$(compose exec -T madmail madmail admin-token --raw)"
+[[ ${#token} -ge 32 ]] || { echo "unexpected admin token" >&2; exit 1; }
 
 echo "== compose smoke test passed"

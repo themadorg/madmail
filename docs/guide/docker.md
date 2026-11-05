@@ -574,7 +574,7 @@ services:
       - NET_BIND_SERVICE
     volumes:
       - /var/lib/madmail:/var/lib/madmail
-      - /etc/madmail:/etc/madmail:ro
+      - /etc/madmail:/etc/madmail
       - /run/madmail:/run/madmail
 ```
 
@@ -694,7 +694,7 @@ After `madmail install`, hostname and domain are written into `/etc/madmail/madm
 
 ## Custom configuration
 
-To use your own config (domain, autocert, Postgres, Shadowsocks, etc.), place `madmail.conf` under `/etc/madmail` on the host and bind-mount the three paths. The default image entrypoint already points at `/etc/madmail/madmail.conf` and `/var/lib/madmail`. Postgres is a **driver/DSN in that file**, not a Compose environment variable; use it for an empty database, not to convert SQLite — [PostgreSQL operator guide](../project/user-guide/18-postgres.md).
+To use your own config (domain, autocert, Postgres, Shadowsocks, etc.), place `madmail.conf` under `/etc/madmail` on the host and bind-mount the three paths. Keep `/etc/madmail` writable when the config uses `tls_mode autocert` (renewal rewrites the PEMs); `:ro` below suits `tls file` / `self_signed` only. The default image entrypoint already points at `/etc/madmail/madmail.conf` and `/var/lib/madmail`. Postgres is a **driver/DSN in that file**, not a Compose environment variable; use it for an empty database, not to convert SQLite — [PostgreSQL operator guide](../project/user-guide/18-postgres.md).
 
 ```bash
 cp assets/madmail.conf.docker /etc/madmail/madmail.conf
@@ -739,7 +739,7 @@ Use `--user 999:988` only if host paths are owned by the `madmail` system user f
 
 ## Docker Compose example
 
-The repository ships a ready-to-use Compose project in [`deploy/docker/`](../../deploy/docker/). Its one-shot `bootstrap` service runs `madmail install` on the first `up` (only when `/etc/madmail/madmail.conf` does not exist yet), and `madmail` starts after it succeeds:
+The repository ships a ready-to-use Compose project in [`deploy/docker/`](../../deploy/docker/). Its one-shot `bootstrap` service runs `madmail install` on the first `up` (only when `/etc/madmail/madmail.conf` does not exist yet), and `madmail` starts after it succeeds. `bootstrap` uses host networking so it can answer the Let's Encrypt HTTP-01 challenge on port 80 without clashing with `madmail` on later `up` runs:
 
 ```bash
 cd deploy/docker
@@ -754,12 +754,12 @@ docker compose exec madmail madmail admin-token
 |-----------------|--------------|-------|
 | `MADMAIL_PUBLIC_IP` | `--ip` | **Required.** Public IP clients reach (TURN, Iroh, setup hints). |
 | `MADMAIL_DOMAIN` / `MADMAIL_HOSTNAME` | `--domain` / `--hostname` | Empty domain = IP relay. Hostname defaults to the domain. |
-| `MADMAIL_TLS_MODE` | `--tls-mode` | Empty = install default (`autocert` for a domain, `self_signed` for an IP). |
+| `MADMAIL_TLS_MODE` | `--tls-mode` | Empty = install default (`autocert` for a domain, `self_signed` for an IP). For `file`, put `fullchain.pem` / `privkey.pem` in `${MADMAIL_CONFIG_DIR}/certs` first. |
 | `MADMAIL_ACME_EMAIL` | `--acme-email` | Defaults to `admin@<domain>`. |
 | `MADMAIL_ENABLE_IROH` | `--enable-iroh` | `true` turns on the WebXDC relay; `compose.yaml` already publishes TCP 3340. |
 | `MADMAIL_INSTALL_EXTRA_ARGS` | — | Appended to `madmail install`. |
 | `MADMAIL_STATE_DIR` / `MADMAIL_CONFIG_DIR` | — | Host paths (default `/var/lib/madmail`, `/etc/madmail`). |
-| `MADMAIL_TURN_RELAY_PORTS` | — | UDP range published for TURN media (bridged mode only). |
+| `MADMAIL_TURN_RELAY_MIN` / `MADMAIL_TURN_RELAY_MAX` | — | TURN media UDP range (default `50000-50099`, bridged mode only). Published by Compose and written into `madmail.conf` at first install. |
 
 The install variables only matter for the first run. Afterwards change settings with the CLI (`docker compose exec madmail madmail …`), the admin API, or by editing `madmail.conf`, then `docker compose restart madmail`.
 
