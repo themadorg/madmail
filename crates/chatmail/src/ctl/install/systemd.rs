@@ -35,6 +35,7 @@ pub fn install_unit(cfg: &InstallConfig) -> Result<()> {
 }
 
 // Escape unit specifiers everywhere and command environment expansion in ExecStart.
+// For word-split settings (`ExecStart=`, `ReadWritePaths=`) only.
 fn unit_path(path: &Path, command: bool) -> String {
     let mut value = path.to_string_lossy().replace('%', "%%");
     if command {
@@ -42,7 +43,7 @@ fn unit_path(path: &Path, command: bool) -> String {
     }
     if value
         .chars()
-        .any(|c| c.is_whitespace() || matches!(c, '"' | '\\'))
+        .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '\\'))
     {
         format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
     } else {
@@ -50,9 +51,16 @@ fn unit_path(path: &Path, command: bool) -> String {
     }
 }
 
+// `WorkingDirectory=` takes the whole value verbatim: systemd expands specifiers
+// but does not unquote, so only `%` is escaped and no quotes are added.
+fn unit_working_directory(path: &Path) -> String {
+    path.to_string_lossy().replace('%', "%%")
+}
+
 /// Build the `.service` unit body. Default FHS paths use `StateDirectory` /
 /// `ConfigurationDirectory`; explicit `--config-dir` / `--state-dir` are reflected
-/// in `ExecStart`, `WorkingDirectory`, and `ReadWritePaths`. Both layouts retain
+/// in `ExecStart`, `WorkingDirectory`, and `ReadWritePaths` (`WorkingDirectory`
+/// is written verbatim, the others are quoted as needed). Both layouts retain
 /// `RuntimeDirectory`. Home protection is disabled when a required path needs it.
 pub fn render_systemd_unit(cfg: &InstallConfig) -> String {
     let managed_dirs = if cfg.use_default_systemd_paths {
@@ -96,7 +104,7 @@ TimeoutStartSec=120
 
 User={user}
 Group={group}
-WorkingDirectory={state_dir}
+WorkingDirectory={working_dir}
 RuntimeDirectory={name}
 {managed_dirs}
 ReadWritePaths={state_dir} {config_dir}
@@ -125,6 +133,7 @@ WantedBy=multi-user.target
         name = cfg.binary_name,
         user = cfg.maddy_user,
         group = cfg.maddy_group,
+        working_dir = unit_working_directory(&cfg.state_dir),
         state_dir = unit_path(&cfg.state_dir, false),
         exec_state_dir = unit_path(&cfg.state_dir, true),
         managed_dirs = managed_dirs,
@@ -237,6 +246,25 @@ mod tests {
             unit_path(Path::new("/srv/\"mail"), true),
             "\"/srv/\\\"mail\""
         );
+        assert_eq!(
+            unit_path(Path::new("/srv/o'brien"), false),
+            "\"/srv/o'brien\""
+        );
+    }
+
+    #[test]
+    fn working_directory_is_verbatim_not_quoted() {
+        let mut cfg = sample_cfg();
+        cfg.use_default_systemd_paths = false;
+        cfg.state_dir = PathBuf::from("/srv/mail data");
+        let unit = render_systemd_unit(&cfg);
+        assert!(unit.contains("\nWorkingDirectory=/srv/mail data\n"));
+        assert!(unit.contains("\nReadWritePaths=\"/srv/mail data\" /etc/madmail\n"));
+        assert!(unit.contains("run --libexec \"/srv/mail data\"\n"));
+
+        cfg.state_dir = PathBuf::from("/srv/%n/$HOME");
+        let unit = render_systemd_unit(&cfg);
+        assert!(unit.contains("\nWorkingDirectory=/srv/%%n/$HOME\n"));
     }
 
     #[test]

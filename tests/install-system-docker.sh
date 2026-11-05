@@ -5,6 +5,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BINARY="${MADMAIL_INSTALL_TEST_BINARY:-$ROOT/target/debug/madmail}"
 IMAGE="madmail-install-system:test"
 [[ -x "$BINARY" ]] || { echo "Build madmail first: cargo build -p chatmail" >&2; exit 1; }
+# The container runs the binary: a macOS (Mach-O) host build fails with an exec error.
+[[ "$(head -c4 "$BINARY" | od -An -tx1 | tr -d ' \n')" == 7f454c46 ]] || {
+    echo "$BINARY is not a Linux ELF binary; set MADMAIL_INSTALL_TEST_BINARY to a Linux build" >&2
+    exit 1
+}
 # The test image copies no sources: do not send the repository as build context.
 docker build -t "$IMAGE" - < "$ROOT/tests/install-system.Dockerfile"
 docker run --rm -i --network none -v "$BINARY:/input/madmail:ro" "$IMAGE" bash -s <<'INNER'
@@ -165,7 +170,16 @@ json_check /tmp/nouser.log system_install true service_installed true
 [[ -x '/tmp/nouser bin%name' && -f /etc/systemd/system/nousermail.service ]]
 systemd-analyze verify /etc/systemd/system/nousermail.service
 [[ "$(wc -l < /tmp/systemctl-calls)" = "$((reloads_before + 1))" ]]
-echo 'PASS: each skip flag independently and combined, JSON results, escaped binary path'
+# WorkingDirectory= is taken verbatim; ReadWritePaths= and ExecStart= are quoted.
+cp /tmp/madmail /tmp/spacemail
+useradd -rU -d /nonexistent spacemail
+/tmp/spacemail install --simple --system --skip-user --ip 127.0.0.1 \
+    --tls-mode self_signed --config-dir '/tmp/space config' --state-dir '/tmp/space state' \
+    --binary-path /tmp/space-bin > /tmp/space.log
+grep -qx 'WorkingDirectory=/tmp/space state' /etc/systemd/system/spacemail.service
+grep -qx 'ReadWritePaths="/tmp/space state" "/tmp/space config"' /etc/systemd/system/spacemail.service
+systemd-analyze verify /etc/systemd/system/spacemail.service
+echo 'PASS: each skip flag independently and combined, JSON results, escaped binary and state paths'
 
 # Local bootstrap really works as a non-root user and does not copy a host binary.
 install -d -o nobody -g nogroup /tmp/nonroot-local

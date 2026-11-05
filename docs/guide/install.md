@@ -18,6 +18,7 @@ The command is **Madmail-compatible**. The binary name (`madmail`, `chatmail`, â
 - [Examples](#examples)
 - [After install](#after-install)
 - [Related docs](#related-docs)
+- [Installer regression testing](#installer-regression-testing)
 
 ---
 
@@ -59,7 +60,7 @@ Defaults: `%ProgramData%\Madmail\config` and `%ProgramData%\Madmail\data`, servi
 ### Local / dev â€” custom paths (no root)
 
 ```bash
-madmail install --simple --ip 127.0.0.1 \
+madmail install --simple --local --ip 127.0.0.1 \
   --config-dir /tmp/mm --state-dir /tmp/sd --lang en
 madmail --config /tmp/mm/madmail.conf run --libexec /tmp/sd
 ```
@@ -136,7 +137,7 @@ Choose installation intent explicitly when using custom paths:
 
 - `--system`: Unix system install, requiring root, regardless of directory layout.
 - `--local`: local bootstrap; skip host account/ownership, binary, CLI docs and unit installation.
-- The flags are mutually exclusive. `--skip-user` and `--skip-systemd` still opt out of their respective system steps. System config, state and binary paths must be absolute.
+- The flags are mutually exclusive. `--skip-user` and `--skip-systemd` still opt out of their respective system steps. System config, state and binary paths must be absolute and must not contain control characters or end with whitespace or a backslash (systemd cannot represent them). Spaces, quotes and `%` inside a path are escaped in the generated unit.
 
 For example, the custom-path bootstrap in issue #216 becomes:
 
@@ -444,5 +445,7 @@ Developers can run `make test-install-docker` for a compact debug build and an
 isolated Debian provisioning test. It covers installation modes, permissions,
 custom systemd paths, repeated installation, skip flags, dry-run/JSON output and
 failure handling without modifying host accounts or services. Docker and Cargo
-are required. This test validates unit syntax and service-user boot; it does not
+are required, and the mounted binary must be a Linux (ELF) build: on macOS, set
+`MADMAIL_INSTALL_TEST_BINARY` to a Linux binary and run
+`bash tests/install-system-docker.sh` (CI does not run this suite). This test validates unit syntax and service-user boot; it does not
 run systemd as PID 1. Details: [testing design](../TDD/16-testing.md#expanded-installer-e2e-matrix).
