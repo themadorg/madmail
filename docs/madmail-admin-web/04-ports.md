@@ -6,6 +6,17 @@
 
 View and change listener ports for all madmail services, and toggle **public** vs **local-only** access per port.
 
+## Deployment protection
+
+Settings follow **environment > explicit config file setting > database > defaults**.
+Only `CHATMAIL_*` variables, `.conf` `settings { }` entries and top-level TOML
+settings protect a value; listener lines and module directives are defaults.
+`configuration_sources` identifies protected settings and their controlling source.
+Protected controls are read-only; change their environment/file source and restart
+Madmail. CLI/API writes and resets return `configuration_locked`. Removing a
+protection exposes the previously stored database value. See the
+[configuration guide](../guide/configuration.md).
+
 ## Data loaded
 
 | When | Loader | API |

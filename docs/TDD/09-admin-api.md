@@ -296,3 +296,13 @@ PUT (partial configuration), and POST `{"action":"test"}`. Configuration is
 operator-only and excluded from public templates and generic settings snapshots.
 See [25-operator-webhooks.md](25-operator-webhooks.md) for schema, HMAC signing,
 registration/quota hooks, retry/timeout policy, persistence and security tests.
+
+## Deployment configuration protection
+
+Environment values and explicit file settings (`settings { }`, top-level TOML) override database settings; module directives such as listener lines do not lock. Settings responses
+include `configuration_sources` with `source`, `locked`, and
+`database_value_present`; this metadata contains no setting values. Rejected writes
+and resets return envelope status `409` with `error_code: "configuration_locked"`
+(the transport remains HTTP 200). Compound operations preflight their affected
+keys before writing. See [configuration precedence](26-configuration-precedence.md)
+and the [operator guide](../guide/configuration.md).

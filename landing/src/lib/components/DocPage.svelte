@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { siteLanguage, t } = useSiteLanguage();
 	import { docTreeModal, openDocTree } from '$lib/docTreeModal.svelte.js';
 	import showSidebarIcon from '$lib/icons/chevron-right.svg?raw';
 	import { setDocFocus } from '$lib/docFocus.js';
@@ -12,8 +14,9 @@
 	import SiteFooter from '$lib/components/SiteFooter.svelte';
 	import { enhanceDocProse } from '$lib/enhanceDocProse.js';
 
-	/** @type {{ href: string, children: import('svelte').Snippet }} */
-	let { href, children } = $props();
+	/** @type {{ href: string, children: import('svelte').Snippet, language?: string, directory?: boolean, languages?: { label: string, href: string, current: boolean }[] }} */
+	let { href, children, language = 'en', directory = false, languages = [] } = $props();
+	const contentLanguage = $derived(directory ? siteLanguage.code : language);
 	const focused = $derived(browser && page.url.searchParams.get('focus') === 'true');
 
 	$effect(() => {
@@ -34,17 +37,20 @@
 </script>
 
 <svelte:window onkeydown={(event) => { if (focused && event.key === 'Escape') setDocFocus(false); }} />
-{#if !focused}<DocHeader currentHref={href} />{/if}
+{#if !focused}<DocHeader currentHref={href} {languages} />{/if}
 <main class="doc" class:focused>
 	{#if !focused}
 	<div class="page-breadcrumb">
-		<DocBreadcrumb currentHref={href} />
+		<DocBreadcrumb currentHref={href} currentTitle={language === 'fa' ? page.data.metaTitle : undefined} />
 		<div class="page-tools">
 			<DocPageActions currentHref={href} />
 		</div>
 	</div>
 	{/if}
-	<article class="prose" use:enhanceDocProse>
+	{#if !directory && siteLanguage.code === 'fa' && language !== 'fa'}
+	<p class="translation-notice" lang="fa" dir="rtl">{t('This article is not available in Persian yet. Showing the original.')}</p>
+	{/if}
+	<article class="prose" lang={contentLanguage} dir={contentLanguage === 'fa' ? 'rtl' : 'ltr'} use:enhanceDocProse>
 		{@render children()}
 	</article>
 	{#if !focused}
@@ -54,26 +60,29 @@
 </main>
 {#if !focused}<SiteFooter spacious />{/if}
 {#if !focused && !docTreeModal.open}
-	<button class="restore-sidebar" aria-label="Show documentation sidebar" title="Show sidebar" onclick={() => { docTreeModal.docked = true; openDocTree(); }}>
+	<button class="restore-sidebar" aria-label={t("Show documentation sidebar")} title={t("Show sidebar")} onclick={() => { docTreeModal.docked = true; openDocTree(); }}>
 		<span aria-hidden="true">{@html showSidebarIcon}</span>
 	</button>
 {/if}
 {#if focused}
-	<button class="exit-focus" aria-label="Exit focus mode" title="Exit focus mode (Escape)" onclick={() => setDocFocus(false)}>
+	<button class="exit-focus" aria-label={t("Exit focus mode")} title={t("Exit focus mode (Escape)")} onclick={() => setDocFocus(false)}>
 		<span aria-hidden="true">{@html exitFocusIcon}</span>
-		<span>Exit focus</span>
+		<span>{t("Exit focus")}</span>
 	</button>
 {/if}
 
 <style>
-	.restore-sidebar { position: fixed; bottom: 1rem; left: 1rem; z-index: 50; display: grid; place-items: center; width: 2rem; height: 2rem; border: 1px solid var(--color-border); border-radius: 0.5rem; background: var(--color-surface); color: var(--color-text-muted); cursor: pointer; }
+	.translation-notice { max-width: 48rem; margin: 1rem auto; padding: 0.75rem 1rem; border: 1px solid var(--color-border); border-radius: 0.5rem; color: var(--color-text-muted); font-size: 0.85rem; }
+	.prose[dir="rtl"] :global(pre), .prose[dir="rtl"] :global(.code-block) { direction: ltr; text-align: left; }
+	.prose[dir="rtl"] :global(code) { direction: ltr; unicode-bidi: isolate; }
+	.restore-sidebar { position: fixed; bottom: 1rem; inset-inline-start: 1rem; z-index: 50; display: grid; place-items: center; width: 2rem; height: 2rem; border: 1px solid var(--color-border); border-radius: 0.5rem; background: var(--color-surface); color: var(--color-text-muted); cursor: pointer; }
 	.restore-sidebar:hover { background: var(--color-surface-raised); color: var(--color-text); }
 	.restore-sidebar :global(svg) { display: block; width: 1rem; height: 1rem; }
 
 	.exit-focus {
 		position: fixed;
 		bottom: 1rem;
-		left: 1rem;
+		inset-inline-start: 1rem;
 		z-index: 50;
 		display: flex;
 		align-items: center;
@@ -353,14 +362,14 @@
 
 	.prose :global(.heading-wrap) {
 		position: relative;
-		margin-left: -1.75rem;
-		padding-left: 1.75rem;
+		margin-inline-start: -1.75rem;
+		padding-inline-start: 1.75rem;
 	}
 
 	.prose :global(.heading-link) {
 		position: absolute;
-		left: 0;
-		top: 0;
+		inset-inline-start: 0;
+		top: 0.5rem;
 		display: flex;
 		align-items: flex-start;
 		justify-content: flex-end;
@@ -385,8 +394,8 @@
 
 	@media (max-width: 640px) {
 		.prose :global(.heading-wrap) {
-			margin-left: 0;
-			padding-left: 0;
+			margin-inline-start: 0;
+			padding-inline-start: 0;
 		}
 
 		.prose :global(.heading-link) {

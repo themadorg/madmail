@@ -48,6 +48,23 @@ pub(crate) async fn build_http_extra(
     app: Arc<AppState>,
     reload_tx: Option<mpsc::Sender<ReloadRequest>>,
 ) -> Result<Option<Router>> {
+    let api_path = chatmail_db::get_setting(&pool, chatmail_db::settings_keys::ADMIN_PATH)
+        .await?
+        .or_else(|| file_config.admin_path.clone())
+        .unwrap_or_else(|| "/api/admin".into());
+    let api_path = chatmail_config::settings_policy::validate("admin_path", &api_path)?;
+    let web_path = chatmail_admin_web::resolve_admin_web_path(file_config, &pool)
+        .await
+        .unwrap_or_else(|| "/admin".into());
+    let web_path = chatmail_config::settings_policy::validate("admin_web_path", &web_path)?;
+    if api_path == web_path
+        || api_path.starts_with(&format!("{web_path}/"))
+        || web_path.starts_with(&format!("{api_path}/"))
+    {
+        return Err(chatmail_types::ChatmailError::config(
+            "admin API and web paths must not overlap",
+        ));
+    }
     let admin_extra = build_admin_router(
         file_config,
         state_dir,
@@ -55,28 +72,29 @@ pub(crate) async fn build_http_extra(
         pool.clone(),
         Arc::clone(&app),
         reload_tx,
-    );
+    )
+    .await?;
     let admin_web_extra =
         chatmail_admin_web::router_if_configured(file_config, pool.clone()).await?;
     let www_extra = www_router(WwwState::new(pool, app, file_config.clone(), state_dir));
     Ok(merge_http_routers(admin_extra, admin_web_extra, www_extra))
 }
 
-pub(crate) fn build_admin_router(
+pub(crate) async fn build_admin_router(
     file_config: &AppConfig,
     state_dir: &Path,
     admin_token: &str,
     pool: DbPool,
     app: Arc<AppState>,
     reload_tx: Option<mpsc::Sender<ReloadRequest>>,
-) -> Option<Router> {
+) -> Result<Option<Router>> {
     let disabled = file_config
         .admin_token
         .as_deref()
         .is_some_and(|t| t.eq_ignore_ascii_case("disabled"));
     if disabled {
         tracing::info!("admin API disabled via config (admin_token disabled)");
-        return None;
+        return Ok(None);
     }
 
     let token = file_config
@@ -85,10 +103,11 @@ pub(crate) fn build_admin_router(
         .filter(|t| !t.eq_ignore_ascii_case("disabled"))
         .unwrap_or_else(|| admin_token.to_string());
 
-    let path = std::env::var("CHATMAIL_ADMIN_PATH")
-        .ok()
+    let path = chatmail_db::get_setting(&pool, chatmail_db::settings_keys::ADMIN_PATH)
+        .await?
         .or_else(|| file_config.admin_path.clone())
         .unwrap_or_else(|| "/api/admin".into());
+    let path = chatmail_config::settings_policy::validate("admin_path", &path)?;
     let path = normalize_admin_path(&path);
 
     let hostname = file_config
@@ -107,7 +126,7 @@ pub(crate) fn build_admin_router(
     );
     let inner = admin_router(state);
     tracing::info!(%path, "admin API mounted");
-    Some(Router::new().nest(&path, inner))
+    Ok(Some(Router::new().nest(&path, inner)))
 }
 
 pub(crate) fn merge_http_routers(
@@ -149,5 +168,80 @@ fn normalize_admin_path(path: &str) -> String {
         path.to_string()
     } else {
         format!("/{path}")
+    }
+}
+
+#[cfg(test)]
+mod configuration_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn admin_database_path_remount_preserves_authentication() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let cfg = AppConfig::default();
+        let mut policy = chatmail_config::SettingsPolicy::default();
+        policy
+            .insert(
+                "admin_web_enabled",
+                "false",
+                "environment:CHATMAIL_ADMIN_WEB_ENABLED",
+            )
+            .unwrap();
+        let pool = pool.with_policy(policy);
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        chatmail_db::set_setting(&pool, chatmail_db::settings_keys::ADMIN_PATH, "/api/custom")
+            .await
+            .unwrap();
+        let router = build_admin_router(&cfg, dir.path(), token, pool.clone(), app, None)
+            .await
+            .unwrap()
+            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = reqwest::Client::new();
+        let body = serde_json::json!({"method":"GET","resource":"/admin/settings","headers":{"Authorization":format!("Bearer {token}")}});
+        let response: serde_json::Value = client
+            .post(format!("http://{addr}/api/custom"))
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response["status"], 200);
+        let response: serde_json::Value = client
+            .post(format!("http://{addr}/api/custom"))
+            .json(&serde_json::json!({"method":"GET","resource":"/admin/settings"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response["status"], 401);
+        let old = client
+            .post(format!("http://{addr}/api/admin"))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(old.status(), reqwest::StatusCode::NOT_FOUND);
+        let rejected: serde_json::Value = client.post(format!("http://{addr}/api/custom"))
+            .json(&serde_json::json!({"method":"POST","resource":"/admin/services/admin_web","headers":{"Authorization":format!("Bearer {token}")},"body":{"action":"enable"}}))
+            .send().await.unwrap().json().await.unwrap();
+        assert_eq!(rejected["status"], 409);
+        assert_eq!(rejected["error_code"], "configuration_locked");
+        assert!(chatmail_db::settings::get_stored_setting(
+            &pool,
+            chatmail_db::settings_keys::ADMIN_WEB_ENABLED
+        )
+        .await
+        .unwrap()
+        .is_none());
+        task.abort();
     }
 }

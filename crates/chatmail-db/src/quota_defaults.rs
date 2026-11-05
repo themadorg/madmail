@@ -46,7 +46,7 @@ mod tests {
             default_quota: Some("1G".into()),
             ..Default::default()
         };
-        let DbPool::Sqlite(p) = &pool else {
+        let crate::pool::DbConnection::Sqlite(p) = pool.connection() else {
             panic!("memory db is sqlite");
         };
         sqlx::query(

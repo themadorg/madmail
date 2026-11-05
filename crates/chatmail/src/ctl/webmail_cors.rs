@@ -233,6 +233,11 @@ async fn enable_dev(args: &Args, pool: &DbPool, origin: &str) -> Result<()> {
     if !origin.is_empty() {
         validate_origin(origin)?;
     }
+    pool.check_settings_writable(&[
+        settings_keys::WEBIMAP_ENABLED,
+        settings_keys::WEBSMTP_ENABLED,
+        settings_keys::WEBMAIL_CORS_ORIGINS,
+    ])?;
     set_setting(pool, settings_keys::WEBIMAP_ENABLED, "true").await?;
     set_setting(pool, settings_keys::WEBSMTP_ENABLED, "true").await?;
     let merged = if origin.is_empty() {
@@ -275,6 +280,11 @@ async fn enable_dev(args: &Args, pool: &DbPool, origin: &str) -> Result<()> {
 
 async fn disable_dev(args: &Args, pool: &DbPool) -> Result<()> {
     let out = CtlOut::from_args(args, "webmail-cors disable");
+    pool.check_settings_writable(&[
+        settings_keys::WEBIMAP_ENABLED,
+        settings_keys::WEBSMTP_ENABLED,
+        settings_keys::WEBMAIL_CORS_ORIGINS,
+    ])?;
     set_setting(pool, settings_keys::WEBIMAP_ENABLED, "false").await?;
     set_setting(pool, settings_keys::WEBSMTP_ENABLED, "false").await?;
     out.done_msg(

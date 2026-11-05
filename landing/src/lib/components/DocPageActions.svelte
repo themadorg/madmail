@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import CopyPageButton from '$lib/components/CopyPageButton.svelte';
 	import EditPageButton from '$lib/components/EditPageButton.svelte';
 
@@ -6,7 +8,7 @@
 	let { currentHref = '', variant = 'header' } = $props();
 </script>
 
-<div class="doc-page-actions" class:footer={variant === 'footer'} aria-label="Page actions">
+<div class="doc-page-actions" class:footer={variant === 'footer'} aria-label={t("Page actions")}>
 	<EditPageButton {currentHref} />
 	<CopyPageButton {currentHref} />
 </div>

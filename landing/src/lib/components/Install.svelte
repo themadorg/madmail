@@ -1,6 +1,9 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { siteLanguage, t } = useSiteLanguage();
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import arrowRight from '$lib/icons/arrow-right.svg?raw';
+	import arrowLeft from '$lib/icons/arrow-left.svg?raw';
 	import { repo } from '$lib/nav.js';
 
 	const installCode = `ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
@@ -17,25 +20,24 @@ sudo systemctl enable --now madmail`;
 </script>
 
 <section class="install">
-	<h2>Quick Setup</h2>
-	<p>Download the release binary, then install and start the service:</p>
+	<h2>{t("Quick Setup")}</h2>
+	<p>{t("Download the release binary, then install and start the service:")}</p>
 	<CodeBlock code={installCode} wrap class="install-code" />
 	<p class="hint">
-		Also works with a public IP and no domain.
+		{t("Also works with a public IP and no domain.")}
 		<a href="/docs/deployment" class="hint-link">
-			See deployment options
-			<span class="icon" aria-hidden="true">{@html arrowRight}</span>
+			{t("See deployment options")}
+			<span class="icon" aria-hidden="true">{@html siteLanguage.code === 'fa' ? arrowLeft : arrowRight}</span>
 		</a>
 	</p>
 	<p class="hint">
-		On Windows, use
+		{t("On Windows, use")}
 		<code>madmail-windows-amd64-setup.exe</code>
-		from
-		<a href="{repo}/releases">Releases</a>,
-		or the CLI in
+		{t("from")}
+		<a href="{repo}/releases">{t("Releases")}</a>{t(", or the CLI in")}
 		<a href="/docs/project/user-guide/02-quick-start#windows" class="hint-link">
-			Quick Start — Windows
-			<span class="icon" aria-hidden="true">{@html arrowRight}</span>
+			{t("Quick Start — Windows")}
+			<span class="icon" aria-hidden="true">{@html siteLanguage.code === 'fa' ? arrowLeft : arrowRight}</span>
 		</a>
 	</p>
 </section>

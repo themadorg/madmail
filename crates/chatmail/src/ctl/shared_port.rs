@@ -20,6 +20,7 @@
 
 use chatmail_config::cli::SharedPortCommand;
 use chatmail_config::{parse_bool_str, Args};
+use chatmail_db::settings::get_stored_setting;
 use chatmail_db::{get_setting, set_setting, settings_keys, DbPool};
 use chatmail_types::{ChatmailError, Result};
 
@@ -38,15 +39,17 @@ fn selected(protocol: &str) -> Result<(bool, bool)> {
     }
 }
 
-/// Effective value, and whether it came from the DB override or the config file.
+/// Effective value (protected source, DB row, then file default) and the stored
+/// DB override, which is `None` when no row exists.
 async fn effective(pool: &DbPool, key: &str, file_default: bool) -> Result<(bool, Option<bool>)> {
-    Ok(match get_setting(pool, key).await? {
-        Some(v) => {
-            let on = parse_bool_str(&v);
-            (on, Some(on))
-        }
-        None => (file_default, None),
-    })
+    let on = match get_setting(pool, key).await? {
+        Some(v) => parse_bool_str(&v),
+        None => file_default,
+    };
+    let stored = get_stored_setting(pool, key)
+        .await?
+        .map(|v| parse_bool_str(&v));
+    Ok((on, stored))
 }
 
 pub async fn shared_port(args: &Args, cmd: &SharedPortCommand) -> Result<()> {
@@ -70,6 +73,10 @@ pub async fn shared_port(args: &Args, cmd: &SharedPortCommand) -> Result<()> {
                     "smtp": smtp,
                     "file_default": { "imap": file_imap, "smtp": file_smtp },
                     "db_override": { "imap": imap_db, "smtp": smtp_db },
+                    "protected": {
+                        "imap": pool.protection_source(settings_keys::SHARED_PORT_IMAP),
+                        "smtp": pool.protection_source(settings_keys::SHARED_PORT_SMTP),
+                    },
                     "chatmail_block_configured": configured,
                     "reload_required": false,
                 }));
@@ -91,6 +98,9 @@ pub async fn shared_port(args: &Args, cmd: &SharedPortCommand) -> Result<()> {
                 ("__SHARED_PORT_IMAP__", imap_db),
                 ("__SHARED_PORT_SMTP__", smtp_db),
             ] {
+                if let Some(source) = pool.protection_source(label) {
+                    out.line(format!("  Protected ({label}): {source}"));
+                }
                 match db {
                     Some(on) => out.line(format!("  DB override ({label}): {on}")),
                     None => out.line(format!(
@@ -118,6 +128,14 @@ pub async fn shared_port(args: &Args, cmd: &SharedPortCommand) -> Result<()> {
                     "shared-port disable"
                 },
             );
+            let mut keys = Vec::new();
+            if want_imap {
+                keys.push(settings_keys::SHARED_PORT_IMAP);
+            }
+            if want_smtp {
+                keys.push(settings_keys::SHARED_PORT_SMTP);
+            }
+            pool.check_settings_writable(&keys)?;
             let value = if on { "true" } else { "false" };
             if want_imap {
                 set_setting(&pool, settings_keys::SHARED_PORT_IMAP, value).await?;
@@ -162,5 +180,40 @@ mod tests {
         assert_eq!(selected("submission").unwrap(), (false, true));
         assert!(selected("imap4").is_err());
         assert!(selected("").is_err());
+    }
+
+    /// A protected value is the effective state but not a "DB override" (#219).
+    #[tokio::test]
+    async fn protected_value_is_not_reported_as_db_override() {
+        let raw = chatmail_db::init_memory_db().await.unwrap();
+        let mut policy = chatmail_config::SettingsPolicy::default();
+        policy
+            .insert(
+                "shared_port_imap",
+                "false",
+                "file:/etc/madmail/madmail.conf",
+            )
+            .unwrap();
+        let pool = raw.clone().with_policy(policy);
+        assert_eq!(
+            effective(&pool, settings_keys::SHARED_PORT_IMAP, true)
+                .await
+                .unwrap(),
+            (false, None)
+        );
+        assert_eq!(
+            pool.protection_source(settings_keys::SHARED_PORT_IMAP)
+                .as_deref(),
+            Some("file:/etc/madmail/madmail.conf")
+        );
+        set_setting(&raw, settings_keys::SHARED_PORT_SMTP, "false")
+            .await
+            .unwrap();
+        assert_eq!(
+            effective(&pool, settings_keys::SHARED_PORT_SMTP, true)
+                .await
+                .unwrap(),
+            (false, Some(false))
+        );
     }
 }

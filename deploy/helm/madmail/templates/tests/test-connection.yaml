@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "madmail.fullname" . }}-test
+  labels:
+    {{- include "madmail.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probe
+      image: {{ include "madmail.image" . }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+      command: ["/bin/sh", "-ec"]
+      args:
+        - |
+          host={{ include "madmail.fullname" . }}
+          for port in 25 587 993; do
+            nc -z -w 5 "$host" "$port"
+            echo "ok: $host:$port"
+          done
+          banner="$(printf 'QUIT\r\n' | nc -w 5 "$host" 25 | head -n1)"
+          echo "smtp banner: $banner"
+          case "$banner" in 220*) ;; *) echo "unexpected SMTP banner" >&2; exit 1 ;; esac

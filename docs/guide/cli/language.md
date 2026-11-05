@@ -23,7 +23,7 @@ madmail language [status|set|reset]
 |------------|-------------|
 | `status` | Show current language (default when no subcommand given) |
 | `set <LANG>` | Set language code |
-| `reset` | Remove DB override (use config default) |
+| `reset` | Remove unprotected DB value (inherit defaults) |
 
 ## Supported codes
 

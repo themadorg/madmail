@@ -15,6 +15,15 @@ Practical configuration recipes: multi-domain addresses, selective JIT
 registration, and CLI provisioning ([English](../recipes/server-domains_en.md) /
 [فارسی](../recipes/server-domains_fa.md)).
 
+## Configuration sources
+
+Operational settings resolve as **environment > explicit config file setting >
+database > defaults**. Only a `CHATMAIL_*` variable, a `.conf` `settings { }` entry,
+or a top-level TOML setting protects a value; listener lines and other module
+directives are defaults that CLI changes override. CLI writes and resets fail with
+`configuration_locked` (exit status 1) when such a source protects the setting. Change that source and restart the service to unlock
+it. See [configuration sources and examples](../configuration.md).
+
 Raw mail over WSS: [`websocket-bridge`](websocket-bridge.md) (disabled by default).
 
 ## Global flags
@@ -49,6 +58,14 @@ Port service aliases: `submission_tls` → `submission-tls`, `imap_tls` → `ima
 
 
 ### [`install`](install.md)
+
+Full CLI reference for new setup and existing-installation repair:
+
+- [System versus local mode, effects and prerequisites](install.md#choose-the-operation)
+- [Custom-path host setup](install.md#new-server-with-custom-paths)
+- [User-only and systemd-only repair](install.md#repair-only-the-service-account-or-systemd-unit)
+- [Every install option](install.md#all-install-options)
+- [Dry-run, JSON and troubleshooting](install.md#preview-and-json-output)
 
 
 ### [`uninstall`](uninstall.md)
@@ -340,6 +357,7 @@ Alias: [`pr`](pr.md).
 
 - [Native install guide](../install.md)
 - [Docker guide](../docker.md)
+- [Kubernetes (Helm) guide](../kubernetes.md)
 - [CLI tools (TDD)](../../TDD/14-cli-tools.md) — implementation parity, `ctl/` module map, Madmail Go references
 - [TDD index](../../TDD/README.md) — architecture and crate map
 

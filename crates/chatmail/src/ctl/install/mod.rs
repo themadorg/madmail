@@ -17,6 +17,8 @@
 
 //! `madmail install` — Madmail `ctl/install.go` parity for `--simple --ip`.
 
+#[cfg(unix)]
+mod chown_walk;
 mod config;
 #[cfg(unix)]
 mod system;
@@ -35,11 +37,155 @@ use chatmail_db::{init_db_from_config, set_setting, settings_keys};
 use chatmail_types::{wrap_ip_domain, ChatmailError, Result};
 
 use self::config::{local_domains_for_ip, render_maddy_conf, InstallConfig};
+#[cfg(unix)]
+use self::system::SecureInstall;
+
+/// Without Unix there is no service account to guard against; this type has
+/// no values, so `Option<&SecureInstall>` is always `None` there.
+#[cfg(not(unix))]
+pub enum SecureInstall {}
 use super::docs;
 use super::language::validate_language_code;
 use super::output::CtlOut;
 
+fn print_install_plan(cfg: &InstallConfig, args: &InstallArgs) {
+    println!(
+        "  Install mode:  {}",
+        if cfg.system_install {
+            "system"
+        } else {
+            "local"
+        }
+    );
+    println!("  Plan: create directories and prepare TLS certificates");
+    if args.cert_only {
+        println!("  Plan: certificate-only; skip config, database, binary, docs and systemd");
+    } else {
+        println!("  Plan: write config and initialize database");
+        if cfg.system_install {
+            println!(
+                "  Plan: install binary at {} and CLI documentation",
+                cfg.binary_path.display()
+            );
+            println!(
+                "  Plan: {} systemd unit",
+                if cfg.skip_systemd {
+                    "skip"
+                } else {
+                    "install and daemon-reload"
+                }
+            );
+        }
+    }
+    if cfg.system_install {
+        println!(
+            "  Plan: {} service account",
+            if cfg.skip_user {
+                "skip"
+            } else {
+                "create/update"
+            }
+        );
+        if !args.cert_only {
+            println!(
+                "  Plan: {} ownership setup",
+                if cfg.skip_user { "skip" } else { "apply" }
+            );
+        }
+    } else {
+        println!("  Plan: skip host account, ownership, binary, documentation and systemd changes");
+        #[cfg(unix)]
+        if !args.local {
+            println!("  Custom paths selected local mode; use --system to install a host service at these paths.");
+        }
+    }
+}
+
+/// Repair existing host provisioning without entering the full bootstrap pipeline.
+fn repair_installation(global: &Args, args: &InstallArgs) -> Result<()> {
+    #[cfg(not(unix))]
+    {
+        let _ = (global, args);
+        Err(ChatmailError::config("installation repair is Unix-only"))
+    }
+    #[cfg(unix)]
+    {
+        let cfg = InstallConfig::from_args(global, args)?;
+        system::require_root_for_system_install(&cfg, args.dry_run)?;
+        let mode = if args.user_only {
+            "user-only"
+        } else {
+            "systemd-only"
+        };
+        println!("  Install mode: {mode}");
+        println!("  Config: {}", cfg.config_path.display());
+        println!("  State: {}", cfg.state_dir.display());
+        if args.user_only {
+            println!("  Plan: create/update service account and apply existing config/TLS/state permissions");
+            println!(
+                "  TLS: {} / {}",
+                cfg.cert_path.display(),
+                cfg.key_path.display()
+            );
+            if !cfg.cert_path.exists() && !cfg.key_path.exists() {
+                println!(
+                    "  TLS files not found; pass --cert-path/--key-path for custom TLS locations"
+                );
+            }
+        } else {
+            println!("  Plan: replace systemd unit and daemon-reload (no enable/start)");
+            println!("  Binary: {}", cfg.binary_path.display());
+        }
+        // A state directory that is not madmail's own is refused before
+        // anything changes (read-only, so a dry run reports it too).
+        system::check_state_dir(&cfg)?;
+        if !args.dry_run {
+            // Check prerequisites before account or unit mutations.
+            if !cfg.config_path.is_file() || !cfg.state_dir.is_dir() {
+                return Err(ChatmailError::config(
+                    "repair requires an existing config file and state directory; use the original install paths",
+                ));
+            }
+            if args.user_only {
+                system::create_service_user(&cfg, false, true)?;
+                let sec = SecureInstall::open(&cfg, false)?;
+                // The config file's owner and mode are set after the state
+                // walk, so they are the final ones.
+                system::setup_permissions(&cfg, sec.as_ref())?;
+                system::setup_config_permissions(&cfg, sec.as_ref())?;
+            } else {
+                system::validate_service_prerequisites(&cfg)?;
+                systemd::install_unit(&cfg)?;
+                systemd::daemon_reload()?;
+            }
+        }
+        if global.json {
+            CtlOut::from_args(global, "install").emit(serde_json::json!({
+                "mode": mode,
+                "dry_run": args.dry_run,
+                "system_install": true,
+                "create_service_user": args.user_only,
+                "apply_permissions": args.user_only,
+                "install_binary": false,
+                "install_systemd": args.systemd_only,
+                "service_installed": args.systemd_only && !args.dry_run,
+                "service_started": false,
+            }))?;
+        } else if args.dry_run {
+            println!(
+                "[dry-run] no changes; live execution checks existing installation prerequisites"
+            );
+        } else {
+            println!("Installation repair completed ({mode}).");
+        }
+        Ok(())
+    }
+}
+
 pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
+    if args.user_only || args.systemd_only {
+        return repair_installation(global, args);
+    }
     if !args.non_interactive && !args.simple {
         return Err(ChatmailError::config(
             "interactive install is not implemented yet; use --non-interactive or --simple",
@@ -69,13 +215,21 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         ));
     }
 
+    print_install_plan(&cfg, args);
+    // A state directory that is not madmail's own is refused before anything
+    // changes, the service account included (read-only, so a dry run reports
+    // it too).
+    #[cfg(unix)]
+    system::check_state_dir(&cfg)?;
     if args.dry_run {
-        #[cfg(unix)]
-        if cfg.system_install {
-            docs::install_cli_docs(&cfg.binary_name, true)?;
-        }
         if global.json {
-            CtlOut::from_args(global, "install").emit(serde_json::json!({ "dry_run": true }))?;
+            CtlOut::from_args(global, "install").emit(serde_json::json!({
+                "dry_run": true,
+                "system_install": cfg.system_install,
+                "create_service_user": cfg.system_install && !cfg.skip_user,
+                "install_binary": cfg.system_install && !args.cert_only,
+                "install_systemd": cfg.system_install && !cfg.skip_systemd && !args.cert_only,
+            }))?;
         } else {
             println!("[dry-run] would run full install steps");
         }
@@ -84,11 +238,29 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
 
     #[cfg(unix)]
     {
-        system::create_service_user(&cfg, false)?;
+        if cfg.system_install && !args.skip_systemd && !args.cert_only {
+            systemd::check_unit_path(&cfg)?;
+        }
+        if !args.cert_only {
+            system::check_binary_path(&cfg, None)?;
+        }
+        system::create_service_user(&cfg, false, false)?;
     }
-    create_directories(&cfg)?;
-    generate_dkim_keys(&cfg);
-    if let Err(e) = setup_certificates(&cfg, args).await {
+    // From here on, root changes files for a system install only through this
+    // handle (checked resolution, descriptors, no links followed), also with
+    // `--skip-user` when the service account exists.
+    #[cfg(unix)]
+    let sec = SecureInstall::open(&cfg, true)?;
+    #[cfg(unix)]
+    if !args.cert_only {
+        system::check_binary_path(&cfg, sec.as_ref())?;
+    }
+    #[cfg(not(unix))]
+    let sec: Option<SecureInstall> = None;
+    let sec = sec.as_ref();
+    create_directories(&cfg, sec)?;
+    generate_dkim_keys(&cfg, sec);
+    if let Err(e) = setup_certificates(&cfg, args, sec).await {
         return Err(cert_step_failed(e));
     }
     if args.cert_only {
@@ -110,14 +282,23 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         return Ok(());
     }
     ensure_secrets(&mut cfg)?;
-    write_config(&cfg)?;
-    seed_install_language(&cfg).await?;
+    write_config(&cfg, sec)?;
     #[cfg(unix)]
     {
-        system::setup_config_permissions(&cfg, false)?;
-        system::setup_permissions(&cfg, false)?;
-        system::install_binary(&cfg, false)?;
-        docs::install_cli_docs(&cfg.binary_name, false)?;
+        // The config file's owner and mode are set after the state walk, so
+        // they are the final ones.
+        system::setup_permissions(&cfg, sec)?;
+        system::setup_config_permissions(&cfg, sec)?;
+    }
+    // After the walk: with a service account the database is opened as that
+    // account (see `seed_install_language`).
+    seed_install_language(&cfg, sec).await?;
+    #[cfg(unix)]
+    {
+        system::install_binary(&cfg, sec, false)?;
+        if cfg.system_install {
+            docs::install_cli_docs(&cfg.binary_name, false)?;
+        }
     }
     #[cfg(unix)]
     if cfg.system_install && !args.skip_systemd {
@@ -135,7 +316,8 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
             "paths_explicit": cfg.paths_explicit,
             "config": cfg.config_path.display().to_string(),
             "state_dir": cfg.state_dir.display().to_string(),
-            "service_installed": post.service_installed,
+            "system_install": cfg.system_install,
+            "service_installed": post.service_installed || (cfg.system_install && !cfg.skip_systemd),
             "service_started": post.service_started,
             "firewall_applied": post.firewall_applied,
             "man_page": if cfg.system_install { Some(doc_paths.man_page.display().to_string()) } else { None },
@@ -330,9 +512,21 @@ fn cert_step_failed(err: ChatmailError) -> ChatmailError {
     ChatmailError::config(format!("{msg}{note}"))
 }
 
-async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<()> {
+async fn setup_certificates(
+    cfg: &InstallConfig,
+    args: &InstallArgs,
+    sec: Option<&SecureInstall>,
+) -> Result<()> {
     if cfg.generate_certs {
         println!("Generating self-signed certificate…");
+        #[cfg(unix)]
+        if let Some(sec) = sec {
+            let (cert, key) = chatmail_acme::self_signed_pems(&cfg.primary_domain, &cfg.hostname)?;
+            let owner = sec.tls_owner();
+            sec.write_file(&cfg.cert_path, cert.as_bytes(), 0o640, owner)?;
+            sec.write_file(&cfg.key_path, key.as_bytes(), 0o600, owner)?;
+            return Ok(());
+        }
         generate_self_signed(
             &cfg.primary_domain,
             &cfg.hostname,
@@ -389,6 +583,11 @@ async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<(
             staging: false,
             skip_if_valid: false,
         };
+        #[cfg(unix)]
+        if let Some(sec) = sec {
+            return obtain_into_staging(cfg, opts, sec).await;
+        }
+        let _ = sec;
         obtain_certificate(&opts).await?;
     } else if cfg.tls_mode == "file" {
         if missing_pems {
@@ -405,20 +604,78 @@ async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<(
     Ok(())
 }
 
-fn generate_dkim_keys(cfg: &InstallConfig) {
+/// Obtain a certificate with the ACME client writing only into a private,
+/// root-owned staging directory, then store the results with
+/// [`SecureInstall::write_file`]: the client itself writes by path and follows
+/// links, so it never writes into the state tree or the TLS paths directly.
+/// The Let's Encrypt account (`autocert/le-account.json`) is copied in and out.
+#[cfg(unix)]
+async fn obtain_into_staging(
+    cfg: &InstallConfig,
+    mut opts: ObtainOptions,
+    sec: &SecureInstall,
+) -> Result<()> {
+    let staging = system::StagingDir::create(sec)?;
+    let account = cfg.state_dir.join("autocert/le-account.json");
+    let staged_account = staging.path().join("autocert/le-account.json");
+    let io = |op: &str, path: &std::path::Path, e: std::io::Error| {
+        ChatmailError::config(format!("{op} {}: {e}", path.display()))
+    };
+    if let Some(bytes) = sec.read_file(&account, 1 << 20)? {
+        std::fs::create_dir_all(staging.path().join("autocert"))
+            .map_err(|e| io("mkdir", staging.path(), e))?;
+        std::fs::write(&staged_account, bytes).map_err(|e| io("write", &staged_account, e))?;
+    }
+    let cert = staging.path().join("certs/fullchain.pem");
+    let key = staging.path().join("certs/privkey.pem");
+    opts.state_dir = staging.path().to_path_buf();
+    opts.cert_path = Some(cert.clone());
+    opts.key_path = Some(key.clone());
+    obtain_certificate(&opts).await?;
+    let read = |path: &std::path::Path| std::fs::read(path).map_err(|e| io("read", path, e));
+    let owner = sec.tls_owner();
+    sec.write_file(&cfg.cert_path, &read(&cert)?, 0o640, owner)?;
+    sec.write_file(&cfg.key_path, &read(&key)?, 0o600, owner)?;
+    if staged_account.is_file() {
+        sec.write_file(&account, &read(&staged_account)?, 0o600, None)?;
+    }
+    Ok(())
+}
+
+/// With a service account the key files are created through
+/// [`SecureInstall`]: the private key with create-new (mode 0600; an existing
+/// one is read only when it is a regular file with one link that belongs to
+/// the service account), the `TXT` file by create-new-then-rename. Both get
+/// the service account as owner on creation (with `--skip-user`, see
+/// [`SecureInstall::write_file`]), so a run that stops at a later step leaves
+/// keys the service can read. Otherwise [`DkimSigner::load_or_create`] is
+/// used.
+///
+/// [`DkimSigner::load_or_create`]: chatmail_delivery::dkim::DkimSigner::load_or_create
+fn generate_dkim_keys(cfg: &InstallConfig, sec: Option<&SecureInstall>) {
+    use chatmail_delivery::dkim::{public_txt_path, DKIM_SELECTOR};
+    #[cfg(unix)]
+    if let Some(sec) = sec {
+        let txt = public_txt_path(&cfg.state_dir, DKIM_SELECTOR);
+        match secure_dkim_keys(cfg, sec) {
+            Ok(()) => println!(
+                "  DKIM:           selector '{DKIM_SELECTOR}' — publish TXT default._domainkey ({})\n                   madmail dkim show",
+                txt.display()
+            ),
+            Err(e) => println!("  DKIM:           skipped ({e})"),
+        }
+        return;
+    }
+    let _ = sec;
     match chatmail_delivery::dkim::DkimSigner::load_or_create(
         &cfg.state_dir,
-        chatmail_delivery::dkim::DKIM_SELECTOR,
+        DKIM_SELECTOR,
         &cfg.primary_domain,
     ) {
         Ok(_) => {
-            let txt = chatmail_delivery::dkim::public_txt_path(
-                &cfg.state_dir,
-                chatmail_delivery::dkim::DKIM_SELECTOR,
-            );
+            let txt = public_txt_path(&cfg.state_dir, DKIM_SELECTOR);
             println!(
-                "  DKIM:           selector '{}' — publish TXT default._domainkey ({})\n                   madmail dkim show",
-                chatmail_delivery::dkim::DKIM_SELECTOR,
+                "  DKIM:           selector '{DKIM_SELECTOR}' — publish TXT default._domainkey ({})\n                   madmail dkim show",
                 txt.display()
             );
         }
@@ -428,7 +685,47 @@ fn generate_dkim_keys(cfg: &InstallConfig) {
     }
 }
 
-fn create_directories(cfg: &InstallConfig) -> Result<()> {
+#[cfg(unix)]
+fn secure_dkim_keys(cfg: &InstallConfig, sec: &SecureInstall) -> Result<()> {
+    use chatmail_delivery::dkim::{
+        generate_private_key_pem, private_key_path, public_txt_from_private_pem, public_txt_path,
+        signing_domain, DKIM_SELECTOR,
+    };
+    let primary = &cfg.primary_domain;
+    if primary
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .find_map(signing_domain)
+        .is_none()
+    {
+        return Err(ChatmailError::config(format!(
+            "DKIM d= cannot be an IP literal ({primary}); publish a DNS name"
+        )));
+    }
+    let private = private_key_path(&cfg.state_dir, DKIM_SELECTOR);
+    let pem = match sec.read_file(&private, 1 << 20)? {
+        Some(bytes) => String::from_utf8(bytes)
+            .map_err(|_| ChatmailError::config(format!("{} is not UTF-8", private.display())))?,
+        None => {
+            let pem = generate_private_key_pem().map_err(ChatmailError::config)?;
+            if !sec.create_new_file(&private, pem.as_bytes(), 0o600)? {
+                return Err(ChatmailError::config(format!(
+                    "{} appeared while install was creating it",
+                    private.display()
+                )));
+            }
+            pem
+        }
+    };
+    let txt = public_txt_from_private_pem(&pem).map_err(ChatmailError::config)?;
+    sec.write_file(
+        &public_txt_path(&cfg.state_dir, DKIM_SELECTOR),
+        format!("{txt}\n").as_bytes(),
+        0o644,
+        None,
+    )
+}
+
+fn create_directories(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let config_dir = cfg
         .config_path
         .parent()
@@ -442,13 +739,48 @@ fn create_directories(cfg: &InstallConfig) -> Result<()> {
         config_dir,
         cfg.cert_path.parent().unwrap_or(config_dir),
     ] {
+        #[cfg(unix)]
+        if let Some(sec) = sec {
+            sec.ensure_dir(dir)?;
+            continue;
+        }
+        let _ = sec;
+        // A system install without a service account (`--skip-user` before
+        // the account exists) marks a state directory it creates as madmail's,
+        // as [`SecureInstall::open`] does, so a later run with the account
+        // accepts it while it is still root's.
+        let mark = cfg.system_install && dir == cfg.state_dir.as_path() && !dir.exists();
         std::fs::create_dir_all(dir)
             .map_err(|e| ChatmailError::config(format!("mkdir {}: {e}", dir.display())))?;
+        #[cfg(unix)]
+        if mark {
+            use std::os::unix::fs::OpenOptionsExt;
+            let marker = dir.join(system::STATE_MARKER);
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o644)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&marker)
+                .map_err(|e| ChatmailError::config(format!("create {}: {e}", marker.display())))?;
+        }
+        #[cfg(not(unix))]
+        let _ = mark;
     }
     Ok(())
 }
 
-async fn seed_install_language(cfg: &InstallConfig) -> Result<()> {
+/// SQLite opens files by path and follows links, so when the state directory
+/// is controlled by the service account (after the ownership walk, or on a
+/// `--skip-user` reinstall into a tree the service already owns) the database
+/// is opened with the service account's effective uid, gid and groups
+/// ([`secure_fs::AsService`](super::secure_fs::AsService)): whatever a link
+/// planted in the state tree points at, the open can only reach what the
+/// service account could reach itself, and new database files belong to it.
+/// Only the effective ids change; the saved uid stays 0 (see
+/// `docs/TDD/12-security.md`). A root-owned state directory (`--skip-user`
+/// into a new directory) is used as root.
+async fn seed_install_language(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let app_config = AppConfig {
         state_dir: Some(cfg.state_dir.clone()),
         language: Some(cfg.language.clone()),
@@ -456,26 +788,86 @@ async fn seed_install_language(cfg: &InstallConfig) -> Result<()> {
     };
 
     let database = effective_database_config(&cfg.state_dir, &app_config);
-    let pool = init_db_from_config(&database).await?;
-    set_setting(&pool, settings_keys::LANGUAGE, &cfg.language).await?;
+    #[cfg(unix)]
+    let identity = match sec.filter(|s| s.state_dir_is_service_controlled()) {
+        Some(sec) => Some(
+            super::secure_fs::AsService::enter(sec.uid, sec.gid).map_err(|e| {
+                ChatmailError::config(format!("switch to the service account: {e}"))
+            })?,
+        ),
+        None => None,
+    };
+    #[cfg(not(unix))]
+    let _ = sec;
+    let seeded = async {
+        let pool = init_db_from_config(&database).await?;
+        let result = set_setting(&pool, settings_keys::LANGUAGE, &cfg.language).await;
+        // Close every connection before the identity changes back.
+        match pool.connection() {
+            chatmail_db::pool::DbConnection::Sqlite(p) => p.close().await,
+            chatmail_db::pool::DbConnection::Postgres(p) => p.close().await,
+        }
+        result
+    }
+    .await;
+    #[cfg(unix)]
+    if let Some(identity) = identity {
+        identity
+            .leave()
+            .map_err(|e| ChatmailError::config(format!("switch back to root: {e}")))?;
+    }
+    seeded?;
     println!("✓ Seeded website language in database: {}", cfg.language);
     Ok(())
 }
 
-fn write_config(cfg: &InstallConfig) -> Result<()> {
+/// The config file holds `ss_password` and `turn_secret`, so it is created
+/// with mode 0640 from the start. With a service account it is written with
+/// [`SecureInstall::write_config_file`]: outside the state tree owned by
+/// `root:gid` (with `--skip-user` the previous file's owner, or root); inside
+/// it owned by the service account (with `--skip-user` only when the previous
+/// file was the service account's, else root). Otherwise it is opened with
+/// `O_NOFOLLOW` and keeps the caller as owner.
+fn write_config(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let text = render_maddy_conf(cfg);
+    #[cfg(unix)]
+    if let Some(sec) = sec {
+        let owner = if cfg.skip_user {
+            sec.existing_owner(&cfg.config_path)
+        } else {
+            Some((0, sec.gid))
+        };
+        sec.write_config_file(&cfg.config_path, text.as_bytes(), owner)?;
+        println!("✓ Wrote {}", cfg.config_path.display());
+        return Ok(());
+    }
+    let _ = sec;
     if let Some(parent) = cfg.config_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| ChatmailError::config(format!("mkdir {}: {e}", parent.display())))?;
     }
-    std::fs::write(&cfg.config_path, text)
-        .map_err(|e| ChatmailError::config(format!("write {}: {e}", cfg.config_path.display())))?;
+    let write_err = |e: std::io::Error| {
+        ChatmailError::config(format!("write {}: {e}", cfg.config_path.display()))
+    };
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&cfg.config_path, std::fs::Permissions::from_mode(0o644))
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o640)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&cfg.config_path)
+            .map_err(write_err)?;
+        // An existing file keeps its mode on open; set it on the descriptor.
+        file.set_permissions(std::fs::Permissions::from_mode(0o640))
             .map_err(|e| ChatmailError::config(format!("chmod config: {e}")))?;
+        file.write_all(text.as_bytes()).map_err(write_err)?;
     }
+    #[cfg(not(unix))]
+    std::fs::write(&cfg.config_path, text).map_err(write_err)?;
     println!("✓ Wrote {}", cfg.config_path.display());
     Ok(())
 }
@@ -599,9 +991,24 @@ impl InstallConfig {
         #[cfg(windows)]
         let system_install = false;
         #[cfg(not(windows))]
-        let system_install = config_dir.starts_with("/etc/")
-            || state_dir.starts_with("/var/lib/")
-            || (args.simple && !paths_explicit);
+        let system_install = !args.local
+            && (args.system
+                || args.user_only
+                || args.systemd_only
+                || config_dir.starts_with("/etc/")
+                || state_dir.starts_with("/var/lib/")
+                || (args.simple && !paths_explicit));
+        if args.system && args.local {
+            return Err(ChatmailError::config(
+                "--system and --local cannot be combined",
+            ));
+        }
+        #[cfg(windows)]
+        if args.system || args.user_only || args.systemd_only {
+            return Err(ChatmailError::config(
+                "--system is Unix-only; use --install-service on Windows",
+            ));
+        }
 
         let binary_path = args.binary_path.clone().unwrap_or_else(|| {
             #[cfg(windows)]
@@ -614,7 +1021,47 @@ impl InstallConfig {
             }
         });
 
-        let (primary_domain, hostname, public_ip, local_domains, turn_off_tls) = if args.simple {
+        if system_install {
+            for (flag, path) in [
+                ("--config-dir", &config_dir),
+                ("--state-dir", &state_dir),
+                ("--binary-path", &binary_path),
+            ] {
+                if path.to_string_lossy().chars().any(char::is_control) {
+                    return Err(ChatmailError::config(format!(
+                        "{flag} must not contain control characters"
+                    )));
+                }
+                if !path.is_absolute() {
+                    return Err(ChatmailError::config(format!(
+                        "{flag} must be absolute for a system install"
+                    )));
+                }
+                // systemd strips trailing whitespace and treats a trailing `\`
+                // as a line continuation, so such paths cannot be written to the unit.
+                if path
+                    .to_string_lossy()
+                    .ends_with(|c: char| c.is_whitespace() || c == '\\')
+                {
+                    return Err(ChatmailError::config(format!(
+                        "{flag} must not end with whitespace or a backslash for a system install"
+                    )));
+                }
+            }
+        }
+
+        let (primary_domain, hostname, public_ip, local_domains, turn_off_tls) = if args.user_only
+            || args.systemd_only
+        {
+            // Repair does not read domain/TLS settings or perform DNS lookups.
+            (
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                false,
+            )
+        } else if args.simple {
             if let Some(domain) = args.domain.clone() {
                 let bare = domain
                     .trim()
@@ -829,6 +1276,125 @@ mod tests {
     use super::*;
     use chatmail_config::Args;
 
+    #[test]
+    fn install_mode_flags_conflict() {
+        use clap::Parser;
+        assert!(InstallArgs::try_parse_from(["install", "--system", "--local"]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_modes_override_path_heuristic_and_preserve_opt_outs() {
+        use clap::Parser;
+        let global = Args {
+            config: "/etc/madmail/madmail.conf".into(),
+            state_dir: "./data".into(),
+            boot_once: false,
+            json: false,
+        };
+        let base = [
+            "install",
+            "--simple",
+            "--ip",
+            "127.0.0.1",
+            "--config-dir",
+            "/var/xyzzy/etc/madmail",
+            "--state-dir",
+            "/var/xyzzy/lib/madmail",
+            "--binary-path",
+            "/var/xyzzy/bin/madmail",
+        ];
+        let mut args = InstallArgs::try_parse_from(base).unwrap();
+        assert!(
+            !InstallConfig::from_args(&global, &args)
+                .unwrap()
+                .system_install
+        );
+        args.system = true;
+        args.skip_user = true;
+        args.skip_systemd = true;
+        let cfg = InstallConfig::from_args(&global, &args).unwrap();
+        assert!(cfg.system_install && cfg.skip_user && cfg.skip_systemd);
+        assert_eq!(cfg.binary_path, PathBuf::from("/var/xyzzy/bin/madmail"));
+        assert!(!cfg.use_default_systemd_paths);
+        args.binary_path = Some("relative/madmail".into());
+        assert!(InstallConfig::from_args(&global, &args).is_err());
+        args.binary_path = Some("/var/xyzzy/bin/madmail".into());
+        args.state_dir = Some("/var/xyzzy/lib/mail data".into());
+        assert!(InstallConfig::from_args(&global, &args).is_ok());
+        args.state_dir = Some("/var/xyzzy/lib/madmail ".into());
+        assert!(InstallConfig::from_args(&global, &args).is_err());
+        args.state_dir = Some("/var/xyzzy/lib/madmail\\".into());
+        assert!(InstallConfig::from_args(&global, &args).is_err());
+        let local =
+            InstallArgs::try_parse_from(["install", "--simple", "--ip", "127.0.0.1", "--local"])
+                .unwrap();
+        assert!(
+            !InstallConfig::from_args(&global, &local)
+                .unwrap()
+                .system_install
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repair_modes_build_system_config_without_domain() {
+        use clap::Parser;
+        let global = Args {
+            config: "/etc/madmail/madmail.conf".into(),
+            state_dir: "./data".into(),
+            boot_once: false,
+            json: false,
+        };
+        for mode in ["--user-only", "--systemd-only"] {
+            let mut args = InstallArgs::try_parse_from([
+                "install",
+                mode,
+                "--config-dir",
+                "/var/xyzzy/etc/madmail",
+                "--state-dir",
+                "/var/xyzzy/lib/madmail",
+                "--binary-path",
+                "/var/xyzzy/bin/madmail",
+            ])
+            .unwrap();
+            let cfg = InstallConfig::from_args(&global, &args).unwrap();
+            assert!(cfg.system_install, "{mode}");
+            assert!(cfg.primary_domain.is_empty(), "{mode}");
+            assert_eq!(cfg.state_dir, PathBuf::from("/var/xyzzy/lib/madmail"));
+            // The config filename follows the executable name (the test binary here).
+            assert!(cfg.config_path.starts_with("/var/xyzzy/etc/madmail"));
+            assert_eq!(cfg.binary_path, PathBuf::from("/var/xyzzy/bin/madmail"));
+            assert!(!cfg.use_default_systemd_paths, "{mode}");
+            args.state_dir = Some("relative/state".into());
+            let Err(err) = InstallConfig::from_args(&global, &args) else {
+                panic!("{mode}: relative state dir accepted");
+            };
+            let err = err.to_string();
+            assert!(err.contains("must be absolute"), "{mode}: {err}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unix_system_mode_rejected_on_windows() {
+        use clap::Parser;
+        let args =
+            InstallArgs::try_parse_from(["install", "--simple", "--ip", "127.0.0.1", "--system"])
+                .unwrap();
+        let global = Args {
+            config: "config.toml".into(),
+            state_dir: "data".into(),
+            boot_once: false,
+            json: false,
+        };
+        assert!(InstallConfig::from_args(&global, &args)
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("Unix-only"));
+    }
+
     /// Globally routable example IP for `--auto-ip-cert` (not a real deployment host).
     /// RFC 5737 addresses such as 203.0.113.50 are documentation-only and are rejected by ACME.
     const EXAMPLE_PUBLIC_IP: &str = "1.2.3.4";
@@ -842,6 +1408,10 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: None,
@@ -944,6 +1514,10 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: None,
@@ -995,6 +1569,10 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: None,
@@ -1051,6 +1629,10 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: None,
@@ -1098,6 +1680,10 @@ mod tests {
         let args = InstallArgs {
             lang: "fa".into(),
             ..InstallArgs {
+                user_only: false,
+                systemd_only: false,
+                system: false,
+                local: false,
                 non_interactive: false,
                 simple: true,
                 domain: None,
@@ -1134,6 +1720,209 @@ mod tests {
         assert!(conf.contains("language fa"));
     }
 
+    /// Fresh-install regression (#219 review): the generated configuration keeps
+    /// listener lines, `alpn_*`, TURN, Shadowsocks and Iroh directives, and none of
+    /// them may lock the database-backed CLI settings.
+    #[tokio::test]
+    async fn generated_config_keeps_cli_settings_writable() {
+        use crate::ctl::dispatch;
+        use crate::ctl::test_harness::{parse_cli_with_config, setup_ctl_env};
+        use chatmail_db::{get_setting, settings_keys};
+
+        let global = Args {
+            config: PathBuf::from("/etc/madmail/madmail.conf"),
+            state_dir: PathBuf::from("./data"),
+            boot_once: false,
+            json: false,
+        };
+        let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
+            system: false,
+            local: false,
+            non_interactive: true,
+            simple: true,
+            domain: None,
+            hostname: None,
+            ip: Some(EXAMPLE_PUBLIC_IP.into()),
+            config_dir: None,
+            state_dir: None,
+            tls_mode: None,
+            cert_path: None,
+            key_path: None,
+            acme_email: None,
+            enable_chatmail: true,
+            enable_ss: true,
+            enable_iroh: true,
+            turn_off_tls: false,
+            dry_run: true,
+            skip_systemd: false,
+            skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
+            binary_path: None,
+            obtain_certificate: false,
+            no_obtain_certificate: true,
+            cert_only: false,
+            http_listen: "0.0.0.0:80".into(),
+            auto_ip_cert: false,
+            lang: "en".into(),
+        };
+        let mut cfg = InstallConfig::from_args(&global, &args).unwrap();
+        cfg.turn_secret = "generated-turn-secret".into();
+        cfg.ss_password = "generated-ss-password".into();
+        assert!(cfg.enable_turn && cfg.enable_ss && cfg.enable_iroh && cfg.enable_chatmail);
+        // Keep the test inside its temporary state directory.
+        let conf: String = render_maddy_conf(&cfg)
+            .lines()
+            .filter(|l| !l.starts_with("state_dir") && !l.starts_with("runtime_dir"))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        assert!(conf.contains("smtp tcp://0.0.0.0:25"));
+        assert!(conf.contains("alpn_imap"));
+        // An install from an older template had these lines uncommented.
+        let legacy = conf
+            .replace("# retention 24h", "retention 24h")
+            .replace("# appendlimit 100M", "appendlimit 100M")
+            .replace("# max_message_size 100M", "max_message_size 100M")
+            .replace("# language en", "language en")
+            .replace("# turn_enable yes", "turn_enable yes");
+        for text in [&conf, &legacy] {
+            let parsed = chatmail_config::parse_maddy_config(text).unwrap();
+            assert!(
+                parsed.deployment_policy().unwrap().0.is_empty(),
+                "generated config must not lock settings"
+            );
+        }
+
+        let (dir, _args, _db, pool) = setup_ctl_env().await;
+        let path = dir.path().join("madmail.conf");
+        std::fs::write(&path, &legacy).unwrap();
+        for (argv, key, value) in [
+            (
+                &["port", "smtp", "set", "2525"][..],
+                settings_keys::SMTP_PORT,
+                "2525",
+            ),
+            (
+                &["port", "smtp", "local"][..],
+                settings_keys::SMTP_LOCAL_ONLY,
+                "true",
+            ),
+            (
+                &["port", "imap", "set", "1143"][..],
+                settings_keys::IMAP_PORT,
+                "1143",
+            ),
+            (
+                &["port", "https", "set", "8443"][..],
+                settings_keys::HTTPS_PORT,
+                "8443",
+            ),
+            (
+                &["port", "turn", "set", "3479"][..],
+                settings_keys::TURN_PORT,
+                "3479",
+            ),
+            (
+                &["port", "turn", "local"][..],
+                settings_keys::TURN_LOCAL_ONLY,
+                "true",
+            ),
+            (
+                &["port", "iroh", "set", "3341"][..],
+                settings_keys::IROH_PORT,
+                "3341",
+            ),
+            (
+                &["port", "shadowsocks", "set", "8389"][..],
+                settings_keys::SS_PORT,
+                "8389",
+            ),
+            (
+                &["port", "http", "disable"][..],
+                settings_keys::HTTP_ENABLED,
+                "false",
+            ),
+            (
+                &["shared-port", "disable", "imap"][..],
+                settings_keys::SHARED_PORT_IMAP,
+                "false",
+            ),
+            (
+                &["proxy", "password", "set", "new-pass"][..],
+                settings_keys::SS_PASSWORD,
+                "new-pass",
+            ),
+            (
+                &["proxy", "cipher", "set", "chacha20-ietf-poly1305"][..],
+                settings_keys::SS_CIPHER,
+                "chacha20-ietf-poly1305",
+            ),
+            (
+                &["message-size", "set", "20M"][..],
+                settings_keys::APPENDLIMIT,
+                "20M",
+            ),
+            (
+                &["language", "set", "fa"][..],
+                settings_keys::LANGUAGE,
+                "fa",
+            ),
+        ] {
+            let cli = parse_cli_with_config(dir.path(), &path, argv);
+            dispatch(&cli)
+                .await
+                .unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+            assert_eq!(
+                get_setting(&pool, key).await.unwrap().as_deref(),
+                Some(value),
+                "{argv:?}"
+            );
+        }
+        let cli = parse_cli_with_config(dir.path(), &path, &["port", "smtp", "reset"]);
+        dispatch(&cli).await.unwrap();
+        assert!(get_setting(&pool, settings_keys::SMTP_PORT)
+            .await
+            .unwrap()
+            .is_none());
+
+        // The legacy `retention 24h` line does not override the database value.
+        chatmail_db::set_setting(&pool, settings_keys::MESSAGE_RETENTION_ENABLED, "true")
+            .await
+            .unwrap();
+        chatmail_db::set_setting(&pool, settings_keys::MESSAGE_RETENTION, "7d")
+            .await
+            .unwrap();
+        let parsed = chatmail_config::parse_maddy_config(&legacy).unwrap();
+        let service_pool = pool
+            .clone()
+            .with_policy(parsed.deployment_policy().unwrap());
+        let retention = chatmail_db::effective_message_retention(&service_pool)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retention.as_secs(), 7 * 86_400);
+
+        // An explicit settings value still protects exactly that key.
+        let protected = dir.path().join("protected.conf");
+        std::fs::write(
+            &protected,
+            format!("{legacy}settings {{\n    smtp_port 2525\n}}\n"),
+        )
+        .unwrap();
+        let cli = parse_cli_with_config(dir.path(), &protected, &["port", "smtp", "set", "2526"]);
+        let err = dispatch(&cli).await.unwrap_err().to_string();
+        assert!(err.contains("configuration_locked"), "{err}");
+        assert!(get_setting(&pool, settings_keys::SMTP_PORT)
+            .await
+            .unwrap()
+            .is_none());
+        let cli = parse_cli_with_config(dir.path(), &protected, &["port", "smtp", "public"]);
+        dispatch(&cli).await.unwrap();
+    }
+
     #[test]
     fn simple_domain_install_config() {
         let global = Args {
@@ -1143,6 +1932,10 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
+            system: false,
+            local: false,
             non_interactive: false,
             simple: true,
             domain: Some("mail.example.org".into()),
@@ -1196,6 +1989,10 @@ mod tests {
         };
         const IPV6: &str = "2606:4700:4700::1111";
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
+            system: false,
+            local: false,
             non_interactive: true,
             simple: true,
             domain: Some("mail.example.org".into()),
@@ -1253,6 +2050,10 @@ mod tests {
             simple: true,
             domain: Some(EXAMPLE_PUBLIC_IP.into()),
             ..InstallArgs {
+                user_only: false,
+                systemd_only: false,
+                system: false,
+                local: false,
                 non_interactive: false,
                 simple: false,
                 domain: None,
@@ -1292,6 +2093,10 @@ mod tests {
             obtain_certificate: false,
             no_obtain_certificate: false,
             ..InstallArgs {
+                user_only: false,
+                systemd_only: false,
+                system: false,
+                local: false,
                 non_interactive: false,
                 simple: true,
                 domain: None,
@@ -1339,6 +2144,10 @@ mod tests {
         let args = InstallArgs {
             lang: "de".into(),
             ..InstallArgs {
+                user_only: false,
+                systemd_only: false,
+                system: false,
+                local: false,
                 non_interactive: false,
                 simple: true,
                 domain: None,
@@ -1381,6 +2190,10 @@ mod tests {
             json: false,
         };
         let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
+            system: false,
+            local: false,
             non_interactive: true,
             simple: true,
             domain: None,

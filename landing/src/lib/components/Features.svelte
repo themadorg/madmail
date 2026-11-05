@@ -1,14 +1,16 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import { features } from '$lib/data.js';
 </script>
 
 <section class="features">
-	<h2>Features</h2>
+	<h2>{t("Features")}</h2>
 	<ul>
 		{#each features as f}
 			<li>
-				<strong>{f.title}</strong>
-				<span>{f.desc}</span>
+				<strong>{t(f.title)}</strong>
+				<span>{t(f.desc)}</span>
 			</li>
 		{/each}
 	</ul>

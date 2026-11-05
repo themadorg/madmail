@@ -12,8 +12,10 @@ Public CI versions the repository and publishes **unsigned testing** builds. Sta
 |---------|------|
 | `fix:`, `perf:`, `revert:` | patch |
 | `feat:` | minor |
-| Breaking change (`!` or a `BREAKING CHANGE` footer) | major |
+| Breaking change (`!` or a `BREAKING CHANGE` footer) | minor; major only with explicit `--allow-major` |
 | `docs:`, `chore:`, `ci:`, `test:`, and other types | none |
+
+Automatic releases stay within the current major version, including breaking fixes. Breaking-change warnings remain in the changelog and release notes. A deliberate major release requires an operator to pass `--allow-major` to `scripts/release.py`; CI does not pass this option. Use a dry run with that flag before preparing a major release.
 
 The numeric manifests stay `X.Y.Z`. The `-unstable` suffix is only on the Git tag, GitHub prerelease, and container tags.
 

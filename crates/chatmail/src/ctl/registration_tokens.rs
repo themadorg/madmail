@@ -321,13 +321,15 @@ async fn status_token(args: &Args, pool: &DbPool, token: &str) -> Result<()> {
 
 async fn delete_token(args: &Args, pool: &DbPool, token: &str) -> Result<()> {
     let out = CtlOut::from_args(args, "registration-tokens delete");
-    let affected = match pool {
-        DbPool::Sqlite(p) => sqlx::query("DELETE FROM registration_tokens WHERE token = ?")
-            .bind(token)
-            .execute(p)
-            .await?
-            .rows_affected(),
-        DbPool::Postgres(p) => {
+    let affected = match pool.connection() {
+        chatmail_db::pool::DbConnection::Sqlite(p) => {
+            sqlx::query("DELETE FROM registration_tokens WHERE token = ?")
+                .bind(token)
+                .execute(p)
+                .await?
+                .rows_affected()
+        }
+        chatmail_db::pool::DbConnection::Postgres(p) => {
             sqlx::query(&pg_sql("DELETE FROM registration_tokens WHERE token = ?"))
                 .bind(token)
                 .execute(p)

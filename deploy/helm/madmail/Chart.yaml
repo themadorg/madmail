@@ -1,0 +1,26 @@
+apiVersion: v2
+name: madmail
+description: Madmail — a Delta Chat (chatmail) mail server with SMTP, IMAP, TURN and Iroh relay in one binary.
+type: application
+# version and appVersion both follow the Madmail release (.version); they
+# are rewritten by scripts/release.py on every release. appVersion is the
+# default image tag when image.tag is empty.
+version: 2.43.0
+appVersion: "2.43.0"
+kubeVersion: ">=1.26.0-0"
+home: https://madmail.chat
+icon: https://raw.githubusercontent.com/themadorg/madmail/main/assets/madmail_logo02_bg_white.png
+sources:
+  - https://github.com/themadorg/madmail
+keywords:
+  - mail
+  - smtp
+  - imap
+  - chatmail
+  - deltachat
+  - turn
+maintainers:
+  - name: Madmail
+    url: https://github.com/themadorg/madmail
+annotations:
+  artifacthub.io/license: AGPL-3.0-or-later

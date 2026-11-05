@@ -671,7 +671,15 @@ fn format_duration(d: Duration) -> String {
 }
 
 pub fn db_err(e: impl std::fmt::Display) -> (u16, String) {
-    (500, e.to_string())
+    let message = e.to_string();
+    (
+        if message.starts_with("configuration_locked:") {
+            409
+        } else {
+            500
+        },
+        message,
+    )
 }
 
 #[cfg(test)]

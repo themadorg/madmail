@@ -49,3 +49,6 @@ tmp/
 .vscode/
 .DS_Store
 *.swp
+
+# Deployment manifests (not needed to build the image)
+deploy/

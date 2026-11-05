@@ -1,13 +1,16 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { siteLanguage, t, localize } = useSiteLanguage();
 	import { posts } from '$lib/blog.js';
 	import arrowRight from '$lib/icons/arrow-right.svg?raw';
-	const latest = posts.find((post) => post.language === 'en') ?? posts[0] ?? null;
+	import arrowLeft from '$lib/icons/arrow-left.svg?raw';
+	const latest = $derived(posts.find((post) => post.language === siteLanguage.code) ?? posts.find((post) => post.language === 'en') ?? posts[0] ?? null);
 </script>
 
 <section class="blog" id="blog" aria-labelledby="blog-heading">
 	<div class="heading">
-		<h2 id="blog-heading">Blog</h2>
-		<a href="/blog">All posts <span class="icon" aria-hidden="true">{@html arrowRight}</span></a>
+		<h2 id="blog-heading">{t("Blog")}</h2>
+		<a href={localize("/blog")}>{t("All posts")} <span class="icon" aria-hidden="true">{@html siteLanguage.code === 'fa' ? arrowLeft : arrowRight}</span></a>
 	</div>
 	{#if latest}
 		<a class="post-card" href="/blog/{latest.slug}" aria-labelledby="latest-post-title">
@@ -15,7 +18,7 @@
 			{#if latest.description}<p>{latest.description}</p>{/if}
 		</a>
 	{:else}
-		<p>No posts yet.</p>
+		<p>{t("No posts yet.")}</p>
 	{/if}
 </section>
 

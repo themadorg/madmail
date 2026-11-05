@@ -1,13 +1,15 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, localize, localizeTree, siteLanguage } = useSiteLanguage();
 	import { docTreeNodes } from '$lib/docTreeData.js';
 	import { sameDocPage } from '$lib/docs.js';
 
 	function flattenPages(nodes) {
 		return nodes.flatMap((node) => node.type === 'dir' ? flattenPages(node.children) : node.external ? [] : [node]);
 	}
-	const pages = flattenPages(docTreeNodes);
+	const pages = $derived(flattenPages(localizeTree(docTreeNodes)));
 	function getDocNeighbors(href) {
-		const index = pages.findIndex((page) => sameDocPage(page.href, href));
+		const index = pages.findIndex((page) => sameDocPage(page.href, localize(href)));
 		return { prev: index > 0 ? pages[index - 1] : null, next: index >= 0 ? pages[index + 1] ?? null : null };
 	}
 	import chevronLeft from '$lib/icons/chevron-left.svg?raw';
@@ -20,13 +22,13 @@
 </script>
 
 {#if prev || next}
-	<nav class="doc-footer" aria-label="Documentation navigation">
+	<nav class="doc-footer" aria-label={t("Documentation navigation")}>
 		{#if prev}
-			<a class="nav-btn prev" href={prev.href} rel="prev">
-				<span class="icon" aria-hidden="true">{@html chevronLeft}</span>
+			<a class="nav-btn prev" href={localize(prev.href)} rel="prev">
+				<span class="icon" aria-hidden="true">{@html siteLanguage.code === 'fa' ? chevronRight : chevronLeft}</span>
 				<span class="label">
-					<span class="hint">Previous</span>
-					{prev.label}
+					<span class="hint">{t("Previous")}</span>
+					{t(prev.label)}
 				</span>
 			</a>
 		{:else}
@@ -34,12 +36,12 @@
 		{/if}
 
 		{#if next}
-			<a class="nav-btn next" href={next.href} rel="next">
+			<a class="nav-btn next" href={localize(next.href)} rel="next">
 				<span class="label">
-					<span class="hint">Next</span>
-					{next.label}
+					<span class="hint">{t("Next")}</span>
+					{t(next.label)}
 				</span>
-				<span class="icon" aria-hidden="true">{@html chevronRight}</span>
+				<span class="icon" aria-hidden="true">{@html siteLanguage.code === 'fa' ? chevronLeft : chevronRight}</span>
 			</a>
 		{/if}
 	</nav>
@@ -80,8 +82,8 @@
 
 	.next {
 		justify-content: flex-end;
-		margin-left: auto;
-		text-align: right;
+		margin-inline-start: auto;
+		text-align: end;
 	}
 
 	.label {

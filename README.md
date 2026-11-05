@@ -110,6 +110,38 @@ sudo systemctl start madmail
 
 > Replace `mail.example.org` with your hostname and `you@example.com` with a valid contact email.
 
+### Custom paths and targeted repair
+
+For a new Unix service at custom paths, select `--system` explicitly:
+
+```bash
+sudo ./madmail install --simple --system --domain mail.example.org \
+  --acme-email admin@example.org \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail --dry-run
+```
+
+Review the plan, rerun without `--dry-run`, then `sudo systemctl enable --now madmail`.
+Use `--local` for application bootstrap without host users or systemd changes.
+Running as root alone does not select system mode for custom paths.
+
+For an **existing installation**, avoid rerunning full bootstrap just to fix its
+account or unit. Stop the service if present, then run the needed repair:
+
+```bash
+sudo ./madmail install --user-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail
+sudo ./madmail install --systemd-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail
+```
+
+Account repair fixes user/group and permissions. Unit repair replaces the unit and
+reloads systemd. Both preserve config, database, certificate and binary contents;
+start the service explicitly afterward. Use the original executable name and paths.
+
+[Complete CLI reference and all flags](docs/guide/cli/install.md) · [Mode comparison](docs/guide/cli/install.md#choose-the-operation) · [Repair prerequisites](docs/guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
+
 More detail:
 
 - [Quick start (full guide)](docs/project/user-guide/02-quick-start.md)
@@ -142,6 +174,8 @@ Documentation is organized by audience and purpose.
 ### Quick References
 
 - [Simple IP + ACME Installation](docs/install-simple-ip-acme.md) — IP-based install with Let's Encrypt TLS
+- [Docker & Docker Compose](docs/guide/docker.md) — Container image, `deploy/docker/compose.yaml`, TLS, ports
+- [Kubernetes (Helm)](docs/guide/kubernetes.md) — `deploy/helm/madmail` chart: StatefulSet, LoadBalancer or host networking, cert-manager
 - [Local Development Guide](docs/local-dev.md) — Developer setup, build, and testing workflow
 
 Documentation lives in the repository alongside the source code.

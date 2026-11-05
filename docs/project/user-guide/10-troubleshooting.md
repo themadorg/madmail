@@ -2,6 +2,135 @@
 
 This guide collects the most frequent issues that server admins and users run into, along with practical ways to diagnose and fix them.
 
+## Installation skipped the account or systemd unit
+
+Custom paths can select local mode even when run as root. For a **new** host setup,
+use `install --system` with the intended config/state/binary paths and inspect
+`--dry-run` first. For an **existing** config and state directory, use `--user-only`
+to repair the account/permissions or `--systemd-only` to replace the unit and reload
+systemd. Do not rerun full bootstrap just to repair provisioning: it rewrites config.
+
+Stop the service before account repair, use the original executable name and paths,
+and start it explicitly afterward. Unit-only repair needs the installed executable
+and service account already present. It replaces the generated unit; keep custom
+unit settings in drop-ins. See the [complete repair procedure](../../guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
+and [error reference](../../guide/cli/install.md#troubleshooting).
+
+A full install stops before changing anything if the unit file is masked (run
+`systemctl unmask madmail`), or if the service account's home is elsewhere and still
+exists while `--state-dir` already exists, so data in the old home is not left behind. Move the
+data if needed, run `--user-only` with the same paths, then retry. A state directory
+that is a symlink to a data volume is fine.
+
+Install and repair print `Skipping ownership of <path>: <reason>` for a TLS file
+they will not change by path, and `Ownership of <path> left unchanged: <reason>`
+for an entry in the state directory they left alone, for example
+`belongs to uid 0, not to the service account; it may be another account's file`.
+Install gives a file in the state directory to the service account only when it
+already belongs to that account (or to the previous owner of the state directory);
+files install writes there belong to the service account from the start. So a
+file a root command created there, or a link to another account's file, keeps its
+owner. These are protections, not errors: the service account can write to its
+state directory, so install does not follow links there. Check the named file
+and, if madmail needs it, change its owner yourself with the steps the output
+prints: stop the service (`systemctl stop madmail`) and every process of the
+service account. Lock and expire the account, so that cron and at, which check
+the account with PAM, start no job for it (`usermod -L -e 1970-01-02 madmail`;
+`usermod` cannot change an account that exists only in a directory service such
+as LDAP or sssd: lock and expire it there); where cron or at is installed,
+remove its jobs (`crontab -r -u madmail`; `atq` lists the jobs, `atrm` removes
+them); stop its systemd user manager where there is one
+(`loginctl terminate-user madmail`); kill its processes
+(`pkill -KILL -u madmail`); `ps -u madmail` must then list none. When the
+file's uid now belongs to another account, the steps do the same for that
+account, after noting its expiry (`chage -l <name>`). When you are done, end the
+expiry again (`usermod -e '' madmail`); give the other account its old expiry
+back (`usermod -e <date> <name>`, or `usermod -e '' <name>` when it had none)
+and, if it was not locked before, unlock it (`usermod -U <name>`). The service
+unit does not use PAM, so the service starts while its account is locked and
+expired. Do not change the file if it has more than one hard link
+(`stat -c %h <path>` prints more than 1). One link does not prove that it is
+madmail's file, so compare its content with what madmail writes there, or remove
+it and let madmail create it again. The printed steps end with the command
+`chown -h madmail:madmail <path>`. The processes must be stopped first because
+`chown` looks up the directories on the way to the file again by name, and a
+running process of those accounts could replace one of them with a link. A
+look at the running processes alone is not enough: a process can ignore
+`SIGTERM`, and cron or at can start a new one for an account whose password is
+locked. When a
+directory on the way to the file belongs to another account or can be written by
+one, the output prints no command and says that the file needs manual
+inspection. For a directory
+of another account the output says that it was not entered and that its contents
+were left unchanged; inspect it yourself. Keep certificates and the config file
+in root-owned directories outside the state directory.
+
+When install refuses the state directory because
+`it belongs to account <name> (uid <n>), not to root or to the service account`,
+the old service uid was reused by another account. That account owns the files
+and directories of uid `<n>` and can move them while you work, so first stop the
+service (`systemctl stop madmail`) and stop that account the same way as the
+service account above (note its expiry with `chage -l <name>`, then
+`usermod -L -e 1970-01-02 <name>`, or lock it in the directory service when it
+exists only there; `crontab -r -u <name>` and `atrm` for its `atq` jobs where
+cron or at is installed; `loginctl terminate-user <name>`;
+`pkill -KILL -u <name>`; `ps -u <name>` must then list none; afterwards give it
+its old expiry back and, if it was not locked before, `usermod -U <name>`). To
+keep the data, give the directory itself to root (`chown -h root:root <state>`)
+and run install again: files and directories of uid `<n>` in it are then listed
+and left as they are. A root-owned state directory that is not named for
+madmail is taken only when it is empty, holds only `lost+found` or has a
+root-owned `.madmail-state` file (which install creates in a state directory it
+creates), so first move data in any other such directory to one that is named
+for madmail, such as `/var/lib/madmail`. List the files with
+`find -H <state> -xdev -uid <n> -ls` and check them. Then, with the service and
+both accounts still stopped, give directories and single-link files to the
+service account with
+`find -H <state> -xdev \( -type d \( ! -uid 0 ! -uid <n> ! -user madmail -o -perm -g+w -o -perm -o+w \) -prune \) -o -uid <n> \( -type d -o -type f -links 1 \) -exec chown -h madmail:madmail {} +`
+and check files with more than one hard link one by one. Give the state
+directory as its physical path, or keep `-H`, which follows a link given as the
+starting point and no other. The `-prune` part keeps `find` out of a directory
+of any other account (install's own walk does not enter one either) and out of
+a directory that a group or others can write; check such a directory yourself.
+`find -exec` and `chown` look up each path again by name, so the service must be
+stopped and neither account may have a running process. Install also refuses a well-known system
+directory, a directory directly under `/`, a user's home directory, a directory
+below `/etc`, `/usr`, `/lib`, `/bin`, `/sbin`, `/boot`, `/dev`, `/proc`, `/sys`
+or `/run` that is not named for madmail (such as `/etc/systemd`), a path that
+resolves to one of these (also through a link to a directory that does not
+exist yet), and a directory of root or of a uid without an account name that
+is not empty and not named for madmail (such as `/var/lib/dpkg`) as
+`--state-dir`, unless it holds only `lost+found` or has install's root-owned
+`.madmail-state` file; the name that counts is the physical one, after links.
+Use a directory of its own such as `/var/lib/madmail`. If a previous install was
+interrupted in a directory madmail did not create, check what is in it, then
+empty it or move the data to a directory named for madmail, and run install
+again. It also stops when a lookup of the owner of an existing state directory
+or of the service account's groups reports an error: they must be known before
+install trusts anything there. Install asks the C library and then
+`getent passwd`, which uses the host's NSS configuration (LDAP, sssd and so
+on); the release binaries are linked statically with musl, whose C library
+reads only `/etc/passwd`. Without any `getent`, an account counts as missing
+only when `/etc/nsswitch.conf` is missing or lists only `files` for passwd and
+group. `getent` cannot tell a directory service
+that is down from an account that does not exist, so make sure such a service
+is reachable when you install.
+
+An error that starts with `refusing to` stops install before it writes the file.
+It names the directory or link on the path that the service account can change,
+or says that the config file has several hard links, that a config path outside
+`--state-dir` as written resolves to a path inside the state directory (give a
+`--config-dir` under `--state-dir` as written if it belongs there), or that
+`--binary-path` is in (or resolves into) the state directory. Move the file to a
+root-owned directory outside the state directory and run the command again.
+With `--skip-user`, install refuses to run when the service account does not exist
+but the state directory exists and is not owned by root; create the account (run
+install without `--skip-user`) or give the directory to root first.
+
+Uninstall leaves a directory in place when its name does not show that it belongs
+to madmail, and lists it as `Left in place: <path> (<reason>)`. Check the listed
+directory and remove what madmail created yourself.
+
 ## Users Cannot Register or Log In
 
 ### Possible causes

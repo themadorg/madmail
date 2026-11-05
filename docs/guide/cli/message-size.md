@@ -1,5 +1,7 @@
 # `message-size`
 
+Configuration precedence is **environment → explicit file setting → database → defaults**. A `CHATMAIL_*` variable, a `.conf` `settings { }` entry, or a top-level TOML setting protects its value from database-backed commands. Listener lines and other module directives are file defaults these commands override. File/environment changes require restart. See [configuration sources and migration](../configuration.md).
+
 View or set maximum message size (`__APPENDLIMIT__` / `__MAX_MESSAGE_SIZE__`).
 
 

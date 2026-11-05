@@ -17,39 +17,135 @@
 
 //! systemd unit (Madmail `install.go` `systemdServiceTemplate`).
 
-use std::path::Path;
+use std::fs;
+use std::io::Write;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use chatmail_types::{ChatmailError, Result};
 
 use super::config::InstallConfig;
 
-pub fn install_unit(cfg: &InstallConfig) -> Result<()> {
-    let unit_path = Path::new("/etc/systemd/system").join(format!("{}.service", cfg.binary_name));
-    let body = render_systemd_unit(cfg);
+fn unit_file_path(cfg: &InstallConfig) -> PathBuf {
+    Path::new("/etc/systemd/system").join(format!("{}.service", cfg.binary_name))
+}
 
-    std::fs::write(&unit_path, body)
-        .map_err(|e| ChatmailError::config(format!("write {}: {e}", unit_path.display())))?;
+pub fn install_unit(cfg: &InstallConfig) -> Result<()> {
+    let unit_path = unit_file_path(cfg);
+    write_unit_file(&unit_path, &render_systemd_unit(cfg), &cfg.binary_name)?;
     println!("✓ Wrote {}", unit_path.display());
     Ok(())
 }
 
+/// Full-install preflight: refuse a symlinked or masked unit before any other
+/// step changes the host, instead of failing at the end.
+pub fn check_unit_path(cfg: &InstallConfig) -> Result<()> {
+    refuse_unit_symlink(&unit_file_path(cfg), &cfg.binary_name)
+}
+
+/// A symlink (a `systemctl mask` link to /dev/null or a link to another file) is
+/// refused instead of being written through.
+fn refuse_unit_symlink(unit_path: &Path, name: &str) -> Result<()> {
+    match fs::symlink_metadata(unit_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(ChatmailError::config(format!(
+            "{} is a symlink (masked?); run `systemctl unmask {name}` and retry",
+            unit_path.display()
+        ))),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(ChatmailError::config(format!(
+            "stat {}: {e}",
+            unit_path.display()
+        ))),
+    }
+}
+
+/// Replace the unit atomically with mode 0644, whatever the process umask.
+fn write_unit_file(unit_path: &Path, body: &str, name: &str) -> Result<()> {
+    let write_err =
+        |e: std::io::Error| ChatmailError::config(format!("write {}: {e}", unit_path.display()));
+    refuse_unit_symlink(unit_path, name)?;
+    let mut staging = unit_path.as_os_str().to_owned();
+    staging.push(".tmp");
+    let staging = PathBuf::from(staging);
+    // remove_file does not follow a link left at the staging path.
+    match fs::remove_file(&staging) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(write_err(e)),
+        _ => {}
+    }
+    let written = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o644)
+        .open(&staging)
+        .and_then(|mut file| {
+            file.write_all(body.as_bytes())?;
+            file.set_permissions(fs::Permissions::from_mode(0o644))
+        })
+        .and_then(|()| fs::rename(&staging, unit_path));
+    if let Err(e) = written {
+        let _ = fs::remove_file(&staging);
+        return Err(write_err(e));
+    }
+    Ok(())
+}
+
+// Escape unit specifiers everywhere and command environment expansion in ExecStart.
+// For word-split settings (`ExecStart=`, `ReadWritePaths=`) only.
+fn unit_path(path: &Path, command: bool) -> String {
+    let mut value = path.to_string_lossy().replace('%', "%%");
+    if command {
+        value = value.replace('$', "$$");
+    }
+    if value
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '\\'))
+    {
+        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        value
+    }
+}
+
+// `WorkingDirectory=` takes the whole value verbatim: systemd expands specifiers
+// but does not unquote, so only `%` is escaped and no quotes are added.
+fn unit_working_directory(path: &Path) -> String {
+    path.to_string_lossy().replace('%', "%%")
+}
+
 /// Build the `.service` unit body. Default FHS paths use `StateDirectory` /
 /// `ConfigurationDirectory`; explicit `--config-dir` / `--state-dir` are reflected
-/// in `ExecStart`, `WorkingDirectory`, and `ReadWritePaths` only.
+/// in `ExecStart`, `WorkingDirectory`, and `ReadWritePaths` (`WorkingDirectory`
+/// is written verbatim, the others are quoted as needed). Both layouts retain
+/// `RuntimeDirectory`. Home protection is disabled when a required path needs it.
 pub fn render_systemd_unit(cfg: &InstallConfig) -> String {
     let managed_dirs = if cfg.use_default_systemd_paths {
         format!(
             r#"
 StateDirectory={name}
 ConfigurationDirectory={name}
-RuntimeDirectory={name}
 LogsDirectory={name}"#,
             name = cfg.binary_name,
         )
     } else {
         String::new()
     };
+
+    let protect_home = ![
+        &cfg.state_dir,
+        &cfg.config_dir,
+        &cfg.config_path,
+        &cfg.binary_path,
+        &cfg.cert_path,
+        &cfg.key_path,
+    ]
+    .iter()
+    .any(|path| {
+        ["/home", "/root", "/run/user"]
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+    });
 
     format!(
         r#"[Unit]
@@ -65,12 +161,13 @@ TimeoutStartSec=120
 
 User={user}
 Group={group}
-WorkingDirectory={state_dir}
+WorkingDirectory={working_dir}
+RuntimeDirectory={name}
 {managed_dirs}
 ReadWritePaths={state_dir} {config_dir}
 
 PrivateTmp=true
-ProtectHome=true
+ProtectHome={protect_home}
 ProtectSystem=full
 NoNewPrivileges=true
 
@@ -81,7 +178,7 @@ UMask=0007
 LimitNOFILE=131072
 LimitNPROC=512
 
-ExecStart={binary} --config {config} run --libexec {state_dir}
+ExecStart={binary} --config {config} run --libexec {exec_state_dir}
 Restart=on-failure
 TimeoutStopSec=7s
 KillMode=mixed
@@ -93,11 +190,13 @@ WantedBy=multi-user.target
         name = cfg.binary_name,
         user = cfg.maddy_user,
         group = cfg.maddy_group,
-        state_dir = cfg.state_dir.display(),
+        working_dir = unit_working_directory(&cfg.state_dir),
+        state_dir = unit_path(&cfg.state_dir, false),
+        exec_state_dir = unit_path(&cfg.state_dir, true),
         managed_dirs = managed_dirs,
-        config_dir = cfg.config_dir.display(),
-        binary = cfg.binary_path.display(),
-        config = cfg.config_path.display(),
+        config_dir = unit_path(&cfg.config_dir, false),
+        binary = unit_path(&cfg.binary_path, true),
+        config = unit_path(&cfg.config_path, true),
     )
 }
 
@@ -116,13 +215,12 @@ pub fn daemon_reload() -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     use super::super::config::InstallConfig;
 
-    fn sample_cfg() -> InstallConfig {
+    pub(in crate::ctl::install) fn sample_cfg() -> InstallConfig {
         InstallConfig {
             binary_name: "madmail".into(),
             binary_path: PathBuf::from("/usr/local/bin/madmail"),
@@ -164,6 +262,68 @@ mod tests {
     }
 
     #[test]
+    fn home_protection_matches_required_paths() {
+        assert!(render_systemd_unit(&sample_cfg()).contains("ProtectHome=true"));
+        for prefix in ["/home", "/root", "/run/user"] {
+            for field in 0..6 {
+                let mut cfg = sample_cfg();
+                let path = PathBuf::from(format!("{prefix}/custom/mail"));
+                match field {
+                    0 => cfg.state_dir = path,
+                    1 => cfg.config_dir = path,
+                    2 => cfg.config_path = path,
+                    3 => cfg.binary_path = path,
+                    4 => cfg.cert_path = path,
+                    _ => cfg.key_path = path,
+                }
+                assert!(render_systemd_unit(&cfg).contains("ProtectHome=false"));
+            }
+        }
+        let mut cfg = sample_cfg();
+        cfg.state_dir = PathBuf::from("/home-other/mail");
+        assert!(render_systemd_unit(&cfg).contains("ProtectHome=true"));
+    }
+
+    #[test]
+    fn paths_are_escaped_for_systemd_not_interpreted() {
+        assert_eq!(
+            unit_path(Path::new("/srv/mail data"), false),
+            "\"/srv/mail data\""
+        );
+        assert_eq!(
+            unit_path(Path::new("/srv/%n/$HOME"), false),
+            "/srv/%%n/$HOME"
+        );
+        assert_eq!(
+            unit_path(Path::new("/srv/%n/$HOME"), true),
+            "/srv/%%n/$$HOME"
+        );
+        assert_eq!(
+            unit_path(Path::new("/srv/\"mail"), true),
+            "\"/srv/\\\"mail\""
+        );
+        assert_eq!(
+            unit_path(Path::new("/srv/o'brien"), false),
+            "\"/srv/o'brien\""
+        );
+    }
+
+    #[test]
+    fn working_directory_is_verbatim_not_quoted() {
+        let mut cfg = sample_cfg();
+        cfg.use_default_systemd_paths = false;
+        cfg.state_dir = PathBuf::from("/srv/mail data");
+        let unit = render_systemd_unit(&cfg);
+        assert!(unit.contains("\nWorkingDirectory=/srv/mail data\n"));
+        assert!(unit.contains("\nReadWritePaths=\"/srv/mail data\" /etc/madmail\n"));
+        assert!(unit.contains("run --libexec \"/srv/mail data\"\n"));
+
+        cfg.state_dir = PathBuf::from("/srv/%n/$HOME");
+        let unit = render_systemd_unit(&cfg);
+        assert!(unit.contains("\nWorkingDirectory=/srv/%%n/$HOME\n"));
+    }
+
+    #[test]
     fn default_paths_use_state_and_configuration_directory() {
         let unit = render_systemd_unit(&sample_cfg());
         assert!(unit.contains("StateDirectory=madmail"));
@@ -186,11 +346,44 @@ mod tests {
 
         let unit = render_systemd_unit(&cfg);
         assert!(!unit.contains("StateDirectory="));
+        assert!(unit.contains("RuntimeDirectory=madmail"));
         assert!(!unit.contains("ConfigurationDirectory="));
         assert!(unit.contains("WorkingDirectory=/tmp/sd"));
         assert!(unit.contains("ReadWritePaths=/tmp/sd /tmp/mm"));
         assert!(unit.contains(
             "ExecStart=/usr/local/bin/madmail --config /tmp/mm/madmail.conf run --libexec /tmp/sd"
         ));
+    }
+
+    #[test]
+    fn unit_write_refuses_symlinks_and_replaces_regular_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let unit = dir.path().join("madmail.service");
+
+        write_unit_file(&unit, "first", "madmail").unwrap();
+        write_unit_file(&unit, "second", "madmail").unwrap();
+        assert_eq!(std::fs::read_to_string(&unit).unwrap(), "second");
+        assert_eq!(
+            std::fs::metadata(&unit).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+        assert!(!dir.path().join("madmail.service.tmp").exists());
+
+        let other = dir.path().join("other.service");
+        std::fs::write(&other, "keep").unwrap();
+        std::fs::remove_file(&unit).unwrap();
+        std::os::unix::fs::symlink(&other, &unit).unwrap();
+        let err = write_unit_file(&unit, "body", "madmail")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("symlink") && err.contains("systemctl unmask madmail"),
+            "{err}"
+        );
+        assert_eq!(std::fs::read_to_string(&other).unwrap(), "keep");
+        assert!(std::fs::symlink_metadata(&unit)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 }

@@ -2,9 +2,9 @@
 
 Every `madmail` subcommand accepts a global **`--json`** flag. In JSON mode:
 
-- **Stdout** receives a single JSON object (success envelope or legacy bare JSON — see below).
+- **Stdout** normally receives a single JSON object (success envelope or legacy bare JSON — see below). **Exception:** [`install`](#install) prints progress before its final JSON envelope.
 - **Stderr** receives `{"ok":false,"error":"..."}` on failure.
-- Decorative text, emoji, and QR codes are **not** printed.
+- Commands normally suppress decorative output; `install` retains human progress output.
 - Confirmation prompts still apply unless you pass `-y` / `--yes`.
 
 ```bash
@@ -203,21 +203,155 @@ One envelope per sample (newline-delimited when `--count` is not 1):
 
 ### `install`
 
+Use `madmail --json install ...` with a valid install or repair invocation.
+Human progress precedes the final JSON envelope; parse the envelope rather than
+passing the entire stdout stream to a JSON parser. Always check the exit status.
+The `data` fields depend on the selected operation:
+
+| Operation | Fields in `data` |
+|-----------|------------------|
+| Full-install dry-run | `dry_run`, `system_install`, `create_service_user`, `install_binary`, `install_systemd` |
+| Completed full install | `installed`, `primary_domain`, `paths_explicit`, `config`, `state_dir`, `system_install`, `service_installed`, `service_started`, `firewall_applied`, `man_page`, `completions` |
+| Completed certificate-only | `cert_only`, `primary_domain`, `tls_mode`, `cert_path`, `key_path` |
+| Repair, including dry-run | `mode`, `dry_run`, `system_install`, `create_service_user`, `apply_permissions`, `install_binary`, `install_systemd`, `service_installed`, `service_started` |
+
+A full-install `--dry-run` reports the planned actions without changing the host:
+
 ```json
 {
   "ok": true,
   "command": "install",
-  "message": "Install completed",
   "data": {
-    "config_path": "/etc/madmail/madmail.conf",
-    "state_dir": "/var/lib/madmail"
+    "dry_run": true,
+    "system_install": true,
+    "create_service_user": true,
+    "install_binary": true,
+    "install_systemd": true
   }
 }
 ```
 
+`create_service_user` is false with `--skip-user`; `install_systemd` is false with
+`--skip-systemd`; `install_binary` and `install_systemd` are false with `--cert-only`.
+All three are false for a local install (`system_install: false`).
+
+A completed install:
+
+```json
+{
+  "ok": true,
+  "command": "install",
+  "data": {
+    "installed": true,
+    "primary_domain": "[203.0.113.50]",
+    "paths_explicit": false,
+    "config": "/etc/madmail/madmail.conf",
+    "state_dir": "/var/lib/madmail",
+    "system_install": true,
+    "service_installed": true,
+    "service_started": false,
+    "firewall_applied": false,
+    "man_page": "/usr/share/man/man1/madmail.1",
+    "completions": {
+      "bash": "/usr/share/bash-completion/completions/madmail",
+      "zsh": "/usr/share/zsh/site-functions/_madmail",
+      "fish": "/usr/share/fish/vendor_completions.d/madmail.fish"
+    }
+  }
+}
+```
+
+`config` is the config path (not `config_path`). On Unix, `service_installed: true`
+means the systemd unit was written and `systemctl daemon-reload` ran; the service is
+not enabled or started (run `systemctl enable --now`), so `service_started` remains
+false. On Windows they report `--install-service` / `--start-service`.
+`man_page` and `completions` are `null` for a local install.
+`--cert-only` returns `cert_only`, `primary_domain`, `tls_mode`, `cert_path` and `key_path`.
+
+Repair preview example:
+
+```bash
+madmail --json install --systemd-only --dry-run
+```
+
+Final envelope:
+
+```json
+{
+  "ok": true,
+  "command": "install",
+  "data": {
+    "mode": "systemd-only",
+    "dry_run": true,
+    "system_install": true,
+    "create_service_user": false,
+    "apply_permissions": false,
+    "install_binary": false,
+    "install_systemd": true,
+    "service_installed": false,
+    "service_started": false
+  }
+}
+```
+
+The `install_*`, `create_service_user` and `apply_permissions` fields describe
+selected actions, including during preview. `service_installed` is false in repair
+dry-runs and true only after successful unit repair. User-only uses `mode: "user-only"`,
+selects account/permission actions and leaves systemd actions false. See
+[installer semantics](install.md#preview-and-json-output).
+
 ### `uninstall`
 
-Dry-run / completed uninstall returns paths and flags in `data`. When nothing to uninstall:
+On Unix, a dry-run or completed uninstall returns its flags and the paths it left
+in place (`left_in_place`). The list holds the paths kept from the removal steps
+that run: config paths are listed unless `--keep-config` is given, and state paths
+unless `--keep-data` is given. A path that a removal step left in place because a
+directory on its way failed the trust check, or because its removal failed, is
+always listed. It is empty when nothing was kept. Each entry has `path`, the
+path itself for scripts (JSON escapes control characters below U+0020, such as
+`\n`; bytes that are not UTF-8 become U+FFFD), `path_shown`, the same path
+escaped as in the human output for display (control characters (C0, DEL and
+C1 such as U+009B), bidirectional marks and overrides (such as U+202E),
+U+FEFF, line and paragraph separators and the backslash are written as visible
+escapes such as `\n`, `\x7f`, `\u{009b}` or `\\`, and bytes that are not
+UTF-8 as `\xNN`), and `reason`, in which paths are escaped the same way. Do
+not print `path` to a terminal as it is: it can hold control characters. See
+[what is removed](uninstall.md#what-is-removed) and
+[the reasons](uninstall.md#reasons-for-paths-left-in-place). This is the result
+after an install with `--config-dir /usr/local/etc`:
+
+```json
+{
+  "ok": true,
+  "command": "uninstall",
+  "message": "Uninstallation completed successfully",
+  "data": {
+    "uninstalled": true,
+    "binary": "madmail",
+    "dry_run": false,
+    "keep_data": false,
+    "left_in_place": [
+      {
+        "path": "/usr/local/etc",
+        "path_shown": "/usr/local/etc",
+        "reason": "well-known system directory; only madmail.conf is removed"
+      },
+      {
+        "path": "/usr/local/etc/certs/fullchain.pem",
+        "path_shown": "/usr/local/etc/certs/fullchain.pem",
+        "reason": "TLS file in a shared directory; install may not have created it, remove it yourself if it did"
+      },
+      {
+        "path": "/usr/local/etc/certs/privkey.pem",
+        "path_shown": "/usr/local/etc/certs/privkey.pem",
+        "reason": "TLS file in a shared directory; install may not have created it, remove it yourself if it did"
+      }
+    ]
+  }
+}
+```
+
+When nothing to uninstall (Unix):
 
 ```json
 {
@@ -228,6 +362,10 @@ Dry-run / completed uninstall returns paths and flags in `data`. When nothing to
   }
 }
 ```
+
+On Windows the result has no `left_in_place` and no `found`: a dry run returns
+`uninstalled`, `dry_run` and `keep_data`, and a completed uninstall returns
+`uninstalled`, `binary`, `dry_run`, `keep_data` and `"platform": "windows"`.
 
 ---
 
@@ -578,12 +716,13 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
     "allowed": false,
     "file_default": false,
     "db_override": null,
+    "protected_by": null,
     "reload_required": false
   }
 }
 ```
 
-`db_override` is `true` / `false` when `__ALLOW_INBOUND_REMOTE_RCPT__` is set, or `null` when the file default is used.
+`db_override` is the stored `__ALLOW_INBOUND_REMOTE_RCPT__` row (`true` / `false`), or `null` when no row exists. `protected_by` names the explicit source (for example `CHATMAIL_ALLOW_INBOUND_REMOTE_RCPT` or a `settings { }` entry) that controls the value, or is `null`; a protected value wins over the row.
 
 ### `openrelay enable` / `disable`
 
@@ -1056,7 +1195,7 @@ madmail-v2 writes `quotas`.
 }
 ```
 
-`source` is `"db"` or `"config"`. Null `appendlimit` / `max_message_size` when unset in DB.
+`source` is `"protected"` (an environment variable or `settings { }` entry controls the limit), `"db"`, or `"config"`. `appendlimit` / `max_message_size` are the protected or stored values, or null when neither exists.
 
 ### `message-size set` / `reset`
 
@@ -1087,7 +1226,7 @@ madmail-v2 writes `quotas`.
 }
 ```
 
-`source` is `"db"` when a DB override is active.
+`source` is `"protected"` when an environment variable or `settings { }` entry controls the language, `"db"` when a DB override is active, and `"config"` otherwise.
 
 ### `language set` / `reset`
 
@@ -1225,12 +1364,13 @@ When Shadowsocks is not configured (`ss_addr` / `ss_password` missing), `configu
   "data": {
     "cipher": "aes-128-gcm",
     "db_override": null,
-    "source": "config"
+    "source": "config",
+    "protected_by": null
   }
 }
 ```
 
-`source` is `"db"` when a DB override is active. `db_override` holds the stored value when set.
+`source` is `"protected"` when an explicit source controls the cipher, `"db"` when a DB override is active, and `"config"` otherwise. `db_override` holds the stored value when a row exists; `protected_by` names the protecting source or is `null`. `proxy status` reports the same three values as `cipher_source`; its `password_db_override` is `true` only when a stored password row exists.
 
 ### `proxy cipher set` / `reset`
 
@@ -1257,12 +1397,13 @@ When Shadowsocks is not configured (`ss_addr` / `ss_password` missing), `configu
   "data": {
     "configured": true,
     "db_override": false,
-    "source": "config"
+    "source": "config",
+    "protected_by": null
   }
 }
 ```
 
-Password values are never included in JSON output.
+`db_override` is `true` when a stored password row exists. `source` and `protected_by` follow `proxy cipher status`. Password values are never included in JSON output.
 
 ### `proxy password set` / `reset`
 

@@ -30,7 +30,7 @@ export async function loadSearchPages() {
 	if (cachedPages) return cachedPages;
 
 	const { default: index } = await import('$lib/assets/search-index.json');
-	cachedPages = [...sitePages, ...index.pages];
+	cachedPages = [...new Map([...index.pages, ...sitePages].map((page) => [page.href, page])).values()];
 	return cachedPages;
 }
 

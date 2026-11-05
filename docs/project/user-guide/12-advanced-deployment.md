@@ -8,6 +8,7 @@ This page indexes advanced operator topics. Each has its own guide.
 | Exchangers (push-pull, pull-pull intermediaries) | [16-exchangers.md](./16-exchangers.md) |
 | Customizing public HTML pages and web UI (Linux + Windows) | [17-customizing-html-pages.md](./17-customizing-html-pages.md) |
 | DNS, SPF, DKIM, DMARC, federation reachability | [12-dns-mail-auth.md](./12-dns-mail-auth.md) |
+| Docker Compose and Kubernetes (Helm) | [Docker](../../guide/docker.md#docker-compose-example) and [Kubernetes](../../guide/kubernetes.md) guides |
 | Windows installer, service, tray, Defender/UAC | [packaging/windows/README.md](../../../packaging/windows/README.md) |
 | Stealth / Shadowsocks | [What is Chatmail?](./01-what-is-chatmail.md) (Shadowsocks feature) and [Admin & CLI](./07-admin-and-cli.md) |
 

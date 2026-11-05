@@ -59,8 +59,10 @@ async fn status(args: &Args, ctx: &CtlContext, pool: &chatmail_db::DbPool) -> Re
     let db_lang = get_setting(pool, settings_keys::LANGUAGE).await?;
     let config_default = ctx.config.language.as_deref().unwrap_or("en").to_string();
 
+    let protected = pool.protection_source(settings_keys::LANGUAGE);
     if out.is_json() {
         let (current, source) = match db_lang.as_deref() {
+            Some(v) if !v.is_empty() && protected.is_some() => (v.to_string(), "protected"),
             Some(v) if !v.is_empty() => (v.to_string(), "db"),
             _ => (config_default.clone(), "config"),
         };
@@ -73,7 +75,10 @@ async fn status(args: &Args, ctx: &CtlContext, pool: &chatmail_db::DbPool) -> Re
 
     let display = if let Some(v) = db_lang {
         if !v.is_empty() {
-            format!("{} — {} (DB override)", v, language_name(&v))
+            match &protected {
+                Some(source) => format!("{} — {} (protected by {source})", v, language_name(&v)),
+                None => format!("{} — {} (DB override)", v, language_name(&v)),
+            }
         } else {
             "(config default)".into()
         }

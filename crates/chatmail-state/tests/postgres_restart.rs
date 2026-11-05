@@ -24,7 +24,7 @@ async fn postgres_runtime_stats_survive_restart() {
     flush_federation_stats(&pool, &tracker).await.unwrap();
     let last_active = tracker.snapshot()[0].last_active;
     drop(tracker);
-    if let chatmail_db::DbPool::Postgres(p) = &pool {
+    if let chatmail_db::pool::DbConnection::Postgres(p) = pool.connection() {
         p.close().await;
     }
     // Re-run migration and startup hydration through a new connection.

@@ -60,6 +60,6 @@ export function formatMegabytes(bytes) {
 }
 
 /** @param {string} iso */
-export function formatReleaseDate(iso) {
-	return new Date(iso).toLocaleDateString('en', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+export function formatReleaseDate(iso, language = 'en') {
+	return new Date(iso).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 }

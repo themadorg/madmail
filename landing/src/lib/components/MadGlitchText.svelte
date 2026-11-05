@@ -37,6 +37,7 @@
 </script>
 
 <button
+	dir="ltr"
 	type="button"
 	class="mad-glitch {className}"
 	class:mad-glitch--scrambling={scrambling}

@@ -16,7 +16,7 @@ madmail proxy cipher [status|set|reset]
 |------------|-------------|
 | `status` | Show effective cipher and DB override (default) |
 | `set <CIPHER>` | Set DB override |
-| `reset` | Clear DB override (revert to config file) |
+| `reset` | Clear unprotected DB value (inherit defaults) |
 
 ## Examples
 

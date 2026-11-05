@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import PhoneShell from '$lib/components/phone/PhoneShell.svelte';
 	import { slugifyHeading } from '$lib/slugify.js';
 
@@ -7,24 +9,24 @@
 
 <PhoneShell current="/phone/faq">
 	<article class="doc">
-		<h1>Questions</h1>
+		<h1>{t("Questions")}</h1>
 		<p class="lede">
-			What people ask before putting a mail server on a phone. Still curious? Ask in
-			<a href="https://t.me/the_madmail">Telegram</a> or
-			<a href="https://github.com/themadorg/madmail-phone/issues">open an issue</a>.
+			{t("What people ask before putting a mail server on a phone. Still curious? Ask in")}
+			<a href="https://t.me/the_madmail">Telegram</a> {t("or")}
+			<a href="https://github.com/themadorg/madmail-phone/issues">{t("open an issue")}</a>.
 		</p>
 
 		<div class="list">
 			{#each data.faq as item}
 				<details id={slugifyHeading(item.question)}>
-					<summary>{item.question}</summary>
-					<p>{item.answer}</p>
+					<summary>{t(item.question)}</summary>
+					<p>{t(item.answer)}</p>
 				</details>
 			{/each}
 		</div>
 
 		<p class="next">
-			Ready to try it? <a href="/phone/install">Install Madmail Mobile</a>.
+			{t("Ready to try it?")} <a href="/phone/install">{t("Install Madmail Mobile")}</a>.
 		</p>
 	</article>
 </PhoneShell>
@@ -61,7 +63,7 @@
 		flex: none;
 		width: 0.6rem;
 		height: 0.6rem;
-		margin-right: 0.3rem;
+		margin-inline-end: 0.3rem;
 		border-right: 2px solid var(--color-text-subtle);
 		border-bottom: 2px solid var(--color-text-subtle);
 		transform: rotate(45deg) translateY(-25%);

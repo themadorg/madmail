@@ -1,5 +1,7 @@
 # Quota, Retention, and Maintenance
 
+Configuration precedence is **environment → explicit file setting → database → defaults**. A `CHATMAIL_*` variable, a `.conf` `settings { }` entry, or a top-level TOML setting protects its value from database-backed commands. Listener lines and other module directives are file defaults these commands override. File/environment changes require restart. See [configuration sources and migration](../../guide/configuration.md).
+
 As a server admin you will regularly deal with storage limits, old messages, and accounts that are no longer used. This guide explains how these things work on a chatmail server and what you can do about them.
 
 ## Storage Quota

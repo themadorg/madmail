@@ -37,6 +37,19 @@ Replace:
 
 `--simple` implies non-interactive install; you do not need `--non-interactive` unless you drop `--simple`.
 
+### Custom paths and existing-installation repair
+
+For a new host service at custom paths, add `--system` plus `--config-dir`,
+`--state-dir` and `--binary-path`. Preview with `--dry-run`. Without an explicit
+mode, custom paths can select local bootstrap even as root. Use `--local` when
+you want application files without host provisioning.
+
+For an existing installation, `install --user-only` repairs the account/permissions
+and `install --systemd-only` replaces the unit and reloads systemd. Neither reruns
+TLS issuance or changes config/database/binary contents. Supply the original paths,
+stop the service before account repair, and start it explicitly afterward. See
+[all options and repair prerequisites](guide/cli/install.md).
+
 ### Optional flags
 
 | Flag | Purpose |
@@ -44,7 +57,7 @@ Replace:
 | `--enable-chatmail` | Turn on Chatmail blocks in the generated config |
 | `--enable-ss` | Include Shadowsocks proxy blocks |
 | `--install-service` / `--start-service` / `--firewall` | **Windows:** register/start SCM service and open firewall ports |
-| `--skip-systemd` | Config + certs only, no `madmail.service` (**Linux**) |
+| `--skip-systemd` | Skip the unit/reload only; account, binary, config, DB and certificate setup still run (**Linux**) |
 | `--skip-user` | Do not create the `madmail` system user (**Linux**) |
 | `--dry-run` | Print planned paths without writing files |
 | `--no-obtain-certificate` | Skip issuance during install (unusual with `--auto-ip-cert`) |
@@ -52,7 +65,7 @@ Replace:
 
 ## What this does
 
-1. **System layout** — **Linux:** installs `madmail` to `/usr/local/bin/madmail`, writes `/etc/madmail/madmail.conf`, state under `/var/lib/madmail`, enables a `madmail.service` systemd unit (unless `--skip-systemd`). **Windows:** uses `%ProgramData%\Madmail\{config,data}` and the `Madmail` Windows service when `--install-service` is set (see [Windows packaging](../packaging/windows/README.md)).
+1. **System layout** — **Linux:** installs `madmail` to `/usr/local/bin/madmail`, writes `/etc/madmail/madmail.conf`, state under `/var/lib/madmail`, writes a `madmail.service` systemd unit and reloads systemd (unless `--skip-systemd`). **Windows:** uses `%ProgramData%\Madmail\{config,data}` and the `Madmail` Windows service when `--install-service` is set (see [Windows packaging](../packaging/windows/README.md)).
 2. **TLS mode** — Sets `autocert` (not self-signed). With `--auto-ip-cert`, `turn_off_tls` stays **off** so IMAP/SMTP submission use TLS with the issued cert.
 3. **Certificate** — Obtains a Let's Encrypt **short-lived IP certificate** (profile `shortlived`, ~6-day lifetime) with **HTTP-01** on `0.0.0.0:80`.
 4. **Storage** — Writes PEMs to:
@@ -145,10 +158,16 @@ sudo cp ./target/release/madmail /usr/local/bin/madmail
 
 ### Wrong systemd unit (`madmail-new.service`, CHDIR errors)
 
-Install using the final binary name (`madmail`), not a temporary name like `madmail-new`. Remove stale units or run `madmail uninstall` (see uninstall docs for cleaning `madmail*.service` units).
+The executable basename controls account, unit and config filenames. Use the same
+name and paths as the intended installation. For an existing config/state directory,
+use [unit-only repair](guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
+with the installed executable path. Account repair may be needed first. Repair does
+not rename an installation created under a different basename; review its config
+filename, account and unit together before migrating names.
 
 ## Related documentation
 
 - [TDD/19-certificates.md](TDD/19-certificates.md) — TLS modes, `certificate` CLI, DNS autocert
-- [TDD/14-cli-tools.md](TDD/14-cli-tools.md) — Full `install` flag list
+- [Installer CLI reference](guide/cli/install.md) — all flags, modes, repair and troubleshooting
+- [TDD/14-cli-tools.md](TDD/14-cli-tools.md) — CLI design
 - [local-dev.md](local-dev.md) — Development setup (not for production IP relays)

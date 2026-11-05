@@ -48,9 +48,9 @@
 }
 
 html.doc-tree-docked main.doc {
-	margin-left: var(--modal-docked-width);
+	margin-inline-start: var(--modal-docked-width);
 	width: calc(100% - var(--modal-docked-width));
-	transition: margin-left 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+	transition: margin-inline-start 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 :root[data-light] {
@@ -369,17 +369,17 @@ a {
 
 @media (min-width: 1100px) {
 	html.doc-tree-docked main.doc {
-		margin-left: 0;
+		margin-inline-start: 0;
 		width: 100%;
-		padding-left: calc(var(--modal-docked-width) + 2rem);
+		padding-inline-start: calc(var(--modal-docked-width) + 2rem);
 		/* Keep a full reading column before reserving space to center it in the viewport. */
-		padding-right: clamp(2rem, calc(100vw - var(--modal-docked-width) - 50rem), calc(var(--modal-docked-width) + 2rem));
+		padding-inline-end: clamp(2rem, calc(100vw - var(--modal-docked-width) - 50rem), calc(var(--modal-docked-width) + 2rem));
 	}
 }
 
 @media (max-width: 1023px) {
 	html.doc-tree-docked main.doc {
-		margin-left: 0;
+		margin-inline-start: 0;
 		width: 100%;
 	}
 }
@@ -480,7 +480,7 @@ html.docs-theme[data-light] .token.function { color: #1d4ed8; }
 	html.docs-theme :focus-visible { outline-color: Highlight; }
 }
 
-html.docs-theme .prose .external-link-icon { display: inline-block; width: 0.75em; height: 0.75em; margin-left: 0.2em; vertical-align: super; }
+html.docs-theme .prose .external-link-icon { display: inline-block; width: 0.75em; height: 0.75em; margin-inline-start: 0.2em; vertical-align: super; }
 
 @font-face {
  font-family: Shabnam;
@@ -494,4 +494,24 @@ html.docs-theme .prose .external-link-icon { display: inline-block; width: 0.75e
  font-weight: 600 900;
  font-display: swap;
 }
-[lang="fa"] { font-family: Shabnam, sans-serif; }
+[lang="fa"] {
+	--font-sans: 'Shabnam', system-ui, sans-serif;
+	font-family: var(--font-sans);
+}
+
+[lang="fa"] :where(button, input, select, textarea) { font-family: inherit; }
+
+/* The interface follows the chosen language; commands retain their reading order. */
+html[dir="rtl"] .code-block, html[dir="rtl"] pre { direction: ltr; text-align: left; }
+html[dir="rtl"] code { direction: ltr; unicode-bidi: isolate; }
+html[dir="rtl"] .folder-row, html[dir="rtl"] .folder-back { text-align: start; }
+
+/* Installation choices remain usable on narrow screens and in focus mode. */
+.prose [data-postgres-options] { margin-block: 1.5rem; padding: 1rem; border: 1px solid var(--color-border); border-radius: 0.75rem; }
+.prose [data-postgres-options] fieldset { min-inline-size: 0; margin: 0 0 1rem; padding: 0; border: 0; }
+.prose [data-postgres-options] legend { margin-block-end: 0.5rem; font-weight: 600; }
+.prose .postgres-choices { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.prose .postgres-choices button { padding: 0.55rem 0.85rem; border: 1px solid var(--color-border-strong); border-radius: 0.5rem; background: var(--color-surface); color: var(--color-text); font: inherit; cursor: pointer; }
+.prose .postgres-choices button[aria-pressed="true"] { background: var(--color-btn-primary-bg); color: var(--color-btn-primary-fg); }
+.prose .postgres-choices button:focus-visible { outline: 2px solid var(--color-text); outline-offset: 3px; }
+.prose [data-pg-method][hidden], .prose [data-pg-os][hidden] { display: none; }

@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import { onDestroy, onMount } from 'svelte';
 	import copyIcon from '$lib/icons/document-duplicate.svg?raw';
 	import checkIcon from '$lib/icons/check.svg?raw';
@@ -57,23 +59,23 @@
 	}
 </script>
 
-<Modal bind:open title="Share page" maxWidth="30rem">
-	<label for="share-page-link">Page link</label>
+<Modal bind:open title={t("Share page")} maxWidth="30rem">
+	<label for="share-page-link">{t("Page link")}</label>
 	<div class="link-row">
-		<input id="share-page-link" bind:this={linkInput} value={url} readonly onclick={(event) => event.currentTarget.select()} />
-		<button class="copy-icon" class:copied aria-label={copied ? 'Link copied' : 'Copy link'} title={copied ? 'Link copied' : 'Copy link'} onclick={copyLink}>{#key copied}<span class="copy-symbol" aria-hidden="true">{@html copied ? checkIcon : copyIcon}</span>{/key}</button>
+		<input dir="ltr" id="share-page-link" bind:this={linkInput} value={url} readonly onclick={(event) => event.currentTarget.select()} />
+		<button class="copy-icon" class:copied aria-label={t(copied ? 'Link copied' : 'Copy link')} title={t(copied ? 'Link copied' : 'Copy link')} onclick={copyLink}>{#key copied}<span class="copy-symbol" aria-hidden="true">{@html copied ? checkIcon : copyIcon}</span>{/key}</button>
 	</div>
 	<div class="share-options">
-		{#if nativeShare}<button onclick={sharePage} disabled={sharing}><span class="service-icon" aria-hidden="true">{@html shareIcon}</span>Share</button>{/if}
+		{#if nativeShare}<button onclick={sharePage} disabled={sharing}><span class="service-icon" aria-hidden="true">{@html shareIcon}</span>{t("Share")}</button>{/if}
 		{#if article}
-			<button onclick={shareWebxdc} disabled={exporting}><img class="service-icon" src={webxdcIcon} alt="" width="18" height="18" />{exporting ? 'Creating webxdc…' : 'Download webxdc'}</button>
+			<button onclick={shareWebxdc} disabled={exporting}><img class="service-icon" src={webxdcIcon} alt="" width="18" height="18" />{t(exporting ? 'Creating webxdc…' : 'Download webxdc')}</button>
 		{/if}
 	</div>
 	{#if status}<p role="status">{status}</p>{/if}
 </Modal>
 
 <style>
-	.copy-icon { display: grid; place-items: center; width: 2.6rem; flex-shrink: 0; }
+	.copy-icon { display: grid; place-items: center; width: 2.6rem; height: 2.6rem; box-sizing: border-box; padding: 0; flex-shrink: 0; }
 	.copy-icon.copied { color: #3fb950; border-color: #3fb950; }
 	.copy-symbol { display: block; animation: copy-pop 180ms ease-out; }
 	.copy-symbol :global(svg), .service-icon :global(svg) { display: block; width: 1.1rem; height: 1.1rem; }
@@ -83,8 +85,8 @@
 	@media (prefers-reduced-motion: reduce) { .copy-symbol { animation: none; } }
 
 	label { font-size: 0.8rem; color: var(--color-text-muted); }
-	.link-row { display: flex; gap: 0.5rem; margin: 0.5rem 0 1.25rem; }
-	input { flex: 1; min-width: 0; padding: 0.6rem; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-bg); color: var(--color-text); font: inherit; font-size: 0.8rem; }
+	.link-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; padding: 0.5rem; margin: 0.5rem 0 1.25rem; }
+	input { flex: 1; min-width: 0; height: 2.6rem; box-sizing: border-box; padding: 0 0.65rem; direction: ltr; text-align: left; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-bg); color: var(--color-text); font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.4; }
 	button, a { padding: 0.6rem 0.8rem; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
 	button:disabled { opacity: 0.65; cursor: wait; }
 	button:hover, a:hover { background: var(--color-hover); }

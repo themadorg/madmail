@@ -24,6 +24,12 @@ pub const MESSAGE_FILE_TOO_BIG: &str = "552 5.3.4 message file too big";
 
 #[derive(Debug, Error)]
 pub enum ChatmailError {
+    #[error("configuration_locked: {setting} is controlled by {source_name}; change that source and restart the service")]
+    ConfigurationLocked {
+        setting: String,
+        source_name: String,
+    },
+
     #[error("database error: {0}")]
     Db(#[from] sqlx::Error),
 

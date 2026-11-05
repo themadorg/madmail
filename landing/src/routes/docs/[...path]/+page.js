@@ -1,3 +1,4 @@
+import { docLanguagesForRoute, docVariantRoute } from '$lib/docLanguages.js';
 import { error } from '@sveltejs/kit';
 import { loadDocModule } from '$lib/docModules.js';
 import {
@@ -26,7 +27,7 @@ export function entries() {
 
 /** @type {import('./$types').PageLoad} */
 export async function load({ params }) {
-	const route = params.path;
+	const route = params.locale === 'fa' ? docVariantRoute(params.path, 'fa', getAllDocRoutes()) ?? params.path : params.path;
 	const compiled = await loadDocModule(route);
 
 	if (compiled) {
@@ -34,6 +35,7 @@ export async function load({ params }) {
 		const href = hrefFromRoute(route);
 		return {
 			kind: 'doc',
+		...docLanguagesForRoute(route, getAllDocRoutes()),
 			href,
 			title: meta.title,
 			description: meta.description,
@@ -67,6 +69,7 @@ export async function load({ params }) {
 
 	return {
 		kind: 'doc',
+		...docLanguagesForRoute(route, getAllDocRoutes()),
 		href,
 		title: meta.title,
 		description: meta.description,
