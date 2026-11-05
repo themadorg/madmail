@@ -268,6 +268,39 @@ class GitIntegrationTests(unittest.TestCase):
                 self.assertIn("[skip ci]", self.git("log", "-1", "--format=%s"))
                 self.assertEqual(self.git("status", "--porcelain"), "")
 
+    def test_helm_chart_versions_follow_release(self):
+        chart = (
+            "apiVersion: v2\nname: madmail\nversion: 1.2.3\n"
+            'appVersion: "1.2.3"\nkubeVersion: ">=1.26.0-0"\n'
+        )
+        self.write(release.HELM_CHART, chart)
+        self.git("add", release.HELM_CHART)
+        self.git("commit", "-m", "chore: add chart")
+        self.commit("fix: patch")
+        result = release.release(self.root, write=True)
+        self.assertIn(release.HELM_CHART, result["files"])
+        text = (self.root / release.HELM_CHART).read_text()
+        self.assertIn("\nversion: 1.2.4\n", text)
+        self.assertIn('\nappVersion: "1.2.4"\n', text)
+        self.assertIn('kubeVersion: ">=1.26.0-0"', text)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_helm_chart_version_mismatch_refused(self):
+        self.write(
+            release.HELM_CHART,
+            'apiVersion: v2\nname: madmail\nversion: 0.1.0\nappVersion: "1.2.3"\n',
+        )
+        self.git("add", release.HELM_CHART)
+        self.git("commit", "-m", "chore: add chart")
+        with self.assertRaisesRegex(release.ReleaseError, "disagree"):
+            release.verify_versions(self.root, release.cargo_metadata(self.root))
+
+    def test_helm_chart_missing_fields_refused(self):
+        with self.assertRaisesRegex(release.ReleaseError, "appVersion"):
+            release.chart_versions("apiVersion: v2\nversion: 1.2.3\n")
+        with self.assertRaisesRegex(release.ReleaseError, "Duplicate"):
+            release.chart_versions("version: 1\nversion: 2\nappVersion: 1\n")
+
     def test_rerun_is_idempotent(self):
         self.commit("fix: patch")
         first = release.release(self.root, write=True)

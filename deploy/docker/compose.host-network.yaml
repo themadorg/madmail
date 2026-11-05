@@ -1,0 +1,16 @@
+# Host networking override for production calls (TURN) and real client IPs.
+#
+#   docker compose -f compose.yaml -f compose.host-network.yaml up -d
+#
+# madmail binds directly on the host, so no port mappings are needed (or
+# allowed). Open the ports in the host and cloud firewall instead; see
+# docs/guide/docker.md#ports. Requires Docker Compose v2.24+ for `!reset`.
+
+services:
+  bootstrap:
+    network_mode: host
+    ports: !reset []
+
+  madmail:
+    network_mode: host
+    ports: !reset []

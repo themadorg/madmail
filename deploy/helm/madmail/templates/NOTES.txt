@@ -1,0 +1,39 @@
+{{- $fullname := include "madmail.fullname" . }}
+{{- $m := .Values.madmail }}
+{{- $host := default $m.publicIp (default $m.domain $m.hostname) }}
+Madmail {{ include "madmail.imageTag" . }} is starting as StatefulSet {{ $fullname }} in namespace {{ .Release.Namespace }}.
+
+First start runs `madmail install` in the bootstrap init container. Follow it with:
+
+  kubectl -n {{ .Release.Namespace }} logs {{ $fullname }}-0 -c bootstrap -f
+
+{{- if .Values.hostNetwork }}
+
+hostNetwork is on: madmail binds directly on the node. Make sure {{ $m.publicIp }}
+is that node's public IP and open the mail, web and TURN ports in its firewall.
+{{- else if eq .Values.service.type "LoadBalancer" }}
+
+Wait for the LoadBalancer address and check that it equals madmail.publicIp ({{ $m.publicIp }}):
+
+  kubectl -n {{ .Release.Namespace }} get svc {{ $fullname }} -w
+{{- end }}
+
+DNS: point A/AAAA for {{ $host }} at {{ $m.publicIp }}{{ if $m.domain }} and MX for {{ $m.domain }} at {{ $host }}{{ end }}.
+DKIM/SPF/DMARC records: kubectl -n {{ .Release.Namespace }} exec {{ $fullname }}-0 -- madmail dkim show
+
+Registration page (Delta Chat): https://{{ $host }}/
+
+Admin API token:
+
+  kubectl -n {{ .Release.Namespace }} exec {{ $fullname }}-0 -- madmail admin-token
+{{- if $m.adminWeb.enabled }}
+
+Admin web UI: https://{{ $host }}{{ $m.adminWeb.path }}/
+{{- end }}
+{{- if not .Values.hostNetwork }}
+
+TURN relay ports published: UDP {{ include "madmail.relayPortMin" . }}-{{ include "madmail.relayPortMax" . }} (set at first install).
+{{- end }}
+
+Settings under `madmail.*` (except adminWeb and metrics) only apply to the
+first install. See docs/guide/kubernetes.md for day-2 operations.

@@ -1,0 +1,83 @@
+{{- include "madmail.validate" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "madmail.fullname" . }}-bootstrap
+  labels:
+    {{- include "madmail.labels" . | nindent 4 }}
+data:
+  bootstrap.sh: |
+    #!/bin/sh
+    # Runs as an init container before every madmail start.
+    #  1. First start only: `madmail install` writes /etc/madmail/madmail.conf,
+    #     TLS PEMs and the initial databases.
+    #  2. Every start: apply the settings the chart keeps managing
+    #     (admin web UI, metrics listener).
+    set -eu
+    CONF=/etc/madmail/madmail.conf
+    mm() { /bin/madmail "$@"; }
+
+    if [ -f "$CONF" ]; then
+      echo "bootstrap: $CONF exists; skipping install"
+    else
+      set -- install --simple --non-interactive --skip-systemd --skip-user \
+        --ip "$MADMAIL_PUBLIC_IP" --lang "$MADMAIL_LANG"
+      if [ -n "${MADMAIL_DOMAIN:-}" ]; then
+        set -- "$@" --domain "$MADMAIL_DOMAIN" --hostname "${MADMAIL_HOSTNAME:-$MADMAIL_DOMAIN}"
+      fi
+      case "${MADMAIL_TLS_MODE:-}" in
+        "") ;;
+        self_signed) set -- "$@" --tls-mode self_signed --no-obtain-certificate ;;
+        file)
+          set -- "$@" --tls-mode file --no-obtain-certificate \
+            --cert-path /etc/madmail/certs/fullchain.pem \
+            --key-path /etc/madmail/certs/privkey.pem
+          ;;
+        *) set -- "$@" --tls-mode "$MADMAIL_TLS_MODE" ;;
+      esac
+      if [ -n "${MADMAIL_ACME_EMAIL:-}" ]; then
+        set -- "$@" --acme-email "$MADMAIL_ACME_EMAIL"
+      fi
+      if [ "${MADMAIL_ENABLE_IROH:-false}" = "true" ]; then
+        set -- "$@" --enable-iroh
+      fi
+      {{- range .Values.madmail.installExtraArgs }}
+      set -- "$@" {{ printf "'%s'" (replace "'" "'\\''" (toString .)) }}
+      {{- end }}
+
+      echo "bootstrap: madmail $*"
+      # install obtains TLS before it writes madmail.conf, so a failed ACME
+      # challenge leaves no config behind and is retried on the next start.
+      mm "$@"
+
+      # Pin the TURN relay range to the ports this chart publishes.
+      if [ -n "${MADMAIL_RELAY_PORT_MIN:-}" ] && ! grep -q 'relay_port_min' "$CONF"; then
+        awk -v min="$MADMAIL_RELAY_PORT_MIN" -v max="$MADMAIL_RELAY_PORT_MAX" '
+          { print }
+          /^turn[[:space:]]/ { in_turn = 1 }
+          in_turn && /^[[:space:]]*relay_ip[[:space:]]/ {
+            print "    relay_port_min " min
+            print "    relay_port_max " max
+            in_turn = 0
+          }
+        ' "$CONF" > "$CONF.tmp"
+        mv "$CONF.tmp" "$CONF"
+        echo "bootstrap: TURN relay range set to $MADMAIL_RELAY_PORT_MIN-$MADMAIL_RELAY_PORT_MAX"
+      fi
+    fi
+
+    if [ "${MADMAIL_ADMIN_WEB_ENABLED:-false}" = "true" ]; then
+      mm admin-web path "$MADMAIL_ADMIN_WEB_PATH"
+      mm admin-web enable
+    else
+      mm admin-web disable
+    fi
+
+    if [ "${MADMAIL_METRICS_ENABLED:-false}" = "true" ]; then
+      set -- monitor
+      if [ -n "${MADMAIL_MONITOR_PASSWORD:-}" ]; then
+        set -- "$@" --username "$MADMAIL_METRICS_USERNAME" --password "$MADMAIL_MONITOR_PASSWORD"
+      fi
+      mm "$@" enable --ip 0.0.0.0 --port "$MADMAIL_METRICS_PORT"
+    fi
+    echo "bootstrap: done"

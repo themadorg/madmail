@@ -1,0 +1,196 @@
+# Default values for the madmail chart.
+# Full guide: docs/guide/kubernetes.md
+#
+# Madmail keeps its state in SQLite and binds mail ports directly, so the chart
+# always runs exactly ONE pod (StatefulSet, replicas: 1). Do not scale it.
+
+image:
+  repository: ghcr.io/themadorg/madmail
+  # Defaults to the chart appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Server identity and first-run install options.
+# Everything under `madmail` except `adminWeb` and `metrics` is applied only by
+# the first `madmail install` (when /etc/madmail/madmail.conf does not exist on
+# the config volume). Later changes must go through the madmail CLI, the admin
+# API, or an edit of madmail.conf; see docs/guide/kubernetes.md#day-2-operations.
+madmail:
+  # REQUIRED. Public IP clients and other servers reach (LoadBalancer IP or node
+  # IP with hostNetwork). Used for TURN, Iroh and client setup hints. Reserve a
+  # static IP first and set service.loadBalancerIP to the same address.
+  publicIp: ""
+  # Mail domain (user@domain). Empty = IP-only relay (user@[publicIp]).
+  domain: ""
+  # Server hostname (TLS name, SMTP banner). Defaults to `domain`.
+  hostname: ""
+  # Registration page language: en | fa | ru | es
+  lang: en
+
+  tls:
+    # "" = install default (autocert for a domain, self_signed for an IP),
+    # or autocert | self_signed | file.
+    #  - autocert: madmail obtains and renews Let's Encrypt certs itself. Port 80
+    #    of `publicIp` must reach the pod (the Service publishes not-ready
+    #    addresses so the first HTTP-01 challenge reaches the bootstrap container).
+    #  - file: mount an existing kubernetes.io/tls Secret (e.g. from
+    #    cert-manager) via `existingSecret`.
+    mode: ""
+    # Let's Encrypt account email (default admin@<domain>).
+    acmeEmail: ""
+    # tls.mode=file: name of a kubernetes.io/tls Secret with tls.crt / tls.key.
+    # Mounted read-only at /etc/madmail/certs. Restart the pod after the
+    # certificate is renewed (or use a tool such as stakater/Reloader).
+    existingSecret: ""
+
+  turn:
+    # TURN relay UDP range written to madmail.conf at first install. Each
+    # active call leg uses one relay port. Every port is listed on the
+    # Service, and cloud load balancers cap listeners (AWS NLB: 50 by
+    # default), so keep the range small unless hostNetwork is on (then
+    # madmail's default 49152-65535 is kept and these are ignored).
+    relayPortMin: 50000
+    relayPortMax: 50019
+
+  # Iroh relay for WebXDC realtime (TCP 3340).
+  iroh:
+    enabled: false
+
+  # `install --simple` enables the Shadowsocks proxy on TCP 8388. Set to false
+  # to stop publishing the port (the listener itself is managed with
+  # `madmail proxy disable`).
+  shadowsocks:
+    enabled: true
+
+  # Embedded admin web UI. Applied on every pod start.
+  adminWeb:
+    enabled: false
+    # Use a hard-to-guess path on public servers.
+    path: /admin
+
+  # Prometheus metrics (`madmail monitor enable`). Applied on every pod start.
+  metrics:
+    enabled: false
+    port: 9749
+    # Secret with HTTP Basic credentials (keys: `username`, `password`), used by
+    # madmail and the ServiceMonitor. Empty = no auth.
+    existingSecret: ""
+    serviceMonitor:
+      enabled: false
+      interval: 30s
+      labels: {}
+
+  # Extra flags appended to `madmail install` (first run only).
+  installExtraArgs: []
+  # Extra environment for the madmail container.
+  extraEnv: []
+
+# -- Bind directly on the node network. Recommended for production calls (the
+# full TURN relay range works and clients see real source IPs). The Service is
+# then created as ClusterIP for in-cluster access only, and madmail.publicIp
+# must be the node's public IP. Pin the pod with nodeSelector/affinity.
+hostNetwork: false
+
+service:
+  # LoadBalancer (default), NodePort or ClusterIP.
+  type: LoadBalancer
+  # Static IP for the LoadBalancer (cloud-specific; some providers use an
+  # annotation instead). Should equal madmail.publicIp.
+  loadBalancerIP: ""
+  # Local keeps client source IPs (needed for SMTP rate limits, SPF, bans).
+  externalTrafficPolicy: Local
+  annotations: {}
+  labels: {}
+  loadBalancerSourceRanges: []
+  ipFamilyPolicy: ""
+  ipFamilies: []
+  # Put UDP ports (TURN) on a second Service named <fullname>-udp. Use this
+  # when the cloud load balancer cannot mix TCP and UDP on one Service. Both
+  # Services get the same type, annotations and loadBalancerIP; whether two
+  # LoadBalancers may share one IP depends on the provider (e.g. MetalLB
+  # `metallb.universe.tf/allow-shared-ip`).
+  separateUdpService: false
+
+persistence:
+  # /var/lib/madmail — SQLite databases, maildirs, DKIM keys, admin_token.
+  state:
+    size: 10Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    # Use an existing PVC instead of the StatefulSet volumeClaimTemplate.
+    existingClaim: ""
+    annotations: {}
+  # /etc/madmail — madmail.conf and TLS PEMs (written by install / renewal).
+  config:
+    size: 1Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    existingClaim: ""
+    annotations: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+# The image runs as root (it binds ports < 1024 and owns its volumes). The
+# defaults drop every capability except binding low ports.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+    add: [NET_BIND_SERVICE]
+
+resources: {}
+#  requests:
+#    cpu: 100m
+#    memory: 256Mi
+#  limits:
+#    memory: 1Gi
+
+bootstrap:
+  resources: {}
+
+# Probes use TCP connects; madmail has no HTTP health endpoint.
+startupProbe:
+  tcpSocket:
+    port: imaps
+  periodSeconds: 5
+  failureThreshold: 60
+livenessProbe:
+  tcpSocket:
+    port: imaps
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+readinessProbe:
+  tcpSocket:
+    port: smtp
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+terminationGracePeriodSeconds: 30
+priorityClassName: ""
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  # Allow ingress only to madmail's published ports. Egress stays open (mail
+  # delivery, ACME, federation).
+  enabled: false
+  # Extra ingress sources for the metrics port, e.g. the Prometheus namespace.
+  metricsFrom: []

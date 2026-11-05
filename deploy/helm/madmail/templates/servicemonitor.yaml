@@ -1,0 +1,29 @@
+{{- $mt := .Values.madmail.metrics }}
+{{- if and $mt.enabled $mt.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "madmail.fullname" . }}
+  labels:
+    {{- include "madmail.labels" . | nindent 4 }}
+    {{- with $mt.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "madmail.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ $mt.serviceMonitor.interval }}
+      {{- with $mt.existingSecret }}
+      basicAuth:
+        username:
+          name: {{ . }}
+          key: username
+        password:
+          name: {{ . }}
+          key: password
+      {{- end }}
+{{- end }}

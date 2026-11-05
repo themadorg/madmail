@@ -187,10 +187,12 @@ docker run -d \
   -p 3478:3478/udp \
   -p 49152-65535:49152-65535/udp \
   -v /var/lib/madmail:/var/lib/madmail \
-  -v /etc/madmail:/etc/madmail:ro \
+  -v /etc/madmail:/etc/madmail \
   -v /run/madmail:/run/madmail \
   ghcr.io/themadorg/madmail:latest
 ```
+
+`/etc/madmail` is mounted **writable** here: with `tls_mode autocert` the server renews the Let's Encrypt certificate in-process and rewrites `/etc/madmail/certs/*.pem`. A read-only mount is fine only for `self_signed` or `file` TLS.
 
 ### 4. Verify
 
@@ -225,7 +227,7 @@ services:
       - "49152-65535:49152-65535/udp"
     volumes:
       - /var/lib/madmail:/var/lib/madmail
-      - /etc/madmail:/etc/madmail:ro
+      - /etc/madmail:/etc/madmail
       - /run/madmail:/run/madmail
 ```
 
@@ -737,6 +739,38 @@ Use `--user 999:988` only if host paths are owned by the `madmail` system user f
 
 ## Docker Compose example
 
+The repository ships a ready-to-use Compose project in [`deploy/docker/`](../../deploy/docker/). Its one-shot `bootstrap` service runs `madmail install` on the first `up` (only when `/etc/madmail/madmail.conf` does not exist yet), and `madmail` starts after it succeeds:
+
+```bash
+cd deploy/docker
+cp .env.example .env
+# edit .env: MADMAIL_PUBLIC_IP (required), MADMAIL_DOMAIN, MADMAIL_TLS_MODE, …
+docker compose up -d
+docker compose logs -f bootstrap madmail
+docker compose exec madmail madmail admin-token
+```
+
+| `.env` variable | Install flag | Notes |
+|-----------------|--------------|-------|
+| `MADMAIL_PUBLIC_IP` | `--ip` | **Required.** Public IP clients reach (TURN, Iroh, setup hints). |
+| `MADMAIL_DOMAIN` / `MADMAIL_HOSTNAME` | `--domain` / `--hostname` | Empty domain = IP relay. Hostname defaults to the domain. |
+| `MADMAIL_TLS_MODE` | `--tls-mode` | Empty = install default (`autocert` for a domain, `self_signed` for an IP). |
+| `MADMAIL_ACME_EMAIL` | `--acme-email` | Defaults to `admin@<domain>`. |
+| `MADMAIL_ENABLE_IROH` | `--enable-iroh` | `true` turns on the WebXDC relay; `compose.yaml` already publishes TCP 3340. |
+| `MADMAIL_INSTALL_EXTRA_ARGS` | — | Appended to `madmail install`. |
+| `MADMAIL_STATE_DIR` / `MADMAIL_CONFIG_DIR` | — | Host paths (default `/var/lib/madmail`, `/etc/madmail`). |
+| `MADMAIL_TURN_RELAY_PORTS` | — | UDP range published for TURN media (bridged mode only). |
+
+The install variables only matter for the first run. Afterwards change settings with the CLI (`docker compose exec madmail madmail …`), the admin API, or by editing `madmail.conf`, then `docker compose restart madmail`.
+
+For production calls use host networking, which needs no port mappings and keeps real client IPs:
+
+```bash
+docker compose -f compose.yaml -f compose.host-network.yaml up -d
+```
+
+The minimal hand-written equivalent (after a one-off `madmail install`, see [Quick start (domain name)](#quick-start-domain-name)):
+
 ```yaml
 services:
   madmail:
@@ -761,7 +795,7 @@ services:
       - /run/madmail:/run/madmail
 ```
 
-Run `madmail install …` once before `docker compose up -d` (same as [Quick start (domain name)](#quick-start-domain-name)). For TURN-only details see [TURN (calls)](#turn-calls). Iroh is off unless you passed `--enable-iroh` (or ran `iroh install` later); then also map TCP **3340** — see [Iroh (WebXDC realtime)](#iroh-webxdc-realtime).
+For TURN-only details see [TURN (calls)](#turn-calls). Iroh is off unless you passed `--enable-iroh` (or ran `iroh install` later); then also map TCP **3340** — see [Iroh (WebXDC realtime)](#iroh-webxdc-realtime). For Kubernetes see the [Helm chart guide](kubernetes.md).
 
 ## Offline install (save / load)
 
@@ -856,6 +890,7 @@ The Dockerfile uses three stages: admin-web (Bun), Rust compile (Alpine), and Al
 
 ## Related docs
 
+- [Kubernetes (Helm chart)](kubernetes.md)
 - [Delta Chat calls — TURN ports, firewall, Docker](../TDD/20-deltachat-calls.md)
 - [Iroh relay — IMAP METADATA, port 3340](../TDD/11-proxy-services.md#iroh-relay-webxdc-realtime)
 - [`madmail iroh` CLI](cli/iroh.md)

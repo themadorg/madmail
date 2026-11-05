@@ -1,0 +1,123 @@
+# Validate the container deployment assets: Helm chart (lint, render, schema),
+# Compose files, and an end-to-end Compose smoke test against a fresh image.
+
+name: Deploy assets
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - assets/madmail.conf.docker
+      - deploy/**
+      - .github/workflows/deploy.yml
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - assets/madmail.conf.docker
+      - deploy/**
+      - .github/workflows/deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-assets-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KUBECONFORM_VERSION: v0.6.7
+  KUBERNETES_VERSION: 1.30.0
+
+jobs:
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+
+      - name: Lint
+        run: helm lint --strict deploy/helm/madmail --set madmail.publicIp=203.0.113.50
+
+      - name: Render and validate value permutations
+        working-directory: deploy/helm/madmail
+        run: |
+          set -euo pipefail
+          base=(--kube-version "$KUBERNETES_VERSION" --set madmail.publicIp=203.0.113.50)
+          cases=(
+            ""
+            "--set hostNetwork=true"
+            "--set madmail.domain=example.org --set madmail.tls.mode=autocert --set madmail.iroh.enabled=true"
+            "--set madmail.domain=example.org --set madmail.tls.mode=file --set madmail.tls.existingSecret=mm-tls --set madmail.metrics.enabled=true --set madmail.metrics.existingSecret=mm-metrics --set madmail.metrics.serviceMonitor.enabled=true --set networkPolicy.enabled=true"
+            "--set service.separateUdpService=true --set madmail.adminWeb.enabled=true --set persistence.state.existingClaim=mm-state --set service.type=NodePort --set madmail.installExtraArgs[0]=--turn-off-tls"
+            "--set persistence.config.storageClass=- --set madmail.shadowsocks.enabled=false --set madmail.turn.relayPortMax=50000"
+          )
+          for c in "${cases[@]}"; do
+            echo "::group::helm template ${c:-<defaults>}"
+            # shellcheck disable=SC2086
+            helm template mm . "${base[@]}" $c > rendered.yaml
+            kubeconform -strict -summary -ignore-missing-schemas \
+              -kubernetes-version "$KUBERNETES_VERSION" rendered.yaml
+            echo "::endgroup::"
+          done
+
+      - name: Invalid values must fail
+        working-directory: deploy/helm/madmail
+        run: |
+          set -uo pipefail
+          bad=(
+            ""
+            "--set madmail.publicIp=1.2.3.4 --set madmail.tls.mode=file"
+            "--set madmail.publicIp=1.2.3.4 --set madmail.tls.mode=autocert"
+            "--set madmail.publicIp=1.2.3.4 --set madmail.tls.mode=nope"
+            "--set madmail.publicIp=1.2.3.4 --set madmail.turn.relayPortMax=60000"
+          )
+          for c in "${bad[@]}"; do
+            # shellcheck disable=SC2086
+            if helm template mm . $c >/dev/null 2>err.txt; then
+              echo "expected failure for: ${c:-<no publicIp>}" >&2
+              exit 1
+            fi
+            echo "ok (rejected): ${c:-<no publicIp>} -> $(head -n1 err.txt)"
+          done
+
+  compose:
+    name: Compose smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Validate compose files
+        working-directory: deploy/docker
+        run: |
+          cp .env.example .env
+          docker compose config -q
+          docker compose -f compose.yaml -f compose.host-network.yaml config -q
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: madmail-local:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run smoke test
+        run: bash deploy/docker/smoke-test.sh madmail-local:smoke
