@@ -71,7 +71,9 @@ use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 use crate::ctl::secure_fs::cstring;
-use crate::ctl::secure_fs::{fchown, fstat, fstatat_nofollow, kind, openat, read_names, DIR_FLAGS};
+#[cfg(not(target_os = "linux"))]
+use crate::ctl::secure_fs::fchown;
+use crate::ctl::secure_fs::{fstat, fstatat_nofollow, kind, openat, read_names, DIR_FLAGS};
 
 /// Directory levels below the root that are still changed. Install-created
 /// state (databases, DKIM keys, mail directories) is a few levels deep.
@@ -92,6 +94,37 @@ pub struct Skipped {
     pub reason: String,
     /// The entry belongs to another account ([`Action::SkipForeignOwner`]).
     pub foreign_owner: bool,
+    /// The entry is a directory, so it was not entered either.
+    pub is_dir: bool,
+}
+
+/// How the walk gives one checked object to `uid:gid`, through the descriptor
+/// it checked: a directory opened with [`DIR_FLAGS`], or another entry (on
+/// Linux opened with `O_PATH`). [`ByDescriptor`] is the real one; tests record
+/// the calls and inject errors.
+pub trait Chown {
+    fn chown(&mut self, fd: RawFd, path: &Path, uid: u32, gid: u32) -> io::Result<()>;
+}
+
+/// `fchown`, or on Linux `fchownat(fd, "", AT_EMPTY_PATH)`, which also works
+/// on an `O_PATH` descriptor.
+pub struct ByDescriptor;
+
+impl Chown for ByDescriptor {
+    fn chown(&mut self, fd: RawFd, _path: &Path, uid: u32, gid: u32) -> io::Result<()> {
+        #[cfg(target_os = "linux")]
+        {
+            // SAFETY: `fd` is open; the empty path with AT_EMPTY_PATH names
+            // the object `fd` refers to.
+            let rc = unsafe { libc::fchownat(fd, c"".as_ptr(), uid, gid, libc::AT_EMPTY_PATH) };
+            if rc < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
+        #[cfg(not(target_os = "linux"))]
+        fchown(fd, uid, gid)
+    }
 }
 
 /// What the walk does with one object, from its `fstat` data.
@@ -162,13 +195,25 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
 /// [`chown_tree`] for a root directory that is already open (with
 /// [`DIR_FLAGS`]); `root_path` is only used in messages. `old_uid` is the
 /// previous service uid, if any (see [`decide`]). The root is always changed,
-/// after everything below it.
+/// after everything below it, and not at all when the walk fails.
 pub fn chown_tree_fd(
     fd: OwnedFd,
     root_path: &Path,
     uid: u32,
     gid: u32,
     old_uid: Option<u32>,
+) -> Result<Vec<Skipped>, WalkError> {
+    chown_tree_fd_with(fd, root_path, uid, gid, old_uid, &mut ByDescriptor)
+}
+
+/// [`chown_tree_fd`] with the ownership change given by `owner`.
+pub fn chown_tree_fd_with(
+    fd: OwnedFd,
+    root_path: &Path,
+    uid: u32,
+    gid: u32,
+    old_uid: Option<u32>,
+    owner: &mut dyn Chown,
 ) -> Result<Vec<Skipped>, WalkError> {
     let fail = |op, path: &Path, source| WalkError {
         op,
@@ -204,12 +249,13 @@ pub fn chown_tree_fd(
             continue;
         };
         let path = frame.path.join(OsStr::from_bytes(name.to_bytes()));
-        let mut skip = |action: Action| {
+        let mut skip = |action: Action, is_dir: bool| {
             if let Some(reason) = skip_reason(action) {
                 skipped.push(Skipped {
                     path: path.clone(),
                     reason,
                     foreign_owner: matches!(action, Action::SkipForeignOwner { .. }),
+                    is_dir,
                 })
             }
         };
@@ -230,6 +276,7 @@ pub fn chown_tree_fd(
                         path: path.clone(),
                         reason: format!("deeper than {MAX_DEPTH} levels"),
                         foreign_owner: false,
+                        is_dir: true,
                     });
                     continue;
                 }
@@ -246,10 +293,11 @@ pub fn chown_tree_fd(
                 let action = rules.decide(&child_st);
                 if action != Action::Chown {
                     // Not descended: another account's directory.
-                    skip(action);
+                    skip(action, true);
                     continue;
                 }
-                fchown(child.as_raw_fd(), rules.uid, rules.gid)
+                owner
+                    .chown(child.as_raw_fd(), &path, rules.uid, rules.gid)
                     .map_err(|e| fail("chown", &path, e))?;
                 let names = match read_names(&child) {
                     Ok(names) => names,
@@ -267,14 +315,23 @@ pub fn chown_tree_fd(
                     depth,
                 });
             }
-            entry_kind => match chown_entry(frame.fd.as_raw_fd(), &name, entry_kind, &rules) {
-                Ok(action) => skip(action),
+            entry_kind => match chown_entry(
+                frame.fd.as_raw_fd(),
+                &name,
+                &path,
+                entry_kind,
+                &rules,
+                owner,
+            ) {
+                Ok(action) => skip(action, false),
                 Err(e) if changed_under_us(&e) => push_changed(&mut skipped, &path, &e),
                 Err(e) => return Err(fail("chown", &path, e)),
             },
         }
     }
-    fchown(root_fd.as_raw_fd(), uid, gid).map_err(|e| fail("chown", root_path, e))?;
+    owner
+        .chown(root_fd.as_raw_fd(), root_path, uid, gid)
+        .map_err(|e| fail("chown", root_path, e))?;
     Ok(skipped)
 }
 
@@ -287,6 +344,7 @@ fn push_changed(skipped: &mut Vec<Skipped>, path: &Path, e: &io::Error) {
         path: path.to_path_buf(),
         reason: changed_reason(e),
         foreign_owner: false,
+        is_dir: false,
     });
 }
 
@@ -327,7 +385,14 @@ pub fn skip_reason(action: Action) -> Option<String> {
 /// Check and change one non-directory entry through a descriptor for it.
 /// Returns the action taken ([`Action::Chown`] when it was changed).
 #[cfg(target_os = "linux")]
-fn chown_entry(dir: RawFd, name: &CStr, _kind: libc::mode_t, rules: &Rules) -> io::Result<Action> {
+fn chown_entry(
+    dir: RawFd,
+    name: &CStr,
+    path: &Path,
+    _kind: libc::mode_t,
+    rules: &Rules,
+    owner: &mut dyn Chown,
+) -> io::Result<Action> {
     // O_PATH opens the entry itself (a link too) without reading it.
     let fd = openat(
         dir,
@@ -341,20 +406,7 @@ fn chown_entry(dir: RawFd, name: &CStr, _kind: libc::mode_t, rules: &Rules) -> i
     }
     let action = rules.decide(&st);
     if action == Action::Chown {
-        // SAFETY: `fd` is open; the empty path with AT_EMPTY_PATH names the
-        // object `fd` refers to.
-        let rc = unsafe {
-            libc::fchownat(
-                fd.as_raw_fd(),
-                c"".as_ptr(),
-                rules.uid,
-                rules.gid,
-                libc::AT_EMPTY_PATH,
-            )
-        };
-        if rc < 0 {
-            return Err(io::Error::last_os_error());
-        }
+        owner.chown(fd.as_raw_fd(), path, rules.uid, rules.gid)?;
     }
     Ok(action)
 }
@@ -363,8 +415,10 @@ fn chown_entry(dir: RawFd, name: &CStr, _kind: libc::mode_t, rules: &Rules) -> i
 fn chown_entry(
     dir: RawFd,
     name: &CStr,
+    path: &Path,
     entry_kind: libc::mode_t,
     rules: &Rules,
+    owner: &mut dyn Chown,
 ) -> io::Result<Action> {
     if entry_kind != libc::S_IFREG {
         // Without O_PATH, a FIFO, socket or device would have to be opened.
@@ -377,7 +431,7 @@ fn chown_entry(
     }
     let action = rules.decide(&st);
     if action == Action::Chown {
-        fchown(fd.as_raw_fd(), rules.uid, rules.gid)?;
+        owner.chown(fd.as_raw_fd(), path, rules.uid, rules.gid)?;
     }
     Ok(action)
 }
@@ -490,7 +544,15 @@ mod tests {
         };
         for (name, links) in [("single", 1), ("linked", 2), ("linked2", 2)] {
             let c = CString::new(name).unwrap();
-            let action = chown_entry(fd.as_raw_fd(), &c, libc::S_IFREG, &rules).unwrap();
+            let action = chown_entry(
+                fd.as_raw_fd(),
+                &c,
+                Path::new(name),
+                libc::S_IFREG,
+                &rules,
+                &mut ByDescriptor,
+            )
+            .unwrap();
             assert_eq!(action, Action::SkipForeignOwner { owner: uid, links });
         }
         assert_eq!(owner(&root.join("single")), (uid, gid));
@@ -644,7 +706,15 @@ mod tests {
             uid: 0,
             gid: 0,
         };
-        let e = chown_entry(fd.as_raw_fd(), &name, libc::S_IFREG, &rules).unwrap_err();
+        let e = chown_entry(
+            fd.as_raw_fd(),
+            &name,
+            Path::new("vanished"),
+            libc::S_IFREG,
+            &rules,
+            &mut ByDescriptor,
+        )
+        .unwrap_err();
         assert!(changed_under_us(&e), "{e:?}");
         fs::write(state.path().join("file"), "x").unwrap();
         let file = CString::new("file").unwrap();
@@ -654,6 +724,75 @@ mod tests {
         let link = CString::new("link").unwrap();
         let e = openat(fd.as_raw_fd(), &link, DIR_FLAGS, 0).unwrap_err();
         assert!(changed_under_us(&e), "{e:?}");
+    }
+
+    /// Records every change and fails the one for `fail_at`, with `EIO`
+    /// (an error that stops the walk); the others are applied.
+    struct Recorder {
+        calls: Vec<PathBuf>,
+        fail_at: Option<PathBuf>,
+    }
+
+    impl Chown for Recorder {
+        fn chown(&mut self, fd: RawFd, path: &Path, uid: u32, gid: u32) -> io::Result<()> {
+            self.calls.push(path.to_path_buf());
+            if self.fail_at.as_deref() == Some(path) {
+                return Err(io::Error::from_raw_os_error(libc::EIO));
+            }
+            ByDescriptor.chown(fd, path, uid, gid)
+        }
+    }
+
+    fn walk_with(root: &Path, fail_at: Option<PathBuf>) -> (Recorder, Result<(), WalkError>) {
+        let (uid, gid) = owner(root);
+        let c_root = cstring(root.as_os_str()).unwrap();
+        let fd = openat(libc::AT_FDCWD, &c_root, DIR_FLAGS, 0).unwrap();
+        let mut recorder = Recorder {
+            calls: Vec::new(),
+            fail_at,
+        };
+        let result = chown_tree_fd_with(fd, root, uid, gid, Some(uid), &mut recorder);
+        (recorder, result.map(drop))
+    }
+
+    #[test]
+    fn the_root_is_changed_last_and_not_at_all_after_a_failure() {
+        let state = tempfile::tempdir().unwrap();
+        let root = state.path();
+        fs::create_dir_all(root.join("a/b")).unwrap();
+        fs::write(root.join("a/b/file"), "x").unwrap();
+        fs::write(root.join("top"), "x").unwrap();
+
+        let (recorder, result) = walk_with(root, None);
+        result.unwrap();
+        let mut sorted = recorder.calls.clone();
+        sorted.sort();
+        let expected: Vec<PathBuf> = ["", "a", "a/b", "a/b/file", "top"]
+            .iter()
+            .map(|p| {
+                if p.is_empty() {
+                    root.to_path_buf()
+                } else {
+                    root.join(p)
+                }
+            })
+            .collect();
+        assert_eq!(sorted, expected);
+        assert_eq!(recorder.calls.last(), Some(&root.to_path_buf()));
+        assert_eq!(recorder.calls.iter().filter(|p| *p == root).count(), 1);
+
+        // A failure in the middle of the walk stops it before the root.
+        let (recorder, result) = walk_with(root, Some(root.join("a/b/file")));
+        let err = result.unwrap_err();
+        assert_eq!(
+            (err.op, err.path.as_path()),
+            ("chown", root.join("a/b/file").as_path())
+        );
+        assert!(
+            !recorder.calls.iter().any(|p| p == root),
+            "{:?}",
+            recorder.calls
+        );
     }
 
     #[test]
