@@ -87,7 +87,11 @@ Some directories are never removed as a whole, whatever their source: `/`,
 `/etc`, `/usr`, `/usr/local`, `/usr/local/etc`, `/opt`, `/srv`, `/var`,
 `/var/lib`, `/var/log`, `/var/cache`, `/var/mail`, `/home`, `/root`, `/tmp` and
 other system directories, every directory directly under `/` (such as `/data` or
-`/madmail`), every `/home/<name>`, and the home of root,
+`/madmail`), every directory below `/etc`, `/usr`, `/lib`, `/lib32`, `/lib64`,
+`/libx32`, `/bin`, `/sbin`, `/boot`, `/dev`, `/proc`, `/sys` or `/run` none of
+whose components below the top-level one is named for madmail (such as
+`/etc/systemd`; `/etc/madmail` and `/etc/madmail/data` are named for it), every
+`/home/<name>`, and the home of root,
 of each regular account (uid 1000 or more) in `/etc/passwd`, of `$HOME` and of the
 `sudo` caller. The service accounts being removed are excluded, because their
 home is the state directory. Both the path as written and its resolved form are
@@ -113,8 +117,18 @@ Before each removal, every directory and link on the way to the path must pass
 the same check as the config file above. When one does not, nothing is removed
 at that path, the output prints
 `⚠️  Left in place: <path> (<component> is <reason>; check it and remove the path yourself)`,
-and uninstall goes on with the next path. The path is listed again with the
-other paths left in place when uninstall finishes. The last component is not
+and uninstall goes on with the next path. A removal that fails for another
+reason (for example a file that cannot be unlinked or a mount point) is also
+left in place, as
+`⚠️  Left in place: <path> (removing it failed: <error>; remove it yourself)`,
+and uninstall goes on. The path is listed again with the
+other paths left in place when uninstall finishes. When the groups of a service
+account cannot be read, uninstall prints
+`⚠️  <why>; no directory writable by a group other than root is trusted on the way to a path to remove`:
+the groups of the service are then only the groups that own the state
+directories, and the `/var/log` and `/var/mail` allowance in the check is turned
+off, so a directory on the way that is writable by a group other than root,
+without the sticky bit, leaves the path in place. The last component is not
 followed: a link is removed itself, not its target (the output says
 `Removed link <path> (its target <target> was left in place)`), and a directory is
 removed through descriptors from its checked parent down, without following
@@ -142,6 +156,7 @@ The plan, the final output (`Left in place: <path> (<reason>)`) and the JSON
 |--------|---------|
 | `well-known system directory` | A directory from the deny list, such as `/var/lib`. |
 | `top-level directory` | Any other direct child of `/`, such as `/data`. |
+| `directory below /etc, /usr or another system directory` | A directory below `/etc`, `/usr`, `/lib`, `/bin`, `/sbin`, `/boot`, `/dev`, `/proc`, `/sys` or `/run` (and the other trees listed above) that is not named for madmail, such as `/etc/systemd`. |
 | `user home directory` | `/home/<name>`, `/Users/<name>` or a real account's home. |
 | `shared directory, not named for madmail; remove it yourself` | A state directory that does not follow the naming rule. |
 | `<why>; only <binary>.conf is removed` | A config directory that is not removed as a whole; `<why>` is one of the two reasons above, `shared directory, not named for madmail`, or a `contains ...` reason below. |
@@ -152,6 +167,7 @@ The plan, the final output (`Left in place: <path> (<reason>)`) and the JSON
 | `contains <path>, which --keep-config keeps; remove the rest yourself` | A state, log, cache or runtime directory that contains the config. |
 | `named by state_dir in <config>, which is not used: <why>` | `state_dir` from a config file that failed the check above. |
 | `inside state directory <path>, which --keep-data keeps` | A config directory or file inside a state directory kept by `--keep-data`. |
+| `removing it failed: <error>; remove it yourself` | The removal itself failed, for example because a file could not be unlinked. Uninstall went on with the other paths. |
 | `<component> is <reason>; check it and remove the path yourself` | A path whose way runs through a directory or link that failed the check above. It is listed whatever `--keep-config` and `--keep-data` say. |
 
 For a config directory the `contains` reasons read

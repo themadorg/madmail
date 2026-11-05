@@ -78,10 +78,15 @@ account; with `--skip-user`, only when the file they replace belongs to the
 service account. See [Path safety](#path-safety). Before changing anything,
 install refuses a `--state-dir` that is not a directory of its own: a well-known
 system directory such as `/var/lib` or `/etc`, any directory directly under `/`
-(such as `/data`), a user's home directory (`/home/<name>`), a path that resolves
-to one of these, and an existing directory that belongs to another named account
-(neither root nor the service account). Use a directory of its own, such as
-`/var/lib/madmail`. Before changing anything,
+(such as `/data`), a user's home directory (`/home/<name>`), a directory below
+`/etc`, `/usr`, `/lib`, `/bin`, `/sbin`, `/boot`, `/dev`, `/proc`, `/sys` or
+`/run` that is not named for madmail (such as `/etc/systemd`; `/etc/madmail/data`
+is allowed), a path that resolves to one of these, an existing directory that
+belongs to another named account (neither root nor the service account), and
+an existing directory whose owner cannot be looked up because the account
+database cannot be read. Use a directory of its own, such as
+`/var/lib/madmail`. Install also stops when the service account exists but its
+groups cannot be read. Before changing anything,
 a full install refuses a symlinked or masked unit file (`systemctl unmask` it
 first). If the service account already exists with a home elsewhere that still
 exists, and the `--state-dir` already exists (for example a pre-created mount
@@ -165,13 +170,23 @@ directory while install runs.
   `This directory was not entered: its contents were left unchanged and need manual inspection.`
   Each listed file is followed by the steps to give it to the service account:
   stop the service (`systemctl stop <unit>`) and every process of the service
-  account (`pkill -u <user>`; `ps -u <user>` must then list none), check that
-  the file has one link (`stat -c %h <path>` must print 1), then run
-  `chown -h <user>:<group> <path>`. `chown -h` does not follow a link at the
-  file's own name, but the directories on the way to it are looked up again by
-  name, which is why the service account must not be running. Check such a file
-  (it may be a hard link to another account's file) and do this only if madmail
-  needs it, for example for a database file that a root command created. Mail
+  account (`pkill -u <user>`; `ps -u <user>` must then list none); when the
+  file's uid now belongs to another account, also lock and stop that account
+  (`usermod -L <name>`; `pkill -u <name>`; `ps -u <name>` must then list none);
+  do not change the file if it has more than one hard link (`stat -c %h <path>`
+  prints more than 1), and since one link does not prove that it is madmail's
+  file, compare its content with what madmail writes there, or remove it and
+  let madmail create it again; then run `chown -h <user>:<group> <path>`. The
+  line ends with that command. `chown -h` does not follow a link at the file's
+  own name, but the directories on the way to it are looked up again by name,
+  which is why no process of those accounts may run. Check such a file (it may
+  be a hard link to another account's file) and do this only if madmail needs
+  it, for example for a database file that a root command created. The same
+  steps follow a root-owned TLS file in the state directory and an in-tree file
+  install refuses to read, but only when every directory from the state
+  directory down to the file belongs to root or the service account and no
+  other account can write it; otherwise the output says that the file needs
+  manual inspection and prints no command. Mail
   files, which the store hard-links between folders, belong to the service and
   are changed. The state directory itself is changed last, and not at all when
   the walk stops with an error, so an interrupted run can be repeated.
@@ -179,9 +194,19 @@ directory while install runs.
   before the account is created or changed:
   `it belongs to account <name> (uid <uid>), not to root or to the service account`.
   This happens when the service account was deleted and its old uid was given
-  to another account. To keep the data, give the directory itself to root
-  (`chown -h root:root <state dir>`) and run install again: the files of that
-  uid in it are then listed and left unchanged for you to check.
+  to another account. To keep the data, first lock that account and stop its
+  processes as well as the service (`usermod -L <name>`; `pkill -u <name>`;
+  `ps -u <name>` must then list none): it owns the directories and files of
+  that uid and could otherwise move them while you work. Then give the
+  directory itself to root (`chown -h root:root <state dir>`) and run install
+  again: the files and directories of that uid in it are then listed and left
+  unchanged for you to check. List them with
+  `find <state dir> -xdev -uid <n> -ls`, check them, then hand over directories
+  and single-link files with
+  `find <state dir> -xdev -uid <n> \( -type d -o -type f -links 1 \) -exec chown -h <user>:<group> {} +`.
+  `find -exec` and `chown` look up every directory on the way again by name, so
+  neither account may have a running process. Check files with more than one
+  hard link one by one.
 - Paths in the output are printed with control characters and bytes that are
   not UTF-8 escaped (`\n`, `\t`, `\xNN`, `\u{NNNN}`), so a file name in the
   state directory cannot add a line to the output. In the commands printed for
@@ -381,6 +406,8 @@ written successfully before daemon-reload fails.
 | Missing user/group or systemd `217/USER` | Stop the service if present, run `--user-only` with the original paths, then retry. |
 | Missing unit or wrong `ExecStart` paths | Ensure the account, config, state and installed binary exist; run `--systemd-only` with all original paths. |
 | `... is a symlink (masked?)` | The unit path is a symlink, for example from `systemctl mask`. Full install checks this before any other step; unit repair before writing. Run `systemctl unmask <name>` (or remove the link) and retry. |
+| `refusing to use state directory ...: it is a directory below /etc, /usr or another system directory` | The state directory is inside the system's own files. Use a directory of its own, such as `/var/lib/madmail`, or one named for madmail. |
+| `refusing to use state directory ...: cannot look up the owner (uid ...)` or `cannot read the groups of account ...` | The account database (for example an NSS service such as LDAP or sssd) cannot be read. Fix the lookup and retry; install does not guess. |
 | `... already exists; a full install would leave the data in ... behind` | The account's home differs from an existing `--state-dir`. Move the data into the new state directory if needed, run `--user-only` with the same paths to repoint the account, then rerun the full install. |
 | `systemd-only requires an existing executable binary` | Supply the correct installed executable and ensure executable permissions; unit repair does not copy it. |
 | `systemctl daemon-reload failed` | Inspect the written unit and systemd availability, fix the cause, then retry. Use local bootstrap in environments without host systemd. |

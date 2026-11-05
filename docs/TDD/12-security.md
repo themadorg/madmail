@@ -140,9 +140,13 @@ loops), link and hard-link anything there while root runs, and
 
 - Install and both repair modes refuse, before `useradd` or `usermod`, a state
   directory that is not madmail's own: a well-known system directory (as given,
-  after links, or by device and inode), a direct child of `/` or a user's home
-  directory (as given or after links), or an existing directory that belongs to
-  another named account. Install
+  after links, or by device and inode), a direct child of `/`, a user's home
+  directory, or a directory below `/etc`, `/usr`, `/lib`, `/bin`, `/sbin`,
+  `/boot`, `/dev`, `/proc`, `/sys`, `/run` (or `/lib32`, `/lib64`, `/libx32`)
+  none of whose components below the top-level one is named for madmail (as
+  given or after links; `/etc/madmail/data` passes, `/etc/systemd` does not),
+  or an existing directory that belongs to another named account or whose
+  owner cannot be looked up. Install
   gives the state directory and what is in it to the service account, so such a
   directory would hand system or another account's files to it.
 - Install resolves every path it writes into the state directory, and the paths
@@ -169,16 +173,25 @@ loops), link and hard-link anything there while root runs, and
   original name is replaced by a rename. So a file root owns, for example the
   config file root just wrote outside the tree and the service linked into it,
   is never handed over. A state directory whose owner's uid now names another
-  account (`id -nu`) is refused before the walk. The state directory itself is
-  changed last, and not when the walk fails.
+  account (`getpwuid_r`) is refused before the walk, and so is one whose owner
+  cannot be looked up because the account database cannot be read. Install also
+  stops when the service account exists but its groups cannot be read
+  (`getpwnam_r`, then `id -G`), since a group it does not know of could write a
+  directory it would trust. The state directory itself is changed last, and not
+  when the walk fails.
 - A TLS file of another account outside the state directory is given to the
   service account only in a directory dedicated to madmail or in the Let's
   Encrypt `live`/`archive` layout, and only with one hard link.
 - Paths are printed escaped and commands are printed shell-quoted, so a file name
   the service account chose cannot add lines to the output or to a command the
   operator copies. The printed steps for a file stop the service and every
-  process of its account before `chown -h`, because `chown` resolves the
-  directories on the way again by name.
+  process of its account, and of the account that now has the file's uid when
+  one has, before `chown -h`, because `chown` resolves the directories on the way
+  again by name; they end with the command. They say not to change a file with
+  more than one hard link, and that one link does not prove the file is
+  madmail's. A file inside the state directory that is reached through a
+  directory another account owns or can write gets no command, only a note
+  that it needs manual inspection.
 - The config file's owner and mode are set after the walk, so they are final.
 - The ACME client writes only into a root-owned 0700 staging directory.
 - Directories outside the state directory are re-owned or re-moded only when they
@@ -189,8 +202,8 @@ loops), link and hard-link anything there while root runs, and
   uses a config file's `state_dir` only when that file and its path pass the
   root-only trust rule below and the file has one hard link, and removes a path
   only after checking every directory and link on the way to it under the same
-  rule, without following the last component. A path whose way fails the check
-  is left in place and reported, and uninstall goes on. Directories are removed
+  rule, without following the last component. A path whose way fails the check,
+  or whose removal fails, is left in place and reported, and uninstall goes on. Directories are removed
   through descriptors (`openat` with `O_NOFOLLOW`, `unlinkat`) from the checked
   parent down. A config path inside a state directory goes with that directory.
 - The root-only trust rule (`Trust::root_only`, used by uninstall and for the
@@ -200,7 +213,7 @@ loops), link and hard-link anything there while root runs, and
   the groups of the service are those of every service account found, the group of the config
   file's directory and the groups of the state directories; when an account
   exists but its groups cannot be read, the config file's `state_dir` is not
-  used. Two directories are allowed to be group-writable by another system group:
+  used and the allowance below is turned off. Two directories are allowed to be group-writable by another system group:
   `/var/log` and `/var/mail`, matched by device and inode
   (`secure_fs::WELL_KNOWN_GROUP_DIRS`), and only when that group is not a group
   of the service. Ubuntu ships `/var/log` as `root:syslog` 0775 and Debian ships

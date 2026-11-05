@@ -34,27 +34,45 @@ owner. These are protections, not errors: the service account can write to its
 state directory, so install does not follow links there. Check the named file
 and, if madmail needs it, change its owner yourself with the steps the output
 prints: stop the service (`systemctl stop madmail`) and every process of the
-service account (`pkill -u madmail`; `ps -u madmail` must then list none), check
-the link count (`stat -c %h <path>` must print 1), then run
-`chown -h madmail:madmail <path>`. The service must be stopped first because
+service account (`pkill -u madmail`; `ps -u madmail` must then list none). When
+the file's uid now belongs to another account, the steps also lock and stop that
+account (`usermod -L <name>`; `pkill -u <name>`; `ps -u <name>` must then list
+none). Do not change the file if it has more than one hard link
+(`stat -c %h <path>` prints more than 1). One link does not prove that it is
+madmail's file, so compare its content with what madmail writes there, or remove
+it and let madmail create it again. The printed steps end with the command
+`chown -h madmail:madmail <path>`. The processes must be stopped first because
 `chown` looks up the directories on the way to the file again by name, and a
-running service account could replace one of them with a link. For a directory
+running process of those accounts could replace one of them with a link. When a
+directory on the way to the file belongs to another account or can be written by
+one, the output prints no command and says that the file needs manual
+inspection. For a directory
 of another account the output says that it was not entered and that its contents
 were left unchanged; inspect it yourself. Keep certificates and the config file
 in root-owned directories outside the state directory.
 
 When install refuses the state directory because
 `it belongs to account <name> (uid <n>), not to root or to the service account`,
-the old service uid was reused by another account. To keep the data, give the
-directory itself to root (`chown -h root:root <state>`) and run install again:
-files and directories of uid `<n>` in it are then listed and left as they are.
-Give them to the service account yourself after checking them, with the service
-stopped as above, for example
-`find <state> -uid <n> -exec chown -h madmail:madmail {} +`. `find` also looks up
-each path again by name, so the service account must not be running. Install
-also refuses a well-known system directory, a directory directly under `/` or a
-user's home directory as `--state-dir`; use a directory of its own such as
-`/var/lib/madmail`.
+the old service uid was reused by another account. That account owns the files
+and directories of uid `<n>` and can move them while you work, so first lock it
+and stop its processes and the service (`usermod -L <name>`;
+`pkill -u <name>`; `ps -u <name>` must then list none; `systemctl stop madmail`).
+To keep the data, give the directory itself to root
+(`chown -h root:root <state>`) and run install again: files and directories of
+uid `<n>` in it are then listed and left as they are. List them with
+`find <state> -xdev -uid <n> -ls` and check them. Then give directories and
+single-link files to the service account with
+`find <state> -xdev -uid <n> \( -type d -o -type f -links 1 \) -exec chown -h madmail:madmail {} +`
+and check files with more than one hard link one by one. `find -exec` and
+`chown` look up each path again by name, so neither account may have a running
+process. Install also refuses a well-known system directory, a directory
+directly under `/`, a user's home directory, and a directory below `/etc`,
+`/usr`, `/lib`, `/bin`, `/sbin`, `/boot`, `/dev`, `/proc`, `/sys` or `/run`
+that is not named for madmail (such as `/etc/systemd`) as `--state-dir`; use a
+directory of its own such as `/var/lib/madmail`. It also stops when the
+account database cannot be read (for example when an NSS service such as LDAP is
+down): the owner of an existing state directory or the groups of the service
+account must be known before install trusts anything there.
 
 An error that starts with `refusing to` stops install before it writes the file.
 It names the directory or link on the path that the service account can change,

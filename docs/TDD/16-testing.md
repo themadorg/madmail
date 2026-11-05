@@ -462,6 +462,36 @@ with no name. There are 47 `ctl::install`, 33 `ctl::uninstall`, 11
 `ctl::secure_fs` and 3 `ctl::host_paths` unit tests on a Unix host after these
 fixes.
 
+The next fixes look up account names with `getpwuid_r` (BusyBox `id` takes no
+numeric uid, and an NSS failure looked like "no account") and refuse a state
+directory whose owner cannot be looked up; stop install when the service
+account's groups cannot be read; refuse a state directory below `/etc`, `/usr`
+and the other system directories unless it is named for madmail; print steps
+that also lock and stop the account that now has a file's uid, that say a link
+count of 1 proves nothing, and that end with the command; print no command for
+a file inside the tree reached through another account's directory; escape the
+paths of uninstall's JSON `left_in_place`; and in uninstall turn off the
+`/var/log` and `/var/mail` allowance when groups cannot be read and leave a path
+whose removal fails in place. New unit tests cover `account_name` and
+`account_groups_checked` (a missing account against a lookup error), a lookup
+error that refuses the state directory (`check_state_root_with` with an injected
+lookup), the system-tree rule (`/etc/systemd`, `/lib/systemd/system` refused,
+`/etc/madmail/data`, `/srv/m2` allowed), the printed steps (`file_chown_hint`
+and `in_tree_file_hint`), JSON escaping of DEL, C1 and bidirectional characters
+through `shown`, an injected group lookup error in `uninstall_state_dir_with`
+and `set_service_groups`, the allowance turned off by `without_group_dirs`, and
+a removal that fails on a read-only directory. Docker cases: `--state-dir
+/etc/systemd` and `/usr/lib/systemd/system` refused by install and by
+`--user-only` with passwd, group and the owners and modes of `/etc/systemd`,
+`/etc/systemd/system` and `/usr/lib/systemd` unchanged; whole printed lines
+for the walk's and the in-tree TLS steps (`grep -qxF`); the steps for a file of
+the reused uid naming `uidsquatter`; and the documented recovery (lock the
+account, check `/proc` for its processes, list with `find -xdev -uid <n> -ls`,
+then change directories and single-link files). There are 48 `ctl::install`,
+35 `ctl::uninstall`, 12 `ctl::secure_fs` and 3 `ctl::host_paths` unit tests on
+a Unix host after these fixes. Uninstall's removal error path and the
+unreadable-groups path are covered only by unit tests.
+
 The full Docker suite passed with a Linux aarch64 musl debug build of these fixes.
 Its output was:
 
@@ -469,7 +499,7 @@ Its output was:
 PASS: mode conflicts, automatic/explicit modes, JSON plans, invalid paths and certificate-only plan
 PASS: dry-run side effects, non-root system rejection and local host isolation
 PASS: missing parents, home paths, migration data preservation, failed-move rollback and pre-created state refusal
-PASS: system, top-level, home and linked system directories and another account's directory are refused as state directory before the account or any owner changes
+PASS: system, top-level, home, system-tree (such as /etc/systemd) and linked system directories and another account's directory are refused as state directory before the account or any owner changes
 PASS: custom-path account, ownership, binary/docs, unit verification, service-user boot and idempotence
 PASS: each skip flag independently and combined, JSON results, escaped binary and state paths
 PASS: non-root local install and propagated systemd failure

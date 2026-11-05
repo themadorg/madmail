@@ -276,15 +276,20 @@ with mode 0644 regardless of the process umask.
 Install and both repair modes run `system::check_state_dir` before `useradd` or
 `usermod` (which name the state directory as the home) and before the dry-run
 return. It refuses a `--state-dir` for which `host_paths::system_dir_reason`
-gives a reason (a directory in `DENIED_DIRS`, any direct child of `/`, or a
-direct child of `/home` or `/Users`), checked on the path as given and on the
-physical path after the operator's links; one with the device and inode of a
-`DENIED_DIRS` entry (`is_denied_dir_id`); and an existing directory whose owner
-is neither root nor the service uid and has an account name (`id -nu`). The last
-case is a service account that was deleted and whose uid was given to another
-account; the message tells the operator to give the directory itself to
-`root:root` and run again, after which the files of that uid are listed by the
-walk and left unchanged. `SecureInstall::open` repeats these checks on the
+gives a reason (a directory in `DENIED_DIRS`, any direct child of `/`, a direct
+child of `/home` or `/Users`, or a directory below one of `SYSTEM_TREES`
+(`/bin`, `/boot`, `/dev`, `/etc`, `/lib`, `/lib32`, `/lib64`, `/libx32`,
+`/proc`, `/run`, `/sbin`, `/sys`, `/usr`) none of whose components below the
+top-level one is a family name or the binary's name), checked on the path as
+given and on the physical path after the operator's links; one with the device
+and inode of a `DENIED_DIRS` entry (`is_denied_dir_id`); and an existing
+directory whose owner is neither root nor the service uid and has an account
+name (`secure_fs::account_name`, which calls `getpwuid_r`). An owner whose
+lookup fails (an error other than "not found", for example an NSS service that
+is down) is refused as well. The case of a named owner is a service account
+that was deleted and whose uid was given to another account; the message tells
+the operator to give the directory itself to `root:root` and run again, after
+which the files of that uid are listed by the walk and left unchanged. `SecureInstall::open` repeats these checks on the
 directory it opens. Uninstall uses the same `system_dir_reason`.
 Tests cover CLI conflicts, default/auto/explicit modes, custom unit paths, dry-run
 side-effect absence, root enforcement and isolated installation/idempotence.
@@ -322,7 +327,10 @@ never run when a component is refused:
   Every directory and link on the way is checked with `fstat` /
   `fstatat(AT_SYMLINK_NOFOLLOW)` and refused when it is owned by the service uid
   (or by the previous owner of the state directory), is a directory writable by
-  a group of the service account (primary or supplementary, from `id -G`), or is
+  a group of the service account (primary or supplementary, from
+  `secure_fs::account_groups_checked`: `getpwnam_r` for the account, then
+  `id -G`; install stops when the account exists but its groups cannot be
+  read), or is
   world-writable without the sticky bit. Uid 0 and gid 0 never count as the
   service. Only mode bits are read, so a POSIX ACL entry for the service account
   is caught only when the directory's group is one of its groups. Because every directory passed through is trusted, an
@@ -432,21 +440,34 @@ maildirs, and those files belong to the service. Skipped entries are listed as
 `Ownership of <path> left unchanged: <reason>` (the first 50, then a count). A
 directory of another account is followed by a line saying that it was not entered
 and that its contents were left unchanged and need manual inspection. A file of
-another account is followed by the steps to give it to the service account: stop
-the service and every process of the account (`systemctl stop <unit>`,
-`pkill -u <user>`, `ps -u <user>`), check `stat -c %h <path>` prints 1, then
-`chown -h <user>:<group> <path>`. `chown -h` does not follow a link at the last
-component, but the directories on the way are resolved again by name, so the
-service account must not be running. A file a root command created in the tree is
-among them, and the operator runs these steps after checking that it is
-madmail's own file. Every path in the human output of install and uninstall goes
+another account is followed by the steps to give it to the service account
+(`file_chown_hint`): stop the service and every process of the account
+(`systemctl stop <unit>`, `pkill -u <user>`, `ps -u <user>`), and, when the
+file's uid has an account name other than root's and the service's, lock and
+stop that account too (`usermod -L <name>`, `pkill -u <name>`,
+`ps -u <name>`); do not change the file if `stat -c %h <path>` prints more than
+1, and since one link does not prove it is madmail's file, compare its content
+with what madmail writes there or remove it and let madmail create it again;
+then `chown -h <user>:<group> <path>`, which ends the line. `chown -h` does not
+follow a link at the last component, but the directories on the way are
+resolved again by name, so no process of those accounts may run. The walk
+prints these steps only for entries below directories it entered, which are
+the service account's. A file inside the tree that install refuses to read, or a
+TLS file there, gets them only when every directory from the state root down to
+it belongs to root or the service account and is writable by no other group and
+by others only with the sticky bit (`tree_dirs_are_root_or_service`); otherwise
+the output says that a directory on the way belongs to another account or can
+be written by one and that the file needs manual inspection. A file a root
+command created in the tree is among them, and the operator runs these steps
+after checking that it is madmail's own file. Every path in the human output of install and uninstall goes
 through `host_paths::shown`, which escapes `\`, `\n`, `\r`, `\t`, other
 control characters (`\xNN`, or `\u{NNNN}` beyond ASCII), bidirectional and
 line-separator characters and bytes that are not UTF-8; the commands printed use
 `host_paths::shell_quote`, which leaves a path of safe characters as it is,
 single-quotes other UTF-8 text and writes any path with such characters or bytes
-as `$'...'` with `\xNN` escapes. JSON output carries the path as a string, and
-serde escapes the control characters below U+0020.
+as `$'...'` with `\xNN` escapes. JSON output carries paths as strings; serde
+escapes only the control characters below U+0020, so the paths of uninstall's
+`left_in_place` list also go through `host_paths::shown`.
 An entry that is replaced or removed during the walk (`ELOOP`, `ENOTDIR`,
 `ENOENT`) is skipped with a warning. The walk is iterative and stops descending
 after 64 levels, each open level holding one descriptor.
@@ -491,8 +512,9 @@ sticky bit, or world-writable without the sticky bit. `/var/log` and `/var/mail`
 matched by `(dev, ino)`, may be group-writable by a group that is not a group of
 the service. The groups of the service are the primary and supplementary groups
 of every account found (the `User=` accounts of the units and the accounts named
-like the binary, `madmail` or `chatmail`; read with `id -G`, and when an account
-exists but its groups cannot be read, the config file is not used), the group of
+like the binary, `madmail` or `chatmail`; read with
+`secure_fs::account_groups_checked`, and when an account exists but its groups
+cannot be read, the config file is not used), the group of
 the config file's directory and the groups of the state directories (from the
 config file and from `--state-dir`). Otherwise uninstall uses
 `--state-dir` and lists the ignored value as left in place, unless another source
@@ -507,7 +529,9 @@ but kept, since nothing records whether install generated them. Any other state
 directory is kept, also when it is given with `--state-dir`. Well-known system
 directories (`/`, `/etc`, `/usr`, `/usr/local`, `/usr/local/etc`, `/opt`, `/srv`,
 `/var`, `/var/lib`, `/home`, `/root`, `/tmp` and others), every other direct child
-of `/` (`system_dir_reason`, shared with install), every `/home/<name>`, and
+of `/`, every directory below `/etc`, `/usr` and the other `SYSTEM_TREES` that is
+not named for madmail (`system_dir_reason`, shared with install), every
+`/home/<name>`, and
 the homes of root, regular accounts (uid 1000 or more except `nobody`), `$HOME` and
 `$SUDO_USER` are denied, checked both lexically and after resolution.
 
@@ -526,9 +550,15 @@ listed as kept (`inside state directory <path>, which --keep-data keeps`).
 Before each removal the parent of the path is resolved with the checked resolver
 under the same rule (Ubuntu's `/var/log`, root:syslog 0775, passes through the
 `(dev, ino)` allowance above); a path with a component that fails it is not
-removed: `remove_path` returns it as a `KeptKind::Refused` entry, the output
-prints `⚠️  Left in place: <path> (<component> is <reason>; check it and remove the path yourself)`,
-and the run goes on. Refused entries are shown at the end and in `left_in_place`
+removed: `UninstallPlan::remove` returns it as a `KeptKind::Refused` entry, the
+output prints `⚠️  Left in place: <path> (<component> is <reason>; check it and remove the path yourself)`,
+and the run goes on. A removal that fails (an `unlinkat` error, a directory that
+still has entries after 8 listings, a tree deeper than 256 levels) is handled
+the same way, with the reason `removing it failed: <error>; remove it yourself`.
+When the groups of an account found cannot be read, the removal trust has no
+service groups but those owning the state directories, and the `/var/log` and
+`/var/mail` allowance is turned off (`Trust::without_group_dirs`), and the
+output says so. Refused entries are shown at the end and in `left_in_place`
 whatever the keep flags. The last
 component is never followed: a link is removed itself (the output says
 `Removed link <path> (its target <target> was left in place)`, the target read

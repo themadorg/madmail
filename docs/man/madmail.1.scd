@@ -70,8 +70,11 @@ Extended documentation:
 	account's home is elsewhere and still exists (repoint it with
 	*--user-only* first), and a *--state-dir* that is not a directory of
 	its own: a well-known system directory, a directory directly under /,
-	a user's home directory, a path that resolves to one of these, or a
-	directory of another named account. Install and both repair modes
+	a user's home directory, a directory below /etc, /usr, /lib, /bin,
+	/sbin, /boot, /dev, /proc, /sys or /run that is not named for madmail,
+	a path that resolves to one of these, or a directory of another named
+	account. It also stops when the owner of an existing state directory
+	or the groups of the service account cannot be looked up. Install and both repair modes
 	check this before they create or change the account.
 	See EXAMPLES and NOTES.
 

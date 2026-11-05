@@ -87,8 +87,9 @@ install refuses a masked unit, and refuses an existing `--state-dir` when the
 service account's home is elsewhere and still exists, before changing anything; see
 [custom paths](cli/install.md#new-server-with-custom-paths). It also refuses a
 `--state-dir` that is not a directory of its own (a system directory such as
-`/var/lib`, a directory directly under `/`, a user's home directory, or a
-directory of another named account). Install treats the state directory as
+`/var/lib`, a directory directly under `/`, a user's home directory, a
+directory below `/etc`, `/usr` or another system directory that is not named
+for madmail, or a directory of another named account). Install treats the state directory as
 controlled by the service account: as root it never reads, writes or changes the
 owner or mode of a file through a link inside it, and it opens the database with
 the service account's effective user and group ids when that account controls
