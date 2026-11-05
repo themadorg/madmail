@@ -40,13 +40,19 @@ pub async fn federation_policy_label(pool: &DbPool) -> Result<String> {
     })
 }
 
-pub async fn set_federation_policy_label(pool: &DbPool, policy: &str) -> Result<()> {
+/// Normalized `ACCEPT` / `REJECT` label, or a config error for any other value.
+pub fn parse_federation_policy_label(policy: &str) -> Result<String> {
     let p = policy.trim().to_ascii_uppercase();
     if p != "ACCEPT" && p != "REJECT" {
         return Err(chatmail_types::ChatmailError::config(format!(
             "invalid federation policy: {policy} (expected ACCEPT or REJECT)"
         )));
     }
+    Ok(p)
+}
+
+pub async fn set_federation_policy_label(pool: &DbPool, policy: &str) -> Result<()> {
+    let p = parse_federation_policy_label(policy)?;
     set_setting(pool, FEDERATION_POLICY, &p).await
 }
 

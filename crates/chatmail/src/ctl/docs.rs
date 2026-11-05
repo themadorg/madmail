@@ -320,6 +320,19 @@ mod tests {
     }
 
     #[test]
+    fn bash_completion_includes_federation_transport() {
+        let script = bash_completion("madmail").unwrap();
+        assert!(
+            script.contains("transport"),
+            "bash completion should list federation transport"
+        );
+        assert!(
+            script.contains("--domain"),
+            "bash completion should offer federation transport --domain"
+        );
+    }
+
+    #[test]
     fn bash_completion_includes_dkim_subcommand() {
         let script = bash_completion("madmail").unwrap();
         assert!(

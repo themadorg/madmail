@@ -8,7 +8,7 @@
 Accepted:
 - Properly formed `multipart/encrypted` PGP/MIME messages
 - Secure Join handshake messages (`Secure-Join: vc-request`)
-- Certain automated bounces (`mailer-daemon@` + `multipart/report`)
+- Certain automated bounces (`mailer-daemon@` + `multipart/report`), including the local delivery report written when outbound federation fails
 
 Rejected with `523 Encryption Needed`:
 - Plain text

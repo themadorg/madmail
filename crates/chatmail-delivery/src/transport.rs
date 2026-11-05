@@ -15,12 +15,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use chatmail_state::TransportPolicy;
 use chatmail_types::is_ipv4_literal;
 use reqwest::Client;
 use tracing::debug;
 use tracing::warn;
 
-use crate::federation_http::federation_http_client;
+use crate::federation_http::{federation_http_client, is_cleartext_redirect_blocked};
 use crate::router::{DeliveryContext, OutboundJob};
 
 #[derive(Debug)]
@@ -61,6 +62,18 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
         };
     }
 
+    // Transport policy blocks are permanent, like an MTA 5.7.x policy reject: the queue
+    // drops the entry. Nothing was dialed here, so no per-transport stat is counted.
+    let transports = ctx.state.federation_transport.effective(&domain);
+    if !transports.any_allowed() {
+        let reason = format!(
+            "{} (recipient domain {domain})",
+            chatmail_state::ALL_BLOCKED_REASON
+        );
+        warn!(rcpt = %job.rcpt_to, error = %reason, "federation: all transports blocked");
+        return DeliveryOutcome::Permanent { reason };
+    }
+
     ctx.state.federation_tracker.increment_queue(&domain);
 
     let signed = federated_rfc822(ctx, job).await;
@@ -71,53 +84,62 @@ pub async fn deliver_remote(ctx: &DeliveryContext, job: &OutboundJob) -> Deliver
     };
 
     let target = resolve_federation_target(ctx, &domain).await;
-    let client = federation_http_client();
+    let client = federation_http_client(transports.http);
     // HELO/EHLO must identify *this* server, not the remote MX host.
     let helo = helo_name_for(ctx);
 
-    let http_reason = match &target {
+    let http_error = match &target {
         FederationTarget::MxdelivUrl(url) => {
             debug!(%url, rcpt = %job.rcpt_to, "federation: endpoint rewrite URL");
-            match try_mxdeliv_url(client, url, &job).await {
+            match try_mxdeliv_url(client, url, &job, transports).await {
                 Ok(method) => {
                     record_success(ctx, &domain, method);
                     return DeliveryOutcome::Success;
                 }
-                Err(e) => {
-                    // Always fall through to SMTP after HTTP failure: treating 4xx from
-                    // a missing /mxdeliv as permanent skipped SMTP entirely, which broke
-                    // federation with any peer that only speaks SMTP once HTTP 404'd.
-                    warn!(
-                        %url,
-                        rcpt = %job.rcpt_to,
-                        permanent = e.permanent,
-                        error = %e.reason,
-                        "federation: HTTP /mxdeliv failed, trying SMTP fallback"
-                    );
-                    e.reason
-                }
+                Err(e) => e,
             }
         }
         FederationTarget::Host(host) => {
             debug!(%host, rcpt = %job.rcpt_to, "federation: resolved host");
-            match try_mxdeliv_host(client, host, &job).await {
+            match try_mxdeliv_host(client, host, &job, transports).await {
                 Ok(method) => {
                     record_success(ctx, &domain, method);
                     return DeliveryOutcome::Success;
                 }
-                Err(e) => {
-                    warn!(
-                        %host,
-                        rcpt = %job.rcpt_to,
-                        permanent = e.permanent,
-                        error = %e.reason,
-                        "federation: HTTP /mxdeliv failed, trying SMTP fallback"
-                    );
-                    e.reason
-                }
+                Err(e) => e,
             }
         }
     };
+
+    if !transports.smtp {
+        record_failure(ctx, &domain, http_error.scheme);
+        let reason = format!(
+            "{}; smtp blocked by outbound transport policy (recipient domain {domain})",
+            http_error.reason
+        );
+        warn!(
+            rcpt = %job.rcpt_to,
+            permanent = http_error.permanent,
+            error = %reason,
+            "federation: SMTP blocked by transport policy"
+        );
+        return if http_error.permanent {
+            DeliveryOutcome::Permanent { reason }
+        } else {
+            DeliveryOutcome::Temporary { reason }
+        };
+    }
+
+    // Fall through to SMTP after HTTP failure: treating 4xx from a missing /mxdeliv
+    // as permanent skipped SMTP entirely, which broke federation with any peer that
+    // only speaks SMTP once HTTP 404'd.
+    warn!(
+        rcpt = %job.rcpt_to,
+        permanent = http_error.permanent,
+        error = %http_error.reason,
+        "federation: HTTP /mxdeliv failed, trying SMTP fallback"
+    );
+    let http_reason = http_error.reason;
 
     let smtp_host = match &target {
         FederationTarget::Host(h) => h.clone(),
@@ -170,56 +192,125 @@ fn helo_name_for(ctx: &DeliveryContext) -> String {
 struct PostError {
     reason: String,
     permanent: bool,
+    /// Last `/mxdeliv` scheme tried or blocked (`"HTTPS"` / `"HTTP"`), for federation stats.
+    scheme: &'static str,
 }
+
+const HTTPS_BLOCKED: &str = "https blocked by outbound transport policy";
+const HTTP_BLOCKED: &str = "http blocked by outbound transport policy";
 
 /// HTTPS then HTTP to `https://{host}/mxdeliv` / `http://{host}/mxdeliv`.
 async fn try_mxdeliv_host(
     client: &Client,
     host: &str,
     job: &OutboundJob,
+    policy: TransportPolicy,
 ) -> Result<&'static str, PostError> {
-    let https_url = format!("https://{host}/mxdeliv");
-    match post_mxdeliv(client, &https_url, job).await {
-        Ok(()) => Ok("HTTPS"),
-        Err(e) if e.permanent => Err(e),
-        Err(e) => {
-            debug!(%https_url, error = %e.reason, "federation: HTTPS failed, trying HTTP");
-            let http_url = format!("http://{host}/mxdeliv");
-            match post_mxdeliv(client, &http_url, job).await {
-                Ok(()) => Ok("HTTP"),
-                Err(e2) => Err(PostError {
-                    reason: format!("https: {}; http: {}", e.reason, e2.reason),
-                    permanent: e2.permanent,
-                }),
+    if !policy.https && !policy.http {
+        return Err(PostError {
+            reason: format!("{HTTPS_BLOCKED}; {HTTP_BLOCKED}"),
+            permanent: true,
+            scheme: "HTTPS",
+        });
+    }
+
+    let mut https_err: Option<PostError> = None;
+    if policy.https {
+        let https_url = format!("https://{host}/mxdeliv");
+        match post_mxdeliv(client, &https_url, job).await {
+            Ok(()) => return Ok("HTTPS"),
+            Err(e) if e.permanent => return Err(e),
+            Err(e) => {
+                debug!(%https_url, error = %e.reason, "federation: HTTPS failed, trying HTTP");
+                https_err = Some(e);
             }
         }
     }
+
+    if !policy.http {
+        let https_reason = https_err
+            .map(|e| format!("https: {}", e.reason))
+            .unwrap_or_else(|| HTTPS_BLOCKED.into());
+        return Err(PostError {
+            reason: format!("{https_reason}; {HTTP_BLOCKED}"),
+            permanent: false,
+            scheme: "HTTPS",
+        });
+    }
+
+    let http_url = format!("http://{host}/mxdeliv");
+    match post_mxdeliv(client, &http_url, job).await {
+        Ok(()) => Ok("HTTP"),
+        Err(e2) => Err(PostError {
+            reason: match https_err {
+                Some(e) => format!("https: {}; http: {}", e.reason, e2.reason),
+                None => format!("{HTTPS_BLOCKED}; http: {}", e2.reason),
+            },
+            permanent: e2.permanent,
+            scheme: "HTTP",
+        }),
+    }
 }
 
-/// POST to rewrite URL; if HTTPS fails transiently, retry as HTTP.
+/// POST to rewrite URL; if HTTPS fails transiently, retry as HTTP when allowed.
 async fn try_mxdeliv_url(
     client: &Client,
     url: &str,
     job: &OutboundJob,
+    policy: TransportPolicy,
 ) -> Result<&'static str, PostError> {
+    let https = url.starts_with("https://");
+    if https && !policy.https {
+        if !policy.http {
+            return Err(PostError {
+                reason: format!("{HTTPS_BLOCKED}; {HTTP_BLOCKED}"),
+                permanent: true,
+                scheme: "HTTPS",
+            });
+        }
+        let http_url = url.replacen("https://", "http://", 1);
+        return match post_mxdeliv(client, &http_url, job).await {
+            Ok(()) => Ok("HTTP"),
+            Err(e) => Err(PostError {
+                reason: format!("{HTTPS_BLOCKED}; http: {}", e.reason),
+                permanent: e.permanent,
+                scheme: "HTTP",
+            }),
+        };
+    }
+    if !https && !policy.http {
+        return Err(PostError {
+            reason: format!("{HTTP_BLOCKED} (endpoint rewrite {url})"),
+            permanent: true,
+            scheme: "HTTP",
+        });
+    }
+
     match post_mxdeliv(client, url, job).await {
         Ok(()) => Ok(scheme_label(url)),
         Err(e) if e.permanent => Err(e),
-        Err(e) if url.starts_with("https://") => {
+        Err(e) if https && policy.http => {
             let http_url = url.replacen("https://", "http://", 1);
             match post_mxdeliv(client, &http_url, job).await {
                 Ok(()) => Ok("HTTP"),
                 Err(e2) => Err(PostError {
                     reason: format!("https: {}; http: {}", e.reason, e2.reason),
                     permanent: e2.permanent,
+                    scheme: "HTTP",
                 }),
             }
         }
+        Err(e) if https => Err(PostError {
+            reason: format!("https: {}; {HTTP_BLOCKED}", e.reason),
+            permanent: false,
+            scheme: "HTTPS",
+        }),
         Err(e) => Err(e),
     }
 }
 
 async fn post_mxdeliv(client: &Client, url: &str, job: &OutboundJob) -> Result<(), PostError> {
+    let scheme = scheme_label(url);
     let res = client
         .post(url)
         .header("X-Mail-From", &job.mail_from)
@@ -227,9 +318,22 @@ async fn post_mxdeliv(client: &Client, url: &str, job: &OutboundJob) -> Result<(
         .body(job.data.clone())
         .send()
         .await
-        .map_err(|e| PostError {
-            reason: e.to_string(),
-            permanent: false,
+        .map_err(|e| {
+            // A peer redirecting the POST onto plain HTTP while `http` is blocked is a
+            // policy block, so it is permanent like the other transport policy failures.
+            if is_cleartext_redirect_blocked(&e) {
+                PostError {
+                    reason: format!("{HTTP_BLOCKED} (refused redirect from {url})"),
+                    permanent: true,
+                    scheme,
+                }
+            } else {
+                PostError {
+                    reason: e.to_string(),
+                    permanent: false,
+                    scheme,
+                }
+            }
         })?;
 
     if res.status().is_success() {
@@ -243,6 +347,7 @@ async fn post_mxdeliv(client: &Client, url: &str, job: &OutboundJob) -> Result<(
                 res.status().canonical_reason().unwrap_or("")
             ),
             permanent: true,
+            scheme,
         });
     }
     Err(PostError {
@@ -252,6 +357,7 @@ async fn post_mxdeliv(client: &Client, url: &str, job: &OutboundJob) -> Result<(
             res.status().canonical_reason().unwrap_or("")
         ),
         permanent: false,
+        scheme,
     })
 }
 
@@ -432,5 +538,255 @@ mod tests {
             "[2001:db8::1]:19080"
         );
         assert_eq!(mxdeliv_host_for_url("[127.0.0.1]"), "127.0.0.1");
+    }
+
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const RCPT_DOMAIN: &str = "other.org";
+
+    async fn test_ctx(policy: TransportPolicy) -> (DeliveryContext, tempfile::TempDir) {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(chatmail_state::AppState::new(dir.path(), pool.clone()));
+        state.federation_transport.set(policy);
+        let ctx = DeliveryContext {
+            pool,
+            state,
+            primary_domain: "example.org".into(),
+            local_domains: vec!["example.org".into()],
+            dkim: None,
+        };
+        (ctx, dir)
+    }
+
+    /// Deliver to `RCPT_DOMAIN` with `target` as its endpoint rewrite.
+    async fn deliver_via(
+        policy: TransportPolicy,
+        target: &str,
+    ) -> (DeliveryOutcome, DeliveryContext, tempfile::TempDir) {
+        let (ctx, dir) = test_ctx(policy).await;
+        chatmail_db::set_endpoint_override(&ctx.pool, RCPT_DOMAIN, target, "test")
+            .await
+            .unwrap();
+        let outcome = deliver_remote(
+            &ctx,
+            &OutboundJob {
+                mail_from: "a@example.org".into(),
+                rcpt_to: format!("b@{RCPT_DOMAIN}"),
+                data: b"test".to_vec(),
+            },
+        )
+        .await;
+        (outcome, ctx, dir)
+    }
+
+    fn stats(ctx: &DeliveryContext) -> chatmail_state::tracker::FederationStatRow {
+        ctx.state
+            .federation_tracker
+            .snapshot()
+            .into_iter()
+            .find(|r| r.domain == RCPT_DOMAIN)
+            .expect("federation stat row for recipient domain")
+    }
+
+    /// Plain-HTTP `/mxdeliv` peer. An `https://` URL to it fails at the TLS handshake,
+    /// which is a transient error, so the code moves on to plain HTTP when allowed.
+    async fn http_peer(status: u16) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+        server
+    }
+
+    async fn requests(server: &MockServer) -> usize {
+        server.received_requests().await.unwrap_or_default().len()
+    }
+
+    const HTTPS_ONLY: TransportPolicy = TransportPolicy {
+        https: true,
+        http: false,
+        smtp: false,
+    };
+    const NO_SMTP: TransportPolicy = TransportPolicy {
+        https: true,
+        http: true,
+        smtp: false,
+    };
+
+    #[tokio::test]
+    async fn http_blocked_host_target_never_posts_cleartext() {
+        let peer = http_peer(200).await;
+        let host = peer.address().to_string();
+        let (outcome, ctx, _dir) = deliver_via(HTTPS_ONLY, &host).await;
+        assert_eq!(requests(&peer).await, 0, "http:// must not be dialed");
+        match outcome {
+            DeliveryOutcome::Temporary { reason } => {
+                assert!(reason.contains(HTTP_BLOCKED), "{reason}");
+                assert!(
+                    reason.contains("smtp blocked by outbound transport policy"),
+                    "{reason}"
+                );
+                assert!(reason.contains(RCPT_DOMAIN), "{reason}");
+            }
+            other => panic!("expected temporary failure, got {other:?}"),
+        }
+        let row = stats(&ctx);
+        assert_eq!(row.failed_https, 1);
+        assert_eq!(row.queued_messages, 0);
+    }
+
+    #[tokio::test]
+    async fn http_allowed_host_target_falls_back_to_cleartext() {
+        let peer = http_peer(200).await;
+        let host = peer.address().to_string();
+        let (outcome, ctx, _dir) = deliver_via(NO_SMTP, &host).await;
+        assert!(matches!(outcome, DeliveryOutcome::Success), "{outcome:?}");
+        assert_eq!(requests(&peer).await, 1);
+        assert_eq!(stats(&ctx).success_http, 1);
+    }
+
+    #[tokio::test]
+    async fn http_blocked_rewrite_urls_never_post_cleartext() {
+        let peer = http_peer(200).await;
+        let addr = peer.address().to_string();
+
+        let (outcome, ctx, _dir) = deliver_via(HTTPS_ONLY, &format!("http://{addr}/mxdeliv")).await;
+        match outcome {
+            DeliveryOutcome::Permanent { reason } => {
+                assert!(reason.contains(HTTP_BLOCKED), "{reason}");
+                assert!(reason.contains(RCPT_DOMAIN), "{reason}");
+            }
+            other => panic!("expected permanent policy failure, got {other:?}"),
+        }
+        assert_eq!(stats(&ctx).failed_http, 1);
+
+        let (outcome, _ctx, _dir) =
+            deliver_via(HTTPS_ONLY, &format!("https://{addr}/mxdeliv")).await;
+        match outcome {
+            DeliveryOutcome::Temporary { reason } => {
+                assert!(reason.contains(HTTP_BLOCKED), "{reason}");
+            }
+            other => panic!("expected temporary failure, got {other:?}"),
+        }
+        assert_eq!(requests(&peer).await, 0, "http:// must not be dialed");
+    }
+
+    #[tokio::test]
+    async fn smtp_blocked_records_http_failure() {
+        let peer = http_peer(503).await;
+        let url = format!("http://{}/mxdeliv", peer.address());
+        let (outcome, ctx, _dir) = deliver_via(NO_SMTP, &url).await;
+        match outcome {
+            DeliveryOutcome::Temporary { reason } => {
+                assert!(reason.contains("503"), "{reason}");
+                assert!(
+                    reason.contains("smtp blocked by outbound transport policy"),
+                    "{reason}"
+                );
+            }
+            other => panic!("expected temporary failure, got {other:?}"),
+        }
+        let row = stats(&ctx);
+        assert_eq!(row.failed_http, 1);
+        assert_eq!(row.queued_messages, 0);
+        assert_eq!(requests(&peer).await, 1);
+    }
+
+    #[tokio::test]
+    async fn smtp_blocked_client_error_is_permanent_policy_failure() {
+        let peer = http_peer(404).await;
+        let url = format!("http://{}/mxdeliv", peer.address());
+        let (outcome, ctx, _dir) = deliver_via(NO_SMTP, &url).await;
+        match outcome {
+            DeliveryOutcome::Permanent { reason } => {
+                assert!(reason.contains("404"), "{reason}");
+                assert!(
+                    reason.contains("smtp blocked by outbound transport policy"),
+                    "{reason}"
+                );
+                assert!(reason.contains(RCPT_DOMAIN), "{reason}");
+            }
+            other => panic!("expected permanent failure, got {other:?}"),
+        }
+        assert_eq!(stats(&ctx).failed_http, 1);
+    }
+
+    #[tokio::test]
+    async fn all_blocked_transports_fail_before_dialing() {
+        let (ctx, _dir) = test_ctx(TransportPolicy {
+            https: false,
+            http: false,
+            smtp: false,
+        })
+        .await;
+        let outcome = deliver_remote(
+            &ctx,
+            &OutboundJob {
+                mail_from: "a@example.org".into(),
+                rcpt_to: "b@other.org".into(),
+                data: b"test".to_vec(),
+            },
+        )
+        .await;
+        match outcome {
+            DeliveryOutcome::Permanent { reason } => {
+                assert!(
+                    reason.starts_with(chatmail_state::ALL_BLOCKED_REASON),
+                    "{reason}"
+                );
+                assert!(reason.contains("other.org"), "{reason}");
+            }
+            other => panic!("expected permanent policy failure, got {other:?}"),
+        }
+        assert!(ctx.state.federation_tracker.snapshot().is_empty());
+    }
+
+    #[tokio::test]
+    async fn domain_override_blocks_before_dialing() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        chatmail_state::update_domain_transports(
+            &pool,
+            "Other.ORG",
+            &[
+                (chatmail_state::TransportName::Https, Some(false)),
+                (chatmail_state::TransportName::Http, Some(false)),
+                (chatmail_state::TransportName::Smtp, Some(false)),
+            ],
+        )
+        .await
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(chatmail_state::AppState::new(dir.path(), pool.clone()));
+        state.federation_transport.hydrate(&pool).await.unwrap();
+        assert!(state.federation_transport.get().any_allowed());
+        let ctx = DeliveryContext {
+            pool,
+            state,
+            primary_domain: "example.org".into(),
+            local_domains: vec!["example.org".into()],
+            dkim: None,
+        };
+        let outcome = deliver_remote(
+            &ctx,
+            &OutboundJob {
+                mail_from: "a@example.org".into(),
+                rcpt_to: "b@other.org".into(),
+                data: b"test".to_vec(),
+            },
+        )
+        .await;
+        match outcome {
+            DeliveryOutcome::Permanent { reason } => {
+                assert!(
+                    reason.starts_with(chatmail_state::ALL_BLOCKED_REASON),
+                    "{reason}"
+                );
+                assert!(reason.contains("other.org"), "{reason}");
+            }
+            other => panic!("expected permanent policy failure, got {other:?}"),
+        }
+        assert!(ctx.state.federation_tracker.snapshot().is_empty());
     }
 }
