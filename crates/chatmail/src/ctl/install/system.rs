@@ -517,6 +517,14 @@ fn lookup_uid_gid(name: &str) -> Result<(u32, u32)> {
 /// fails if it was replaced by a link in between.
 fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<()> {
     let root = fs::canonicalize(root).map_err(|e| io_error("resolve", root, e))?;
+    if chown_walk::protected_hardlinks_disabled() {
+        println!(
+            "   ! fs.protected_hardlinks is 0: the service account can hard-link files it \
+             does not own into {}, and this walk would hand them over. Set \
+             fs.protected_hardlinks=1 (sysctl) and re-run if that may have happened",
+            root.display()
+        );
+    }
     let skipped =
         chown_walk::chown_tree(&root, uid, gid).map_err(|e| io_error(e.op, &e.path, e.source))?;
     for entry in skipped {

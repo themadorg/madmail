@@ -33,6 +33,14 @@
 //!   `fchownat(AT_SYMLINK_NOFOLLOW)`, which never follows a link even when the
 //!   entry was replaced by one after the check.
 //!
+//! Hard links are not distinguished from other files: the mail store
+//! (`chatmail-storage` `cas.rs` / `blob.rs`) hard-links every message into the
+//! maildirs, so a file with several names is normal there. This relies on the
+//! kernel refusing to let the service account create a hard link to a file it
+//! does not own (`fs.protected_hardlinks = 1` on Linux, the default on the
+//! major distributions); [`protected_hardlinks_disabled`] lets install warn
+//! when that protection is off.
+//!
 //! An entry that changes or disappears during the walk is skipped with a
 //! warning; only problems with the root itself are hard failures. The walk is
 //! iterative and stops descending at [`MAX_DEPTH`] levels (each open level holds
@@ -149,16 +157,10 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
                 });
             }
             _ => {
-                // A second name for a file someone else owns: with
-                // fs.protected_hardlinks disabled the service account could link
-                // a root-owned file into its tree, so do not hand it over.
-                if st.st_nlink > 1 && st.st_uid != uid {
-                    skip(format!(
-                        "has {} hard links and another owner (uid {})",
-                        st.st_nlink, st.st_uid
-                    ));
-                    continue;
-                }
+                // Hard links are changed like any other file: the mail store
+                // links every message into the maildirs, so after a uid change
+                // most files have several names and the old owner. See the
+                // module docs for why this relies on fs.protected_hardlinks.
                 match fchownat_nofollow(frame.fd.as_raw_fd(), &name, uid, gid) {
                     Ok(()) => {}
                     Err(e) if changed_under_us(&e) => {
@@ -170,6 +172,21 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
         }
     }
     Ok(skipped)
+}
+
+/// Whether the kernel lets users hard-link files they do not own, so the
+/// service account could link a root-owned file into its tree for the walk to
+/// hand over. Only Linux exposes the setting; elsewhere this returns false.
+pub fn protected_hardlinks_disabled() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string("/proc/sys/fs/protected_hardlinks")
+            .is_ok_and(|v| v.trim() == "0")
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
 }
 
 /// Errors that mean an entry was replaced or removed after it was listed.
@@ -331,6 +348,34 @@ mod tests {
         let skipped = chown_tree(root, uid, gid).unwrap();
         assert!(skipped.is_empty(), "{skipped:?}");
         assert_eq!(owner(&root.join("a/b/c/file")), (uid, gid));
+    }
+
+    #[test]
+    fn hard_linked_files_are_changed_like_other_files() {
+        // The mail store links each message into the maildirs, so files with
+        // several names are normal and must not be skipped.
+        let state = tempfile::tempdir().unwrap();
+        let root = state.path();
+        fs::create_dir_all(root.join("blobs")).unwrap();
+        fs::create_dir_all(root.join("mail/new")).unwrap();
+        fs::write(root.join("blobs/msg"), "x").unwrap();
+        fs::hard_link(root.join("blobs/msg"), root.join("mail/new/msg")).unwrap();
+        assert_eq!(
+            fs::symlink_metadata(root.join("blobs/msg")).unwrap().nlink(),
+            2
+        );
+        // As root (the Docker suite), hand the files to a new owner, as after the
+        // service account was recreated with another uid.
+        // SAFETY: geteuid has no preconditions.
+        let (uid, gid) = if unsafe { libc::geteuid() } == 0 {
+            (4243, 4243)
+        } else {
+            owner(root)
+        };
+        let skipped = chown_tree(root, uid, gid).unwrap();
+        assert!(skipped.is_empty(), "{skipped:?}");
+        assert_eq!(owner(&root.join("mail/new/msg")), (uid, gid));
+        assert_eq!(owner(&root.join("blobs/msg")), (uid, gid));
     }
 
     #[test]

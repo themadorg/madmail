@@ -296,8 +296,12 @@ to its parent with `O_NOFOLLOW | O_DIRECTORY` and changed with `fchown`, entries
 are listed through a duplicate descriptor and classified with
 `fstatat(AT_SYMLINK_NOFOLLOW)`, links are skipped, and other entries are changed
 with `fchownat(AT_SYMLINK_NOFOLLOW)`. An entry that is replaced or removed during
-the walk (`ELOOP`, `ENOTDIR`, `ENOENT`) is skipped with a warning, as is a file
-with several hard links and another owner. The walk is iterative and stops
+the walk (`ELOOP`, `ENOTDIR`, `ENOENT`) is skipped with a warning. Hard-linked
+files are changed like other files, because the mail store hard-links every
+message into the maildirs; this relies on `fs.protected_hardlinks = 1` (the
+default on major Linux distributions), which stops the service account from
+linking a file it does not own into its tree, and install prints a warning when
+`/proc/sys/fs/protected_hardlinks` is `0`. The walk is iterative and stops
 descending after 64 levels, each open level holding one descriptor. The
 operator-chosen state directory root is resolved once (`canonicalize`), so a
 symlinked root such as a data-volume link keeps working; the resolved root is
