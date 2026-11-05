@@ -82,6 +82,10 @@ See [Docker deployment guide](docker.md) for volume mounts and container layout.
 Choose full system setup, local bootstrap or isolated account/unit repair using the
 [operation comparison](cli/install.md#choose-the-operation). Full install can
 overwrite configuration; use repair modes for existing host provisioning.
+With custom paths, the state directory may be a symlink to a data volume. A full
+install refuses a masked unit, and refuses an existing `--state-dir` when the
+service account's home is elsewhere, before changing anything; see
+[custom paths](cli/install.md#new-server-with-custom-paths).
 
 | Mode | Flag | Required inputs | Notes |
 |------|------|-----------------|-------|

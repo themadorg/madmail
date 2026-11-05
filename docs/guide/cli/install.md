@@ -64,7 +64,15 @@ sudo ./madmail install --simple --system --domain mail.example.org \
 
 Run the same command without `--dry-run` to provision. It creates the service
 account, applies permissions, installs the binary and CLI docs, and writes a unit
-using these paths. Then inspect and start the service:
+using these paths. The state directory may be a symlink to a data volume; it is
+resolved once, and links inside it are never followed. Before changing anything,
+a full install refuses a symlinked or masked unit file (`systemctl unmask` it
+first). If the service account already exists with a home elsewhere and the
+`--state-dir` already exists (for example a pre-created mount point), it also
+refuses instead of leaving the data in the old home behind: move the data if
+needed, run `--user-only` with the same paths to repoint the account, then retry.
+A missing `--state-dir` is filled by moving the old home there. Then inspect and
+start the service:
 
 ```bash
 sudo systemctl cat madmail
@@ -113,8 +121,9 @@ No `--simple`, `--non-interactive`, domain, IP or ACME options are needed.
   repointed at the existing state directory; nothing is moved. Ownership is only
   applied to TLS files at the given paths, so repeat custom `--cert-path` and
   `--key-path` values (the plan output lists the paths it will use). Symlinks
-  inside the state directory are never followed or chowned through, and a
-  symlinked state directory is refused: pass the resolved path.
+  inside the state directory are never followed or chowned through, including a
+  linked directory on the way to a TLS file; a symlinked state directory itself is
+  resolved once.
 - `--systemd-only` replaces the unit and runs `systemctl daemon-reload`. It requires
   an existing executable binary and service user/group. Keep local unit changes in
   systemd drop-ins. It does not enable, start or restart the service. Repeat custom
@@ -236,7 +245,8 @@ written successfully before daemon-reload fails.
 | `repair requires an existing config file and state directory` | Check the executable basename and original `--config-dir` / `--state-dir`. Repair does not bootstrap missing application files. |
 | Missing user/group or systemd `217/USER` | Stop the service if present, run `--user-only` with the original paths, then retry. |
 | Missing unit or wrong `ExecStart` paths | Ensure the account, config, state and installed binary exist; run `--systemd-only` with all original paths. |
-| `... is a symlink (masked?)` | The unit path is a symlink, for example from `systemctl mask`. Run `systemctl unmask <name>` (or remove the link) and retry. |
+| `... is a symlink (masked?)` | The unit path is a symlink, for example from `systemctl mask`. Full install checks this before any other step; unit repair before writing. Run `systemctl unmask <name>` (or remove the link) and retry. |
+| `... already exists; a full install would leave the data in ... behind` | The account's home differs from an existing `--state-dir`. Move the data into the new state directory if needed, run `--user-only` with the same paths to repoint the account, then rerun the full install. |
 | `systemd-only requires an existing executable binary` | Supply the correct installed executable and ensure executable permissions; unit repair does not copy it. |
 | `systemctl daemon-reload failed` | Inspect the written unit and systemd availability, fix the cause, then retry. Use local bootstrap in environments without host systemd. |
 | Repair succeeds but service is stopped | Start it explicitly. Neither repair mode enables, starts or restarts services. |

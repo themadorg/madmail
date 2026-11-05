@@ -265,6 +265,14 @@ Explicit Unix system mode is rejected on Windows (use Windows service flags).
 System paths must be absolute. Custom systemd units retain RuntimeDirectory while
 avoiding StateDirectory/ConfigurationDirectory aliases for custom persistent paths.
 Dry-run lists planned actions without creating files, accounts or invoking systemctl.
+Before its first host change, a system install that writes a unit refuses a
+symlinked or masked unit path. For an existing account whose home differs from the
+state directory, the home is moved with `usermod -d -m` when the state directory does
+not exist yet. When it exists, the full install repoints the home without `-m` only if
+the previous home is gone; otherwise it refuses before `usermod`, so data in the old
+home is not left behind while the install continues with an empty state directory
+(`--user-only` adopts an existing state directory on purpose). Units are written
+with mode 0644 regardless of the process umask.
 Tests cover CLI conflicts, default/auto/explicit modes, custom unit paths, dry-run
 side-effect absence, root enforcement and isolated installation/idempotence.
 
@@ -282,10 +290,12 @@ content is preserved, but ownership and config mode may change. An existing acco
 with another home is repointed with `usermod -d` and no `-m` when the state directory
 exists (`usermod -m` refuses an existing target); `-m` is used only when it does not.
 The state tree is chowned without following symlinks (`lchown`, no descent into
-linked directories), and a symlinked state directory is refused, because the service
-account can plant links there. TLS ownership is applied only to the given
-`--cert-path`/`--key-path` files, so custom locations must be repeated; links to them
-inside the state directory are skipped. Systemd-only requires an existing config
+linked directories), because the service account can plant links there; the
+operator-chosen state directory root is resolved once (`canonicalize`), so a
+symlinked root such as a data-volume link keeps working. TLS ownership is applied
+only to the given `--cert-path`/`--key-path` files, so custom locations must be
+repeated; a path below the state directory is skipped when any of its components
+there is a link, and is otherwise changed with `lchown`. Systemd-only requires an existing config
 file, state directory, executable binary and service account; it writes the unit
 through a temporary file and `rename`, refuses a symlinked or masked unit path, and
 runs daemon-reload, without enabling or starting it. The cert/key paths also feed the

@@ -298,13 +298,21 @@ binary hashes, unchanged accounts and file modes during unit-only repair, no uni
 or daemon changes during user-only repair, and propagated daemon-reload failures.
 It also repoints an account whose home differs at the existing state directory
 (home, config `0640` and state ownership asserted), checks that links planted in the
-state directory to `/etc/shadow` and `/etc` leave their targets' ownership unchanged,
-and refuses a masked (`/dev/null`) or otherwise symlinked unit without writing
-through it or reloading systemd. These Docker cases were added with the #222 review
-fixes and have not yet been run in the Docker suite. Unit tests cover the `usermod`
-arguments (no `-m` into an existing state directory), symlink-safe `chown_tree`,
-symlink refusal and atomic replacement of the unit file, and repair `from_args`
-without a domain; there are 24 `ctl::install` unit tests after these fixes.
+state directory to `/etc/shadow` and `/etc`, and a TLS path through a linked
+directory there, leave their targets' ownership unchanged, and refuses a masked
+(`/dev/null`) or otherwise symlinked unit without writing through it or reloading
+systemd. A full install over a masked unit fails before changing accounts, file
+modes or contents, and a unit written under `umask 077` is still `0644`. A full
+install into a pre-created state directory, while the account's home still holds
+data elsewhere, is refused with the home and data left in place. These cases passed
+in the Docker suite with a Linux (aarch64 musl) build of the #222 review fixes; the
+pre-created state directory case fails against the build before them. Unit tests
+cover the `usermod` arguments (no `-m` into an existing state directory, full-install
+refusal to abandon a previous home), symlink-safe `chown_tree` including a symlinked
+state directory root, planted-link detection on any component below the state
+directory, symlink refusal, mode and atomic replacement of the unit file, and repair
+`from_args` without a domain; there are 25 `ctl::install` unit tests after these
+fixes.
 Systemd uses the same recording stub and real unit syntax verification as the full
 installer suite; running a service under systemd PID 1 is not covered here.
 
