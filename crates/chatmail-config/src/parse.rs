@@ -183,31 +183,17 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
         toml::from_str(content).map_err(|e| ChatmailError::config(e.to_string()))?;
     // Do not copy primary_domain → mail_domain: registration domain comes from HTTP Host.
     let mx_domain = parsed.hostname.clone();
+    // Top-level registry names are explicit settings and protect their value.
+    // Legacy field names (`smtp_listen`, `turn_enable`, `retention`, ...) stay
+    // file defaults below the database, like their `.conf` module directives.
     let mut settings_policy = crate::SettingsPolicy::default();
     let table: toml::Table =
         toml::from_str(content).map_err(|e| ChatmailError::config(e.to_string()))?;
     for (name, value) in &table {
-        let name = match name.as_str() {
-            "turn_enable" => "turn_enabled",
-            "iroh_enable" => "iroh_enabled",
-            "retention" => "message_retention",
-            other => other,
-        };
-        if crate::settings_policy::setting_key(name).is_some() {
-            let text = match value {
-                toml::Value::String(v) => v.clone(),
-                toml::Value::Boolean(v) => v.to_string(),
-                toml::Value::Integer(v) => v.to_string(),
-                _ => {
-                    return Err(ChatmailError::config(format!(
-                        "setting {name} requires a scalar value"
-                    )))
-                }
-            };
-            settings_policy.insert(name, &text, "file")?;
+        let known = crate::settings_policy::setting_key(name).is_some();
+        if !known && !parsed.settings.contains_key(name) {
+            continue;
         }
-    }
-    for (name, value) in &parsed.settings {
         let text = match value {
             toml::Value::String(v) => v.clone(),
             toml::Value::Boolean(v) => v.to_string(),
@@ -218,10 +204,8 @@ fn toml_to_app_config(content: &str) -> Result<AppConfig> {
                 )))
             }
         };
+        // Unknown names fail here with an actionable error.
         settings_policy.insert(name, &text, "file")?;
-    }
-    if let Some(value) = parsed.turn_enable {
-        settings_policy.insert("turn_enabled", &value.to_string(), "file")?;
     }
     let mut cfg = AppConfig {
         settings_policy,
@@ -447,6 +431,21 @@ turn_relay_port_max = 50100
         .unwrap();
         let conf = maddy::parse_maddy_config("settings {\nadmin_web_enabled false\nadmin_web_path /private-admin\nadmin_path /private-api\nmessage_retention_enabled true\nmessage_retention 14d\nturn_relay_port_min 50000\nturn_relay_port_max 50100\n}\n").unwrap().deployment_policy().unwrap();
         assert_eq!(toml, conf);
+    }
+    #[test]
+    fn toml_listen_and_legacy_fields_are_defaults_registry_keys_lock() {
+        let cfg = toml_to_app_config(
+            "smtp_listen = \"0.0.0.0:25\"\nimap_listen = \"0.0.0.0:143\"\nturn_enable = true\nretention = \"24h\"\n",
+        )
+        .unwrap();
+        assert!(cfg.deployment_policy().unwrap().0.is_empty());
+        assert_eq!(cfg.smtp_listen.as_deref(), Some("0.0.0.0:25"));
+        assert_eq!(cfg.retention.as_deref(), Some("24h"));
+
+        let cfg = toml_to_app_config("smtp_listen = \"0.0.0.0:25\"\nsmtp_port = 2525\n").unwrap();
+        let policy = cfg.deployment_policy().unwrap();
+        assert_eq!(policy.0["__SMTP_PORT__"].value, "2525");
+        assert!(!policy.0.contains_key("__SMTP_LOCAL_ONLY__"));
     }
     #[test]
     fn unknown_toml_and_settings_block_keys_fail() {

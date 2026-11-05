@@ -523,7 +523,12 @@ pub fn resolve_state_path(state_dir: &std::path::Path, path: &str) -> PathBuf {
     }
 }
 
-/// Collect explicitly supplied values without collapsing absent booleans into false.
+/// Collect the explicit `settings { name value }` block without collapsing absent
+/// booleans into false.
+///
+/// Only this block protects settings. Legacy module directives (listener lines,
+/// `alpn_*`, `turn_*`, `ss_*`, `retention`, `appendlimit`, ...) are parsed by
+/// `apply_config` as file defaults that database-backed settings may override.
 fn collect_settings(
     nodes: &[Node],
     block: &str,
@@ -534,24 +539,9 @@ fn collect_settings(
             collect_settings(children, &node.name, policy)?;
             continue;
         }
-        let name = node.name.as_str();
-        let mapped = match (block, name) {
-            ("imap", "turn_enable") => Some("turn_enabled"),
-            ("turn", "realm") => Some("turn_realm"),
-            ("turn", "secret") => Some("turn_secret"),
-            ("turn", "relay_ip") => Some("turn_relay_ip"),
-            ("imap", name) if crate::settings_policy::setting_key(name).is_some() => Some(name),
-            ("turn", "relay_port_min") => Some("turn_relay_port_min"),
-            ("turn", "relay_port_max") => Some("turn_relay_port_max"),
-            ("storage.imapsql", "retention") => Some("message_retention"),
-            (_, "allow_inbound_remote_rcpt") => Some("allow_inbound_remote_rcpt"),
-            ("settings", _) => Some(name),
-            ("chatmail", _) if crate::settings_policy::setting_key(name).is_some() => Some(name),
-            _ => None,
-        };
-        if let Some(mapped) = mapped {
+        if block == "settings" {
             policy
-                .insert(mapped, &node.args.join(" "), "file")
+                .insert(&node.name, &node.args.join(" "), "file")
                 .map_err(|e| madmail_parse::ParseError {
                     message: e.to_string(),
                     line: node.line,

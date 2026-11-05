@@ -130,9 +130,12 @@ impl ServerSupervisor {
     ) -> Result<(Self, mpsc::Sender<ReloadRequest>)> {
         let (reload_tx, mut reload_rx) = mpsc::channel(1);
 
-        let hostname = chatmail_db::get_setting(&pool, chatmail_db::settings_keys::SMTP_HOSTNAME)
-            .await?
-            .or_else(|| file_config.hostname.clone())
+        // `file_config.hostname` already carries a protected `smtp_hostname`
+        // (settings block / environment). A database `__SMTP_HOSTNAME__` row stays
+        // informational, as before, so it cannot change the mail identity.
+        let hostname = file_config
+            .hostname
+            .clone()
             .unwrap_or_else(|| "127.0.0.1".into());
         let primary_domain = file_config.effective_registration_domain(Some(&hostname));
         let mut local_domains = file_config.effective_local_domains(&hostname);

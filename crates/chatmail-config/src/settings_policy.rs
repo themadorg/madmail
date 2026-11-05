@@ -241,107 +241,57 @@ pub fn validate(name: &str, value: &str) -> Result<String> {
 }
 
 impl crate::AppConfig {
-    /// Include legacy module directives when callers construct AppConfig directly.
+    /// Settings protected from database-backed CLI/API changes.
+    ///
+    /// Only explicit sources lock a setting: a `.conf` `settings { }` entry, a
+    /// top-level TOML key named in [`SETTINGS`], or a `CHATMAIL_*` environment
+    /// variable (including `CHATMAIL_{SMTP,IMAP,HTTP}_ADDR`). Legacy module
+    /// directives (listener addresses, `alpn_*`, `hostname`, `turn_*`, `ss_*`,
+    /// `iroh_relay_url`, `retention`, `appendlimit`, `max_message_size`,
+    /// `language`, admin paths in `chatmail { }`) stay file defaults below the
+    /// database, as before, so generated configurations never lock settings the
+    /// operator did not choose.
     pub fn deployment_policy(&self) -> Result<SettingsPolicy> {
-        let mut policy = SettingsPolicy::default();
-        macro_rules! optional {
-            ($($name:literal => $field:ident),* $(,)?) => { $(
-                if let Some(v) = &self.$field { policy.insert($name, v, "file")?; }
-            )* };
-        }
-        optional!("smtp_hostname" => hostname, "admin_path" => admin_path,
-            "admin_web_path" => admin_web_path, "language" => language,
-            "turn_realm" => turn_realm, "turn_secret" => turn_secret,
-            "turn_relay_ip" => turn_relay_ip, "iroh_relay_url" => iroh_relay_url,
-            "ss_password" => ss_password, "ss_cipher" => ss_cipher,
-            "appendlimit" => appendlimit, "max_message_size" => max_message_size,
-            "max_federation_size" => max_federation_size, "message_retention" => retention);
-        for (name, value) in [
-            ("turn_port", u64::from(self.turn_port)),
-            ("turn_ttl", self.turn_ttl),
-            ("turn_relay_port_min", u64::from(self.turn_relay_port_min)),
-            ("turn_relay_port_max", u64::from(self.turn_relay_port_max)),
-            ("iroh_port", u64::from(self.iroh_port)),
-        ] {
-            if value != 0 {
-                policy.insert(name, &value.to_string(), "file")?;
-            }
-        }
-        for (name, listen) in [
-            ("smtp", &self.smtp_listen),
-            ("submission", &self.submission_listen),
-            ("submission_tls", &self.submission_tls_listen),
-            ("imap", &self.imap_listen),
-            ("imap_tls", &self.imap_tls_listen),
-            ("http", &self.http_listen),
-            ("https", &self.http_tls_listen),
-            ("turn", &self.turn_listen_udp),
-            ("ss", &self.ss_addr),
-        ] {
-            if let Some(listen) = listen {
-                if let Some(port) = crate::port_from_listen(Some(listen)) {
-                    policy.insert(&format!("{name}_port"), &port.to_string(), "file")?;
-                }
-                let local_name = format!("{name}_local_only");
-                if setting_key(&local_name).is_some() {
-                    let host = listen
-                        .rsplit_once(':')
-                        .map(|(h, _)| h.trim_matches(['[', ']']))
-                        .unwrap_or("");
-                    policy.insert(
-                        &local_name,
-                        if host == "localhost"
-                            || host
-                                .parse::<std::net::IpAddr>()
-                                .is_ok_and(|ip| ip.is_loopback())
-                        {
-                            "true"
-                        } else {
-                            "false"
-                        },
-                        "file",
-                    )?;
-                }
-            }
-        }
-        for (name, value) in [
-            ("shared_port_imap", &self.alpn_imap),
-            ("shared_port_smtp", &self.alpn_smtp),
-        ] {
-            if value.is_some() {
-                policy.insert(name, "true", "file")?;
-            }
-        }
-        policy.0.extend(self.settings_policy.0.clone());
-        Ok(policy)
+        Ok(self.settings_policy.clone())
     }
 
+    /// Reject inconsistent protected values (combined with legacy module
+    /// directives where they interact) before any listener starts.
     pub fn validate_deployment(&self) -> Result<()> {
         let policy = self.deployment_policy()?;
         let get = |name: &str| {
             setting_key(name)
                 .and_then(|k| policy.0.get(k))
-                .map(|v| v.value.as_str())
+                .map(|v| v.value.clone())
         };
-        let min = get("turn_relay_port_min")
-            .unwrap_or("49152")
-            .parse::<u16>()
-            .unwrap_or(49152);
-        let max = get("turn_relay_port_max")
-            .unwrap_or("65535")
-            .parse::<u16>()
-            .unwrap_or(65535);
-        let control = get("turn_port")
-            .unwrap_or("3478")
-            .parse::<u16>()
-            .unwrap_or(3478);
-        crate::turn_relay_ports::TurnRelayPortRange { min, max }
-            .validate(control)
-            .map_err(ChatmailError::config)?;
-        let api = get("admin_path").unwrap_or("/api/admin");
-        let web = get("admin_web_path").unwrap_or("/admin");
-        if api == web || api.starts_with(&format!("{web}/")) || web.starts_with(&format!("{api}/"))
+        let number = |name: &str, field: u16, default: u16| {
+            get(name)
+                .and_then(|v| v.parse::<u16>().ok())
+                .or((field != 0).then_some(field))
+                .unwrap_or(default)
+        };
+        // Legacy-only TURN values keep their previous runtime handling; once any of
+        // them is protected, the effective combination must be valid.
+        if ["turn_relay_port_min", "turn_relay_port_max", "turn_port"]
+            .iter()
+            .any(|name| get(name).is_some())
         {
+            let min = number("turn_relay_port_min", self.turn_relay_port_min, 49152);
+            let max = number("turn_relay_port_max", self.turn_relay_port_max, 65535);
+            let control = number("turn_port", self.turn_port, 3478);
+            crate::turn_relay_ports::TurnRelayPortRange { min, max }
+                .validate(control)
+                .map_err(ChatmailError::config)?;
+        }
+        let path = |name: &str, field: &Option<String>, default: &str| {
+            let raw = get(name)
+                .or_else(|| field.clone())
+                .unwrap_or_else(|| default.into());
+            validate(name, &raw)
+        };
+        let api = path("admin_path", &self.admin_path, "/api/admin")?;
+        let web = path("admin_web_path", &self.admin_web_path, "/admin")?;
+        if admin_paths_overlap(&api, &web) {
             return Err(ChatmailError::config(
                 "admin_path and admin_web_path must not overlap",
             ));
@@ -350,16 +300,47 @@ impl crate::AppConfig {
     }
 }
 
+/// Admin path accepted from a database-backed write (CLI or admin API): the
+/// [`validate`] rules plus the admin API's character set and length limit
+/// (ASCII letters, digits and `.:/@-_`, at most 253 characters).
+pub fn validate_admin_path_write(name: &str, value: &str) -> Result<String> {
+    let value = value.trim();
+    if value.len() > 253
+        || !value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".:/@-_".contains(c))
+    {
+        return Err(ChatmailError::config(format!(
+            "invalid value for setting {name}"
+        )));
+    }
+    validate(name, value)
+}
+
+/// True when one admin path equals or nests inside the other (both normalized).
+pub fn admin_paths_overlap(api: &str, web: &str) -> bool {
+    api == web || api.starts_with(&format!("{web}/")) || web.starts_with(&format!("{api}/"))
+}
+
 impl crate::AppConfig {
     pub fn apply_deployment_environment(&mut self) -> Result<()> {
-        self.settings_policy
-            .apply_environment(|key| std::env::var(key).ok())?;
+        self.apply_deployment_environment_from(|key| std::env::var(key).ok())
+    }
+
+    /// [`Self::apply_deployment_environment`] with an injectable lookup (tests).
+    pub fn apply_deployment_environment_from(
+        &mut self,
+        get: impl Fn(&str) -> Option<String>,
+    ) -> Result<()> {
+        self.settings_policy.apply_environment(&get)?;
+        // A listener address is an explicit bind choice: it protects both the
+        // port and the bind mode of that service.
         for (env, service, field) in [
             ("CHATMAIL_SMTP_ADDR", "smtp", &mut self.smtp_listen),
             ("CHATMAIL_IMAP_ADDR", "imap", &mut self.imap_listen),
             ("CHATMAIL_HTTP_ADDR", "http", &mut self.http_listen),
         ] {
-            if let Ok(addr) = std::env::var(env) {
+            if let Some(addr) = get(env) {
                 let parsed: std::net::SocketAddr = addr.parse().map_err(|_| {
                     ChatmailError::config(format!("invalid listen address in {env}"))
                 })?;
@@ -471,6 +452,132 @@ mod tests {
         .unwrap();
         assert!(!format!("{p:?}").contains("very-private-secret"));
         assert!(!format!("{:?}", p.sources()).contains("very-private-secret"));
+    }
+
+    /// Listener lines, `alpn_*` and other legacy module directives written by the
+    /// installer are file defaults: they must not lock any setting.
+    const LEGACY_CONF: &str = r#"
+hostname mail.example.org
+storage.imapsql local_mailboxes {
+    retention 24h
+    appendlimit 100M
+}
+smtp tcp://0.0.0.0:25 {
+    max_message_size 100M
+}
+submission tls://0.0.0.0:465 tcp://0.0.0.0:587 {
+}
+imap tls://0.0.0.0:993 tcp://0.0.0.0:143 {
+    turn_enable yes
+    turn_server 203.0.113.1
+    turn_port 3478
+    turn_secret s3cret
+    turn_ttl 86400
+    iroh_relay_url http://203.0.113.1:3340
+}
+turn udp://0.0.0.0:3478 tcp://0.0.0.0:3478 {
+    realm 203.0.113.1
+    secret s3cret
+    relay_ip 203.0.113.1
+}
+chatmail tcp://0.0.0.0:80 {
+    language fa
+    ss_addr "0.0.0.0:8388"
+    ss_password "pw"
+    ss_cipher "aes-128-gcm"
+}
+chatmail tls://0.0.0.0:443 {
+    alpn_smtp smtp
+    alpn_imap imap
+    language fa
+}
+"#;
+
+    #[test]
+    fn legacy_directives_and_listen_lines_do_not_lock() {
+        let cfg = crate::parse_maddy_config(LEGACY_CONF).unwrap();
+        assert!(cfg.deployment_policy().unwrap().0.is_empty());
+        // Still parsed as the bind and file defaults.
+        assert_eq!(cfg.smtp_listen.as_deref(), Some("0.0.0.0:25"));
+        assert!(cfg.alpn_imap.is_some() && cfg.alpn_smtp.is_some());
+        assert_eq!(cfg.retention.as_deref(), Some("24h"));
+        assert_eq!(cfg.turn_port, 3478);
+        assert!(cfg.ss_configured());
+    }
+
+    #[test]
+    fn settings_block_locks_only_named_keys() {
+        let conf = format!(
+            "{LEGACY_CONF}\nsettings {{\n    smtp_port 2525\n    shared_port_imap false\n}}\n"
+        );
+        let cfg = crate::parse_maddy_config(&conf).unwrap();
+        let policy = cfg.deployment_policy().unwrap();
+        let keys: Vec<_> = policy.0.keys().map(String::as_str).collect();
+        assert_eq!(keys, ["__SHARED_PORT_IMAP__", "__SMTP_PORT__"]);
+        assert!(policy.check_writable(&["__SMTP_LOCAL_ONLY__"]).is_ok());
+        assert!(policy.check_writable(&["__SHARED_PORT_SMTP__"]).is_ok());
+        assert!(policy.check_writable(&["__SMTP_PORT__"]).is_err());
+    }
+
+    #[test]
+    fn environment_port_and_listen_address_lock() {
+        let mut cfg = crate::parse_maddy_config(LEGACY_CONF).unwrap();
+        cfg.apply_deployment_environment_from(|key| {
+            (key == "CHATMAIL_IMAP_PORT").then(|| "1143".to_string())
+        })
+        .unwrap();
+        let sources = cfg.settings_policy.sources();
+        assert_eq!(sources["__IMAP_PORT__"], "environment:CHATMAIL_IMAP_PORT");
+        // A port variable does not imply a bind mode.
+        assert!(!sources.contains_key("__IMAP_LOCAL_ONLY__"));
+
+        let mut cfg = crate::parse_maddy_config(LEGACY_CONF).unwrap();
+        cfg.apply_deployment_environment_from(|key| {
+            (key == "CHATMAIL_SMTP_ADDR").then(|| "127.0.0.1:2525".to_string())
+        })
+        .unwrap();
+        let policy = &cfg.settings_policy.0;
+        assert_eq!(policy["__SMTP_PORT__"].value, "2525");
+        assert_eq!(policy["__SMTP_LOCAL_ONLY__"].value, "true");
+        assert_eq!(
+            policy["__SMTP_PORT__"].source,
+            "environment:CHATMAIL_SMTP_ADDR"
+        );
+        assert_eq!(cfg.smtp_listen.as_deref(), Some("127.0.0.1:2525"));
+    }
+
+    #[test]
+    fn legacy_turn_range_keeps_runtime_handling_but_protected_range_is_checked() {
+        let legacy = "turn udp://0.0.0.0:3478 {\n    secret s\n    relay_port_min 51000\n    relay_port_max 50000\n}\n";
+        assert!(crate::parse_maddy_config(legacy).is_ok());
+        let protected = format!("{legacy}settings {{\n    turn_relay_port_max 50500\n}}\n");
+        assert!(crate::parse_maddy_config(&protected).is_err());
+    }
+
+    #[test]
+    fn legacy_admin_paths_join_the_overlap_check() {
+        let conf = "chatmail tcp://0.0.0.0:80 {\n    admin_path /admin/api\n}\n";
+        let err = crate::parse_maddy_config(conf).unwrap_err().to_string();
+        assert!(err.contains("must not overlap"), "{err}");
+        let conf = "chatmail tcp://0.0.0.0:80 {\n    admin_path /private-api\n}\n";
+        assert!(crate::parse_maddy_config(conf).is_ok());
+    }
+
+    #[test]
+    fn admin_path_writes_use_the_api_character_set() {
+        assert_eq!(
+            validate_admin_path_write("admin_web_path", "/panel/").unwrap(),
+            "/panel"
+        );
+        for bad in ["/panel+1", "/a b", "/x%2e"] {
+            assert!(
+                validate_admin_path_write("admin_web_path", bad).is_err(),
+                "{bad}"
+            );
+        }
+        let long = format!("/{}", "a".repeat(253));
+        assert!(validate_admin_path_write("admin_web_path", &long).is_err());
+        assert!(validate("admin_web_path", "/panel+1").is_ok());
     }
 
     #[test]
