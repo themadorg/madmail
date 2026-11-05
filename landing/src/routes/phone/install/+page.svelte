@@ -137,7 +137,7 @@
 		margin: 2rem 0 0;
 		padding: 0;
 		list-style: none;
-		border-radius: 1.25rem;
+		border-radius: 0;
 		background: var(--pm-group);
 		color: var(--pm-ink);
 		overflow: hidden;
@@ -167,7 +167,7 @@
 		gap: 1.1rem;
 		margin-top: 2.5rem;
 		padding: 1.6rem;
-		border-radius: 1.6rem;
+		border-radius: 0;
 		border: 1px solid var(--color-border);
 	}
 
@@ -216,13 +216,13 @@
 		font-family: var(--font-mono);
 		font-size: 0.88em;
 		padding: 0.1em 0.35em;
-		border-radius: 0.3rem;
+		border-radius: 0;
 		background: var(--color-surface-code);
 	}
 
 	.fingerprint {
 		padding: 0.9rem 1.1rem;
-		border-radius: 0.9rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		font-family: var(--font-mono);
 		font-size: 0.85rem;
@@ -236,7 +236,7 @@
 		align-items: flex-start;
 		margin-top: 1.25rem;
 		padding: 1rem 1.1rem;
-		border-radius: 1.1rem;
+		border-radius: 0;
 		background: color-mix(in srgb, #f08a1c 12%, transparent);
 	}
 

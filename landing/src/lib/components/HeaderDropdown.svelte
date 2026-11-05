@@ -33,7 +33,7 @@
 		justify-content: center;
 		height: 1.9rem;
 		padding: 0;
-		border-radius: 0.5rem;
+		border-radius: 0;
 		background: transparent;
 		color: var(--color-text-subtle);
 		cursor: pointer;
@@ -75,7 +75,7 @@
 		min-width: 10rem;
 		padding: 0.35rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.6rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		color: var(--color-text);
 		box-shadow: 0 8px 24px rgb(0 0 0 / 15%);
@@ -85,7 +85,7 @@
 		align-items: center;
 		gap: 0.6rem;
 		padding: 0.6rem 0.75rem;
-		border-radius: 0.35rem;
+		border-radius: 0;
 		color: inherit;
 		font-size: 0.85rem;
 		text-decoration: none;

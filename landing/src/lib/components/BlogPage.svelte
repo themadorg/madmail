@@ -6,25 +6,33 @@
 	import { renderReleaseMarkdown } from '$lib/releaseMarkdown.js';
 	import { siteOrigin } from '$lib/siteMeta.js';
 	import { posts as allPosts } from '$lib/blog.js';
+	import { isLang, langDir, languages as siteLanguages, translate } from '$lib/i18n/index.js';
+
+	/** @param {string} code */
+	const languageName = (code) => siteLanguages.find((l) => l.code === code)?.name ?? code;
 
 	/** @type {{ posts: { slug: string, title: string, date: string, author?: string, language?: string, translation?: string, description: string, body: string }[], selected?: { slug: string, title: string, date: string, author?: string, language?: string, translation?: string, description: string, body: string } | null }} */
 	let { posts, selected = null } = $props();
 	// Query strings don't exist at prerender time; the static page is English and ?lang= applies after hydration.
 	const requestedLanguage = $derived(browser ? page.url.searchParams.get('lang') : null);
-	const indexLanguage = $derived(['en', 'fa', 'ru'].includes(requestedLanguage) ? requestedLanguage : 'en');
+	const indexLanguage = $derived(isLang(requestedLanguage) ? requestedLanguage : 'en');
+	/** Chrome strings in the language of what is shown: the post, or the index edition. */
+	const chrome = $derived(selected?.language ?? indexLanguage);
+	/** @param {string} key */
+	const t = (key) => translate(chrome, key);
 	const groups = $derived([...new Set(posts.map((post) => post.translation))].map((key) => {
 		const variants = posts.filter((post) => post.translation === key);
 		return variants.find((post) => post.language === indexLanguage) ?? variants.find((post) => post.language === 'en') ?? variants[0];
 	}));
 	const visible = $derived(selected ? [selected] : groups);
-	const languages = $derived(selected ? allPosts.filter((post) => post.translation === selected.translation).map((post) => ({ label: post.language === 'fa' ? 'فارسی' : post.language === 'en' ? 'English' : post.language === 'ru' ? 'Русский' : post.language, href: `/blog/${post.slug}`, current: post.slug === selected.slug })) : [...new Set(allPosts.map((post) => post.language))].map((language) => ({ label: language === 'fa' ? 'فارسی' : language === 'en' ? 'English' : language === 'ru' ? 'Русский' : language, href: `/blog?lang=${language}`, current: language === indexLanguage })));
+	const languages = $derived(selected ? allPosts.filter((post) => post.translation === selected.translation).map((post) => ({ label: languageName(post.language ?? 'en'), href: `/blog/${post.slug}`, current: post.slug === selected.slug })) : [...new Set(allPosts.map((post) => post.language))].map((language) => ({ label: languageName(language), href: `/blog?lang=${language}`, current: language === indexLanguage })));
 </script>
 
 <DocHeader section="Blog" {languages} article={selected} blogLanguage={selected?.language ?? indexLanguage} />
 
 <div class="blog-page">
 	<header class="page-cover">
-		<div class="page-heading" lang={selected?.language ?? indexLanguage} dir={(selected?.language ?? indexLanguage) === 'fa' ? 'rtl' : undefined}>
+		<div class="page-heading" lang={selected?.language ?? indexLanguage} dir={langDir(chrome)}>
 			{#if selected}
 				<h1>{selected.title}</h1>
 				<p class="post-meta">
@@ -34,27 +42,27 @@
 						<a href="https://github.com/{encodeURIComponent(selected.author)}">{selected.author}</a>
 					{/if}
 					<svg class="meta-dot" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="2" fill="currentColor" /></svg>
-					<a href="/blog/{selected.slug}/source.md">Source</a>
+					<a href="/blog/{selected.slug}/source.md">{t('blog_source')}</a>
 				</p>
 			{:else}
-				<h1>{indexLanguage === 'fa' ? 'وبلاگ' : indexLanguage === 'ru' ? 'Блог' : 'Blog'}</h1>
-				<p>{indexLanguage === 'fa' ? 'یادداشت‌های پروژهٔ مدمیل.' : indexLanguage === 'ru' ? 'Заметки о проекте Madmail.' : 'Notes from the Madmail project.'} <a href="/blog/rss.xml">RSS</a></p>
+				<h1>{t('blog_title')}</h1>
+				<p>{t('blog_lede')} <a href="/blog/rss.xml">RSS</a></p>
 			{/if}
 		</div>
 	</header>
 	<main>
 		{#if visible.length === 0}
-			<p>No posts yet.</p>
+			<p>{t('blog_empty')}</p>
 		{:else}
 			{#each visible as post (post.slug)}
 				{#if !selected}
 					<div class="post-entry">
-					<a lang={post.language} dir={post.language === 'fa' ? 'rtl' : undefined} class="post-card" href="/blog/{post.slug}" aria-labelledby="post-title-{post.slug}">
+					<a lang={post.language} dir={langDir(post.language ?? 'en')} class="post-card" href="/blog/{post.slug}" aria-labelledby="post-title-{post.slug}">
 						<h2 id="post-title-{post.slug}">{post.title}</h2>
 						<p class="date"><time datetime={post.date}>{post.date}</time></p>
 						{#if post.description}<p>{post.description}</p>{/if}
 					</a>
-					<div class="language-tags" aria-label="Available translations">
+					<div class="language-tags" aria-label={t('blog_translations')}>
 						{#each allPosts.filter((variant) => variant.translation === post.translation) as variant}
 							<a href="/blog/{variant.slug}" lang={variant.language}>{variant.language.toUpperCase()}</a>
 						{/each}
@@ -62,7 +70,7 @@
 					</div>
 				{:else}
 					<article>
-						<div class="notes" lang={post.language} dir={post.language === 'fa' ? 'rtl' : undefined}>{@html renderReleaseMarkdown(post.body, { baseUrl: `${siteOrigin}/blog/${post.slug}`, internalLinks: true, wrapTables: true })}</div>
+						<div class="notes" lang={post.language} dir={langDir(post.language ?? 'en')}>{@html renderReleaseMarkdown(post.body, { baseUrl: `${siteOrigin}/blog/${post.slug}`, internalLinks: true, wrapTables: true })}</div>
 					</article>
 				{/if}
 			{/each}
@@ -90,11 +98,9 @@
 	}
 	.page-cover {
 		min-height: clamp(9rem, 20vw, 15rem);
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-surface) 75%, #6b8afd),
-			color-mix(in srgb, var(--color-surface) 92%, #6b8afd)
-		);
+		background: var(--paper-2);
+		border-block-end: 10px solid transparent;
+		border-image: var(--airmail) 0 0 10 / 0 0 10px round;
 	}
 	.page-heading {
 		max-width: 48rem;
@@ -141,7 +147,7 @@
 		margin-bottom: 1rem;
 		padding: 1rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		transition: background-color 250ms ease, border-color 250ms ease;
 	}
@@ -149,9 +155,9 @@
 		background: var(--color-surface-raised);
 		border-color: var(--color-border-strong);
 	}
-	.post-card::after { content: ''; position: absolute; inset: 0; border-radius: 0.75rem; }
+	.post-card::after { content: ''; position: absolute; inset: 0; border-radius: 0; }
 	.language-tags { position: relative; display: flex; gap: 0.4rem; margin-top: 0.75rem; width: fit-content; }
-	.language-tags a { padding: 0.2rem 0.4rem; border: 1px solid var(--color-border); border-radius: 0.3rem; font-size: 0.7rem; text-decoration: none; }
+	.language-tags a { padding: 0.2rem 0.4rem; border: 1px solid var(--color-border); border-radius: 0; font-size: 0.7rem; text-decoration: none; }
 	.post-card {
 		display: block;
 		margin-bottom: 0;
@@ -196,7 +202,7 @@
 		margin: 1.5rem 0;
 		overflow-x: auto;
 		border: 1px solid var(--color-border);
-		border-radius: 0.65rem;
+		border-radius: 0;
 		background: var(--color-surface);
 	}
 	.notes :global(.table-scroll:focus-visible) {
@@ -227,13 +233,13 @@
 		overflow-x: auto;
 		padding: 1rem;
 		background: var(--color-surface-code);
-		border-radius: 0.5rem;
+		border-radius: 0;
 	}
 	.notes :global(code) {
 		font-size: 0.85em;
 		background: var(--color-surface-code);
 		padding: 0.15em 0.3em;
-		border-radius: 0.2rem;
+		border-radius: 0;
 	}
 	.notes :global(pre code) {
 		padding: 0;

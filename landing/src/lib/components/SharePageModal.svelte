@@ -84,8 +84,8 @@
 
 	label { font-size: 0.8rem; color: var(--color-text-muted); }
 	.link-row { display: flex; gap: 0.5rem; margin: 0.5rem 0 1.25rem; }
-	input { flex: 1; min-width: 0; padding: 0.6rem; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-bg); color: var(--color-text); font: inherit; font-size: 0.8rem; }
-	button, a { padding: 0.6rem 0.8rem; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
+	input { flex: 1; min-width: 0; padding: 0.6rem; border: 1px solid var(--color-border); border-radius: 0; background: var(--color-bg); color: var(--color-text); font: inherit; font-size: 0.8rem; }
+	button, a { padding: 0.6rem 0.8rem; border: 1px solid var(--color-border); border-radius: 0; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
 	button:disabled { opacity: 0.65; cursor: wait; }
 	button:hover, a:hover { background: var(--color-hover); }
 	.share-options { display: flex; flex-wrap: wrap; gap: 0.5rem; }

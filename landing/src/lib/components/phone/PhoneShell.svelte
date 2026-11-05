@@ -103,13 +103,13 @@
 		text-decoration-thickness: 1.5px;
 	}
 
-	/* The red pill is the app's one primary action; the site reuses it for Download. */
+	/* The red button is the app's one primary action; the site reuses it for Download. */
 	.phone-shell :global(.pill) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.6rem;
 		padding: 0.8rem 1.4rem;
-		border-radius: 999px;
+		border-radius: 0;
 		background: var(--pm-red);
 		color: #fff;
 		font-weight: 600;

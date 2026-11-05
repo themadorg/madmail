@@ -65,7 +65,7 @@
 		min-width: 0;
 		padding: 0.75rem 1rem;
 		border: 1px solid var(--color-border-input);
-		border-radius: 0.5rem;
+		border-radius: 0;
 		font-size: 0.9rem;
 		font-weight: 500;
 		color: var(--color-text);

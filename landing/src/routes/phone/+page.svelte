@@ -374,7 +374,6 @@
 		aspect-ratio: 1;
 		border-radius: 50%;
 		border: 1px solid color-mix(in srgb, var(--pm-red) 55%, transparent);
-		background: radial-gradient(circle, color-mix(in srgb, var(--pm-red) 10%, transparent), transparent 70%);
 		opacity: 0;
 		animation: ripple 6s cubic-bezier(0.2, 0, 0, 1) infinite;
 	}
@@ -395,7 +394,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.5rem 0.8rem;
-		border-radius: 0.9rem;
+		border-radius: 0;
 		background: var(--pm-group);
 		color: var(--pm-ink);
 		font-family: var(--font-mono);
@@ -444,7 +443,7 @@
 
 	.sheet {
 		padding: 1.25rem;
-		border-radius: 1.75rem;
+		border-radius: 0;
 		background: var(--pm-panel);
 	}
 
@@ -452,7 +451,7 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
-		border-radius: 1.25rem;
+		border-radius: 0;
 		background: var(--pm-group);
 		color: var(--pm-ink);
 		overflow: hidden;
@@ -526,7 +525,7 @@
 		gap: 0.75rem;
 		width: 12.5rem;
 		aspect-ratio: 9 / 20;
-		border-radius: 1.9rem;
+		border-radius: 0;
 		background: var(--pm-panel);
 		color: var(--pm-ink);
 	}
@@ -608,7 +607,7 @@
 
 	.panel {
 		padding: 1.1rem;
-		border-radius: 1.6rem;
+		border-radius: 0;
 		background: var(--pm-panel);
 	}
 
@@ -760,7 +759,7 @@
 
 		.dc-card {
 			width: 8.5rem;
-			border-radius: 1.3rem;
+			border-radius: 0;
 		}
 
 		.dc-icon :global(svg) {

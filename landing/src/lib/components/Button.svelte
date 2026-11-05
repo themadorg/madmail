@@ -12,7 +12,7 @@
 		display: inline-block;
 		padding: 0.65rem 1.35rem;
 		border: 1px solid var(--color-btn-border);
-		border-radius: 0.5rem;
+		border-radius: 0;
 		font-size: 0.95rem;
 		font-weight: 500;
 		color: var(--color-btn-fg);

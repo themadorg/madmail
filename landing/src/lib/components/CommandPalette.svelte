@@ -8,10 +8,12 @@
 		openCommandPalette
 	} from '$lib/commandPalette.svelte.js';
 	import { theme } from '$lib/theme.svelte.js';
+	import { useI18n } from '$lib/i18n/use.svelte.js';
 	import magnifyingGlass from '$lib/icons/magnifying-glass.svg?raw';
 	import { fade } from 'svelte/transition';
 	import { cubicInOut } from 'svelte/easing';
 
+	const i18n = useI18n();
 	let query = $state('');
 	let selectedIndex = $state(0);
 	let loading = $state(false);
@@ -127,12 +129,12 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 {#if commandPalette.open}
-	<button type="button" class="backdrop" aria-label="Close command palette" transition:fade={{ duration: 180, easing: cubicInOut }} onclick={close}></button>
+	<button type="button" class="backdrop" aria-label={i18n.t('palette_close')} transition:fade={{ duration: 180, easing: cubicInOut }} onclick={close}></button>
 	<div
 		class="palette"
 		role="dialog"
 		aria-modal="true"
-		aria-label="Command palette"
+		aria-label={i18n.t('palette_label')}
 		transition:fade={{ duration: 180, easing: cubicInOut }}
 	>
 		<label class="search">
@@ -140,18 +142,18 @@
 			<input
 				bind:this={inputEl}
 				type="search"
-				placeholder="Search pages or run commands…"
+				placeholder={i18n.t('palette_placeholder')}
 				bind:value={query}
-				aria-label="Search pages or run commands"
+				aria-label={i18n.t('palette_placeholder')}
 				autocomplete="off"
 				spellcheck="false"
 			/>
 			<kbd class="hint" aria-hidden="true">Esc</kbd>
 		</label>
 
-		<div class="results" bind:this={listEl} role="listbox" aria-label="Commands and pages">
+		<div class="results" bind:this={listEl} role="listbox" aria-label={i18n.t('palette_results')}>
 			{#if loading && !pages}
-				<p class="status">Loading search index…</p>
+				<p class="status">{i18n.t('palette_loading')}</p>
 			{:else if results.length}
 				{#each results as item, index (item.id)}
 					<button
@@ -174,7 +176,7 @@
 					</button>
 				{/each}
 			{:else}
-				<p class="empty">No commands or pages match your search.</p>
+				<p class="empty">{i18n.t('palette_empty')}</p>
 			{/if}
 		</div>
 	</div>
@@ -202,7 +204,7 @@
 		max-height: min(70vh, 32rem);
 		overflow: hidden;
 		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
+		border-radius: 0;
 		background: var(--color-modal-bg);
 		box-shadow: 0 1rem 3rem var(--color-shadow);
 		transform: translateX(-50%);
@@ -255,7 +257,7 @@
 		flex-shrink: 0;
 		padding: 0.15rem 0.4rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.35rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		font-family: var(--font-mono);
 		font-size: 0.68rem;
@@ -277,7 +279,7 @@
 	}
 
 	.results::-webkit-scrollbar-thumb {
-		border-radius: 0.25rem;
+		border-radius: 0;
 		background: var(--color-scrollbar-thumb);
 	}
 
@@ -289,7 +291,7 @@
 		width: 100%;
 		padding: 0.65rem 0.75rem;
 		border: none;
-		border-radius: 0.45rem;
+		border-radius: 0;
 		background: transparent;
 		color: var(--color-text);
 		font: inherit;
