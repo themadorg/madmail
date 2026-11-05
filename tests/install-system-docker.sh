@@ -107,6 +107,11 @@ uid_before="$(id -u madmail)"
 /tmp/madmail "${args[@]}" > /tmp/reinstall.log
 [[ "$(id -u madmail)" = "$uid_before" ]]
 [[ "$(stat -c '%U:%G:%a' /var/xyzzy/etc/madmail/madmail.conf)" = root:madmail:640 ]]
+# A binary path inside the state directory is refused before anything changes.
+reject 'inside the state directory' /tmp/madmail install --simple --system --ip 127.0.0.1 \
+    --tls-mode self_signed --non-interactive --config-dir /var/xyzzy/etc/madmail \
+    --state-dir /var/xyzzy/lib/madmail --binary-path /var/xyzzy/lib/madmail/bin/madmail
+[[ ! -e /var/xyzzy/lib/madmail/bin ]]
 # Existing users can migrate into a tree whose parents do not exist.
 echo preserved > /var/xyzzy/lib/madmail/migration-marker
 /tmp/madmail install --simple --system --ip 127.0.0.1 --tls-mode self_signed \
@@ -246,7 +251,7 @@ repair_uid="$(id -u madmail)"
 # An existing account with another home is repointed at the existing state
 # directory without moving it, and ownership is reapplied after the account fix.
 usermod -d /var/wrong/madmail madmail
-chown root:root /var/xyzzy/etc/madmail/madmail.conf /var/xyzzy/lib/madmail/credentials.db
+chown root:root /var/xyzzy/etc/madmail/madmail.conf
 chmod 600 /var/xyzzy/etc/madmail/madmail.conf
 # Links planted in the service-writable state tree must never be chowned through.
 ln -s /etc/shadow /var/xyzzy/lib/madmail/planted-file
@@ -362,9 +367,20 @@ printf 'victim\n' > /var/xyzzy/hl-victim
 chmod 600 /var/xyzzy/hl-victim
 ln /var/xyzzy/hl-victim /var/xyzzy/lib/madmail/hl-planted
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-hardlink.log
-grep -q '^   ! Ownership of /var/xyzzy/lib/madmail/hl-planted left unchanged: has 2 hard links and belongs to uid 0, not to the service account' /tmp/user-hardlink.log
+grep -q '^   ! Ownership of /var/xyzzy/lib/madmail/hl-planted left unchanged: belongs to uid 0, not to the service account and has 2 hard links' /tmp/user-hardlink.log
 [[ "$(stat -c '%U:%G:%a' /var/xyzzy/hl-victim)" = root:root:600 ]]
 rm /var/xyzzy/lib/madmail/hl-planted /var/xyzzy/hl-victim
+# The link count proves nothing: once /etc/shadow is replaced by a rename (as
+# passwd, useradd or a package update do), a hard link planted in the tree is
+# the old inode's only link. It still belongs to root and is left alone.
+ln /etc/shadow /var/xyzzy/lib/madmail/x
+cp -p /etc/shadow /etc/shadow.new
+mv /etc/shadow.new /etc/shadow
+[[ "$(stat -c '%U:%h' /var/xyzzy/lib/madmail/x)" = root:1 ]]
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-renamed-shadow.log
+grep -q '^   ! Ownership of /var/xyzzy/lib/madmail/x left unchanged: belongs to uid 0, not to the service account;' /tmp/user-renamed-shadow.log
+[[ "$(stat -c '%U:%G' /var/xyzzy/lib/madmail/x)" = "$(stat -c '%U:%G' /etc/shadow)" ]]
+rm /var/xyzzy/lib/madmail/x
 # A planted link to a root-owned file outside the tree changes neither its
 # owner nor its content.
 shadow_sum="$(sha256sum /etc/shadow)"
@@ -373,21 +389,37 @@ ln -s /etc/shadow /var/xyzzy/lib/madmail/planted-shadow
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-symlink.log
 [[ "$(sha256sum /etc/shadow)" = "$shadow_sum" && "$(stat -c '%U:%G:%a' /etc/shadow)" = "$shadow_meta" ]]
 rm /var/xyzzy/lib/madmail/planted-shadow
-# When the account is recreated with a new uid (the old one is taken by another
-# account), the service's own hard-linked files still follow: they belong to the
-# previous owner of the state directory.
+# When the account is recreated with a new uid and the old uid is free, the
+# service's own hard-linked files still follow: they belong to the previous
+# owner of the state directory.
 old_uid="$(id -u madmail)"
 install -o madmail -g madmail -m 640 /dev/null /var/xyzzy/lib/madmail/own-a
 ln /var/xyzzy/lib/madmail/own-a /var/xyzzy/lib/madmail/own-b
 userdel madmail
-useradd -r -M -N -u "$old_uid" -d /nonexistent uidsquatter
+getent group madmail >/dev/null || groupadd -r madmail
+new_uid=$((old_uid + 100))
+while getent passwd "$new_uid" >/dev/null; do new_uid=$((new_uid + 1)); done
+useradd -r -M -g madmail -u "$new_uid" -d /var/xyzzy/lib/madmail -s /sbin/nologin madmail
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-newuid.log
-new_uid="$(id -u madmail)"
-[[ "$new_uid" != "$old_uid" ]]
+[[ "$(id -u madmail)" = "$new_uid" ]]
 [[ "$(stat -c '%u:%h' /var/xyzzy/lib/madmail/own-a)" = "$new_uid:2" ]]
 [[ "$(stat -c '%u' /var/xyzzy/lib/madmail)" = "$new_uid" ]]
 [[ "$(stat -c '%U:%G' /var/xyzzy/lib/madmail/credentials.db)" = madmail:madmail ]]
+# When the old uid now belongs to another account, files of that uid are that
+# account's as far as install can tell: they are listed and left alone.
+squat_uid="$(id -u madmail)"
+userdel madmail
+getent group madmail >/dev/null || groupadd -r madmail
+useradd -r -M -N -u "$squat_uid" -d /nonexistent uidsquatter
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-squatted.log
+[[ "$(id -u madmail)" != "$squat_uid" ]]
+grep -q "belonged to uid $squat_uid, which is now account uidsquatter" /tmp/user-squatted.log
+grep -q "^   ! Ownership of /var/xyzzy/lib/madmail/.* left unchanged: belongs to uid $squat_uid, not to the service account" /tmp/user-squatted.log
+[[ "$(stat -c '%u' /var/xyzzy/lib/madmail/own-a)" = "$squat_uid" ]]
+[[ "$(stat -c '%U' /var/xyzzy/lib/madmail)" = madmail ]]
 rm /var/xyzzy/lib/madmail/own-a /var/xyzzy/lib/madmail/own-b
+# The operator hands the rest over after checking it.
+find /var/xyzzy/lib/madmail -uid "$squat_uid" -exec chown -h madmail:madmail {} +
 userdel uidsquatter
 # An operator link from the config directory to a TLS file in the state tree,
 # whose target the service account then replaced with a link to /etc/shadow, is
@@ -406,7 +438,31 @@ grep -q 'Skipping ownership of /var/xyzzy/etc/madmail/certs/fullchain.pem: insid
 rm /var/xyzzy/etc/madmail/certs/fullchain.pem
 rm -r /var/xyzzy/lib/madmail/certs
 mv /tmp/fullchain.saved /var/xyzzy/etc/madmail/certs/fullchain.pem
-echo 'PASS: state walk skips foreign hard links and planted links, follows a new service uid, and never writes through an operator link into the tree'
+# A --skip-user reinstall writes into the service's tree through descriptors
+# too: a DKIM TXT file the service replaced with a link to /etc/shadow is
+# replaced, not written through. DKIM keys need a DNS name, not an IP.
+dns_args=(install --simple --system --domain mail.example.org --ip 127.0.0.1
+          --tls-mode self_signed --non-interactive --config-dir /var/xyzzy/etc/madmail
+          --state-dir /var/xyzzy/lib/madmail --binary-path /var/xyzzy/bin/madmail)
+/tmp/madmail "${dns_args[@]}" > /tmp/reinstall-dns.log
+[[ -f /var/xyzzy/lib/madmail/dkim/default.txt ]]
+runuser -u madmail -- ln -sfn /etc/shadow /var/xyzzy/lib/madmail/dkim/default.txt
+/tmp/madmail "${dns_args[@]}" --skip-user > /tmp/skip-user-reinstall.log
+[[ "$(sha256sum /etc/shadow)" = "$shadow_sum" && "$(stat -c '%U:%G:%a' /etc/shadow)" = "$shadow_meta" ]]
+[[ -f /var/xyzzy/lib/madmail/dkim/default.txt && ! -L /var/xyzzy/lib/madmail/dkim/default.txt ]]
+grep -q '^v=DKIM1' /var/xyzzy/lib/madmail/dkim/default.txt
+[[ "$(stat -c '%U:%G:%a' /var/xyzzy/etc/madmail/madmail.conf)" = root:madmail:640 ]]
+/tmp/madmail "${dns_args[@]}" > /tmp/reinstall-after-skip.log
+[[ "$(stat -c '%U' /var/xyzzy/lib/madmail/dkim/default.txt)" = madmail ]]
+/tmp/madmail "${args[@]}" > /tmp/reinstall-ip.log
+# Without the account, --skip-user refuses a state directory another account owns.
+install -d -o nobody /tmp/foreign-state
+cp /tmp/madmail /tmp/ghostmail
+reject 'does not exist, but state directory' /tmp/ghostmail install --simple --system --skip-user \
+    --skip-systemd --ip 127.0.0.1 --tls-mode self_signed --config-dir /tmp/ghost-config \
+    --state-dir /tmp/foreign-state --binary-path /tmp/ghost-bin
+[[ ! -e /tmp/ghost-config && ! -e /tmp/ghost-bin ]]
+echo 'PASS: state walk skips foreign files (hard-linked or renamed), planted links and files of a reused uid, follows a new service uid, never writes through an operator link into the tree, and --skip-user writes through descriptors'
 
 # Uninstall after an install with a shared --config-dir removes only the files
 # install put there and leaves the directory and everything else in it.
@@ -436,7 +492,16 @@ left = {entry['path'] for entry in envelope['data']['left_in_place']}
 assert {'/usr/local/etc', '/usr/local/etc/certs/fullchain.pem', '/usr/local/etc/certs/privkey.pem'} <= left, left
 PYJSON
 [[ -f /usr/local/etc/madmail.conf && -d /var/xyzzy/lib/madmail ]]
+# A parent writable by a system group the service is not in (Ubuntu's /var/log
+# is root:syslog 0775) does not block removing madmail's directory in it.
+groupadd -r syslogish
+chgrp syslogish /var/log
+chmod 775 /var/log
+mkdir -p /var/log/madmail
 /tmp/madmail uninstall --force > /tmp/uninstall.log
+[[ ! -e /var/log/madmail ]]
+chgrp root /var/log
+chmod 755 /var/log
 [[ "$(cat /usr/local/etc/other.conf)" = keep ]]
 [[ ! -e /usr/local/etc/madmail.conf && -f /usr/local/etc/certs/privkey.pem ]]
 grep -q '^Left in place: /usr/local/etc/certs/fullchain.pem (TLS file' /tmp/uninstall.log
