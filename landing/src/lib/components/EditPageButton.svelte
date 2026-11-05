@@ -24,7 +24,7 @@
 		flex-shrink: 0;
 		padding: 0.45rem 0.7rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		color: var(--color-text);
 		font: inherit;

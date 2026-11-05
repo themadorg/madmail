@@ -66,7 +66,7 @@
 {/if}
 
 <style>
-	.restore-sidebar { position: fixed; bottom: 1rem; left: 1rem; z-index: 50; display: grid; place-items: center; width: 2rem; height: 2rem; border: 1px solid var(--color-border); border-radius: 0.5rem; background: var(--color-surface); color: var(--color-text-muted); cursor: pointer; }
+	.restore-sidebar { position: fixed; bottom: 1rem; left: 1rem; z-index: 50; display: grid; place-items: center; width: 2rem; height: 2rem; border: 1px solid var(--color-border); border-radius: 0; background: var(--color-surface); color: var(--color-text-muted); cursor: pointer; }
 	.restore-sidebar:hover { background: var(--color-surface-raised); color: var(--color-text); }
 	.restore-sidebar :global(svg) { display: block; width: 1rem; height: 1rem; }
 
@@ -80,7 +80,7 @@
 		gap: 0.45rem;
 		padding: 0.55rem 0.75rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		color: var(--color-text);
 		font: inherit;
@@ -249,7 +249,7 @@
 		display: block;
 		max-width: 100%;
 		margin: 1.5rem 0;
-		border-radius: 0.5rem;
+		border-radius: 0;
 	}
 
 	.prose :global(pre) {
@@ -257,7 +257,7 @@
 		padding: 1rem 1.25rem;
 		overflow-x: auto;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		font-family: var(--font-mono);
 		font-size: 0.84rem;
@@ -295,7 +295,7 @@
 
 	.prose :global(:not(pre) > code) {
 		padding: 0.12rem 0.35rem;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		background: var(--color-surface-code);
 		color: var(--color-code-text);
 	}
@@ -335,7 +335,7 @@
 	.prose :global(blockquote) {
 		padding: 0.5rem 1.1rem;
 		border-left: 3px solid var(--color-border-strong);
-		border-radius: 0 0.4rem 0.4rem 0;
+		border-radius: 0;
 		background: var(--color-surface);
 		color: var(--color-text-subtle);
 		line-height: 1.7;
@@ -427,7 +427,7 @@
 		margin-top: 1rem;
 		padding: 0.8rem 1rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: 0;
 		background: var(--color-surface);
 	}
 

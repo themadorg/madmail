@@ -42,6 +42,19 @@ Allow: /
 User-agent: CCBot
 Allow: /
 
+User-agent: DuckAssistBot
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: MistralAI-User
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
 # Machine-readable summaries for LLMs: https://madmail.chat/llms.txt and https://madmail.chat/llms-full.txt
 # Every docs and blog page also has a Markdown copy at the same URL plus ".md".
+# The home page is published in English (/), Persian (/fa), Spanish (/es) and Russian (/ru).
 Sitemap: https://madmail.chat/sitemap.xml

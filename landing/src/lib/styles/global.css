@@ -1,36 +1,107 @@
+@import '@fontsource-variable/sofia-sans';
+@import '@fontsource-variable/sofia-sans-extra-condensed';
+@import '@fontsource-variable/vazirmatn';
+
+/*
+ * Airmail, the TheMadOrg design system (themadorg.net DESIGN.md), as Madmail wears it.
+ * Paper, ink, airmail red and blue. Depth by flat tone steps, never shadows at rest.
+ * Colours resolve through light-dark(); data-theme pins one scheme, otherwise the OS decides.
+ */
 :root {
-	--font-sans: 'Inter', system-ui, sans-serif;
-	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
-	--color-bg: #0d0d0d;
-	--color-text: #f2f2f2;
-	--color-text-muted: #a3a3a3;
-	--color-text-subtle: #8a8a8a;
-	--color-text-faint: #6b6b6b;
-	--color-border: #262626;
-	--color-border-strong: #363636;
-	--color-border-input: #404040;
-	--color-surface: #171717;
-	--color-surface-raised: #1f1f1f;
-	--color-surface-code: #1a1a1a;
-	--color-code-flash: #333333;
-	--color-code-text: #e8e8e8;
-	--color-hover: #1c1c1c;
-	--color-hover-border: #525252;
-	--color-btn-fg: #f2f2f2;
-	--color-btn-border: #404040;
-	--color-btn-primary-bg: #f2f2f2;
-	--color-btn-primary-fg: #0d0d0d;
-	--color-btn-primary-hover-bg: #d4d4d4;
-	--color-modal-bg: #171717;
-	--color-modal-text: var(--color-text);
-	--color-modal-text-faint: var(--color-text-faint);
-	--color-modal-link-hover: var(--color-modal-text);
-	--color-doc-tree-active-indicator: var(--color-text);
-	--color-overlay: rgb(0 0 0 / 0.65);
-	--color-shadow: rgb(0 0 0 / 0.45);
-	--color-close-bg: #2a2a2a;
-	--color-close-fg: #a3a3a3;
-	--color-close-hover-bg: #363636;
+	color-scheme: light dark;
+
+	--font-display: 'Sofia Sans Extra Condensed Variable', 'Sofia Sans Variable', 'Arial Narrow', sans-serif;
+	--font-text: 'Sofia Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	/* Literal commands and code only. */
+	--font-code: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+	--paper: light-dark(#ffffff, #14161b);
+	--paper-2: light-dark(#eceef1, #1c1f26);
+	--paper-3: light-dark(#dfe3e8, #262a33);
+	--ink: light-dark(#121418, #eef0f3);
+	--ink-2: light-dark(#474c55, #aab0bb);
+	--red: light-dark(#d7262e, #ff4d55);
+	--on-red: light-dark(#ffffff, #14161b);
+	--red-field: #c41f28;
+	--red-field-ink: #ffffff;
+	--blue: light-dark(#1d3a8a, #8ea8f0);
+	--blue-field: #1d3a8a;
+	--blue-field-ink: #ffffff;
+	--focus: light-dark(#1d3a8a, #8ea8f0);
+	--slip-paper: #ffffff;
+	--slip-paper-2: #eceef1;
+	--slip-ink: #121418;
+	--picture-backdrop: #111318;
+
+	--airmail: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath fill='%23d7262e' d='M0 0h10L0 10zM0 40L40 0v10L10 40z'/%3E%3Cpath fill='%231d3a8a' d='M0 20L20 0h10L0 30zM20 40l20-20v10L30 40z'/%3E%3C/svg%3E");
+
+	--step-display: clamp(3.25rem, 1.6rem + 6.4vw, 6rem);
+	--step-h2: clamp(2.5rem, 1.6rem + 3.6vw, 4.5rem);
+	--step-h3: clamp(1.5rem, 1.3rem + 0.7vw, 1.875rem);
+	--step-lead: clamp(1.1875rem, 1.1rem + 0.35vw, 1.375rem);
+	--step-body: 1.125rem;
+	--step-small: 0.9375rem;
+
+	--margin: clamp(1.25rem, 4vw, 3rem);
+	--content-max: 86rem;
+	--section-gap: clamp(6rem, 4rem + 8vw, 11rem);
+
+	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+	--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+	--dur-press: 140ms;
+	--dur-ui: 220ms;
+	--dur-enter: 640ms;
+
+	/* Paper objects stay paper on a dark desk, only slightly dimmed. */
+	--sheet: #ffffff;
+	--sheet-2: #eceef1;
+	--sheet-3: #dfe3e8;
+	--sheet-red: #d7262e;
+
+	/*
+	 * The app's older role tokens (docs, blog, releases, command palette, phone pages)
+	 * now resolve onto the Airmail palette, so every page is printed on the same paper.
+	 */
+	--font-sans: var(--font-text);
+	--font-mono: var(--font-code);
+	--color-bg: var(--paper);
+	--color-text: var(--ink);
+	--color-text-muted: var(--ink-2);
+	--color-text-subtle: var(--ink-2);
+	--color-text-faint: var(--ink-2);
+	--color-border: var(--paper-3);
+	--color-border-strong: light-dark(#9aa1ab, #4a505c);
+	--color-border-input: light-dark(#9aa1ab, #4a505c);
+	--color-surface: var(--paper-2);
+	--color-surface-raised: var(--paper-3);
+	--color-surface-code: var(--paper-2);
+	--color-code-flash: var(--paper-3);
+	--color-code-text: var(--ink);
+	--color-hover: var(--paper-2);
+	--color-hover-border: var(--red);
+	--color-btn-fg: var(--ink);
+	--color-btn-border: var(--paper-3);
+	--color-btn-primary-bg: var(--red-field);
+	--color-btn-primary-fg: var(--red-field-ink);
+	--color-btn-primary-hover-bg: color-mix(in oklab, var(--red-field) 86%, #000);
+	--color-modal-bg: var(--paper);
+	--color-modal-text: var(--ink);
+	--color-modal-text-faint: var(--ink-2);
+	--color-modal-link-hover: var(--red);
+	--color-doc-tree-active-indicator: var(--red);
+	--color-overlay: rgb(12 14 18 / 0.55);
+	--color-shadow: rgb(0 0 0 / 0.18);
+	--color-close-bg: var(--paper-2);
+	--color-close-fg: var(--ink-2);
+	--color-close-hover-bg: var(--paper-3);
+	--color-scrollbar-track: var(--paper);
+	--color-scrollbar-thumb: var(--paper-3);
+	--color-scrollbar-thumb-hover: var(--ink-2);
+	--color-matrix: var(--red);
+	--color-glitch-r: #d7262e;
+	--color-glitch-g: #1d3a8a;
+	--transition-theme: background-color 0.3s var(--ease-out), color 0.3s var(--ease-out), border-color 0.3s var(--ease-out);
+
 	--modal-max-width: 24rem;
 	--modal-max-height: 85vh;
 	--modal-max-width-lg: 42rem;
@@ -38,107 +109,219 @@
 	--modal-height-lg: 36rem;
 	--doc-content-max-width: 48rem;
 	--modal-docked-width: min(22rem, max(15rem, calc(100dvw - var(--doc-content-max-width) - 2rem)));
-	--color-scrollbar-track: #1a1a1a;
-	--color-scrollbar-thumb: #404040;
-	--color-scrollbar-thumb-hover: #525252;
-	--color-matrix: #4ade80;
-	--color-glitch-r: #f87171;
-	--color-glitch-g: #34d399;
-	--transition-theme: background-color 0.45s ease, color 0.45s ease, border-color 0.45s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--sheet: #e7e9ec;
+		--sheet-2: #d6dade;
+		--sheet-3: #c8cdd3;
+		--sheet-red: #b81f27;
+	}
+}
+
+:root[data-theme='dark'] {
+	color-scheme: dark;
+	--sheet: #e7e9ec;
+	--sheet-2: #d6dade;
+	--sheet-3: #c8cdd3;
+	--sheet-red: #b81f27;
+}
+
+:root[data-theme='light'] {
+	color-scheme: light;
+}
+
+/* Mad mode (click the logo): the desk runs red. */
+:root[data-mad] {
+	color-scheme: dark;
+	--paper: #120b0b;
+	--paper-2: #1d1212;
+	--paper-3: #2b1919;
+	--ink: #f7eeee;
+	--ink-2: #d4b3b3;
+	--red: #ff4d55;
+}
+
+:root:lang(fa) {
+	/* Sofia first: it has no Arabic-script glyphs, so Persian falls through to
+	   Vazirmatn per glyph while Latin names (Madmail, Delta Chat) keep the cut. */
+	--font-display: 'Sofia Sans Extra Condensed Variable', 'Vazirmatn Variable', Tahoma, sans-serif;
+	--font-text: 'Sofia Sans Variable', 'Vazirmatn Variable', Tahoma, sans-serif;
+}
+
+/* Persian anywhere on a page (a blog post, a translated doc, the footer) gets the same fallback. */
+:lang(fa) {
+	--font-display: 'Sofia Sans Extra Condensed Variable', 'Vazirmatn Variable', Tahoma, sans-serif;
+	--font-text: 'Sofia Sans Variable', 'Vazirmatn Variable', Tahoma, sans-serif;
+	--font-sans: var(--font-text);
+}
+
+[lang='fa'] {
+	font-family: var(--font-text);
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+	scroll-padding-top: 5rem;
+	interpolate-size: allow-keywords;
+	background: var(--paper);
+	accent-color: var(--red);
+	scrollbar-color: var(--paper-3) var(--paper);
+	caret-color: var(--red);
+}
+
+html,
+body {
+	margin: 0;
+	min-height: 100%;
+}
+
+body {
+	font-family: var(--font-text);
+	font-size: var(--step-body);
+	line-height: 1.55;
+	background: var(--paper);
+	color: var(--ink);
+	font-kerning: normal;
+	font-variant-numeric: tabular-nums;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
+	transition: var(--transition-theme);
+}
+
+:lang(fa) body,
+body:lang(fa) {
+	line-height: 1.8;
+}
+
+a {
+	color: inherit;
+	text-decoration-thickness: 0.08em;
+	text-underline-offset: 0.2em;
+}
+
+:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 3px;
+}
+
+::selection {
+	background: var(--red);
+	color: #fff;
+}
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.wrap {
+	width: 100%;
+	max-width: calc(var(--content-max) + 2 * var(--margin));
+	margin-inline: auto;
+	padding-inline: var(--margin);
+}
+
+/*
+ * A paper object. color-scheme: light makes every light-dark() token inside
+ * resolve to its light value, and the paper tones map to the per-theme sheet
+ * values. Chatmail is mail: the desk darkens, paper does not.
+ */
+.sheet {
+	color-scheme: light;
+	--paper: var(--sheet);
+	--paper-2: var(--sheet-2);
+	--paper-3: var(--sheet-3);
+	--red: var(--sheet-red);
+	background: var(--paper);
+	color: var(--ink);
+}
+
+/* Flat square action: one fill, decided once. Registered red in both themes. */
+.action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.6em;
+	min-height: 3.25rem;
+	padding: 0.85rem 1.5rem;
+	border: 0;
+	border-radius: 0;
+	background: var(--red-field);
+	color: var(--red-field-ink);
+	font-family: var(--font-text);
+	font-size: var(--step-body);
+	font-weight: 700;
+	line-height: 1.2;
+	text-decoration: none;
+	cursor: pointer;
+	transition:
+		transform var(--dur-press) var(--ease-out),
+		background-color var(--dur-ui) var(--ease-out);
+}
+
+.action:active {
+	transform: scale(0.97);
+}
+
+.action .arrow {
+	transition: transform var(--dur-ui) var(--ease-out);
+}
+
+:dir(rtl) .action .arrow {
+	scale: -1 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.action:hover {
+		background: color-mix(in oklab, var(--red-field) 86%, #000);
+	}
+
+	.action:hover .arrow {
+		transform: translateX(3px);
+	}
+
+	:dir(rtl) .action:hover .arrow {
+		transform: translateX(-3px);
+	}
+}
+
+.textlink {
+	font-weight: 700;
+	color: var(--ink);
+	text-decoration: underline;
+	text-decoration-color: var(--red);
+	text-decoration-thickness: 2px;
+	text-underline-offset: 0.3em;
+	transition: text-underline-offset var(--dur-ui) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.textlink:hover {
+		text-underline-offset: 0.42em;
+	}
 }
 
 html.doc-tree-docked main.doc {
 	margin-left: var(--modal-docked-width);
 	width: calc(100% - var(--modal-docked-width));
 	transition: margin-left 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-:root[data-light] {
-	--color-bg: #ffffff;
-	--color-text: #111111;
-	--color-text-muted: #666666;
-	--color-text-subtle: #555555;
-	--color-text-faint: #888888;
-	--color-border: #eeeeee;
-	--color-border-strong: #dddddd;
-	--color-border-input: #dddddd;
-	--color-surface: #f5f5f5;
-	--color-surface-raised: #f7f7f7;
-	--color-surface-code: #f0f0f0;
-	--color-code-flash: #e4e4e4;
-	--color-code-text: #222222;
-	--color-hover: #f7f7f7;
-	--color-hover-border: #aaaaaa;
-	--color-btn-fg: #111111;
-	--color-btn-border: #dddddd;
-	--color-btn-primary-bg: #111111;
-	--color-btn-primary-fg: #ffffff;
-	--color-btn-primary-hover-bg: #333333;
-	--color-modal-bg: #ffffff;
-	--color-overlay: rgb(0 0 0 / 0.4);
-	--color-shadow: rgb(0 0 0 / 0.15);
-	--color-close-bg: #e5e5e5;
-	--color-close-fg: #555555;
-	--color-close-hover-bg: #d4d4d4;
-	--modal-max-width: 24rem;
-	--modal-max-height: 85vh;
-	--modal-max-width-lg: 42rem;
-	--modal-max-height-lg: 80vh;
-	--modal-height-lg: 36rem;
-	--doc-content-max-width: 48rem;
-	--modal-docked-width: min(22rem, max(15rem, calc(100dvw - var(--doc-content-max-width) - 2rem)));
-	--color-scrollbar-track: #f0f0f0;
-	--color-scrollbar-thumb: #c4c4c4;
-	--color-scrollbar-thumb-hover: #a3a3a3;
-	--color-matrix: #166534;
-	--color-glitch-r: #f87171;
-	--color-glitch-g: #34d399;
-}
-
-:root[data-mad] {
-	--color-bg: #0a0a0a;
-	--color-text: #f5f0f0;
-	--color-text-muted: #c9a8a8;
-	--color-text-subtle: #a88888;
-	--color-text-faint: #806666;
-	--color-border: #3a2222;
-	--color-border-strong: #5c2e2e;
-	--color-border-input: #6b3535;
-	--color-surface: #151010;
-	--color-surface-raised: #1c1414;
-	--color-surface-code: #181212;
-	--color-code-flash: #3d2424;
-	--color-code-text: #f0e8e8;
-	--color-hover: #1f1515;
-	--color-hover-border: #e63946;
-	--color-btn-fg: #f5f0f0;
-	--color-btn-border: #6b3535;
-	--color-btn-primary-bg: #e63946;
-	--color-btn-primary-fg: #ffffff;
-	--color-btn-primary-hover-bg: #f04552;
-	--color-modal-bg: #171717;
-	--color-modal-text: #f2f2f2;
-	--color-modal-text-faint: #6b6b6b;
-	--color-modal-link-hover: #e63946;
-	--color-doc-tree-active-indicator: #f5f0f0;
-	--color-overlay: rgb(0 0 0 / 0.65);
-	--color-shadow: rgb(0 0 0 / 0.45);
-	--color-close-bg: #2a2a2a;
-	--color-close-fg: #a3a3a3;
-	--color-close-hover-bg: #363636;
-	--modal-max-width: 24rem;
-	--modal-max-height: 85vh;
-	--modal-max-width-lg: 42rem;
-	--modal-max-height-lg: 80vh;
-	--modal-height-lg: 36rem;
-	--doc-content-max-width: 48rem;
-	--modal-docked-width: min(22rem, max(15rem, calc(100dvw - var(--doc-content-max-width) - 2rem)));
-	--color-scrollbar-track: #151010;
-	--color-scrollbar-thumb: #5c2e2e;
-	--color-scrollbar-thumb-hover: #e63946;
-	--color-matrix: #ff6b6b;
-	--color-glitch-r: #ff4757;
-	--color-glitch-g: #e63946;
 }
 
 @keyframes code-block-flash {
@@ -161,7 +344,7 @@ html.doc-tree-docked main.doc {
 .code-block {
 	position: relative;
 	border: 1px solid var(--color-border);
-	border-radius: 0.5rem;
+	border-radius: 0;
 	background: var(--color-surface);
 	overflow: hidden;
 	font-family: var(--font-mono);
@@ -242,7 +425,7 @@ html.doc-tree-docked main.doc {
 	height: 2rem;
 	padding: 0;
 	border: 1px solid var(--color-border);
-	border-radius: 0.4rem;
+	border-radius: 0;
 	background: var(--color-surface-raised);
 	color: var(--color-text-subtle);
 	cursor: pointer;
@@ -307,42 +490,6 @@ html.doc-tree-docked main.doc {
 	}
 }
 
-*,
-*::before,
-*::after {
-	box-sizing: border-box;
-}
-
-html {
-	color-scheme: dark;
-}
-
-html[data-light] {
-	color-scheme: light;
-}
-
-html[data-mad] {
-	color-scheme: dark;
-}
-
-html,
-body {
-	margin: 0;
-	min-height: 100%;
-}
-
-body {
-	font-family: var(--font-sans);
-	-webkit-font-smoothing: antialiased;
-	background-color: var(--color-bg);
-	color: var(--color-text);
-	transition: var(--transition-theme);
-}
-
-a {
-	color: inherit;
-}
-
 ::view-transition-group(madmail-logo) {
 	animation-duration: 0.45s;
 	animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -384,96 +531,51 @@ a {
 	}
 }
 
-/* Documentation roles: keep reading, navigation, and interaction distinct. */
+
+/*
+ * Documentation, blog and releases: Read surfaces on the same paper. Headings
+ * take the display face in sentence case (long doc titles stay readable),
+ * links are ink with the red airmail underline, code is literal mono.
+ */
 html.docs-theme {
-	color-scheme: dark;
-	--color-bg: #111318;
-	--color-text: #f3f4f6;
-	--color-text-muted: #9ca3af;
-	--color-text-subtle: #9ca3af;
-	--color-text-faint: #9ca3af;
-	--color-surface: #1b202a;
-	--color-surface-raised: #242c38;
-	--color-surface-code: #1b202a;
-	--color-border: #303947;
-	--color-border-strong: #718096;
-	--color-border-input: #718096;
-	--color-hover: #242c38;
-	--color-hover-border: #8ab4ff;
-	--color-code-text: #d1d5db;
-	--color-modal-bg: #1b202a;
-	--color-modal-text-faint: #9ca3af;
-	--docs-navigation-bg: #161a22;
-	--docs-heading: #f3f4f6;
-	--docs-text: #d1d5db;
-	--docs-link: #8ab4ff;
-	--docs-link-hover: #b3d0ff;
-	--docs-link-visited: #c4b5fd;
-	--docs-focus: #b3d0ff;
-	--docs-selection: #2b4672;
+	--docs-navigation-bg: var(--paper-2);
+	--docs-heading: var(--ink);
+	--docs-text: var(--ink);
+	--docs-link: var(--ink);
+	--docs-link-hover: var(--red);
+	--docs-focus: var(--focus);
 }
-html.docs-theme[data-light] {
-	color-scheme: light;
-	--color-bg: #ffffff;
-	--color-text: #111318;
-	--color-text-muted: #4b5563;
-	--color-text-subtle: #4b5563;
-	--color-text-faint: #4b5563;
-	--color-surface: #f3f4f6;
-	--color-surface-raised: #e5e7eb;
-	--color-surface-code: #f3f4f6;
-	--color-border: #d1d5db;
-	--color-border-strong: #64748b;
-	--color-border-input: #64748b;
-	--color-hover: #e5e7eb;
-	--color-hover-border: #1d4ed8;
-	--color-code-text: #374151;
-	--color-modal-bg: #ffffff;
-	--color-modal-text-faint: #4b5563;
-	--docs-navigation-bg: #f8fafc;
-	--docs-heading: #111318;
-	--docs-text: #374151;
-	--docs-link: #1d4ed8;
-	--docs-link-hover: #1e40af;
-	--docs-link-visited: #6d28d9;
-	--docs-focus: #1d4ed8;
-	--docs-selection: #2b4672;
-}
-html.docs-theme body { background: var(--color-bg); }
+html.docs-theme body { background: var(--paper); }
 html.docs-theme .doc-header,
 html.docs-theme .modal.sidebar-layout.fixed-height.docked,
 html.docs-theme .folder-back { background: var(--docs-navigation-bg); }
-html.docs-theme main.doc .prose { color: var(--docs-text); max-width: min(48rem, 75ch); font-size: 1.0625rem; line-height: 1.75; overflow-wrap: anywhere; }
-html.docs-theme .prose :is(h1, h2, h3, h4, h5, h6) { color: var(--docs-heading); font-weight: 650; line-height: 1.3; scroll-margin-top: 5rem; }
-html.docs-theme .prose h1 { font-size: clamp(2rem, 4vw, 2.5rem); }
-html.docs-theme .prose h2 { font-size: 1.8rem; }
-html.docs-theme .prose h3 { font-size: 1.4rem; }
-html.docs-theme .prose h4 { font-size: 1.2rem; }
+html.docs-theme main.doc .prose { color: var(--docs-text); max-width: min(48rem, 75ch); font-size: 1.125rem; line-height: 1.7; overflow-wrap: anywhere; }
+html.docs-theme .prose :is(h1, h2, h3, h4, h5, h6) { color: var(--docs-heading); line-height: 1.2; scroll-margin-top: 5rem; }
+html.docs-theme .prose :is(h1, h2) { font-family: var(--font-display); font-weight: 800; line-height: 1; letter-spacing: -0.005em; }
+html.docs-theme .prose :is(h3, h4, h5, h6) { font-family: var(--font-text); font-weight: 750; }
+html.docs-theme .prose h1 { font-size: clamp(2.5rem, 1.9rem + 2.4vw, 3.5rem); text-transform: uppercase; text-wrap: balance; }
+html.docs-theme .prose h2 { font-size: clamp(1.875rem, 1.6rem + 1vw, 2.375rem); }
+html.docs-theme .prose h3 { font-size: 1.375rem; }
+html.docs-theme .prose h4 { font-size: 1.1875rem; }
+html.docs-theme .prose :lang(fa) :is(h1, h2), html.docs-theme .prose:lang(fa) :is(h1, h2) { line-height: 1.35; letter-spacing: 0; }
 html.docs-theme .prose :is(strong, em) { color: inherit; }
 html.docs-theme .prose strong { font-weight: 700; }
-html.docs-theme .prose a[href] { color: var(--docs-link); text-decoration: underline; text-underline-offset: 0.18em; }
-html.docs-theme .prose a[href]:visited { color: var(--docs-link-visited); }
+html.docs-theme .prose a[href] { color: var(--docs-link); text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 0.22em; }
 html.docs-theme .prose a[href]:hover { color: var(--docs-link-hover); }
 html.docs-theme .prose a[href] :is(strong, em, code) { color: inherit; }
 html.docs-theme :focus-visible { outline: 3px solid var(--docs-focus); outline-offset: 3px; }
-html.docs-theme ::selection { background: var(--docs-selection); color: #f3f4f6; }
-html.docs-theme .prose blockquote { color: var(--docs-text); font-size: inherit; font-style: normal; border-left-color: var(--color-border-strong); }
+html.docs-theme .prose blockquote { color: var(--docs-text); font-size: inherit; font-style: normal; border-left-color: var(--red); }
 html.docs-theme .prose :is(td, th) { color: var(--docs-text); }
-html.docs-theme .prose th { color: var(--docs-heading); font-weight: 600; }
+html.docs-theme .prose th { color: var(--docs-heading); font-weight: 700; }
 html.docs-theme .prose code { color: var(--color-code-text); background: var(--color-surface-code); }
 html.docs-theme .token { color: var(--color-code-text); }
-html.docs-theme .token.comment { color: var(--color-text-muted); }
-html.docs-theme:not([data-light]) .token.keyword { color: #c4b5fd; }
-html.docs-theme:not([data-light]) .token.string { color: #86efac; }
-html.docs-theme:not([data-light]) :is(.token.number, .token.constant) { color: #fcd34d; }
-html.docs-theme:not([data-light]) .token.function { color: #93c5fd; }
-html.docs-theme[data-light] .token.keyword { color: #6d28d9; }
-html.docs-theme[data-light] .token.string { color: #166534; }
-html.docs-theme[data-light] :is(.token.number, .token.constant) { color: #854d0e; }
-html.docs-theme[data-light] .token.function { color: #1d4ed8; }
+html.docs-theme .token.comment { color: var(--ink-2); }
+html.docs-theme .token.keyword { color: var(--red); }
+html.docs-theme .token.string { color: var(--blue); }
+html.docs-theme :is(.token.number, .token.constant) { color: var(--red); }
+html.docs-theme .token.function { color: var(--blue); }
 @media (prefers-contrast: more) {
-	html.docs-theme { --color-text-muted: #d1d5db; --color-text-subtle: #d1d5db; --color-text-faint: #d1d5db; --color-border: #718096; }
-	html.docs-theme[data-light] { --color-text-muted: #374151; --color-text-subtle: #374151; --color-text-faint: #374151; --color-border: #64748b; }
+	html.docs-theme { --color-border: var(--ink-2); }
 }
 @media (forced-colors: active) {
 	html.docs-theme .file-link.active { outline: 1px solid Highlight; }
@@ -482,16 +584,39 @@ html.docs-theme[data-light] .token.function { color: #1d4ed8; }
 
 html.docs-theme .prose .external-link-icon { display: inline-block; width: 0.75em; height: 0.75em; margin-left: 0.2em; vertical-align: super; }
 
-@font-face {
- font-family: Shabnam;
- src: url('/fonts/shabnam/Shabnam.woff2') format('woff2');
- font-weight: 400;
- font-display: swap;
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
 }
-@font-face {
- font-family: Shabnam;
- src: url('/fonts/shabnam/Shabnam-Bold.woff2') format('woff2');
- font-weight: 600 900;
- font-display: swap;
+
+/* Airmail pages (the localized home and the footer): stamp lettering for headings. */
+.airmail :is(h1, h2, h3) {
+	margin: 0;
+	font-family: var(--font-display);
+	font-weight: 800;
+	line-height: 0.92;
+	letter-spacing: -0.01em;
+	text-transform: uppercase;
+	text-wrap: balance;
 }
-[lang="fa"] { font-family: Shabnam, sans-serif; }
+
+.airmail:lang(fa) :is(h1, h2, h3),
+.airmail :lang(fa) :is(h1, h2, h3) {
+	line-height: 1.25;
+	letter-spacing: 0;
+}
+
+.airmail p {
+	margin: 0;
+	text-wrap: pretty;
+}
+
+.airmail :is(img, svg) {
+	display: block;
+	max-width: 100%;
+}

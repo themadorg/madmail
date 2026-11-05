@@ -174,7 +174,7 @@
 		min-width: 0;
 		padding: 0.4rem 0.65rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		color: var(--color-modal-text-faint);
 	}
@@ -201,7 +201,7 @@
 		color: var(--color-modal-text-faint);
 	}
 
-	.folder-row { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0.4rem 0.45rem; border: 0; border-radius: 0.25rem; background: transparent; color: var(--color-text); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; }
+	.folder-row { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0.4rem 0.45rem; border: 0; border-radius: 0; background: transparent; color: var(--color-text); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; }
 	.folder-row:hover, .folder-back:hover { background: var(--color-hover); }
 	.folder-row .icon :global(svg) { width: 1rem; height: 1rem; }
 	.folder-back { position: sticky; top: 0; z-index: 2; flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; padding: 0.5rem 0.45rem; background: var(--color-bg); border: 0; border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; }
@@ -235,7 +235,7 @@
 		height: 1.5rem;
 		padding: 0;
 		border: none;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		background: transparent;
 		color: var(--color-modal-text-faint);
 		cursor: pointer;
@@ -325,7 +325,7 @@
 
 	.folder-row, .file-link, .tree-root > .node > .file-link, .node .file-link {
 		padding: 0.4rem 0.45rem;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		font-weight: 400;
 		color: var(--color-text-muted);
 		line-height: 1.4;

@@ -1,6 +1,5 @@
-import { releases } from '$lib/releases.js';
-import { homeJsonLd } from '$lib/structuredData.js';
+import { homeData } from '$lib/homeData.js';
 
 export function load() {
-	return { jsonLd: homeJsonLd(releases[0]) };
+	return homeData('en');
 }

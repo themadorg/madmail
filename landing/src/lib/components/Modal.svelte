@@ -233,7 +233,7 @@
 		max-height: var(--modal-height);
 		overflow: hidden;
 		padding: 1.5rem;
-		border-radius: 0.75rem;
+		border-radius: 0;
 		background: var(--color-modal-bg);
 		box-shadow: 0 1rem 3rem var(--color-shadow);
 		color: var(--color-modal-text);
@@ -394,13 +394,13 @@
 	}
 
 	.body::-webkit-scrollbar-track {
-		border-radius: 0.25rem;
+		border-radius: 0;
 		background: var(--color-scrollbar-track);
 	}
 
 	.body::-webkit-scrollbar-thumb {
 		border: 2px solid var(--color-scrollbar-track);
-		border-radius: 0.25rem;
+		border-radius: 0;
 		background: var(--color-scrollbar-thumb);
 	}
 

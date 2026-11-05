@@ -8,6 +8,7 @@ import { rehypeDocToc } from './src/lib/rehypeDocToc.js';
 import { rehypeHeadingIds } from './src/lib/rehypeHeadingIds.js';
 import { highlightMdsvex } from './src/lib/mdsvexHighlight.js';
 import { remarkLandingLinks, remarkPlainPowershell } from './src/lib/remarkLandingLinks.js';
+import { Features } from 'lightningcss';
 import { defineConfig } from 'vite';
 
 function generateDocumentationTree() {
@@ -49,6 +50,14 @@ const phoneReleases = (await fetchReleases('themadorg/madmail-phone')).map((rele
 await writeFile(new URL('./src/lib/assets/phoneReleases.json', import.meta.url), JSON.stringify(phoneReleases));
 
 export default defineConfig({
+	css: {
+		lightningcss: {
+			// Keep native light-dark(). The minifier's polyfill resolves it once on :root,
+			// so tokens inherited into a `.sheet` (color-scheme: light) would keep their
+			// dark values and text would vanish on paper. Chrome 123, Safari 17.5, Firefox 120.
+			exclude: Features.LightDark
+		}
+	},
 	build: {
 		chunkSizeWarningLimit: 10000,
 		rolldownOptions: {

@@ -1,0 +1,7 @@
+# Security contact for madmail.chat and the Madmail software.
+# Please report vulnerabilities privately through GitHub security advisories.
+Contact: https://github.com/themadorg/madmail/security/advisories/new
+Expires: 2027-05-01T00:00:00.000Z
+Policy: https://github.com/themadorg/madmail/security/policy
+Preferred-Languages: en, fa, es, ru
+Canonical: https://madmail.chat/.well-known/security.txt

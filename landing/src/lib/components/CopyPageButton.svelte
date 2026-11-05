@@ -131,7 +131,7 @@
 		display: flex;
 		align-items: stretch;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		overflow: hidden;
 	}
@@ -188,7 +188,7 @@
 		min-width: 10.5rem;
 		padding: 0.25rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: 0;
 		background: var(--color-surface);
 		box-shadow: 0 8px 24px var(--color-shadow);
 	}
@@ -201,7 +201,7 @@
 		width: 100%;
 		padding: 0.5rem 0.65rem;
 		border: none;
-		border-radius: 0.35rem;
+		border-radius: 0;
 		background: transparent;
 		color: var(--color-text);
 		font: inherit;

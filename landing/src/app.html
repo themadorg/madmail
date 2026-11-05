@@ -1,17 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="text-scale" content="scale" />
+		<meta name="color-scheme" content="light dark" />
 		<script>
-			try {
-				const mode = localStorage.getItem('madmail-theme') || (localStorage.getItem('madmail-light') === 'true' ? 'light' : 'system');
-				if (mode === 'light' || (mode === 'system' && matchMedia('(prefers-color-scheme: light)').matches)) {
-					document.documentElement.dataset.light = '';
-				}
-			} catch (_) {}
-			document.documentElement.classList.toggle('docs-theme', location.pathname === '/docs' || location.pathname.startsWith('/docs/') || location.pathname === '/releases' || location.pathname.startsWith('/releases/'));
+			(function () {
+				var d = document.documentElement;
+				d.classList.add('js');
+				try {
+					var mode = localStorage.getItem('madmail-theme') || (localStorage.getItem('madmail-light') === 'true' ? 'light' : 'system');
+					var light = mode === 'light' || (mode !== 'dark' && matchMedia('(prefers-color-scheme: light)').matches);
+					d.dataset.theme = light ? 'light' : 'dark';
+					if (light) d.dataset.light = '';
+				} catch (_) {}
+				var p = location.pathname;
+				d.classList.toggle('docs-theme', /^\/(docs|releases|blog)(\/|$)/.test(p));
+			})();
 		</script>
 		%sveltekit.head%
 	</head>

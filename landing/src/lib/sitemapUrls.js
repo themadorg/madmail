@@ -1,4 +1,6 @@
 import { posts } from '$lib/blog.js';
+import { homeAlternates } from '$lib/homeData.js';
+import { prefixedLangs } from '$lib/i18n/index.js';
 import { DOC_HREF_ALIASES, hrefFromRoute } from '$lib/docs.js';
 import { getAllDirRoutes, hrefForDirId } from '$lib/docTreeData.js';
 import { getAllDocRoutes } from '$lib/rawDocModules.js';
@@ -11,7 +13,7 @@ import { siteOrigin } from '$lib/siteMeta.js';
  * @returns {string[]}
  */
 export function getSitemapPathnames() {
-	const paths = new Set(['/', '/docs', '/docs/quick-setup', '/blog', '/releases', '/phone', '/phone/install', '/phone/faq']);
+	const paths = new Set(['/', ...prefixedLangs.map((lang) => `/${lang}`), '/docs', '/docs/quick-setup', '/blog', '/releases', '/phone', '/phone/install', '/phone/faq']);
 	for (const post of posts) {
 		paths.add(`/blog/${post.slug}`);
 	}
@@ -35,15 +37,19 @@ export function getSitemapPathnames() {
 	return [...paths].sort((a, b) => {
 		if (a === '/') return -1;
 		if (b === '/') return 1;
+		const aHome = homeAlternates.some((alt) => alt.href === a);
+		const bHome = homeAlternates.some((alt) => alt.href === b);
+		if (aHome !== bHome) return aHome ? -1 : 1;
 		return a.localeCompare(b);
 	});
 }
 
 /**
- * hreflang links between translations of one blog post.
+ * hreflang links between editions of one page: the localized homes, or the translations of a blog post.
  * @param {string} pathname
  */
-function blogAlternates(pathname) {
+function alternatesFor(pathname) {
+	if (homeAlternates.some((alt) => alt.href === pathname && alt.hreflang !== 'x-default')) return homeAlternates;
 	const post = posts.find((candidate) => `/blog/${candidate.slug}` === pathname);
 	if (!post) return [];
 	const translations = posts.filter((other) => other.translation === post.translation);
@@ -84,7 +90,7 @@ export function buildSitemapXml() {
 			const loc = `${siteOrigin}${pathname === '/' ? '/' : pathname}`;
 			const lines = [`    <loc>${escapeXml(loc)}</loc>`];
 			if (lastmod.has(pathname)) lines.push(`    <lastmod>${lastmod.get(pathname)}</lastmod>`);
-			for (const alternate of blogAlternates(pathname)) {
+			for (const alternate of alternatesFor(pathname)) {
 				lines.push(
 					`    <xhtml:link rel="alternate" hreflang="${alternate.hreflang}" href="${escapeXml(`${siteOrigin}${alternate.href}`)}"/>`
 				);

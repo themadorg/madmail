@@ -8,15 +8,6 @@ const staticFonts = join(root, 'static', 'fonts');
 /** @type {const} */
 const fonts = [
 	{
-		package: '@fontsource/inter',
-		files: [
-			'inter-latin-400-normal.woff2',
-			'inter-latin-500-normal.woff2',
-			'inter-latin-600-normal.woff2',
-			'inter-latin-700-normal.woff2'
-		]
-	},
-	{
 		package: '@fontsource/jetbrains-mono',
 		files: [
 			'jetbrains-mono-latin-400-normal.woff2',

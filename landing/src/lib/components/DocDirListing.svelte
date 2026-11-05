@@ -81,7 +81,7 @@
 		list-style: none;
 		line-height: 1.4;
 		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
+		border-radius: 0;
 		overflow: hidden;
 	}
 

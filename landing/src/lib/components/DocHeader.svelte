@@ -13,11 +13,17 @@
 	import bookOpen from '$lib/icons/book-open.svg?raw';
 	import tagIcon from '$lib/icons/tag.svg?raw';
 	import newspaper from '$lib/icons/newspaper.svg?raw';
+	import { useI18n } from '$lib/i18n/use.svelte.js';
+	import { homePath } from '$lib/i18n/index.js';
 	import { repo } from '$lib/nav.js';
 
 	/** @type {{ article?: ReturnType<typeof import("$lib/blogSource.js").parseBlogSource> | null, currentHref?: string, section?: string, blogLanguage?: string, languages?: { label: string, href: string, current: boolean }[] }} */
 	let { currentHref = '', section = 'Docs', languages = [], article = null, blogLanguage = 'en' } = $props();
 
+	const i18n = useI18n();
+	/** @type {Record<string, string>} */
+	const sectionKeys = { Docs: 'chrome_docs', Releases: 'chrome_releases', Blog: 'chrome_blog' };
+	const sectionLabel = $derived(i18n.t(sectionKeys[section] ?? 'chrome_docs'));
 	const blogHref = $derived(blogLanguage === 'en' ? '/blog' : `/blog?lang=${encodeURIComponent(blogLanguage)}`);
 
 	let shareOpen = $state(false);
@@ -34,52 +40,52 @@
 <header class="doc-header">
 	<div class="brand">
 		<div class="brand-start">
-			<MadmailLogo href="/" size="1.5rem" class="doc-logo" transitionName="madmail-logo" />
+			<MadmailLogo href={homePath(i18n.lang)} size="1.5rem" class="doc-logo" transitionName="madmail-logo" />
 			<div class="docs-label">
-				<a href="/">Madmail</a>
+				<a href={homePath(i18n.lang)} lang="en">Madmail</a>
 				<span aria-hidden="true"> / </span>
-				<a href={section === 'Blog' ? blogHref : section === 'Releases' ? '/releases' : '/docs'}>{section}</a>
+				<a href={section === 'Blog' ? blogHref : section === 'Releases' ? '/releases' : '/docs'} lang={i18n.lang}>{sectionLabel}</a>
 			</div>
-			<HeaderDropdown id="section-navigation" label="Switch section" menuLabel="Site sections" icon={chevronDown} items={[
-				{ label: 'Docs', href: '/docs', current: section === 'Docs', icon: bookOpen },
-				{ label: 'Releases', href: '/releases', current: section === 'Releases', icon: tagIcon },
-				{ label: 'Blog', href: blogHref, current: section === 'Blog', icon: newspaper }
+			<HeaderDropdown id="section-navigation" label={i18n.t('chrome_switch_section')} menuLabel={i18n.t('chrome_sections')} icon={chevronDown} items={[
+				{ label: i18n.t('chrome_docs'), href: '/docs', current: section === 'Docs', icon: bookOpen },
+				{ label: i18n.t('chrome_releases'), href: '/releases', current: section === 'Releases', icon: tagIcon },
+				{ label: i18n.t('chrome_blog'), href: blogHref, current: section === 'Blog', icon: newspaper }
 			]} />
 			{#if section === 'Docs' && !(docTreeModal.open && docTreeModal.docked)}
 			<button
 				type="button"
 				class="docs-tree"
-				aria-label="Documentation tree"
+				aria-label={i18n.t('chrome_tree')}
 				onclick={openDocTree}
 			>
 				<span class="icon" aria-hidden="true">{@html queueList}</span>
 			</button>
 			{/if}
 		</div>
-		<button type="button" class="search-bar" aria-label="Search pages" onclick={() => openCommandPalette()}>
+		<button type="button" class="search-bar" aria-label={i18n.t('chrome_search_pages')} onclick={() => openCommandPalette()}>
 			<span class="icon" aria-hidden="true">{@html magnifyingGlass}</span>
-			<span>Search documentation…</span>
+			<span lang={i18n.lang} dir={i18n.dir}>{i18n.t('chrome_search_docs')}</span>
 			<kbd>Ctrl K</kbd>
 		</button>
 		<div class="brand-end">
 			{#if languages.length}
-				<HeaderDropdown id="post-languages" label="Change post language" menuLabel="Post languages" icon={languageIcon} align="right" items={languages.map((language) => ({ ...language, lang: language.label === 'فارسی' ? 'fa' : language.label === 'Русский' ? 'ru' : language.label === 'English' ? 'en' : undefined }))} />
+				<HeaderDropdown id="post-languages" label={i18n.t('chrome_change_post_language')} menuLabel={i18n.t('chrome_post_languages')} icon={languageIcon} align="right" items={languages.map((language) => ({ ...language, lang: language.label === 'فارسی' ? 'fa' : language.label === 'Русский' ? 'ru' : language.label === 'English' ? 'en' : language.label === 'Español' ? 'es' : undefined }))} />
 			{/if}
 			<button
 				type="button"
 				class="search"
-				aria-label="Search pages"
+				aria-label={i18n.t('chrome_search_pages')}
 				onclick={() => openCommandPalette()}
 			>
 				<span class="icon" aria-hidden="true">{@html magnifyingGlass}</span>
 			</button>
-			<button type="button" class="share" aria-label="Share page" title="Share page" onclick={sharePage}>
+			<button type="button" class="share" aria-label={i18n.t('chrome_share')} title={i18n.t('chrome_share')} onclick={sharePage}>
 				<span class="icon" aria-hidden="true">{@html shareIcon}</span>
 			</button>
 			<a
 				href={repo}
 				class="github"
-				aria-label="GitHub repository"
+				aria-label={i18n.t('chrome_github')}
 				target="_blank"
 				rel="noopener noreferrer"
 			>
@@ -93,9 +99,8 @@
 <style>
 	.doc-header {
 		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
+		inset-block-start: 0;
+		inset-inline: 0;
 		height: 3rem;
 		z-index: 110;
 		display: flex;
@@ -105,8 +110,8 @@
 		margin: 0;
 		padding: 0 1rem;
 		justify-content: center;
-		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg);
+		border-bottom: 2px solid var(--ink);
+		background: var(--paper);
 		transition: var(--transition-theme);
 	}
 
@@ -123,7 +128,7 @@
 		align-items: center;
 	}
 
-	.docs-label { color: var(--color-text-muted); text-decoration: none; font-size: 0.85rem; }
+	.docs-label { color: var(--ink); text-decoration: none; font-family: var(--font-display); font-size: 1.125rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1; }
 	.docs-label a { color: inherit; text-decoration: none; }
 	.docs-label a:hover { text-decoration: underline; }
 
@@ -132,9 +137,9 @@
 		.brand { grid-template-columns: 1fr minmax(16rem, 28rem) 1fr; gap: 1rem; }
 		.brand > .brand-end { grid-column: 3; }
 		.brand-end .search { display: none; }
-		.search-bar { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.35rem 0.65rem; border: 1px solid transparent; border-radius: 0.4rem; background: transparent; color: var(--color-text-subtle); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; transition: background-color 160ms ease; }
+		.search-bar { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.35rem 0.65rem; border: 1px solid color-mix(in oklab, var(--ink) 28%, transparent); border-radius: 0; background: var(--paper); color: var(--color-text-subtle); font: inherit; font-size: 0.8rem; text-align: start; cursor: pointer; transition: background-color 160ms ease; }
 		.search-bar:hover { background: var(--color-hover); }
-		.search-bar kbd { margin-left: auto; font-size: 0.7rem; border: 1px solid var(--color-border); border-radius: 0.2rem; padding: 0.1rem 0.3rem; opacity: 0.6; }
+		.search-bar kbd { margin-inline-start: auto; font-size: 0.7rem; border: 1px solid var(--color-border); border-radius: 0; padding: 0.1rem 0.3rem; opacity: 0.6; }
 	}
 
 	.brand-start {
@@ -145,7 +150,7 @@
 		justify-self: start;
 	}
 
-	.share-status { position: absolute; top: 3.25rem; right: 1rem; padding: 0.4rem 0.65rem; border: 1px solid var(--color-border); border-radius: 0.4rem; background: var(--color-surface); color: var(--color-text-muted); font-size: 0.75rem; }
+	.share-status { position: absolute; inset-block-start: 3.25rem; inset-inline-end: 1rem; padding: 0.4rem 0.65rem; border: 1px solid var(--color-border); border-radius: 0; background: var(--color-surface); color: var(--color-text-muted); font-size: 0.75rem; }
 
 	.brand-end {
 		display: flex;
@@ -165,7 +170,7 @@
 		height: 1.9rem;
 		padding: 0;
 		border: none;
-		border-radius: 0.5rem;
+		border-radius: 0;
 		background: transparent;
 		color: var(--color-text-subtle);
 		cursor: pointer;
@@ -184,7 +189,7 @@
 		justify-content: center;
 		width: 2.25rem;
 		height: 1.9rem;
-		border-radius: 0.5rem;
+		border-radius: 0;
 		color: var(--color-text-subtle);
 		text-decoration: none;
 	}
