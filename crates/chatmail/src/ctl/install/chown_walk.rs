@@ -30,27 +30,32 @@
 //!   resolver and passes the descriptor to [`chown_tree_fd`]). The caller
 //!   records the root's owner before the walk as `old_uid`: the previous
 //!   service uid when the account was recreated with a new uid (install leaves
-//!   it out when that uid now belongs to another account);
+//!   it out when that uid now belongs to another account). The root itself is
+//!   changed last, so a run that stops half way can be repeated with the same
+//!   `old_uid`;
 //! - each directory is opened relative to its parent's descriptor with
 //!   `O_NOFOLLOW | O_DIRECTORY`, so a link swapped in fails to open (`ELOOP` or
-//!   `ENOTDIR`) instead of being followed, and is changed with `fchown` on the
-//!   opened descriptor (directories cannot be hard-linked);
+//!   `ENOTDIR`) instead of being followed, then checked with `fstat` and
+//!   changed with `fchown` on the opened descriptor (directories cannot be
+//!   hard-linked);
 //! - every other entry is opened by itself and checked with `fstat` on that
 //!   descriptor before `fchown`: on Linux `openat(O_PATH | O_NOFOLLOW)` and
 //!   `fchownat(fd, "", AT_EMPTY_PATH)`; elsewhere regular files are opened with
 //!   `O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY` and changed with `fchown`,
 //!   and FIFOs, sockets and device files are left unchanged (they are not
 //!   opened);
-//! - [`decide`] skips a link, and skips a file whose owner is neither the
-//!   service uid nor `old_uid`, whatever its link count, unless install created
-//!   that file in this run (its device and inode are in the `created` set).
-//!   The link count proves nothing: a hard link to another account's file
-//!   (for example `/etc/shadow`, possible when `fs.protected_hardlinks` is 0)
+//! - [`decide`] skips a link, a file whose owner is neither the service uid nor
+//!   `old_uid` (whatever its link count), and a directory whose owner is none
+//!   of the service uid, `old_uid` and root (with everything below it). The
+//!   link count proves nothing: a hard link to another account's file (for
+//!   example `/etc/shadow`, possible when `fs.protected_hardlinks` is 0)
 //!   becomes the inode's only link once the original name is replaced by a
 //!   rename. The mail store (`chatmail-storage` `cas.rs` / `blob.rs`)
 //!   hard-links every message into the maildirs; those files belong to the
 //!   service (`uid` or `old_uid`), so they are changed. Uid 0 is never taken
-//!   as `old_uid`.
+//!   as `old_uid`. Install creates the files it writes into the tree with the
+//!   service owner already (see `SecureInstall`), so the walk needs no list of
+//!   them.
 //!
 //! An entry that changes or disappears during the walk is skipped with a
 //! warning; only problems with the root itself are hard failures. The walk is
@@ -66,9 +71,7 @@ use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 use crate::ctl::secure_fs::cstring;
-use crate::ctl::secure_fs::{
-    fchown, file_id, fstat, fstatat_nofollow, kind, openat, FileId, DIR_FLAGS,
-};
+use crate::ctl::secure_fs::{fchown, fstat, fstatat_nofollow, kind, openat, DIR_FLAGS};
 
 /// Directory levels below the root that are still changed. Install-created
 /// state (databases, DKIM keys, mail directories) is a few levels deep.
@@ -87,6 +90,8 @@ pub struct WalkError {
 pub struct Skipped {
     pub path: PathBuf,
     pub reason: String,
+    /// The entry belongs to another account ([`Action::SkipForeignOwner`]).
+    pub foreign_owner: bool,
 }
 
 /// What the walk does with one object, from its `fstat` data.
@@ -95,40 +100,39 @@ pub enum Action {
     Chown,
     /// A symbolic link: never followed or changed.
     SkipLink,
-    /// A file owned by another account (not the service uid or `old_uid`)
-    /// that install did not create in this run.
+    /// An object owned by another account: a file not owned by the service
+    /// uid or `old_uid`, or a directory not owned by those or by root.
     SkipForeignOwner {
         owner: u32,
         links: u64,
     },
+    /// A FIFO, socket or device file where it could only be changed after
+    /// opening it (not Linux).
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    SkipSpecial,
 }
 
-/// The ownership decision for a non-directory below the root (directories are
-/// always changed: they cannot be hard-linked). `uid` is the service uid being
-/// applied, `old_uid` the previous service uid (never 0), and `created` says
-/// whether install itself created this inode in this run.
+/// The ownership decision for an object below the root. `uid` is the service
+/// uid being applied and `old_uid` the previous service uid (never 0).
+///
+/// Files are changed only when they belong to `uid` or `old_uid`. Directories
+/// are also changed when root owns them (install and root commands create
+/// them; a directory cannot be hard-linked, and one root owns cannot be moved
+/// into the tree by another account, which would need write access to it).
 #[allow(clippy::unnecessary_cast)]
-pub fn decide(st: &libc::stat, old_uid: Option<u32>, uid: u32, created: bool) -> Action {
+pub fn decide(st: &libc::stat, old_uid: Option<u32>, uid: u32) -> Action {
+    let service_owned = st.st_uid == uid || old_uid.is_some_and(|old| old != 0 && st.st_uid == old);
+    let foreign = Action::SkipForeignOwner {
+        owner: st.st_uid,
+        links: st.st_nlink as u64,
+    };
     match kind(st) {
         libc::S_IFLNK => Action::SkipLink,
-        libc::S_IFDIR => Action::Chown,
-        _ => {
-            let service_owned =
-                st.st_uid == uid || old_uid.is_some_and(|old| old != 0 && st.st_uid == old);
-            if service_owned || created {
-                Action::Chown
-            } else {
-                Action::SkipForeignOwner {
-                    owner: st.st_uid,
-                    links: st.st_nlink as u64,
-                }
-            }
-        }
+        libc::S_IFDIR if service_owned || st.st_uid == 0 => Action::Chown,
+        _ if service_owned => Action::Chown,
+        _ => foreign,
     }
 }
-
-/// Objects install created in this run, by device and inode.
-pub type Created = std::collections::HashSet<FileId>;
 
 struct Frame {
     fd: OwnedFd,
@@ -152,20 +156,19 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
     let c_root = cstring(root.as_os_str()).map_err(fail)?;
     let fd = openat(libc::AT_FDCWD, &c_root, DIR_FLAGS, 0).map_err(fail)?;
     let old_uid = fstat(fd.as_raw_fd()).map_err(fail)?.st_uid;
-    chown_tree_fd(fd, root, uid, gid, Some(old_uid), &Created::new())
+    chown_tree_fd(fd, root, uid, gid, Some(old_uid))
 }
 
 /// [`chown_tree`] for a root directory that is already open (with
 /// [`DIR_FLAGS`]); `root_path` is only used in messages. `old_uid` is the
-/// previous service uid, if any, and `created` the files install created in
-/// this run (see [`decide`]).
+/// previous service uid, if any (see [`decide`]). The root is always changed,
+/// after everything below it.
 pub fn chown_tree_fd(
     fd: OwnedFd,
     root_path: &Path,
     uid: u32,
     gid: u32,
     old_uid: Option<u32>,
-    created: &Created,
 ) -> Result<Vec<Skipped>, WalkError> {
     let fail = |op, path: &Path, source| WalkError {
         op,
@@ -180,14 +183,12 @@ pub fn chown_tree_fd(
             io::Error::from_raw_os_error(libc::ENOTDIR),
         ));
     }
-    let old_uid = old_uid.filter(|&u| u != 0);
     let rules = Rules {
-        old_uid,
+        old_uid: old_uid.filter(|&u| u != 0),
         uid,
         gid,
-        created,
     };
-    fchown(fd.as_raw_fd(), uid, gid).map_err(|e| fail("chown", root_path, e))?;
+    let root_fd = fd.try_clone().map_err(|e| fail("open", root_path, e))?;
     let names = read_names(&fd).map_err(|e| fail("read_dir", root_path, e))?;
 
     let mut skipped = Vec::new();
@@ -203,16 +204,19 @@ pub fn chown_tree_fd(
             continue;
         };
         let path = frame.path.join(OsStr::from_bytes(name.to_bytes()));
-        let mut skip = |reason: String| {
-            skipped.push(Skipped {
-                path: path.clone(),
-                reason,
-            })
+        let mut skip = |action: Action| {
+            if let Some(reason) = skip_reason(action) {
+                skipped.push(Skipped {
+                    path: path.clone(),
+                    reason,
+                    foreign_owner: matches!(action, Action::SkipForeignOwner { .. }),
+                })
+            }
         };
         let st = match fstatat_nofollow(frame.fd.as_raw_fd(), &name) {
             Ok(st) => st,
             Err(e) if changed_under_us(&e) => {
-                skip(format!("changed during the walk ({e})"));
+                push_changed(&mut skipped, &path, &e);
                 continue;
             }
             Err(e) => return Err(fail("stat", &path, e)),
@@ -222,23 +226,35 @@ pub fn chown_tree_fd(
             libc::S_IFLNK => {}
             libc::S_IFDIR => {
                 if frame.depth + 1 > MAX_DEPTH {
-                    skip(format!("deeper than {MAX_DEPTH} levels"));
+                    skipped.push(Skipped {
+                        path: path.clone(),
+                        reason: format!("deeper than {MAX_DEPTH} levels"),
+                        foreign_owner: false,
+                    });
                     continue;
                 }
-                let child = match openat(frame.fd.as_raw_fd(), &name, DIR_FLAGS, 0) {
-                    Ok(fd) => fd,
+                let opened = openat(frame.fd.as_raw_fd(), &name, DIR_FLAGS, 0)
+                    .and_then(|child| fstat(child.as_raw_fd()).map(|st| (child, st)));
+                let (child, child_st) = match opened {
+                    Ok(opened) => opened,
                     Err(e) if changed_under_us(&e) => {
-                        skip(format!("changed during the walk ({e})"));
+                        push_changed(&mut skipped, &path, &e);
                         continue;
                     }
                     Err(e) => return Err(fail("open", &path, e)),
                 };
+                let action = rules.decide(&child_st);
+                if action != Action::Chown {
+                    // Not descended: another account's directory.
+                    skip(action);
+                    continue;
+                }
                 fchown(child.as_raw_fd(), rules.uid, rules.gid)
                     .map_err(|e| fail("chown", &path, e))?;
                 let names = match read_names(&child) {
                     Ok(names) => names,
                     Err(e) if changed_under_us(&e) => {
-                        skip(format!("changed during the walk ({e})"));
+                        push_changed(&mut skipped, &path, &e);
                         continue;
                     }
                     Err(e) => return Err(fail("read_dir", &path, e)),
@@ -252,32 +268,38 @@ pub fn chown_tree_fd(
                 });
             }
             entry_kind => match chown_entry(frame.fd.as_raw_fd(), &name, entry_kind, &rules) {
-                Ok(None) => {}
-                Ok(Some(reason)) => skip(reason),
-                Err(e) if changed_under_us(&e) => skip(format!("changed during the walk ({e})")),
+                Ok(action) => skip(action),
+                Err(e) if changed_under_us(&e) => push_changed(&mut skipped, &path, &e),
                 Err(e) => return Err(fail("chown", &path, e)),
             },
         }
     }
+    fchown(root_fd.as_raw_fd(), uid, gid).map_err(|e| fail("chown", root_path, e))?;
     Ok(skipped)
 }
 
-/// The ids and rules the walk applies to every entry.
-struct Rules<'a> {
+fn changed_reason(e: &io::Error) -> String {
+    format!("changed during the walk ({e})")
+}
+
+fn push_changed(skipped: &mut Vec<Skipped>, path: &Path, e: &io::Error) {
+    skipped.push(Skipped {
+        path: path.to_path_buf(),
+        reason: changed_reason(e),
+        foreign_owner: false,
+    });
+}
+
+/// The ids the walk applies to every entry.
+struct Rules {
     old_uid: Option<u32>,
     uid: u32,
     gid: u32,
-    created: &'a Created,
 }
 
-impl Rules<'_> {
+impl Rules {
     fn decide(&self, st: &libc::stat) -> Action {
-        decide(
-            st,
-            self.old_uid,
-            self.uid,
-            self.created.contains(&file_id(st)),
-        )
+        decide(st, self.old_uid, self.uid)
     }
 }
 
@@ -285,6 +307,9 @@ impl Rules<'_> {
 pub fn skip_reason(action: Action) -> Option<String> {
     match action {
         Action::Chown | Action::SkipLink => None,
+        Action::SkipSpecial => {
+            Some("not a regular file, directory or link; left unchanged on this platform".into())
+        }
         Action::SkipForeignOwner { owner, links } => {
             let links = if links > 1 {
                 format!(" and has {links} hard links")
@@ -293,21 +318,16 @@ pub fn skip_reason(action: Action) -> Option<String> {
             };
             Some(format!(
                 "belongs to uid {owner}, not to the service account{links}; it may be another \
-                 account's file (check it, and change its owner yourself if madmail needs it)"
+                 account's file"
             ))
         }
     }
 }
 
 /// Check and change one non-directory entry through a descriptor for it.
-/// Returns why it was left unchanged, if it was.
+/// Returns the action taken ([`Action::Chown`] when it was changed).
 #[cfg(target_os = "linux")]
-fn chown_entry(
-    dir: RawFd,
-    name: &CStr,
-    _kind: libc::mode_t,
-    rules: &Rules<'_>,
-) -> io::Result<Option<String>> {
+fn chown_entry(dir: RawFd, name: &CStr, _kind: libc::mode_t, rules: &Rules) -> io::Result<Action> {
     // O_PATH opens the entry itself (a link too) without reading it.
     let fd = openat(
         dir,
@@ -336,7 +356,7 @@ fn chown_entry(
             return Err(io::Error::last_os_error());
         }
     }
-    Ok(skip_reason(action))
+    Ok(action)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -344,13 +364,11 @@ fn chown_entry(
     dir: RawFd,
     name: &CStr,
     entry_kind: libc::mode_t,
-    rules: &Rules<'_>,
-) -> io::Result<Option<String>> {
+    rules: &Rules,
+) -> io::Result<Action> {
     if entry_kind != libc::S_IFREG {
         // Without O_PATH, a FIFO, socket or device would have to be opened.
-        return Ok(Some(
-            "not a regular file, directory or link; left unchanged on this platform".into(),
-        ));
+        return Ok(Action::SkipSpecial);
     }
     let fd = openat(dir, name, crate::ctl::secure_fs::FILE_FLAGS, 0)?;
     let st = fstat(fd.as_raw_fd())?;
@@ -361,7 +379,7 @@ fn chown_entry(
     if action == Action::Chown {
         fchown(fd.as_raw_fd(), rules.uid, rules.gid)?;
     }
-    Ok(skip_reason(action))
+    Ok(action)
 }
 
 /// Errors that mean an entry was replaced or removed after it was listed.
@@ -470,23 +488,22 @@ mod tests {
     }
 
     #[test]
-    fn decide_changes_only_files_of_the_service_or_created_by_install() {
+    fn decide_changes_only_objects_of_the_service() {
         let (old, new) = (980, 990);
-        let d = |kind, nlink, owner, created| {
-            decide(&stat_of(kind, nlink, owner), Some(old), new, created)
-        };
+        let d = |kind, nlink, owner| decide(&stat_of(kind, nlink, owner), Some(old), new);
         // Hard-linked message files of the old or the new service uid are
         // changed: the repair case after the account got a new uid.
-        assert_eq!(d(libc::S_IFREG, 2, old, false), Action::Chown);
-        assert_eq!(d(libc::S_IFREG, 3, new, false), Action::Chown);
-        assert_eq!(d(libc::S_IFREG, 1, old, false), Action::Chown);
+        assert_eq!(d(libc::S_IFREG, 2, old), Action::Chown);
+        assert_eq!(d(libc::S_IFREG, 3, new), Action::Chown);
+        assert_eq!(d(libc::S_IFREG, 1, old), Action::Chown);
         // A file of another account (root, another user) is skipped whatever
         // its link count: a hard link to /etc/shadow becomes the only link once
-        // /etc/shadow is replaced by a rename.
+        // /etc/shadow is replaced by a rename, and a hard link to the config
+        // file root just wrote is root's too.
         for foreign in [0, 1000] {
             for links in [1, 2] {
                 assert_eq!(
-                    d(libc::S_IFREG, links, foreign, false),
+                    d(libc::S_IFREG, links, foreign),
                     Action::SkipForeignOwner {
                         owner: foreign,
                         links: links as u64
@@ -494,24 +511,31 @@ mod tests {
                 );
             }
         }
-        // ... unless install created that inode in this run.
-        assert_eq!(d(libc::S_IFREG, 1, 0, true), Action::Chown);
         assert!(matches!(
-            d(libc::S_IFIFO, 1, 1000, false),
+            d(libc::S_IFIFO, 1, 1000),
             Action::SkipForeignOwner { .. }
         ));
         // Uid 0 is never the old service uid; without one, only `new` counts.
         assert!(matches!(
-            decide(&stat_of(libc::S_IFREG, 2, 0), Some(0), new, false),
+            decide(&stat_of(libc::S_IFREG, 2, 0), Some(0), new),
             Action::SkipForeignOwner { .. }
         ));
         assert!(matches!(
-            decide(&stat_of(libc::S_IFREG, 2, old), None, new, false),
+            decide(&stat_of(libc::S_IFREG, 2, old), None, new),
             Action::SkipForeignOwner { .. }
         ));
-        // Directories have nlink >= 2 by nature and cannot be hard-linked.
-        assert_eq!(d(libc::S_IFDIR, 7, 0, false), Action::Chown);
-        assert_eq!(d(libc::S_IFLNK, 1, new, false), Action::SkipLink);
+        // Directories (nlink >= 2 by nature, never hard-linked) are changed
+        // when the service or root owns them, not when another account does.
+        assert_eq!(d(libc::S_IFDIR, 7, 0), Action::Chown);
+        assert_eq!(d(libc::S_IFDIR, 2, old), Action::Chown);
+        assert_eq!(
+            d(libc::S_IFDIR, 2, 1000),
+            Action::SkipForeignOwner {
+                owner: 1000,
+                links: 2
+            }
+        );
+        assert_eq!(d(libc::S_IFLNK, 1, new), Action::SkipLink);
         let reason = skip_reason(Action::SkipForeignOwner { owner: 0, links: 2 }).unwrap();
         assert!(
             reason.starts_with("belongs to uid 0, not to the service account and has 2 hard links"),
@@ -520,10 +544,10 @@ mod tests {
     }
 
     #[test]
-    fn foreign_files_are_skipped_unless_created_in_this_run() {
+    fn foreign_files_and_dirs_are_skipped_through_their_descriptor() {
         // The caller's own uid is "foreign" here: the walk applies another
         // service uid, with no old uid. Nothing is chowned, so no privilege is
-        // needed; the created file would be chowned (and fail with EPERM).
+        // needed (a Chown decision would fail with EPERM).
         let state = tempfile::tempdir().unwrap();
         let root = state.path();
         fs::write(root.join("single"), "x").unwrap();
@@ -532,32 +556,58 @@ mod tests {
         let c_root = cstring(root.as_os_str()).unwrap();
         let fd = openat(libc::AT_FDCWD, &c_root, DIR_FLAGS, 0).unwrap();
         let (uid, gid) = owner(root);
+        // SAFETY: geteuid has no preconditions.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
         let rules = Rules {
             old_uid: None,
             uid: uid.wrapping_add(1),
             gid,
-            created: &Created::new(),
         };
-        for name in ["single", "linked", "linked2"] {
+        for (name, links) in [("single", 1), ("linked", 2), ("linked2", 2)] {
             let c = CString::new(name).unwrap();
-            let why = chown_entry(fd.as_raw_fd(), &c, libc::S_IFREG, &rules)
-                .unwrap()
-                .unwrap();
-            assert!(why.contains(&format!("belongs to uid {uid}")), "{why}");
+            let action = chown_entry(fd.as_raw_fd(), &c, libc::S_IFREG, &rules).unwrap();
+            assert_eq!(action, Action::SkipForeignOwner { owner: uid, links });
         }
         assert_eq!(owner(&root.join("single")), (uid, gid));
-        let m = fs::symlink_metadata(root.join("single")).unwrap();
-        let created: Created = [(m.dev(), m.ino())].into_iter().collect();
-        let rules = Rules {
-            created: &created,
-            ..rules
-        };
-        let c = CString::new("single").unwrap();
+        // The whole walk: the root is changed (EPERM here), but only after
+        // every entry was looked at and none of them was changed.
+        fs::create_dir(root.join("sub")).unwrap();
+        fs::write(root.join("sub/inner"), "x").unwrap();
+        let fd = openat(libc::AT_FDCWD, &c_root, DIR_FLAGS, 0).unwrap();
+        let err = chown_tree_fd(fd, root, uid.wrapping_add(1), gid, None).unwrap_err();
+        assert_eq!((err.op, err.path.as_path()), ("chown", root));
+        assert_eq!(err.source.raw_os_error(), Some(libc::EPERM), "{err:?}");
+    }
+
+    #[test]
+    fn foreign_directories_are_reported_and_not_descended() {
+        // With the caller's uid as the "old" uid that now belongs to another
+        // account (old_uid None), its subdirectory is foreign: reported once,
+        // its contents not looked at, and nothing changed.
         // SAFETY: geteuid has no preconditions.
-        if unsafe { libc::geteuid() } != 0 {
-            let e = chown_entry(fd.as_raw_fd(), &c, libc::S_IFREG, &rules).unwrap_err();
-            assert_eq!(e.raw_os_error(), Some(libc::EPERM), "{e:?}");
+        if unsafe { libc::geteuid() } == 0 {
+            return;
         }
+        let state = tempfile::tempdir().unwrap();
+        let root = state.path();
+        fs::create_dir_all(root.join("bob/deeper")).unwrap();
+        fs::write(root.join("bob/deeper/file"), "x").unwrap();
+        let (uid, gid) = owner(root);
+        let c_root = cstring(root.as_os_str()).unwrap();
+        let fd = openat(libc::AT_FDCWD, &c_root, DIR_FLAGS, 0).unwrap();
+        let st = fstat(fd.as_raw_fd()).unwrap();
+        assert_eq!(
+            decide(&st, None, uid.wrapping_add(1)),
+            Action::SkipForeignOwner {
+                owner: uid,
+                links: st.st_nlink as u64
+            }
+        );
+        let err = chown_tree_fd(fd, root, uid.wrapping_add(1), gid, None).unwrap_err();
+        assert_eq!(err.op, "chown");
+        assert_eq!(err.path, root);
     }
 
     #[test]
@@ -670,7 +720,6 @@ mod tests {
             old_uid: None,
             uid: 0,
             gid: 0,
-            created: &Created::new(),
         };
         let e = chown_entry(fd.as_raw_fd(), &name, libc::S_IFREG, &rules).unwrap_err();
         assert!(changed_under_us(&e), "{e:?}");

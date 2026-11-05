@@ -699,14 +699,15 @@ pub fn replace_file_with(
 }
 
 /// Create `name` in `dir` only if it does not exist (`O_CREAT | O_EXCL |
-/// O_NOFOLLOW`), with `mode` set through the descriptor. Returns the new
-/// file's `stat`, or `None` when an entry of that name (of any kind) already
-/// exists.
+/// O_NOFOLLOW`), with `mode` (and `owner`) set through the descriptor before
+/// anything is written. Returns the new file's `stat`, or `None` when an entry
+/// of that name (of any kind) already exists.
 pub fn create_new_file(
     dir: RawFd,
     name: &OsStr,
     data: &[u8],
     mode: u32,
+    owner: Option<(u32, u32)>,
 ) -> io::Result<Option<libc::stat>> {
     let c_name = cstring(name)?;
     let fd = match openat(
@@ -721,6 +722,9 @@ pub fn create_new_file(
     };
     let result = (|| {
         fchmod(fd.as_raw_fd(), mode)?;
+        if let Some((uid, gid)) = owner {
+            fchown(fd.as_raw_fd(), uid, gid)?;
+        }
         write_all(fd.as_raw_fd(), data)?;
         // SAFETY: `fd` is open.
         check(unsafe { libc::fsync(fd.as_raw_fd()) })?;
@@ -732,34 +736,85 @@ pub fn create_new_file(
     result.map(Some)
 }
 
-/// Open `name` in `dir` as a regular file without following a link
-/// ([`FILE_FLAGS`]); `None` when it does not exist. A link, a directory or a
-/// special file is an error, and so is a file with more than one hard link:
-/// the service account could have linked another file there.
+fn not_regular() -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, "not a regular file")
+}
+
+/// Open `name` in `dir` read-only as a regular file without following a
+/// link; `None` when it does not exist. A link, a directory or a special file
+/// is an error.
+///
+/// On Linux the entry is first opened with `O_PATH | O_NOFOLLOW`, which never
+/// opens the object itself, and checked with `fstat` on that descriptor; only
+/// a regular file is then opened for reading, through `/proc/self/fd`, which
+/// reopens the same inode (checked again by device and inode). So a device
+/// node the service account swapped in or hard-linked there is never opened.
+/// Elsewhere the entry is checked with `fstatat` and opened with
+/// [`FILE_FLAGS`] (`O_NONBLOCK | O_NOCTTY`); a device swapped in between
+/// those two calls would be opened, and is then refused by the `fstat` on
+/// the descriptor.
+pub fn open_regular_file(dir: RawFd, name: &OsStr) -> io::Result<Option<(OwnedFd, libc::stat)>> {
+    let c_name = cstring(name)?;
+    #[cfg(target_os = "linux")]
+    {
+        let path_fd = match openat(
+            dir,
+            &c_name,
+            libc::O_PATH | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0,
+        ) {
+            Ok(fd) => fd,
+            Err(e) if e.raw_os_error() == Some(libc::ENOENT) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let st = fstat(path_fd.as_raw_fd())?;
+        if kind(&st) != libc::S_IFREG {
+            return Err(not_regular());
+        }
+        let proc_path = CString::new(format!("/proc/self/fd/{}", path_fd.as_raw_fd()))
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+        // The /proc entry is a link to the inode itself, so O_NOFOLLOW is not
+        // used here.
+        let fd = openat(
+            libc::AT_FDCWD,
+            &proc_path,
+            libc::O_RDONLY | libc::O_NOCTTY | libc::O_NONBLOCK | libc::O_CLOEXEC,
+            0,
+        )?;
+        let again = fstat(fd.as_raw_fd())?;
+        if file_id(&again) != file_id(&st) || kind(&again) != libc::S_IFREG {
+            return Err(not_regular());
+        }
+        Ok(Some((fd, again)))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let st = match fstatat_nofollow(dir, &c_name) {
+            Ok(st) => st,
+            Err(e) if e.raw_os_error() == Some(libc::ENOENT) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        if kind(&st) != libc::S_IFREG {
+            return Err(not_regular());
+        }
+        let fd = openat(dir, &c_name, FILE_FLAGS, 0)?;
+        let st = fstat(fd.as_raw_fd())?;
+        if kind(&st) != libc::S_IFREG {
+            return Err(not_regular());
+        }
+        Ok(Some((fd, st)))
+    }
+}
+
+/// [`open_regular_file`] that also refuses a file with more than one hard
+/// link: the service account could have linked another file there.
 pub fn open_single_link_file(
     dir: RawFd,
     name: &OsStr,
 ) -> io::Result<Option<(OwnedFd, libc::stat)>> {
-    let c_name = cstring(name)?;
-    let st = match fstatat_nofollow(dir, &c_name) {
-        Ok(st) => st,
-        Err(e) if e.raw_os_error() == Some(libc::ENOENT) => return Ok(None),
-        Err(e) => return Err(e),
+    let Some((fd, st)) = open_regular_file(dir, name)? else {
+        return Ok(None);
     };
-    if kind(&st) != libc::S_IFREG {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "not a regular file",
-        ));
-    }
-    let fd = openat(dir, &c_name, FILE_FLAGS, 0)?;
-    let st = fstat(fd.as_raw_fd())?;
-    if kind(&st) != libc::S_IFREG {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "not a regular file",
-        ));
-    }
     if st.st_nlink > 1 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -1178,11 +1233,17 @@ mod tests {
         assert_eq!((m.permissions().mode() & 0o777, m.nlink()), (0o640, 1));
         // create_new_file refuses any existing entry, including a link.
         symlink(out.join("victim"), state.join("dkim/default.private")).unwrap();
-        let created =
-            create_new_file(dkim.as_raw_fd(), OsStr::new("default.private"), b"k", 0o600).unwrap();
+        let created = create_new_file(
+            dkim.as_raw_fd(),
+            OsStr::new("default.private"),
+            b"k",
+            0o600,
+            None,
+        )
+        .unwrap();
         assert!(created.is_none());
         // A new file's stat is returned, so callers can record what they made.
-        let st = create_new_file(dkim.as_raw_fd(), OsStr::new("fresh"), b"k", 0o600)
+        let st = create_new_file(dkim.as_raw_fd(), OsStr::new("fresh"), b"k", 0o600, None)
             .unwrap()
             .unwrap();
         assert_eq!(file_id(&st), id(&state.join("dkim/fresh")));

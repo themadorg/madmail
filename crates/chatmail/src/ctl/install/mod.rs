@@ -146,8 +146,10 @@ fn repair_installation(global: &Args, args: &InstallArgs) -> Result<()> {
             if args.user_only {
                 system::create_service_user(&cfg, false, true)?;
                 let sec = SecureInstall::open(&cfg, false)?;
-                system::setup_config_permissions(&cfg, sec.as_ref())?;
+                // The config file's owner and mode are set after the state
+                // walk, so they are the final ones.
                 system::setup_permissions(&cfg, sec.as_ref())?;
+                system::setup_config_permissions(&cfg, sec.as_ref())?;
             } else {
                 system::validate_service_prerequisites(&cfg)?;
                 systemd::install_unit(&cfg)?;
@@ -275,8 +277,10 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
     write_config(&cfg, sec)?;
     #[cfg(unix)]
     {
-        system::setup_config_permissions(&cfg, sec)?;
+        // The config file's owner and mode are set after the state walk, so
+        // they are the final ones.
         system::setup_permissions(&cfg, sec)?;
+        system::setup_config_permissions(&cfg, sec)?;
     }
     // After the walk: with a service account the database is opened as that
     // account (see `seed_install_language`).
@@ -630,8 +634,12 @@ async fn obtain_into_staging(
 
 /// With a service account the key files are created through
 /// [`SecureInstall`]: the private key with create-new (mode 0600; an existing
-/// one is read only when it is a regular file with one link), the `TXT` file by
-/// create-new-then-rename. Otherwise [`DkimSigner::load_or_create`] is used.
+/// one is read only when it is a regular file with one link that belongs to
+/// the service account), the `TXT` file by create-new-then-rename. Both get
+/// the service account as owner on creation (with `--skip-user`, see
+/// [`SecureInstall::write_file`]), so a run that stops at a later step leaves
+/// keys the service can read. Otherwise [`DkimSigner::load_or_create`] is
+/// used.
 ///
 /// [`DkimSigner::load_or_create`]: chatmail_delivery::dkim::DkimSigner::load_or_create
 fn generate_dkim_keys(cfg: &InstallConfig, sec: Option<&SecureInstall>) {
@@ -790,9 +798,11 @@ async fn seed_install_language(cfg: &InstallConfig, sec: Option<&SecureInstall>)
 
 /// The config file holds `ss_password` and `turn_secret`, so it is created
 /// with mode 0640 from the start. With a service account it is written with
-/// [`SecureInstall::write_config_file`] (owner `root:gid` outside the state
-/// tree; with `--skip-user` the previous file's owner, or root); otherwise it
-/// is opened with `O_NOFOLLOW` and keeps the caller as owner.
+/// [`SecureInstall::write_config_file`]: outside the state tree owned by
+/// `root:gid` (with `--skip-user` the previous file's owner, or root); inside
+/// it owned by the service account (with `--skip-user` only when the previous
+/// file was the service account's, else root). Otherwise it is opened with
+/// `O_NOFOLLOW` and keeps the caller as owner.
 fn write_config(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let text = render_maddy_conf(cfg);
     #[cfg(unix)]

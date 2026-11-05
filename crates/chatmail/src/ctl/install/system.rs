@@ -86,9 +86,7 @@ pub fn create_service_user(
     }
 
     if !dry_run {
-        if let Some(parent) = cfg.state_dir.parent() {
-            fs::create_dir_all(parent).map_err(|e| io_error("mkdir", parent, e))?;
-        }
+        ensure_state_parent(cfg)?;
     }
 
     let exists = Command::new("id")
@@ -151,6 +149,49 @@ pub fn create_service_user(
     }
     println!("   ✓ User {}", cfg.maddy_user);
     ensure_service_account(cfg, dry_run, adopt_existing_state)
+}
+
+/// Create the parent directories of `--state-dir` (as `mkdir -p` would) before
+/// `useradd` / `usermod` set or move the home by path. They are created with
+/// `mkdirat` in directories that passed the trust check (see [`Resolver`]);
+/// every component, the parent itself included, must not be controlled by the
+/// existing service account, so nothing it planted is followed and the account
+/// is not changed when a component is refused. Without an account yet, only
+/// world-writable directories without the sticky bit are refused.
+fn ensure_state_parent(cfg: &InstallConfig) -> Result<()> {
+    let Some(parent) = cfg.state_dir.parent().filter(|p| !p.as_os_str().is_empty()) else {
+        return Ok(());
+    };
+    let trust = match lookup_uid_gid(&cfg.maddy_user) {
+        Ok((uid, gid)) => {
+            Trust::service(uid, gid, None).with_groups(secure_fs::account_groups(&cfg.maddy_user))
+        }
+        // Uid and gid 0 are never counted as the service account.
+        Err(_) => Trust::service(0, 0, None),
+    };
+    let resolver = Resolver {
+        trust: &trust,
+        state_root: None,
+        check_final: true,
+    };
+    match resolver
+        .ensure_dir(parent)
+        .map_err(|e| io_error("mkdir", parent, e))?
+    {
+        Resolved::Found(_) => Ok(()),
+        Resolved::Controlled { component, reason } => Err(ChatmailError::config(format!(
+            "refusing to use state directory {}: {} is {reason}, so the service account \
+             could redirect the account's home. Use a state directory whose parent \
+             directories are owned by root",
+            cfg.state_dir.display(),
+            component.display()
+        ))),
+        Resolved::InTree(_) | Resolved::Missing { .. } => Err(io_error(
+            "mkdir",
+            parent,
+            io::Error::from(io::ErrorKind::NotFound),
+        )),
+    }
 }
 
 /// Align passwd/group with systemd `User=` / `Group=` (fixes 217/USER after a broken install).
@@ -295,9 +336,10 @@ fn usermod_args(
 ///   replaced, never written through;
 /// - owners and modes are changed with `fchown` / `fchmod` on a descriptor
 ///   for the object that was checked;
-/// - every file it creates is recorded by device and inode, so the state walk
-///   can give root-created files to the service while it leaves files of
-///   other accounts alone (see [`chown_walk::decide`]).
+/// - a file written inside the state tree is given its owner on the new
+///   file's descriptor before it is renamed into place: the service account
+///   when install manages ownership, so the state walk only has to change
+///   files that already belong to the service (see [`chown_walk::decide`]).
 pub struct SecureInstall {
     pub uid: u32,
     pub gid: u32,
@@ -318,7 +360,9 @@ pub struct SecureInstall {
     primary: String,
     /// Whether install changes owners and modes (not with `--skip-user`).
     manage_ownership: bool,
-    created: std::cell::RefCell<chown_walk::Created>,
+    /// Account and group names, for the commands printed to the operator.
+    user: String,
+    group: String,
 }
 
 impl SecureInstall {
@@ -360,8 +404,8 @@ impl SecureInstall {
         let walk_old_uid = old_uid.filter(|&old| match secure_fs::account_name(old) {
             Some(name) if name != cfg.maddy_user => {
                 println!(
-                    "   ! {} belonged to uid {old}, which is now account {name}: files of that \
-                     uid in it are not given to {}",
+                    "   ! {} belonged to uid {old}, which is now account {name}: files and \
+                     directories of that uid in it are not given to {}",
                     cfg.state_dir.display(),
                     cfg.maddy_user
                 );
@@ -383,7 +427,8 @@ impl SecureInstall {
             state_path: host_paths::normalize(&cfg.state_dir),
             primary: cfg.binary_name.clone(),
             manage_ownership: !cfg.skip_user,
-            created: Default::default(),
+            user: cfg.maddy_user.clone(),
+            group: cfg.maddy_group.clone(),
         }))
     }
 
@@ -395,8 +440,25 @@ impl SecureInstall {
         }
     }
 
-    fn record(&self, st: &libc::stat) {
-        self.created.borrow_mut().insert(file_id(st));
+    /// The owner a file written inside the state tree gets on its new
+    /// descriptor: the service account when install manages ownership. With
+    /// `--skip-user` the service account only when the regular file being
+    /// replaced (looked at through the directory descriptor `dir`, without
+    /// following a link) belongs to it, as an in-place rewrite would keep it;
+    /// root otherwise.
+    fn in_tree_owner(&self, dir: RawFd, name: &OsStr) -> Option<(u32, u32)> {
+        if self.manage_ownership {
+            return Some((self.uid, self.gid));
+        }
+        let c_name = secure_fs::cstring(name).ok()?;
+        let st = secure_fs::fstatat_nofollow(dir, &c_name).ok()?;
+        (secure_fs::kind(&st) == libc::S_IFREG && st.st_uid == self.uid)
+            .then_some((self.uid, self.gid))
+    }
+
+    /// Whether `uid` is the service account's (current or previous uid).
+    fn is_service_uid(&self, uid: u32) -> bool {
+        uid == self.uid || Some(uid) == self.walk_old_uid
     }
 
     /// Whether the state directory itself is controlled by the service account
@@ -437,7 +499,7 @@ impl SecureInstall {
     /// Write `data` to `path` with `mode`, replacing what is there (see
     /// [`secure_fs::replace_file`]). Operator links on the way are followed
     /// through the checked resolver. `owner` is applied outside the state tree;
-    /// inside it the state walk sets the owner.
+    /// inside it the owner is [`Self::in_tree_owner`].
     pub fn write_file(
         &self,
         path: &Path,
@@ -479,15 +541,12 @@ impl SecureInstall {
         config: bool,
     ) -> Result<bool> {
         let write = |dir: RawFd, name: &OsStr, owner| {
-            let st = if create_new {
-                secure_fs::create_new_file(dir, name, data, mode)?
+            Ok::<bool, io::Error>(if create_new {
+                secure_fs::create_new_file(dir, name, data, mode, owner)?.is_some()
             } else {
-                Some(secure_fs::replace_file(dir, name, data, mode, owner)?)
-            };
-            if let Some(st) = &st {
-                self.record(st);
-            }
-            Ok::<bool, io::Error>(st.is_some())
+                secure_fs::replace_file(dir, name, data, mode, owner)?;
+                true
+            })
         };
         let in_tree_allowed = || {
             if config && !self.chosen_in_state_dir(path) {
@@ -508,7 +567,8 @@ impl SecureInstall {
                         .map_err(|e| in_tree_error("write", path, &rest, e))?;
                     let fd = secure_fs::tree_open_dir(&self.state_root, &dir, true)
                         .map_err(|e| in_tree_error("write", path, &rest, e))?;
-                    return write(fd.as_raw_fd(), &name, None)
+                    let owner = self.in_tree_owner(fd.as_raw_fd(), &name);
+                    return write(fd.as_raw_fd(), &name, owner)
                         .map_err(|e| in_tree_error("write", path, &rest, e));
                 }
                 Resolved::Found(file) => {
@@ -530,7 +590,8 @@ impl SecureInstall {
                             in_tree_allowed()?;
                             let fd = secure_fs::tree_open_dir(&self.state_root, &rest, true)
                                 .map_err(|e| in_tree_error("write", path, &rest, e))?;
-                            write(fd.as_raw_fd(), &name, None)
+                            let owner = self.in_tree_owner(fd.as_raw_fd(), &name);
+                            write(fd.as_raw_fd(), &name, owner)
                                 .map_err(|e| in_tree_error("write", path, &rest, e))
                         }
                         Resolved::Controlled { component, reason } => {
@@ -575,7 +636,9 @@ impl SecureInstall {
     }
 
     /// Read a regular file with one link (at most `max` bytes); `None` when it
-    /// does not exist.
+    /// does not exist. Inside the state tree the file must also belong to the
+    /// service account (or, with `--skip-user`, to root), so root never copies
+    /// out the contents of another account's file that a hard link put there.
     pub fn read_file(&self, path: &Path, max: usize) -> Result<Option<Vec<u8>>> {
         let opened = match self
             .resolver(false)
@@ -604,9 +667,27 @@ impl SecureInstall {
                     Err(e) if e.raw_os_error() == Some(libc::ENOENT) => return Ok(None),
                     Err(e) => return Err(in_tree_error("read", path, &rest, e)),
                 };
-                secure_fs::open_single_link_file(fd.as_raw_fd(), &name)
+                match secure_fs::open_single_link_file(fd.as_raw_fd(), &name)
                     .map_err(|e| in_tree_error("read", path, &rest, e))?
-                    .map(|(fd, _)| fd)
+                {
+                    None => None,
+                    Some((_, st))
+                        if !self.is_service_uid(st.st_uid)
+                            && !(st.st_uid == 0 && !self.manage_ownership) =>
+                    {
+                        return Err(ChatmailError::config(format!(
+                            "refusing to read {} as root: it belongs to uid {}, not to the \
+                             service account, so it may be another account's file linked \
+                             there. Check it; if it is madmail's own file, run: chown {}:{} {}",
+                            path.display(),
+                            st.st_uid,
+                            self.user,
+                            self.group,
+                            shell_quote(path)
+                        )));
+                    }
+                    Some((fd, _)) => Some(fd),
+                }
             }
         };
         match opened {
@@ -619,9 +700,11 @@ impl SecureInstall {
 
     /// Give the config file (which holds `ss_password` and `turn_secret`) mode
     /// 0640: owned by `root:gid` outside the state tree, by `uid:gid` inside it
-    /// (the owner is set by the state walk). A config file reached through a
+    /// (install writes it with that owner). A config file reached through a
     /// component the service account controls, outside the state tree, is an
     /// error, and so is one given outside `--state-dir` that resolves into it.
+    /// Install runs this after the state walk, so this is the config file's
+    /// final owner and mode.
     pub fn fix_config_file(&self, path: &Path) -> Result<()> {
         match self
             .resolver(true)
@@ -656,17 +739,15 @@ impl SecureInstall {
                     .map_err(|e| in_tree_error("chmod", path, &rest, e))?;
                 let dir = secure_fs::tree_open_dir(&self.state_root, &dir, false)
                     .map_err(|e| in_tree_error("chmod", path, &rest, e))?;
-                let c_name = secure_fs::cstring(&name).map_err(|e| io_error("chmod", path, e))?;
-                let fd = secure_fs::openat(dir.as_raw_fd(), &c_name, secure_fs::FILE_FLAGS, 0)
+                let (fd, st) = secure_fs::open_regular_file(dir.as_raw_fd(), &name)
+                    .and_then(|f| f.ok_or_else(|| io::Error::from_raw_os_error(libc::ENOENT)))
                     .map_err(|e| in_tree_error("chmod", path, &rest, e))?;
-                let st = secure_fs::fstat(fd.as_raw_fd()).map_err(|e| io_error("stat", path, e))?;
-                let created = self.created.borrow().contains(&file_id(&st));
-                let action = chown_walk::decide(&st, self.walk_old_uid, self.uid, created);
-                if secure_fs::kind(&st) != libc::S_IFREG || action != chown_walk::Action::Chown {
+                if !self.is_service_uid(st.st_uid) {
                     return Err(ChatmailError::config(format!(
-                        "refusing to change config file {}: not a regular file of the service \
-                         account or written by this install ({action:?})",
-                        path.display()
+                        "refusing to change config file {}: it belongs to uid {}, not to the \
+                         service account",
+                        path.display(),
+                        st.st_uid
                     )));
                 }
                 secure_fs::fchmod(fd.as_raw_fd(), 0o640).map_err(|e| io_error("chmod", path, e))
@@ -685,15 +766,7 @@ impl SecureInstall {
             .map_err(|e| io_error("resolve", path, e))?
         {
             Resolved::Missing { .. } => {}
-            Resolved::InTree(_) => {
-                if fs::symlink_metadata(path).is_ok() {
-                    skip_note(
-                        path,
-                        "inside the service-writable state directory; the state walk sets \
-                         its owner without following links",
-                    );
-                }
-            }
+            Resolved::InTree(rest) => self.note_in_tree_tls_file(path, &rest),
             Resolved::Controlled { component, reason } => skip_note(
                 path,
                 &format!(
@@ -721,6 +794,39 @@ impl SecureInstall {
             }
         }
         Ok(())
+    }
+
+    /// A TLS file inside the state tree is not changed by path. It is looked
+    /// at through the tree descriptors without following a link: one that
+    /// belongs to the service account was handled by the state walk (install
+    /// writes its own TLS files there with that owner); for anything else the
+    /// operator is told what to check and change.
+    fn note_in_tree_tls_file(&self, path: &Path, rest: &Path) {
+        let st = secure_fs::split_file(rest).and_then(|(dir, name)| {
+            let dir = secure_fs::tree_open_dir(&self.state_root, &dir, false)?;
+            secure_fs::fstatat_nofollow(dir.as_raw_fd(), &secure_fs::cstring(&name)?)
+        });
+        let why = match st {
+            Err(e) if e.raw_os_error() == Some(libc::ENOENT) => return,
+            Err(e) => format!(
+                "inside the state directory, and it cannot be reached there without following \
+                 a link ({e})"
+            ),
+            Ok(st) if secure_fs::kind(&st) == libc::S_IFLNK => {
+                "a link inside the state directory; links there are not followed".to_string()
+            }
+            Ok(st) if self.is_service_uid(st.st_uid) => return,
+            Ok(st) => format!(
+                "inside the state directory and belongs to uid {}, not to the service account, \
+                 so the state walk leaves it unchanged. If it is your certificate or key, check \
+                 that it is not a link to another file, then run: chown {}:{} {}",
+                st.st_uid,
+                self.user,
+                self.group,
+                shell_quote(path)
+            ),
+        };
+        skip_note(path, &why);
     }
 
     /// Re-own a config or certs directory as `root:gid` and clear its group
@@ -920,6 +1026,19 @@ pub fn setup_config_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>
     Ok(())
 }
 
+/// `path` quoted for a POSIX shell command shown to the operator.
+fn shell_quote(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    if !text.is_empty()
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"/._-+:@".contains(&b))
+    {
+        return text.into_owned();
+    }
+    format!("'{}'", text.replace('\'', r"'\''"))
+}
+
 fn skip_note(path: &Path, why: &str) {
     println!("   ! Skipping ownership of {}: {why}", path.display());
 }
@@ -1100,9 +1219,9 @@ pub fn install_binary(
 /// Give the state tree to the service account with the descriptor walk (see
 /// [`chown_walk`]). The walk starts from the state directory opened by
 /// [`SecureInstall::open`], so an operator's link to a data volume was followed
-/// only through the checked resolver. Files of other accounts that install did
-/// not create are listed and left alone. Nothing is changed with
-/// `--skip-user`.
+/// only through the checked resolver. Files and directories of other accounts
+/// are listed and left alone, each file with the `chown` command the operator
+/// can run after checking it. Nothing is changed with `--skip-user`.
 pub fn setup_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let Some(sec) = sec.filter(|s| s.manage_ownership) else {
         return Ok(());
@@ -1116,16 +1235,8 @@ pub fn setup_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Re
     let fd = sec
         .state_root_fd()
         .map_err(|e| io_error("open", &cfg.state_dir, e))?;
-    let created = sec.created.borrow();
-    let skipped = chown_walk::chown_tree_fd(
-        fd,
-        &cfg.state_dir,
-        sec.uid,
-        sec.gid,
-        sec.walk_old_uid,
-        &created,
-    )
-    .map_err(|e| io_error(e.op, &e.path, e.source))?;
+    let skipped = chown_walk::chown_tree_fd(fd, &cfg.state_dir, sec.uid, sec.gid, sec.walk_old_uid)
+        .map_err(|e| io_error(e.op, &e.path, e.source))?;
     const SHOWN: usize = 50;
     for entry in skipped.iter().take(SHOWN) {
         println!(
@@ -1133,6 +1244,15 @@ pub fn setup_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Re
             entry.path.display(),
             entry.reason
         );
+        if entry.foreign_owner {
+            println!(
+                "     If it is madmail's own (check it is not a hard link to another file), run: \
+                 chown {}:{} {}",
+                sec.user,
+                sec.group,
+                shell_quote(&entry.path)
+            );
+        }
     }
     if skipped.len() > SHOWN {
         println!(
@@ -1282,7 +1402,73 @@ mod tests {
             state_path: host_paths::normalize(state),
             primary: "madmail".into(),
             manage_ownership: true,
-            created: Default::default(),
+            user: "madmail".into(),
+            group: "madmail".into(),
+        }
+    }
+
+    /// [`handle`] whose service account is the caller (the trust rule still
+    /// uses `UNUSED_UID`): files written into the tree get the caller as
+    /// owner, which a non-root caller may set.
+    fn caller_handle(state: &Path, marked: &[&Path]) -> SecureInstall {
+        let mut sec = handle(state, None, marked);
+        // SAFETY: getuid/getgid have no preconditions.
+        (sec.uid, sec.gid) = unsafe { (libc::getuid(), libc::getgid()) };
+        sec
+    }
+
+    #[test]
+    fn in_tree_files_get_the_service_owner_on_creation() {
+        let (_b, b) = base();
+        let state = b.join("state");
+        fs::create_dir_all(state.join("dkim")).unwrap();
+        let sec = caller_handle(&state, &[&state]);
+        let dkim = secure_fs::tree_open_dir(&sec.state_root, Path::new("dkim"), false).unwrap();
+        let name = OsStr::new("default.txt");
+        // Install manages ownership: always the service account.
+        assert_eq!(
+            sec.in_tree_owner(dkim.as_raw_fd(), name),
+            Some((sec.uid, sec.gid))
+        );
+        sec.write_file(&state.join("dkim/default.txt"), b"txt", 0o644, None)
+            .unwrap();
+        let m = fs::metadata(state.join("dkim/default.txt")).unwrap();
+        assert_eq!((m.uid(), m.gid()), (sec.uid, sec.gid));
+        // --skip-user: the service account only when the replaced regular file
+        // is its own; root (no owner change) for a missing entry, a link or
+        // another account's file.
+        let mut skip = caller_handle(&state, &[&state]);
+        skip.manage_ownership = false;
+        assert_eq!(
+            skip.in_tree_owner(dkim.as_raw_fd(), name),
+            Some((skip.uid, skip.gid))
+        );
+        assert_eq!(
+            skip.in_tree_owner(dkim.as_raw_fd(), OsStr::new("absent")),
+            None
+        );
+        symlink(state.join("dkim/default.txt"), state.join("dkim/link")).unwrap();
+        assert_eq!(
+            skip.in_tree_owner(dkim.as_raw_fd(), OsStr::new("link")),
+            None
+        );
+        skip.uid = UNUSED_UID;
+        assert_eq!(skip.in_tree_owner(dkim.as_raw_fd(), name), None);
+        // With the UNUSED_UID service account a write into the tree attempts
+        // the chown on the new file, which fails for a non-root caller: the
+        // owner is set before the file is renamed into place.
+        // SAFETY: getuid has no preconditions.
+        if unsafe { libc::getuid() } != 0 {
+            let foreign = handle(&state, None, &[&state]);
+            let err = foreign
+                .write_file(&state.join("dkim/default.txt"), b"new", 0o644, None)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("Operation not permitted"), "{err}");
+            assert_eq!(
+                fs::read_to_string(state.join("dkim/default.txt")).unwrap(),
+                "txt"
+            );
         }
     }
 
@@ -1310,15 +1496,9 @@ mod tests {
         let before = owner(&outside.join("file"));
         // SAFETY: getuid/getgid have no preconditions.
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
-        let skipped = chown_walk::chown_tree_fd(
-            sec.state_root_fd().unwrap(),
-            &state,
-            uid,
-            gid,
-            None,
-            &Default::default(),
-        )
-        .unwrap();
+        let skipped =
+            chown_walk::chown_tree_fd(sec.state_root_fd().unwrap(), &state, uid, gid, None)
+                .unwrap();
         assert!(skipped.is_empty(), "{skipped:?}");
         assert_eq!(owner(&state.join("sub/data")), (uid, gid));
         assert_eq!(owner(&outside.join("file")), before);
@@ -1400,7 +1580,7 @@ mod tests {
         fs::create_dir_all(&etc).unwrap();
         let victim = b.join("victim");
         fs::write(&victim, "keep").unwrap();
-        let sec = handle(&state, None, &[&state]);
+        let sec = caller_handle(&state, &[&state]);
         // Operator link /etc/.../fullchain.pem -> <state>/certs/fullchain.pem,
         // which the service replaced with a link to the victim.
         symlink(&victim, state.join("certs/fullchain.pem")).unwrap();
@@ -1449,6 +1629,46 @@ mod tests {
             .read_file(&state.join("absent.json"), 64)
             .unwrap()
             .is_none());
+        // Nor an in-tree file of another account (the caller's, for a service
+        // account with another uid): it may be a hard link to a file whose
+        // original name was replaced.
+        let foreign = handle(&state, None, &[&state]);
+        let err = foreign
+            .read_file(&state.join("acct.json"), 64)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refusing to read"), "{err}");
+        assert!(err.contains("chown madmail:madmail"), "{err}");
+    }
+
+    #[test]
+    fn a_config_written_outside_the_tree_and_linked_into_it_is_not_given_away() {
+        // SAFETY: getuid has no preconditions.
+        if unsafe { libc::getuid() } == 0 {
+            return;
+        }
+        let (_b, b) = base();
+        let state = b.join("state");
+        let etc = b.join("etc");
+        fs::create_dir_all(state.join("m1")).unwrap();
+        fs::create_dir_all(&etc).unwrap();
+        let sec = handle(&state, None, &[&state]);
+        let conf = etc.join("madmail.conf");
+        sec.write_config_file(&conf, b"ss_password", None).unwrap();
+        // The service account links the new config file into its tree.
+        fs::hard_link(&conf, state.join("m1/zz-conf")).unwrap();
+        let before = fs::metadata(&conf).unwrap();
+        // The walk to UNUSED_UID: a chown of the linked config would fail with
+        // EPERM on that path. Only the root, changed last, fails.
+        let err =
+            chown_walk::chown_tree_fd(sec.state_root_fd().unwrap(), &state, sec.uid, sec.gid, None)
+                .unwrap_err();
+        assert_eq!(err.path, state, "{err:?}");
+        let after = fs::metadata(&conf).unwrap();
+        assert_eq!((after.uid(), after.gid()), (before.uid(), before.gid()));
+        // fix_config_file then refuses the config with two links.
+        let err = sec.fix_config_file(&conf).unwrap_err().to_string();
+        assert!(err.contains("hard links"), "{err}");
     }
 
     #[test]
@@ -1465,17 +1685,20 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("refusing to change config file"), "{err}");
-        // The same file inside the tree, written by install in this run, gets
-        // mode 0640 through a descriptor.
+        // The same file inside the tree, written by install (so owned by the
+        // service account), gets mode 0640 through a descriptor.
         let conf = state.join("etc/madmail.conf");
-        let sec = handle(&state, None, &[&state]);
-        sec.write_config_file(&conf, b"x", None).unwrap();
+        let owner_sec = caller_handle(&state, &[&state]);
+        owner_sec.write_config_file(&conf, b"x", None).unwrap();
         fs::set_permissions(&conf, fs::Permissions::from_mode(0o644)).unwrap();
-        sec.fix_config_file(&conf).unwrap();
+        owner_sec.fix_config_file(&conf).unwrap();
         assert_eq!(
             fs::metadata(&conf).unwrap().permissions().mode() & 0o777,
             0o640
         );
+        // From here the service account has another uid, so the caller's
+        // files are another account's.
+        let sec = handle(&state, None, &[&state]);
         // A hard link to a foreign file at the config's name is not changed.
         let victim = b.join("victim");
         fs::write(&victim, "x").unwrap();
@@ -1488,13 +1711,12 @@ mod tests {
             0o644
         );
         // So is a single-link in-tree file of another account (here the
-        // caller's) that install did not write: it may be a hard link whose
-        // original name was replaced.
+        // caller's): it may be a hard link whose original name was replaced.
         fs::remove_file(&conf).unwrap();
         fs::write(&conf, "x").unwrap();
         fs::set_permissions(&conf, fs::Permissions::from_mode(0o644)).unwrap();
         let err = sec.fix_config_file(&conf).unwrap_err().to_string();
-        assert!(err.contains("SkipForeignOwner"), "{err}");
+        assert!(err.contains("not to the service account"), "{err}");
         assert_eq!(
             fs::metadata(&conf).unwrap().permissions().mode() & 0o777,
             0o644
