@@ -435,10 +435,11 @@ fn current_binary_name() -> String {
 }
 
 /// The state directory uninstall works on. A `state_dir` set in the config
-/// file is used only when every component of the config file's path, and the
-/// file itself, is owned by root and not writable by another user or group;
-/// otherwise anyone who can edit that file could point uninstall at any
-/// directory. An ignored value is returned as a kept entry, and the
+/// file is used only when the config file and every directory and link on its
+/// path pass [`Trust::root_or_caller`](super::secure_fs::Trust::root_or_caller)
+/// (owned by root, not group-writable unless the group is root, not
+/// world-writable unless a sticky directory); otherwise anyone who can edit
+/// that file could point uninstall at any directory. An ignored value is returned as a kept entry, and the
 /// `--state-dir` value is used instead.
 fn uninstall_state_dir(args: &Args, ctx: &CtlContext) -> (PathBuf, Option<Kept>) {
     let Some(from_config) = ctx.config.state_dir.clone() else {
@@ -1259,9 +1260,11 @@ fn remove_path(path: &Path, dry_run: bool) -> Result<()> {
 }
 
 /// Remove `path` (a directory with all its contents, or a file or link) after
-/// checking every directory on the way to it: each must be owned by root and
-/// not writable by another user or group (when uninstall is not run as root,
-/// the caller's own directories count as well). The last component is looked
+/// checking every directory and link on the way to it with
+/// [`Trust::root_or_caller`](super::secure_fs::Trust::root_or_caller): owned by
+/// root, not group-writable unless the group is root, not world-writable unless
+/// a sticky directory (when uninstall is not run as root, the caller's own
+/// directories count as well). The last component is looked
 /// at through the opened parent and never followed: a link is removed itself,
 /// a file is unlinked through the parent descriptor, and a directory is
 /// removed with [`fs::remove_dir_all`], which does not follow links inside it.

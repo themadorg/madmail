@@ -224,8 +224,8 @@ impl Trust {
         self
     }
 
-    /// Stricter rule for uninstall: anything not owned by root, and any
-    /// directory writable by a group other than root, is untrusted.
+    /// Stricter rule for uninstall: anything not owned by root, and anything
+    /// but a link writable by a group other than root, is untrusted.
     pub fn root_only() -> Self {
         Self {
             uids: Vec::new(),
@@ -263,13 +263,14 @@ impl Trust {
             return Some("owned by the service account");
         }
         let mode = perm_bits(st);
+        let group_writable = mode & 0o020 != 0;
         match kind(st) {
             libc::S_IFLNK => None,
+            _ if group_writable && self.root_only && st.st_gid != 0 && self.also.is_none() => {
+                Some("group-writable by a group other than root")
+            }
             libc::S_IFDIR => {
-                let group_writable = mode & 0o020 != 0;
-                if group_writable && self.root_only && st.st_gid != 0 && self.also.is_none() {
-                    Some("group-writable by a group other than root")
-                } else if group_writable && Some(st.st_gid) == self.gid {
+                if group_writable && Some(st.st_gid) == self.gid {
                     Some("group-writable by the service group")
                 } else if mode & 0o002 != 0 && mode & 0o1000 == 0 {
                     Some("world-writable without the sticky bit")
@@ -849,6 +850,12 @@ mod tests {
         assert!(strict.verdict(&st).is_some());
         set(&mut st, libc::S_IFDIR, 0o775, 0, 4);
         assert!(strict.verdict(&st).is_some());
+        set(&mut st, libc::S_IFREG, 0o660, 0, 4);
+        assert!(strict.verdict(&st).is_some(), "group-writable file");
+        set(&mut st, libc::S_IFREG, 0o640, 0, 4);
+        assert_eq!(strict.verdict(&st), None, "installed config file");
+        set(&mut st, libc::S_IFDIR, 0o1777, 0, 0);
+        assert_eq!(strict.verdict(&st), None, "sticky /tmp");
     }
 
     #[test]
