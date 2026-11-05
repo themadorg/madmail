@@ -144,13 +144,9 @@ impl OutboundQueue {
                 continue;
             }
             if self.config.is_expired(&meta) {
-                let data = self
-                    .store
-                    .load(&id)
-                    .await
-                    .map(|(_, data)| data)
-                    .unwrap_or_default();
-                self.fail_expired(&id, &meta, &data).await;
+                // The worker loads the body and writes the sender report under the
+                // parallelism limit, so start-up does not wait on a large backlog.
+                let _ = self.work_tx.send(id);
                 continue;
             }
             let run_at = meta.next_attempt_unix.max(min_start);

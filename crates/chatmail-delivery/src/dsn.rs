@@ -24,6 +24,8 @@
 use chatmail_auth::normalize_username;
 use chatmail_pgp::{enforce_encryption, EnforceOptions};
 use chatmail_types::address_domain;
+use time::format_description::well_known::Rfc2822;
+use time::OffsetDateTime;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -48,12 +50,22 @@ pub struct FailureNotice<'a> {
 /// Write a failure report into the local sender's inbox.
 ///
 /// Remote senders are left alone, so a report is never federated onward.
-/// A report whose sender is already `mailer-daemon` is dropped.
+/// A report whose sender is already `mailer-daemon` is dropped, and so is one
+/// for a local address that has no account or is blocked, so a deleted
+/// account's maildir is never recreated.
 pub async fn deliver_failure_notice(ctx: &DeliveryContext, notice: FailureNotice<'_>) {
     let Ok(sender) = normalize_username(notice.mail_from) else {
         return;
     };
     if !ctx.is_local(&sender) || is_mailer_daemon(&sender) {
+        return;
+    }
+    if !ctx
+        .state
+        .auth
+        .local_recipient_allowed_or_db(&ctx.pool, &sender)
+        .await
+    {
         return;
     }
     let Some(domain) = address_domain(&sender) else {
@@ -156,9 +168,13 @@ pub fn build_failure_report(
     let headers = original_headers(notice.original);
     let from = format!("mailer-daemon@{domain}");
     let msg_id = format!("<dsn-{}@{domain}>", Uuid::new_v4().simple());
+    let date = OffsetDateTime::now_utc()
+        .format(&Rfc2822)
+        .unwrap_or_else(|_| OffsetDateTime::now_utc().to_string());
     let raw = format!(
         "From: Mail Delivery System <{from}>\r\n\
          To: <{sender}>\r\n\
+         Date: {date}\r\n\
          Message-ID: {msg_id}\r\n\
          Auto-Submitted: auto-replied\r\n\
          Subject: Delivery failed\r\n\
@@ -230,20 +246,29 @@ fn header_safe(value: &str) -> String {
     out.trim().to_string()
 }
 
+/// The original header block as CRLF lines, at most 8 KiB and never cut mid-line.
 fn original_headers(raw: &[u8]) -> String {
-    let sep = raw
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .or_else(|| raw.windows(2).position(|w| w == b"\n\n"));
-    let end = sep.unwrap_or(raw.len()).min(8192);
-    let mut headers = raw[..end].to_vec();
-    while headers.last().is_some_and(|b| *b == b'\n' || *b == b'\r') {
-        headers.pop();
+    const MAX: usize = 8192;
+    let crlf = raw.windows(4).position(|w| w == b"\r\n\r\n");
+    let lf = raw.windows(2).position(|w| w == b"\n\n");
+    let sep = match (crlf, lf) {
+        (Some(a), Some(b)) => a.min(b),
+        (a, b) => a.or(b).unwrap_or(raw.len()),
+    };
+    let mut block = &raw[..sep];
+    if block.len() > MAX {
+        block = &block[..MAX];
+        if let Some(last_nl) = block.iter().rposition(|b| *b == b'\n') {
+            block = &block[..last_nl];
+        }
     }
-    if !headers.is_empty() {
-        headers.extend_from_slice(b"\r\n");
+    let text = String::from_utf8_lossy(block).replace(['\r', '\0'], "");
+    let mut out = String::new();
+    for line in text.split('\n').filter(|line| !line.is_empty()) {
+        out.push_str(line);
+        out.push_str("\r\n");
     }
-    String::from_utf8_lossy(&headers).replace(['\r', '\0'], "")
+    out
 }
 
 #[cfg(test)]
@@ -317,6 +342,7 @@ mod tests {
             local_domains: vec!["example.org".into()],
             dkim: None,
         };
+        state.auth.insert("a@example.org", "bcrypt:test");
         deliver_failure_notice(
             &ctx,
             FailureNotice {
@@ -362,8 +388,91 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert!(!state
             .mailbox_store
+            .maildir_for_user("mailer-daemon@example.org")
+            .root
+            .exists());
+        assert!(!state
+            .mailbox_store
             .maildir_for_user("a@remote.org")
             .root
             .exists());
+    }
+
+    #[tokio::test]
+    async fn no_report_for_a_missing_or_blocked_local_account() {
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let state = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let ctx = DeliveryContext {
+            pool: pool.clone(),
+            state: Arc::clone(&state),
+            primary_domain: "example.org".into(),
+            local_domains: vec!["example.org".into()],
+            dkim: None,
+        };
+        // Deleted accounts are blocklisted; the DB row must not win over the block.
+        chatmail_db::passwords::create_user(&pool, "blocked@example.org", "bcrypt:test")
+            .await
+            .unwrap();
+        state.auth.block("blocked@example.org");
+        for sender in ["ghost@example.org", "blocked@example.org"] {
+            deliver_failure_notice(
+                &ctx,
+                FailureNotice {
+                    mail_from: sender,
+                    rcpt_to: "b@other.org",
+                    reason: "federation transport blocked by policy",
+                    original: sample_original(),
+                    kind: FailureKind::Permanent,
+                },
+            )
+            .await;
+            assert!(
+                !state.mailbox_store.maildir_for_user(sender).root.exists(),
+                "{sender} must not get a maildir"
+            );
+        }
+    }
+
+    #[test]
+    fn report_is_crlf_dated_and_keeps_only_the_header_block() {
+        let original = b"From: a@example.org\nMessage-ID: <lf@example.org>\n\n-----BEGIN PGP MESSAGE-----\r\n\r\nSECRETARMOR\r\n";
+        let notice = FailureNotice {
+            mail_from: "a@example.org",
+            rcpt_to: "b@other.org",
+            reason: "remote rejected",
+            original,
+            kind: FailureKind::Permanent,
+        };
+        let raw = build_failure_report("example.org", "a@example.org", &notice).unwrap();
+        let text = String::from_utf8(raw.clone()).unwrap();
+        assert!(text.contains("Message-ID: <lf@example.org>\r\n"));
+        assert!(!text.contains("SECRETARMOR"));
+        assert!(!text.contains("BEGIN PGP MESSAGE"));
+        let head = text.split("\r\n\r\n").next().unwrap();
+        assert!(
+            head.lines().any(|line| line.starts_with("Date: ")),
+            "{head}"
+        );
+        for (i, b) in raw.iter().enumerate() {
+            if *b == b'\n' {
+                assert!(i > 0 && raw[i - 1] == b'\r', "bare LF at byte {i}");
+            }
+        }
+    }
+
+    #[test]
+    fn long_header_block_is_cut_at_a_line_boundary() {
+        let mut original = Vec::new();
+        for i in 0..400 {
+            original.extend_from_slice(format!("X-Pad-{i:03}: {}\r\n", "y".repeat(20)).as_bytes());
+        }
+        original.extend_from_slice(b"\r\nbody");
+        let headers = original_headers(&original);
+        assert!(headers.len() <= 8192);
+        assert!(headers.ends_with("\r\n"));
+        for line in headers.split("\r\n").filter(|l| !l.is_empty()) {
+            assert_eq!(line.len(), "X-Pad-000: ".len() + 20, "cut line: {line}");
+        }
     }
 }
