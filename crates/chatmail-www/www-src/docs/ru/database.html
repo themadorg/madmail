@@ -40,6 +40,15 @@
         </ul>
     </header>
 
+    {% if DocumentLanguages|length > 1 %}
+    <nav class="document-languages" aria-label="Language" dir="ltr">
+        {% for language in DocumentLanguages %}
+        <a href="{{ language.href }}" lang="{{ language.code }}" hreflang="{{ language.code }}"{% if language.code == Language %} aria-current="page"{% endif %}>{{ language.label }}</a>
+        {% endfor %}
+    </nav>
+    {% endif %}
+
+
     <div class="card card--wide">
         <h1>Настройка базы данных</h1>
         <p><strong>Madmail</strong> хранит учётные записи, настройки, квоты, токены и состояние федерации в <strong>одной</strong> прикладной SQL-базе: <strong>SQLite</strong> (по умолчанию) или <strong>PostgreSQL</strong>. Тела писем остаются на диске (Maildir). Страницы обмена контактами используют отдельный SQLite-файл (<code>sharing.db</code>).</p>

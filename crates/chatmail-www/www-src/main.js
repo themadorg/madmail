@@ -111,3 +111,18 @@ function setQrCodeImage(imgEl, text, cellSize) {
         console.error('QR generation failed', err);
     }
 }
+
+/* Keep a reader's language when navigating documentation. */
+document.addEventListener('DOMContentLoaded', function () {
+    if (!/^\/docs(?:\/|$)/.test(window.location.pathname)) return;
+    const language = document.documentElement.lang;
+    if (!['en', 'fa', 'ru', 'es'].includes(language)) return;
+    document.querySelectorAll('a[href]').forEach(function (link) {
+        if (link.closest('.document-languages')) return;
+        const url = new URL(link.href, window.location.href);
+        if (url.origin === window.location.origin && /^\/docs(?:\/|$)/.test(url.pathname)) {
+            url.searchParams.set('lang', language);
+            link.href = url.pathname + url.search + url.hash;
+        }
+    });
+});

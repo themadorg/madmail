@@ -41,7 +41,7 @@ use serde_json::json;
 use crate::assets::www_html_exists;
 use crate::contact_sharing::is_reserved_slug;
 use crate::gate::{is_websmtp_enabled, service_disabled};
-use crate::template::{build_context, CustomFields};
+use crate::template::{build_context, CustomFields, DocumentLanguage};
 use crate::WwwState;
 
 #[derive(Deserialize)]
@@ -66,37 +66,100 @@ pub async fn template_page(
     render_template(&st, &name, None, client_host(&headers)).await
 }
 
-pub async fn docs_redirect() -> impl IntoResponse {
-    Redirect::permanent("/docs/")
+const DOCUMENT_LANGUAGES: &[(&str, &str)] = &[
+    ("en", "English"),
+    ("fa", "فارسی"),
+    ("ru", "Русский"),
+    ("es", "Español"),
+];
+
+#[derive(Default, Deserialize)]
+pub struct DocumentQuery {
+    lang: Option<String>,
 }
 
-pub async fn docs_index(State(st): State<WwwState>, headers: HeaderMap) -> impl IntoResponse {
-    render_template(&st, "docs_index.html", None, client_host(&headers)).await
+impl DocumentQuery {
+    fn language(&self) -> Option<&str> {
+        self.lang
+            .as_deref()
+            .filter(|lang| DOCUMENT_LANGUAGES.iter().any(|(code, _)| code == lang))
+    }
+}
+
+fn document_languages(st: &WwwState, name: Option<&str>) -> Vec<DocumentLanguage> {
+    DOCUMENT_LANGUAGES
+        .iter()
+        .filter(|(code, _)| {
+            name.is_none_or(|name| {
+                www_html_exists(&format!("docs/{code}/{name}"), st.www_dir.as_deref())
+            })
+        })
+        .map(|(code, label)| DocumentLanguage {
+            code,
+            label,
+            href: format!(
+                "/docs/{}?lang={code}",
+                name.unwrap_or("").trim_end_matches(".html")
+            ),
+        })
+        .collect()
+}
+
+pub async fn docs_redirect(Query(query): Query<DocumentQuery>) -> impl IntoResponse {
+    let location = query
+        .language()
+        .map(|lang| format!("/docs/?lang={lang}"))
+        .unwrap_or_else(|| "/docs/".into());
+    Redirect::permanent(&location)
+}
+
+pub async fn docs_index(
+    State(st): State<WwwState>,
+    headers: HeaderMap,
+    Query(query): Query<DocumentQuery>,
+) -> impl IntoResponse {
+    render_document_template(
+        &st,
+        "docs_index.html",
+        None,
+        client_host(&headers),
+        query.language(),
+        document_languages(&st, None),
+    )
+    .await
 }
 
 pub async fn docs_path(
     State(st): State<WwwState>,
     headers: HeaderMap,
     axum::extract::Path(sub): axum::extract::Path<String>,
+    Query(query): Query<DocumentQuery>,
 ) -> impl IntoResponse {
     let sub = sub.trim_matches('/');
     let file = match sub {
         "" | "index" | "index.html" => {
-            return docs_index(State(st), headers).await.into_response();
+            return docs_index(State(st), headers, Query(query))
+                .await
+                .into_response();
         }
-        "admin" => doc_lang(&st, "admin.html", &headers).await,
+        "admin" => doc_lang(&st, "admin.html", &headers, query.language()).await,
         "api" => render_template(&st, "admin_api_docs.html", None, client_host(&headers)).await,
-        "general" => doc_lang(&st, "general.html", &headers).await,
-        "serve" | "custom-html" => doc_lang(&st, "serve.html", &headers).await,
-        "database" => doc_lang(&st, "database.html", &headers).await,
-        "docker" => doc_lang(&st, "docker.html", &headers).await,
-        "relay" | "domain" | "tls" => doc_lang(&st, "relay.html", &headers).await,
+        "general" => doc_lang(&st, "general.html", &headers, query.language()).await,
+        "serve" | "custom-html" => doc_lang(&st, "serve.html", &headers, query.language()).await,
+        "database" => doc_lang(&st, "database.html", &headers, query.language()).await,
+        "docker" => doc_lang(&st, "docker.html", &headers, query.language()).await,
+        "relay" | "domain" | "tls" => doc_lang(&st, "relay.html", &headers, query.language()).await,
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
     file.into_response()
 }
 
-async fn doc_lang(st: &WwwState, name: &str, headers: &HeaderMap) -> Response {
+async fn doc_lang(
+    st: &WwwState,
+    name: &str,
+    headers: &HeaderMap,
+    requested: Option<&str>,
+) -> Response {
     let host = client_host(headers);
     let state_dir = st.app.mailbox_store.state_dir();
     let lang = if st
@@ -113,15 +176,17 @@ async fn doc_lang(st: &WwwState, name: &str, headers: &HeaderMap) -> Response {
     } else {
         "en".into()
     };
+    let lang = requested.unwrap_or(&lang);
+    let languages = document_languages(st, Some(name));
     let lang_path = format!("docs/{lang}/{name}");
     if www_html_exists(&lang_path, st.www_dir.as_deref()) {
-        return render_template(st, &lang_path, None, host)
+        return render_document_template(st, &lang_path, None, host, Some(lang), languages)
             .await
             .into_response();
     }
     let en_path = format!("docs/en/{name}");
     if www_html_exists(&en_path, st.www_dir.as_deref()) {
-        return render_template(st, &en_path, None, host)
+        return render_document_template(st, &en_path, None, host, Some("en"), languages)
             .await
             .into_response();
     }
@@ -134,7 +199,7 @@ async fn doc_lang(st: &WwwState, name: &str, headers: &HeaderMap) -> Response {
         "admin.html" => "admin_docs.html",
         _ => name,
     };
-    render_template(st, legacy, None, host)
+    render_document_template(st, legacy, None, host, Some(lang), languages)
         .await
         .into_response()
 }
@@ -811,6 +876,17 @@ async fn render_template(
     custom: Option<CustomFields>,
     http_host: Option<&str>,
 ) -> Response {
+    render_document_template(st, name, custom, http_host, None, Vec::new()).await
+}
+
+async fn render_document_template(
+    st: &WwwState,
+    name: &str,
+    custom: Option<CustomFields>,
+    http_host: Option<&str>,
+    language: Option<&str>,
+    languages: Vec<DocumentLanguage>,
+) -> Response {
     let snap = st.app.listener_ports.snapshot();
     let runtime = chatmail_config::RuntimeListeners {
         imap_plain_addr: snap.imap_plain_addr,
@@ -847,6 +923,10 @@ async fn render_template(
     // cache enforces so the page never hands out credentials that the first
     // login would refuse (#235).
     ctx.PasswordSignupEnabled = st.app.auth.jit_registration_enabled();
+    if let Some(language) = language {
+        ctx.Language = language.into();
+    }
+    ctx.DocumentLanguages = languages;
     match st.templates.render(name, &ctx) {
         Ok(html) => {
             let mut resp = Html(html).into_response();
