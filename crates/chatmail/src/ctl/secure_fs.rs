@@ -841,12 +841,25 @@ pub fn open_regular_file(dir: RawFd, name: &OsStr) -> io::Result<Option<(OwnedFd
             .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
         // The /proc entry is a link to the inode itself, so O_NOFOLLOW is not
         // used here.
+        // Without /proc there is no way to reopen the O_PATH descriptor, and
+        // reopening by name would follow what the service account put there,
+        // so this is an error, not a fallback.
         let fd = openat(
             libc::AT_FDCWD,
             &proc_path,
             libc::O_RDONLY | libc::O_NOCTTY | libc::O_NONBLOCK | libc::O_CLOEXEC,
             0,
-        )?;
+        )
+        .map_err(|e| match e.raw_os_error() {
+            Some(libc::ENOENT) | Some(libc::ENOTDIR) => io::Error::new(
+                e.kind(),
+                format!(
+                    "cannot reopen the file through /proc/self/fd ({e}): /proc must be \
+                     mounted for install to read or change files inside the state directory"
+                ),
+            ),
+            _ => e,
+        })?;
         let again = fstat(fd.as_raw_fd())?;
         if file_id(&again) != file_id(&st) || kind(&again) != libc::S_IFREG {
             return Err(not_regular());

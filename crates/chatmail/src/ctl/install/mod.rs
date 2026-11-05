@@ -522,8 +522,9 @@ async fn setup_certificates(
         #[cfg(unix)]
         if let Some(sec) = sec {
             let (cert, key) = chatmail_acme::self_signed_pems(&cfg.primary_domain, &cfg.hostname)?;
-            sec.write_file(&cfg.cert_path, cert.as_bytes(), 0o640, None)?;
-            sec.write_file(&cfg.key_path, key.as_bytes(), 0o600, None)?;
+            let owner = sec.tls_owner();
+            sec.write_file(&cfg.cert_path, cert.as_bytes(), 0o640, owner)?;
+            sec.write_file(&cfg.key_path, key.as_bytes(), 0o600, owner)?;
             return Ok(());
         }
         generate_self_signed(
@@ -632,8 +633,9 @@ async fn obtain_into_staging(
     opts.key_path = Some(key.clone());
     obtain_certificate(&opts).await?;
     let read = |path: &std::path::Path| std::fs::read(path).map_err(|e| io("read", path, e));
-    sec.write_file(&cfg.cert_path, &read(&cert)?, 0o640, None)?;
-    sec.write_file(&cfg.key_path, &read(&key)?, 0o600, None)?;
+    let owner = sec.tls_owner();
+    sec.write_file(&cfg.cert_path, &read(&cert)?, 0o640, owner)?;
+    sec.write_file(&cfg.key_path, &read(&key)?, 0o600, owner)?;
     if staged_account.is_file() {
         sec.write_file(&account, &read(&staged_account)?, 0o600, None)?;
     }

@@ -44,8 +44,8 @@ pub fn require_root_for_system_install(cfg: &InstallConfig, dry_run: bool) -> Re
     }
     Err(ChatmailError::config(format!(
         "system install requires root (use sudo): installs service user, binary, and systemd unit; config {}, state {}",
-        cfg.config_dir.display(),
-        cfg.state_dir.display()
+        shown(&cfg.config_dir),
+        shown(&cfg.state_dir)
     )))
 }
 
@@ -107,7 +107,7 @@ pub fn create_service_user(
         println!(
             "   Would create user {} (home {}, nologin)",
             cfg.maddy_user,
-            cfg.state_dir.display()
+            shown(&cfg.state_dir)
         );
         return Ok(());
     }
@@ -183,8 +183,8 @@ fn ensure_state_parent(cfg: &InstallConfig) -> Result<()> {
             "refusing to use state directory {}: {} is {reason}, so the service account \
              could redirect the account's home. Use a state directory whose parent \
              directories are owned by root",
-            cfg.state_dir.display(),
-            component.display()
+            shown(&cfg.state_dir),
+            shown(&component)
         ))),
         Resolved::InTree(_) | Resolved::Missing { .. } => Err(io_error(
             "mkdir",
@@ -253,7 +253,7 @@ fn ensure_service_account(
     if !status.success() {
         if !moves_home {
             let step = if args.iter().any(|arg| arg == "-d") {
-                format!("setting home {}", cfg.state_dir.display())
+                format!("setting home {}", shown(&cfg.state_dir))
             } else {
                 "updating group/shell".to_string()
             };
@@ -278,7 +278,7 @@ fn ensure_service_account(
             "usermod failed for {} (exit status {:?}) while moving home to {}; {recovery}",
             cfg.maddy_user,
             status.code(),
-            cfg.state_dir.display()
+            shown(&cfg.state_dir)
         )));
     }
     Ok(())
@@ -307,9 +307,9 @@ fn usermod_args(
                  a full install would leave the data in {} behind. Move it there if \
                  needed, run `install --user-only` with the same paths to repoint the \
                  account, then retry",
-                previous_home.display(),
-                state_dir.display(),
-                previous_home.display()
+                shown(previous_home),
+                shown(state_dir),
+                shown(previous_home)
             )));
         }
         args.push("-d".to_string());
@@ -388,7 +388,7 @@ impl SecureInstall {
                              would write into a directory another account controls; run \
                              install without --skip-user, or make the directory root-owned",
                             cfg.maddy_user,
-                            cfg.state_dir.display(),
+                            shown(&cfg.state_dir),
                             m.uid()
                         )));
                     }
@@ -543,7 +543,7 @@ impl SecureInstall {
         };
         let in_tree_allowed = || {
             if config && !self.chosen_in_state_dir(path) {
-                Err(config_into_tree_error(path))
+                Err(config_into_tree_error(path, &self.state_path))
             } else {
                 Ok(())
             }
@@ -671,12 +671,10 @@ impl SecureInstall {
                         return Err(ChatmailError::config(format!(
                             "refusing to read {} as root: it belongs to uid {}, not to the \
                              service account, so it may be another account's file linked \
-                             there. Check it; if it is madmail's own file, run: chown {}:{} {}",
-                            path.display(),
+                             there. Check it; if it is madmail's own file, {}",
+                            shown(path),
                             st.st_uid,
-                            self.user,
-                            self.group,
-                            shell_quote(path)
+                            self.file_chown_hint(path)
                         )));
                     }
                     Some((fd, _)) => Some(fd),
@@ -709,14 +707,14 @@ impl SecureInstall {
                 "refusing to change config file {}: {} is {reason}, so the service account \
                  could redirect a change made by path. Keep the config file in a root-owned \
                  directory (or under --state-dir) and re-run",
-                path.display(),
-                component.display()
+                shown(path),
+                shown(&component)
             ))),
             Resolved::Found(file) => {
                 if file.st.st_nlink > 1 {
                     return Err(ChatmailError::config(format!(
                         "refusing to change config file {}: it has {} hard links",
-                        path.display(),
+                        shown(path),
                         file.st.st_nlink
                     )));
                 }
@@ -726,7 +724,7 @@ impl SecureInstall {
             }
             Resolved::InTree(rest) => {
                 if !self.chosen_in_state_dir(path) {
-                    return Err(config_into_tree_error(path));
+                    return Err(config_into_tree_error(path, &self.state_path));
                 }
                 let (dir, name) = secure_fs::split_file(&rest)
                     .map_err(|e| in_tree_error("chmod", path, &rest, e))?;
@@ -739,7 +737,7 @@ impl SecureInstall {
                     return Err(ChatmailError::config(format!(
                         "refusing to change config file {}: it belongs to uid {}, not to the \
                          service account",
-                        path.display(),
+                        shown(path),
                         st.st_uid
                     )));
                 }
@@ -748,10 +746,20 @@ impl SecureInstall {
         }
     }
 
+    /// The owner for the TLS files install writes: the service account when
+    /// install manages ownership, so they need no change afterwards.
+    pub fn tls_owner(&self) -> Option<(u32, u32)> {
+        self.manage_ownership.then_some((self.uid, self.gid))
+    }
+
     /// Give a TLS file to `uid:gid` through a descriptor, or say why not. A
     /// file outside the state tree reached through trusted directories only
-    /// was placed by root or the operator; it is changed unless it has more
-    /// than one hard link and belongs to another account.
+    /// was placed by root or the operator. One that belongs to the service
+    /// account is changed. One of another account is changed only when it has
+    /// one hard link and sits (after the operator's links) in a directory
+    /// dedicated to madmail ([`host_paths::is_dedicated_dir`]) or in the Let's
+    /// Encrypt layout `/etc/letsencrypt/{live,archive}/<name>/`; otherwise the
+    /// `chown` command is printed for the operator to run after checking it.
     pub fn fix_tls_file(&self, path: &Path) -> Result<()> {
         match self
             .resolver(false)
@@ -764,7 +772,7 @@ impl SecureInstall {
                 path,
                 &format!(
                     "{} is {reason}; the service account could redirect a change made by path",
-                    component.display()
+                    shown(&component)
                 ),
             ),
             Resolved::Found(file) => {
@@ -776,8 +784,22 @@ impl SecureInstall {
                         &format!(
                             "{} has {} hard links and belongs to uid {owner}; it may be a \
                              link to another account's file",
-                            file.path.display(),
+                            shown(&file.path),
                             file.st.st_nlink
+                        ),
+                    );
+                } else if !service_owned && !self.is_tls_dir(&file.path) {
+                    skip_note(
+                        path,
+                        &format!(
+                            "{} belongs to uid {owner} and is not in a directory dedicated to \
+                             madmail or in /etc/letsencrypt/live or archive, so it may be \
+                             another account's file. If it is your certificate or key, run: \
+                             chown {}:{} {}",
+                            shown(&file.path),
+                            self.user,
+                            self.group,
+                            shell_quote(&file.path)
                         ),
                     );
                 } else {
@@ -787,6 +809,18 @@ impl SecureInstall {
             }
         }
         Ok(())
+    }
+
+    /// Whether `physical` (a file path with links resolved) is in a directory
+    /// whose TLS files install may give to the service account.
+    fn is_tls_dir(&self, physical: &Path) -> bool {
+        let Some(dir) = physical.parent() else {
+            return false;
+        };
+        let lets_encrypt = dir.parent().is_some_and(|p| {
+            p == Path::new("/etc/letsencrypt/live") || p == Path::new("/etc/letsencrypt/archive")
+        });
+        lets_encrypt || host_paths::is_dedicated_dir(dir, &self.primary)
     }
 
     /// A TLS file inside the state tree is not changed by path. It is looked
@@ -811,12 +845,9 @@ impl SecureInstall {
             Ok(st) if self.is_service_uid(st.st_uid) => return,
             Ok(st) => format!(
                 "inside the state directory and belongs to uid {}, not to the service account, \
-                 so the state walk leaves it unchanged. If it is your certificate or key, check \
-                 that it is not a link to another file, then run: chown {}:{} {}",
+                 so the state walk leaves it unchanged. If it is your certificate or key, {}",
                 st.st_uid,
-                self.user,
-                self.group,
-                shell_quote(path)
+                self.file_chown_hint(path)
             ),
         };
         skip_note(path, &why);
@@ -839,7 +870,7 @@ impl SecureInstall {
                 dir,
                 &format!(
                     "{} is {reason}; the service account could redirect a change made by path",
-                    component.display()
+                    shown(&component)
                 ),
             ),
             Resolved::Found(opened)
@@ -854,18 +885,35 @@ impl SecureInstall {
             }
             Resolved::Found(opened) => {
                 let resolved = if opened.path != host_paths::normalize(dir) {
-                    format!(" (resolves to {})", opened.path.display())
+                    format!(" (resolves to {})", shown(&opened.path))
                 } else {
                     String::new()
                 };
                 println!(
                     "   Leaving owner and mode of {}{resolved} unchanged: not a directory \
                      dedicated to madmail",
-                    dir.display()
+                    shown(dir)
                 )
             }
         }
         Ok(())
+    }
+
+    /// What to do, in order, to give a file inside the state directory to the
+    /// service account by hand. `chown -h` does not follow a link in the last
+    /// component, but the directories on the way are resolved again by path,
+    /// so the service and every process of its account are stopped first.
+    fn file_chown_hint(&self, path: &Path) -> String {
+        let quoted = shell_quote(path);
+        format!(
+            "stop the service (systemctl stop {unit}) and every process of {user} \
+             (pkill -u {user}; ps -u {user} must then list none), check that the file is \
+             not a hard link to another file (stat -c %h {quoted} must print 1), then run: \
+             chown -h {user}:{group} {quoted}",
+            unit = self.primary,
+            user = self.user,
+            group = self.group,
+        )
     }
 
     /// A new descriptor for the state directory, for the ownership walk.
@@ -874,12 +922,15 @@ impl SecureInstall {
     }
 }
 
-fn config_into_tree_error(path: &Path) -> ChatmailError {
+/// `state_dir` is `--state-dir` as given (normalized).
+fn config_into_tree_error(path: &Path, state_dir: &Path) -> ChatmailError {
     ChatmailError::config(format!(
-        "refusing to use config file {}: it is outside --state-dir but resolves into the \
-         state directory through a link, so the service account would control it. Point \
-         the link elsewhere, or give a --config-dir under --state-dir",
-        path.display()
+        "refusing to use config file {}: it is outside the state directory {} but resolves \
+         into the state directory through a link, so the service account would control it. \
+         Point the link elsewhere, or give a --config-dir under {}",
+        shown(path),
+        shown(state_dir),
+        shown(state_dir)
     ))
 }
 
@@ -1098,8 +1149,8 @@ fn open_state_root(
 fn controlled_error(op: &str, path: &Path, component: &Path, reason: &str) -> ChatmailError {
     ChatmailError::config(format!(
         "refusing to {op} {} as root: {} is {reason}",
-        path.display(),
-        component.display()
+        shown(path),
+        shown(component)
     ))
 }
 
@@ -1107,8 +1158,8 @@ fn in_tree_error(op: &str, path: &Path, rest: &Path, e: io::Error) -> ChatmailEr
     ChatmailError::config(format!(
         "{op} {} (state directory entry {}): {e}; a link or non-directory inside the \
          state directory is not followed",
-        path.display(),
-        rest.display()
+        shown(path),
+        shown(rest)
     ))
 }
 
@@ -1134,7 +1185,7 @@ pub fn setup_config_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>
 }
 
 fn skip_note(path: &Path, why: &str) {
-    println!("   ! Skipping ownership of {}: {why}", path.display());
+    println!("   ! Skipping ownership of {}: {why}", shown(path));
 }
 
 /// A passwd home that resolves to the state directory is already correct, so it
@@ -1176,7 +1227,7 @@ fn binary_dir_refusal(cfg: &InstallConfig, why: &str) -> ChatmailError {
     ChatmailError::config(format!(
         "refusing to install the binary at {}: {why}. Choose a --binary-path in a \
          root-owned directory outside --state-dir",
-        cfg.binary_path.display()
+        shown(&cfg.binary_path)
     ))
 }
 
@@ -1209,7 +1260,7 @@ pub fn check_binary_path(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Re
         )),
         Resolved::Controlled { component, reason } => Err(binary_dir_refusal(
             cfg,
-            &format!("{} is {reason}", component.display()),
+            &format!("{} is {reason}", shown(&component)),
         )),
     }
 }
@@ -1236,8 +1287,8 @@ pub fn install_binary(
     if dry_run {
         println!(
             "   Would install {} → {}",
-            current.display(),
-            cfg.binary_path.display()
+            shown(&current),
+            shown(&cfg.binary_path)
         );
         return Ok(());
     }
@@ -1259,7 +1310,7 @@ pub fn install_binary(
         Resolved::Controlled { component, reason } => {
             return Err(binary_dir_refusal(
                 cfg,
-                &format!("{} is {reason}", component.display()),
+                &format!("{} is {reason}", shown(&component)),
             ))
         }
         Resolved::Missing { .. } => {
@@ -1283,7 +1334,7 @@ pub fn install_binary(
     if same {
         println!(
             "   Skipping binary install (already running from {})",
-            cfg.binary_path.display()
+            shown(&cfg.binary_path)
         );
         let fd = secure_fs::openat(dir.fd.as_raw_fd(), &c_name, secure_fs::FILE_FLAGS, 0)
             .map_err(|e| io_error("open", &cfg.binary_path, e))?;
@@ -1292,8 +1343,8 @@ pub fn install_binary(
     } else {
         println!(
             "   Installing {} → {}",
-            current.display(),
-            cfg.binary_path.display()
+            shown(&current),
+            shown(&cfg.binary_path)
         );
         secure_fs::replace_file_with(dir.fd.as_raw_fd(), name, 0o755, Some((0, 0)), |fd| {
             // SAFETY: `fd` stays open for the closure; ManuallyDrop keeps the
@@ -1324,7 +1375,7 @@ pub fn setup_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Re
         "   Setting ownership {}:{} on {}",
         cfg.maddy_user,
         cfg.maddy_group,
-        cfg.state_dir.display()
+        shown(&cfg.state_dir)
     );
     let fd = sec
         .state_root_fd()
@@ -1335,16 +1386,18 @@ pub fn setup_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Re
     for entry in skipped.iter().take(SHOWN) {
         println!(
             "   ! Ownership of {} left unchanged: {}",
-            entry.path.display(),
+            shown(&entry.path),
             entry.reason
         );
-        if entry.foreign_owner {
+        if entry.foreign_owner && entry.is_dir {
             println!(
-                "     If it is madmail's own (check it is not a hard link to another file), run: \
-                 chown {}:{} {}",
-                sec.user,
-                sec.group,
-                shell_quote(&entry.path)
+                "     This directory was not entered: its contents were left unchanged and \
+                 need manual inspection."
+            );
+        } else if entry.foreign_owner {
+            println!(
+                "     If it is madmail's own file, {}.",
+                sec.file_chown_hint(&entry.path)
             );
         }
     }
@@ -1386,7 +1439,7 @@ fn lookup_uid_gid(name: &str) -> Result<(u32, u32)> {
 }
 
 fn io_error(op: &str, path: &Path, e: io::Error) -> ChatmailError {
-    ChatmailError::config(format!("{op} {}: {e}", path.display()))
+    ChatmailError::config(format!("{op} {}: {e}", shown(path)))
 }
 
 fn effective_uid_is_root() -> bool {
@@ -1646,7 +1699,8 @@ mod tests {
         let (_b, b) = base();
         let state = b.join("state");
         fs::create_dir_all(&state).unwrap();
-        let cert = b.join("fullchain.pem");
+        fs::create_dir_all(b.join("madmail")).unwrap();
+        let cert = b.join("madmail/fullchain.pem");
         fs::write(&cert, "x").unwrap();
         fs::hard_link(&cert, b.join("other-name")).unwrap();
         // Owned by the caller, which is neither the service uid nor old_uid:
@@ -1661,6 +1715,42 @@ mod tests {
         // SAFETY: getuid has no preconditions.
         if unsafe { libc::getuid() } != 0 {
             let err = sec.fix_tls_file(&cert).unwrap_err().to_string();
+            assert!(err.contains("chown"), "{err}");
+        }
+    }
+
+    #[test]
+    fn tls_files_of_another_account_are_chowned_only_in_a_madmail_directory() {
+        let (_b, b) = base();
+        let state = b.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let sec = handle(&state, None, &[&state]);
+        // Owned by the caller, not by the service: outside a directory
+        // dedicated to madmail no chown (to UNUSED_UID) is attempted.
+        fs::create_dir_all(b.join("shared")).unwrap();
+        let shared = b.join("shared/privkey.pem");
+        fs::write(&shared, "x").unwrap();
+        sec.fix_tls_file(&shared).unwrap();
+        // Reached through an operator link into such a directory, the
+        // physical directory decides.
+        fs::create_dir_all(b.join("madmail")).unwrap();
+        symlink(&shared, b.join("madmail/privkey.pem")).unwrap();
+        sec.fix_tls_file(&b.join("madmail/privkey.pem")).unwrap();
+        // In a madmail directory, and in the Let's Encrypt layout, a chown
+        // is attempted (and fails for a non-root caller).
+        assert!(sec.is_tls_dir(Path::new(
+            "/etc/letsencrypt/archive/mx.example/privkey1.pem"
+        )));
+        assert!(sec.is_tls_dir(Path::new("/etc/letsencrypt/live/mx.example/privkey.pem")));
+        assert!(sec.is_tls_dir(Path::new("/etc/madmail/certs/privkey.pem")));
+        assert!(!sec.is_tls_dir(Path::new("/etc/letsencrypt/privkey.pem")));
+        assert!(!sec.is_tls_dir(Path::new("/usr/local/etc/certs/privkey.pem")));
+        assert!(!sec.is_tls_dir(Path::new("/etc/ssl/private/privkey.pem")));
+        // SAFETY: getuid has no preconditions.
+        if unsafe { libc::getuid() } != 0 {
+            let own = b.join("madmail/fullchain.pem");
+            fs::write(&own, "x").unwrap();
+            let err = sec.fix_tls_file(&own).unwrap_err().to_string();
             assert!(err.contains("chown"), "{err}");
         }
     }
@@ -1732,7 +1822,10 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("refusing to read"), "{err}");
-        assert!(err.contains("chown madmail:madmail"), "{err}");
+        assert!(err.contains("systemctl stop madmail"), "{err}");
+        assert!(err.contains("pkill -u madmail; ps -u madmail"), "{err}");
+        assert!(err.contains("stat -c %h "), "{err}");
+        assert!(err.contains("chown -h madmail:madmail "), "{err}");
     }
 
     #[test]

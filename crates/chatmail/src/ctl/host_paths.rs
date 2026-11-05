@@ -344,6 +344,10 @@ mod tests {
             "/s/\\u{009b}2K\\u{202e}"
         );
         assert_eq!(shown(&p(b"/s/back\\slash")), "/s/back\\\\slash");
+        // JSON output carries paths as strings: serde escapes the control
+        // characters below U+0020, so the line structure stays intact.
+        let json = serde_json::json!({ "path": "/s/x\nrun\r\u{1b}[2K" }).to_string();
+        assert_eq!(json, r#"{"path":"/s/x\nrun\r\u001b[2K"}"#);
         for raw in [
             &b"/s/x\nchown -h root /etc"[..],
             b"/s/a\rb",

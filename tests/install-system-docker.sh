@@ -409,6 +409,22 @@ ln /var/xyzzy/hl-victim /var/xyzzy/lib/madmail/hl-planted
 grep -q '^   ! Ownership of /var/xyzzy/lib/madmail/hl-planted left unchanged: belongs to uid 0, not to the service account and has 2 hard links' /tmp/user-hardlink.log
 [[ "$(stat -c '%U:%G:%a' /var/xyzzy/hl-victim)" = root:root:600 ]]
 rm /var/xyzzy/lib/madmail/hl-planted /var/xyzzy/hl-victim
+# A name the service account chose is printed escaped, and the command printed
+# for it is quoted for the shell, so it cannot add a line to the output. Another
+# account's directory is not entered, and no chown command is printed for it.
+touch $'/var/xyzzy/lib/madmail/evil\nname'
+mkdir -p /var/xyzzy/lib/madmail/nobody-dir/inner
+chown -R nobody:nogroup /var/xyzzy/lib/madmail/nobody-dir
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-escaped.log
+grep -qF '   ! Ownership of /var/xyzzy/lib/madmail/evil\nname left unchanged: belongs to uid 0' /tmp/user-escaped.log
+grep -qF "then run: chown -h madmail:madmail \$'/var/xyzzy/lib/madmail/evil\\x0aname'" /tmp/user-escaped.log
+if grep -q '^name' /tmp/user-escaped.log; then fail "raw newline from a file name in the output"; fi
+grep -qF '   ! Ownership of /var/xyzzy/lib/madmail/nobody-dir left unchanged: belongs to uid 65534' /tmp/user-escaped.log
+grep -qF '     This directory was not entered: its contents were left unchanged and need manual inspection.' /tmp/user-escaped.log
+if grep -q 'chown -h madmail:madmail /var/xyzzy/lib/madmail/nobody-dir' /tmp/user-escaped.log; then fail "chown hint for a directory"; fi
+[[ "$(stat -c '%U' /var/xyzzy/lib/madmail/nobody-dir/inner)" = nobody ]]
+[[ "$(stat -c '%U' $'/var/xyzzy/lib/madmail/evil\nname')" = root ]]
+rm -rf $'/var/xyzzy/lib/madmail/evil\nname' /var/xyzzy/lib/madmail/nobody-dir
 # The link count proves nothing: once /etc/shadow is replaced by a rename (as
 # passwd, useradd or a package update do), a hard link planted in the tree is
 # the old inode's only link. It still belongs to root and is left alone.
@@ -554,7 +570,7 @@ install -m 600 /var/xyzzy/etc/madmail/certs/privkey.pem "$S/opcerts/privkey.pem"
 /tmp/madmail "${dns_file_args[@]}" \
     --cert-path "$S/opcerts/fullchain.pem" --key-path "$S/opcerts/privkey.pem" > /tmp/in-tree-tls.log
 grep -q "Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account" /tmp/in-tree-tls.log
-grep -q "run: chown madmail:madmail $S/opcerts/privkey.pem" /tmp/in-tree-tls.log
+grep -q "If it is your certificate or key, stop the service (systemctl stop madmail) and every process of madmail (pkill -u madmail; ps -u madmail must then list none), check that the file is not a hard link to another file (stat -c %h $S/opcerts/privkey.pem must print 1), then run: chown -h madmail:madmail $S/opcerts/privkey.pem" /tmp/in-tree-tls.log
 [[ "$(stat -c '%U:%G:%a' "$S/opcerts/privkey.pem")" = root:root:600 ]]
 [[ "$(stat -c '%U' "$S/opcerts")" = madmail ]]
 rm -r "$S/opcerts"
