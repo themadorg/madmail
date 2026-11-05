@@ -25,7 +25,7 @@
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use chatmail_config::Args;
@@ -56,13 +56,38 @@ struct UninstallPlan {
     service_files: Vec<PathBuf>,
     timer_names: Vec<String>,
     timer_files: Vec<PathBuf>,
+    /// Directories removed with all their contents.
     config_dirs: Vec<PathBuf>,
+    /// Files removed from a directory that is otherwise left in place.
+    config_files: Vec<PathBuf>,
+    /// Directories removed with all their contents.
     state_dirs: Vec<PathBuf>,
+    /// Paths deliberately left in place, with the reason shown to the operator.
+    kept: Vec<Kept>,
+    /// `--config` files named in units, with the unit's binary name; classified
+    /// by [`plan_unit_paths`].
+    unit_configs: Vec<(PathBuf, Option<String>)>,
+    /// `WorkingDirectory=` values from units; classified by [`plan_unit_paths`].
+    unit_state_dirs: Vec<PathBuf>,
     binary_paths: Vec<PathBuf>,
     runtime_dirs: Vec<PathBuf>,
     log_dirs: Vec<PathBuf>,
     cache_dirs: Vec<PathBuf>,
     service_users: Vec<String>,
+}
+
+/// Which removal step a kept path belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeptKind {
+    Config,
+    State,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Kept {
+    kind: KeptKind,
+    path: PathBuf,
+    reason: String,
 }
 
 pub async fn uninstall(args: &Args, flags: &UninstallArgs) -> Result<()> {
@@ -150,7 +175,14 @@ async fn uninstall_unix(args: &Args, flags: &UninstallArgs) -> Result<()> {
     }
 
     daemon_reload(flags.dry_run)?;
+    let kept = kept_paths(&plan, flags);
     if args.json {
+        let left: Vec<_> = kept
+            .iter()
+            .map(
+                |k| serde_json::json!({ "path": k.path.display().to_string(), "reason": k.reason }),
+            )
+            .collect();
         CtlOut::from_args(args, "uninstall").done_msg(
             "",
             serde_json::json!({
@@ -158,13 +190,19 @@ async fn uninstall_unix(args: &Args, flags: &UninstallArgs) -> Result<()> {
                 "binary": plan.primary_binary_name,
                 "dry_run": flags.dry_run,
                 "keep_data": flags.keep_data,
+                "left_in_place": left,
             }),
             "Uninstallation completed successfully",
         )?;
     } else {
         println!("\n🎉 Uninstallation completed successfully!");
         if !flags.keep_data {
-            println!("⚠️  All mail data has been permanently deleted.");
+            println!(
+                "⚠️  All mail data in the removed state directories has been permanently deleted."
+            );
+        }
+        for k in kept {
+            println!("Left in place: {} ({})", k.path.display(), k.reason);
         }
     }
     Ok(())
@@ -475,10 +513,18 @@ fn detect_installation(ctx: &CtlContext, primary: &str) -> Result<UninstallPlan>
         plan.installation_found = true;
     }
 
+    let deny = DenyList::from_system(&plan.service_users);
+    let operator_state = ctx.state_dir.is_dir().then_some(ctx.state_dir.as_path());
+    plan_unit_paths(&mut plan, operator_state, &deny);
+
     let mut path_prefixes: BTreeSet<String> = plan.service_names.iter().cloned().collect();
     for sd in &plan.state_dirs {
         if let Some(name) = sd.file_name().and_then(|n| n.to_str()) {
-            path_prefixes.insert(name.to_string());
+            // `/run`, `/var/log` and `/var/cache` entries are only derived from
+            // names that clearly belong to madmail.
+            if is_family_unit_stem(name) || name == primary {
+                path_prefixes.insert(name.to_string());
+            }
         }
     }
     path_prefixes.insert(DEFAULT_BINARY_NAME.into());
@@ -537,7 +583,7 @@ fn enrich_from_unit_file(plan: &mut UninstallPlan, path: &Path) {
             // Written verbatim by install; only specifiers are escaped.
             let dir = dir.trim().replace("%%", "%");
             if !dir.is_empty() {
-                push_unique_path(&mut plan.state_dirs, PathBuf::from(dir));
+                push_unique_path(&mut plan.unit_state_dirs, PathBuf::from(dir));
             }
         }
         if let Some(exec) = line.strip_prefix("ExecStart=") {
@@ -555,14 +601,294 @@ fn enrich_from_unit_file(plan: &mut UninstallPlan, path: &Path) {
                     w.strip_prefix("--config=").map(str::to_string)
                 }
             });
-            if let Some(dir) = config.as_deref().and_then(|c| Path::new(c).parent()) {
-                // Never derive a top-level directory such as `/` or `/etc`.
-                if dir.is_absolute() && dir.components().count() > 2 {
-                    push_unique_path(&mut plan.config_dirs, dir.to_path_buf());
+            if let Some(config) = config.filter(|c| Path::new(c).is_absolute()) {
+                let binary = words
+                    .first()
+                    .and_then(|b| Path::new(b).file_name())
+                    .map(|n| n.to_string_lossy().into_owned());
+                let entry = (PathBuf::from(config), binary);
+                if !plan.unit_configs.contains(&entry) {
+                    plan.unit_configs.push(entry);
                 }
             }
         }
     }
+}
+
+/// Well-known directories that are never removed as a whole, whatever a unit or
+/// `--state-dir` says.
+const DENIED_DIRS: &[&str] = &[
+    "/",
+    "/bin",
+    "/boot",
+    "/dev",
+    "/etc",
+    "/home",
+    "/lib",
+    "/lib64",
+    "/media",
+    "/mnt",
+    "/opt",
+    "/proc",
+    "/root",
+    "/run",
+    "/sbin",
+    "/srv",
+    "/sys",
+    "/tmp",
+    "/Users",
+    "/usr",
+    "/usr/bin",
+    "/usr/lib",
+    "/usr/local",
+    "/usr/local/bin",
+    "/usr/local/etc",
+    "/usr/local/lib",
+    "/usr/local/share",
+    "/usr/sbin",
+    "/usr/share",
+    "/var",
+    "/var/cache",
+    "/var/lib",
+    "/var/log",
+    "/var/mail",
+    "/var/spool",
+    "/var/tmp",
+];
+
+/// Directories uninstall must never remove as a whole: [`DENIED_DIRS`], any
+/// direct child of `/home` or `/Users`, and the homes of real users.
+#[derive(Debug, Default)]
+struct DenyList {
+    homes: Vec<PathBuf>,
+}
+
+impl DenyList {
+    fn new(homes: impl IntoIterator<Item = PathBuf>) -> Self {
+        Self {
+            homes: homes.into_iter().map(|h| normalize(&h)).collect(),
+        }
+    }
+
+    /// Homes of root and of regular accounts (uid >= 1000, except `nobody`) from
+    /// `/etc/passwd`, plus `$HOME` and the `sudo` caller's home. Service accounts
+    /// being removed are excluded: their home is the state directory.
+    fn from_system(service_users: &[String]) -> Self {
+        let mut homes = Vec::new();
+        if let Ok(passwd) = fs::read_to_string("/etc/passwd") {
+            homes.extend(real_user_homes(&passwd, service_users));
+        }
+        if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
+            homes.push(PathBuf::from(home));
+        }
+        if let Some(user) = std::env::var("SUDO_USER").ok().filter(|u| !u.is_empty()) {
+            if let Ok(passwd) = fs::read_to_string("/etc/passwd") {
+                homes.extend(passwd.lines().filter_map(|line| {
+                    let fields: Vec<&str> = line.split(':').collect();
+                    (fields.len() >= 6 && fields[0] == user).then(|| PathBuf::from(fields[5]))
+                }));
+            }
+        }
+        Self::new(homes)
+    }
+
+    /// Why `path` must not be removed as a whole, or `None` when it may be.
+    /// Both the path as written (normalized) and its resolved form are checked.
+    fn reason(&self, path: &Path) -> Option<&'static str> {
+        let mut forms = vec![normalize(path)];
+        if let Ok(resolved) = fs::canonicalize(path) {
+            forms.push(resolved);
+        }
+        forms.iter().find_map(|form| {
+            if DENIED_DIRS.iter().any(|d| form == Path::new(d)) {
+                return Some("well-known system directory");
+            }
+            let parent = form.parent();
+            if parent == Some(Path::new("/home")) || parent == Some(Path::new("/Users")) {
+                return Some("user home directory");
+            }
+            if self.homes.iter().any(|h| h == form) {
+                return Some("user home directory");
+            }
+            None
+        })
+    }
+}
+
+fn real_user_homes(passwd: &str, service_users: &[String]) -> Vec<PathBuf> {
+    passwd
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split(':').collect();
+            if fields.len() < 6 || service_users.iter().any(|u| u == fields[0]) {
+                return None;
+            }
+            let uid: u32 = fields[2].parse().ok()?;
+            let regular = uid == 0 || (uid >= 1000 && uid != 65534);
+            (regular && fields[5].starts_with('/')).then(|| PathBuf::from(fields[5]))
+        })
+        .collect()
+}
+
+/// Lexically resolve `.` and `..` and drop trailing slashes.
+fn normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DirClass {
+    /// Named for madmail (`madmail*`, `chatmail*` or this binary's name).
+    Dedicated,
+    /// Any other directory: it may hold files that are not madmail's.
+    Shared,
+    /// Never removed as a whole.
+    Denied(&'static str),
+}
+
+fn classify_dir(path: &Path, primary: &str, deny: &DenyList) -> DirClass {
+    if let Some(reason) = deny.reason(path) {
+        return DirClass::Denied(reason);
+    }
+    let normalized = normalize(path);
+    let named_for_madmail = normalized
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|name| is_family_unit_stem(name) || name == primary);
+    if named_for_madmail {
+        DirClass::Dedicated
+    } else {
+        DirClass::Shared
+    }
+}
+
+/// Whether `config` has the name install gives its config file: `<binary>.conf`
+/// for the unit's binary, this binary or a madmail/chatmail name.
+fn is_install_config_file(config: &Path, binary: Option<&str>, primary: &str) -> bool {
+    let Some(name) = config.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let Some(stem) = name.strip_suffix(".conf") else {
+        return false;
+    };
+    binary == Some(stem) || stem == primary || is_family_unit_stem(stem)
+}
+
+/// Decide what to remove for the directories named in units, and drop any
+/// directory on the deny list from the whole-directory removals.
+///
+/// A unit-derived directory is removed as a whole only when it is named for
+/// madmail. Otherwise (for example `--config-dir /usr/local/etc`) only the
+/// config file install wrote there is removed; TLS files in it are kept because
+/// the unit does not say whether install created them. A shared
+/// `WorkingDirectory=` is kept: install's state is mixed with the service's
+/// data there. The operator's `--state-dir` (`operator_state`) is removed as a
+/// whole unless it is denied.
+fn plan_unit_paths(plan: &mut UninstallPlan, operator_state: Option<&Path>, deny: &DenyList) {
+    let primary = plan.primary_binary_name.clone();
+    let kept = |plan: &mut UninstallPlan, kind, path: &Path, reason: String| {
+        let entry = Kept {
+            kind,
+            path: path.to_path_buf(),
+            reason,
+        };
+        if !plan.kept.contains(&entry) {
+            plan.kept.push(entry);
+        }
+    };
+
+    for (config, binary) in std::mem::take(&mut plan.unit_configs) {
+        let Some(dir) = config.parent().filter(|d| d.is_absolute()) else {
+            continue;
+        };
+        let why = match classify_dir(dir, &primary, deny) {
+            DirClass::Dedicated => {
+                push_unique_path(&mut plan.config_dirs, dir.to_path_buf());
+                continue;
+            }
+            DirClass::Shared => "shared directory, not named for madmail",
+            DirClass::Denied(reason) => reason,
+        };
+        let file = config.file_name().unwrap_or_default().to_string_lossy();
+        if is_install_config_file(&config, binary.as_deref(), &primary) {
+            push_unique_path(&mut plan.config_files, config.clone());
+            kept(
+                plan,
+                KeptKind::Config,
+                dir,
+                format!("{why}; only {file} is removed"),
+            );
+        } else {
+            kept(
+                plan,
+                KeptKind::Config,
+                &config,
+                format!("{why}; {file} is not a config file name install writes"),
+            );
+        }
+        for name in ["fullchain.pem", "privkey.pem"] {
+            let tls = dir.join("certs").join(name);
+            if fs::symlink_metadata(&tls).is_ok() {
+                kept(
+                    plan,
+                    KeptKind::Config,
+                    &tls,
+                    "TLS file in a shared directory; install may not have created it, remove it yourself if it did".into(),
+                );
+            }
+        }
+    }
+
+    for dir in std::mem::take(&mut plan.unit_state_dirs) {
+        if !dir.is_absolute() {
+            continue;
+        }
+        let operator_chosen = operator_state.is_some_and(|s| normalize(s) == normalize(&dir));
+        match classify_dir(&dir, &primary, deny) {
+            DirClass::Denied(reason) => kept(plan, KeptKind::State, &dir, reason.to_string()),
+            DirClass::Shared if !operator_chosen => kept(
+                plan,
+                KeptKind::State,
+                &dir,
+                format!(
+                    "shared directory, not named for madmail; remove it yourself, or pass \
+                     --state-dir {} to uninstall to remove it with all its contents",
+                    dir.display()
+                ),
+            ),
+            _ => push_unique_path(&mut plan.state_dirs, dir),
+        }
+    }
+
+    for (kind, dirs) in [
+        (KeptKind::Config, std::mem::take(&mut plan.config_dirs)),
+        (KeptKind::State, std::mem::take(&mut plan.state_dirs)),
+    ] {
+        let mut allowed = Vec::new();
+        for dir in dirs {
+            match deny.reason(&dir) {
+                Some(reason) => kept(plan, kind, &dir, reason.to_string()),
+                None => allowed.push(dir),
+            }
+        }
+        match kind {
+            KeptKind::Config => plan.config_dirs = allowed,
+            KeptKind::State => plan.state_dirs = allowed,
+        }
+    }
+    // A file inside a directory that is removed as a whole needs no own entry.
+    let dirs = plan.config_dirs.clone();
+    plan.config_files
+        .retain(|f| !dirs.iter().any(|d| f.starts_with(d)));
 }
 
 /// Split an `ExecStart=` value the way install writes it: whitespace-separated
@@ -663,13 +989,21 @@ fn show_plan(plan: &UninstallPlan, flags: &UninstallArgs) {
     if !plan.service_names.is_empty() {
         println!("Services: {}", plan.service_names.join(", "));
     }
-    for sd in &plan.state_dirs {
-        println!("State dir: {}", sd.display());
+    if !flags.keep_data {
+        for sd in &plan.state_dirs {
+            println!("State dir (removed with all contents): {}", sd.display());
+        }
     }
     if !flags.keep_config {
         for cd in &plan.config_dirs {
-            println!("Config dir: {}", cd.display());
+            println!("Config dir (removed with all contents): {}", cd.display());
         }
+        for cf in &plan.config_files {
+            println!("Config file (removed): {}", cf.display());
+        }
+    }
+    for kept in kept_paths(plan, flags) {
+        println!("Left in place: {} ({})", kept.path.display(), kept.reason);
     }
     if !flags.keep_binary {
         for bp in &plan.binary_paths {
@@ -721,7 +1055,21 @@ fn remove_config(plan: &UninstallPlan, flags: &UninstallArgs) -> Result<()> {
     for dir in &plan.config_dirs {
         remove_path(dir, flags.dry_run)?;
     }
+    for file in &plan.config_files {
+        remove_path(file, flags.dry_run)?;
+    }
     Ok(())
+}
+
+/// Kept paths that matter for the removal steps that run.
+fn kept_paths<'a>(plan: &'a UninstallPlan, flags: &UninstallArgs) -> Vec<&'a Kept> {
+    plan.kept
+        .iter()
+        .filter(|k| match k.kind {
+            KeptKind::Config => !flags.keep_config,
+            KeptKind::State => !flags.keep_data,
+        })
+        .collect()
 }
 
 fn remove_data(plan: &UninstallPlan, flags: &UninstallArgs) -> Result<()> {
@@ -753,10 +1101,9 @@ fn remove_users(plan: &UninstallPlan, flags: &UninstallArgs) -> Result<()> {
             println!("Would remove user: {user}");
             continue;
         }
-        let status = Command::new("userdel").args(["-r", user]).status();
-        if status.is_err() || !status.unwrap().success() {
-            let _ = Command::new("userdel").arg(user).status();
-        }
+        // No `-r`: the home is the state directory, which is removed (or kept
+        // with --keep-data, or left as a shared directory) by the data step.
+        let _ = Command::new("userdel").arg(user).status();
         println!("Removed user (if existed): {user}");
     }
     Ok(())
@@ -923,7 +1270,7 @@ mod tests {
         enrich_from_unit_file(&mut plan, &unit);
 
         assert_eq!(plan.service_users, vec!["madmail".to_string()]);
-        assert!(plan.state_dirs.iter().any(|p| p == dir.path()));
+        assert!(plan.unit_state_dirs.iter().any(|p| p == dir.path()));
         assert!(plan.binary_paths.iter().any(|p| p == &binary));
     }
 
@@ -949,23 +1296,172 @@ mod tests {
         enrich_from_unit_file(&mut plan, &unit);
 
         assert_eq!(plan.binary_paths, vec![binary]);
-        assert_eq!(plan.config_dirs, vec![config_dir]);
-        assert_eq!(plan.state_dirs, vec![state_dir]);
+        assert_eq!(
+            plan.unit_configs,
+            vec![(config_dir.join("madmail.conf"), Some("madmail".into()))]
+        );
+        assert_eq!(plan.unit_state_dirs, vec![state_dir]);
+    }
+
+    fn unit_plan(configs: &[&Path], state_dirs: &[&Path]) -> UninstallPlan {
+        UninstallPlan {
+            primary_binary_name: "madmail".into(),
+            unit_configs: configs
+                .iter()
+                .map(|c| (c.to_path_buf(), Some("madmail".into())))
+                .collect(),
+            unit_state_dirs: state_dirs.iter().map(|d| d.to_path_buf()).collect(),
+            ..Default::default()
+        }
+    }
+
+    fn kept_paths_of(plan: &UninstallPlan) -> Vec<PathBuf> {
+        plan.kept.iter().map(|k| k.path.clone()).collect()
     }
 
     #[test]
-    fn enrich_from_unit_file_ignores_top_level_config_parent() {
-        let dir = tempfile::tempdir().unwrap();
-        let unit = dir.path().join("madmail.service");
-        fs::write(
-            &unit,
-            "[Service]\nExecStart=/usr/local/bin/madmail --config=/etc/madmail.conf run\n",
-        )
-        .unwrap();
+    fn dedicated_unit_dirs_are_removed_whole() {
+        let base = tempfile::tempdir().unwrap();
+        let config_dir = base.path().join("etc/madmail");
+        let state_dir = base.path().join("lib/madmail-dev");
+        fs::create_dir_all(config_dir.join("certs")).unwrap();
+        fs::write(config_dir.join("madmail.conf"), "x").unwrap();
+        fs::write(config_dir.join("certs/privkey.pem"), "x").unwrap();
+        fs::create_dir_all(state_dir.join("messages")).unwrap();
 
-        let mut plan = UninstallPlan::default();
-        enrich_from_unit_file(&mut plan, &unit);
+        let mut plan = unit_plan(&[&config_dir.join("madmail.conf")], &[&state_dir]);
+        plan_unit_paths(&mut plan, None, &DenyList::default());
+        assert_eq!(plan.config_dirs, vec![config_dir.clone()]);
+        assert!(plan.config_files.is_empty());
+        assert_eq!(plan.state_dirs, vec![state_dir.clone()]);
+        assert!(plan.kept.is_empty(), "{:?}", plan.kept);
+
+        let flags = sample_flags(false, base.path().join("log"));
+        remove_config(&plan, &flags).unwrap();
+        remove_data(&plan, &flags).unwrap();
+        assert!(!config_dir.exists() && !state_dir.exists());
+    }
+
+    #[test]
+    fn shared_config_dir_loses_only_the_config_file() {
+        let base = tempfile::tempdir().unwrap();
+        let shared = base.path().join("usr-local-etc");
+        fs::create_dir_all(shared.join("certs")).unwrap();
+        for file in ["madmail.conf", "other.conf", "certs/fullchain.pem"] {
+            fs::write(shared.join(file), "x").unwrap();
+        }
+
+        let mut plan = unit_plan(&[&shared.join("madmail.conf")], &[]);
+        plan_unit_paths(&mut plan, None, &DenyList::default());
         assert!(plan.config_dirs.is_empty());
+        assert_eq!(plan.config_files, vec![shared.join("madmail.conf")]);
+        assert_eq!(
+            kept_paths_of(&plan),
+            vec![shared.clone(), shared.join("certs/fullchain.pem")]
+        );
+        assert!(plan.kept[0].reason.contains("only madmail.conf is removed"));
+
+        remove_config(&plan, &sample_flags(false, base.path().join("log"))).unwrap();
+        assert!(!shared.join("madmail.conf").exists());
+        assert!(shared.join("other.conf").is_file());
+        assert!(shared.join("certs/fullchain.pem").is_file());
+
+        // A --config file install would not have written is not removed either.
+        let mut plan = unit_plan(&[&shared.join("other.conf")], &[]);
+        plan_unit_paths(&mut plan, None, &DenyList::default());
+        assert!(plan.config_files.is_empty() && plan.config_dirs.is_empty());
+        assert_eq!(kept_paths_of(&plan)[0], shared.join("other.conf"));
+    }
+
+    #[test]
+    fn well_known_and_home_dirs_are_never_removed_whole() {
+        let deny = DenyList::new([PathBuf::from("/srv/people/alice")]);
+        for dir in [
+            "/",
+            "/etc",
+            "/usr",
+            "/usr/local",
+            "/usr/local/etc/",
+            "/opt",
+            "/srv",
+            "/var",
+            "/var/lib",
+            "/var/lib/../lib",
+            "/home",
+            "/home/admin",
+            "/root",
+            "/tmp",
+            "/srv/people/alice",
+        ] {
+            assert!(
+                matches!(
+                    classify_dir(Path::new(dir), "madmail", &deny),
+                    DirClass::Denied(_)
+                ),
+                "{dir}"
+            );
+        }
+        assert_eq!(
+            classify_dir(Path::new("/opt/etc/madmail-x"), "madmail", &deny),
+            DirClass::Dedicated
+        );
+        assert_eq!(
+            classify_dir(Path::new("/opt/etc"), "madmail", &deny),
+            DirClass::Shared
+        );
+
+        // `/etc/madmail.conf`: the file goes, `/etc` stays. A denied state
+        // directory is kept even when it came from `--state-dir`.
+        let mut plan = unit_plan(
+            &[Path::new("/etc/madmail.conf")],
+            &[Path::new("/home/admin")],
+        );
+        plan.state_dirs.push(PathBuf::from("/var/lib"));
+        plan_unit_paths(&mut plan, Some(Path::new("/var/lib")), &deny);
+        assert!(plan.config_dirs.is_empty() && plan.state_dirs.is_empty());
+        assert_eq!(plan.config_files, vec![PathBuf::from("/etc/madmail.conf")]);
+        let kept = kept_paths_of(&plan);
+        for path in ["/etc", "/home/admin", "/var/lib"] {
+            assert!(kept.contains(&PathBuf::from(path)), "{path}: {kept:?}");
+        }
+    }
+
+    #[test]
+    fn real_user_homes_come_from_passwd() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
+                      daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n\
+                      nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n\
+                      alice:x:1000:1000:Alice:/data/alice:/bin/bash\n\
+                      madmail:x:1001:1001::/var/lib/madmail:/sbin/nologin\n";
+        assert_eq!(
+            real_user_homes(passwd, &["madmail".into()]),
+            vec![PathBuf::from("/root"), PathBuf::from("/data/alice")]
+        );
+    }
+
+    #[test]
+    fn shared_working_directory_is_kept_unless_given_as_state_dir() {
+        let base = tempfile::tempdir().unwrap();
+        let shared = base.path().join("srv-data");
+        fs::create_dir_all(&shared).unwrap();
+
+        let mut plan = unit_plan(&[], &[&shared]);
+        plan_unit_paths(&mut plan, None, &DenyList::default());
+        assert!(plan.state_dirs.is_empty());
+        assert_eq!(kept_paths_of(&plan), vec![shared.clone()]);
+        assert_eq!(plan.kept[0].kind, KeptKind::State);
+        assert!(plan.kept[0].reason.contains("--state-dir"));
+        // The kept note is only shown when the data step runs.
+        let mut flags = sample_flags(true, base.path().join("log"));
+        assert_eq!(kept_paths(&plan, &flags).len(), 1);
+        flags.keep_data = true;
+        assert!(kept_paths(&plan, &flags).is_empty());
+
+        // Naming it with --state-dir is the operator's explicit choice.
+        let mut plan = unit_plan(&[], &[&shared]);
+        plan_unit_paths(&mut plan, Some(&shared), &DenyList::default());
+        assert_eq!(plan.state_dirs, vec![shared]);
+        assert!(plan.kept.is_empty());
     }
 
     #[test]

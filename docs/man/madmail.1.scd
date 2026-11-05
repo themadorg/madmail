@@ -92,6 +92,12 @@ Extended documentation:
 	Remove the service, configuration, and data.
 	Confirmation is required; use keep flags such as *--keep-data* to
 	preserve selected artifacts.
+	A config or state directory named in a unit is removed as a whole only
+	when its name is the binary name, or madmail or chatmail optionally
+	followed by a suffix starting with - or \_. From any other config
+	directory only the config file is removed, and a shared state directory
+	is kept. Well-known system directories and user homes are never removed
+	as a whole. The plan lists every path removed or left in place.
 
 *upgrade*, *update*
 	Replace this executable from a signed local file or URL

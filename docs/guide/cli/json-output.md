@@ -302,7 +302,31 @@ selects account/permission actions and leaves systemd actions false. See
 
 ### `uninstall`
 
-Dry-run / completed uninstall returns paths and flags in `data`. When nothing to uninstall:
+A dry-run or completed uninstall returns its flags and the paths it left in place
+(`left_in_place`, empty when nothing was kept; see
+[what is removed](uninstall.md#what-is-removed)):
+
+```json
+{
+  "ok": true,
+  "command": "uninstall",
+  "message": "Uninstallation completed successfully",
+  "data": {
+    "uninstalled": true,
+    "binary": "madmail",
+    "dry_run": false,
+    "keep_data": false,
+    "left_in_place": [
+      {
+        "path": "/usr/local/etc",
+        "reason": "shared directory, not named for madmail; only madmail.conf is removed"
+      }
+    ]
+  }
+}
+```
+
+When nothing to uninstall:
 
 ```json
 {
