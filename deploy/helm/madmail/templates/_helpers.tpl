@@ -203,3 +203,47 @@ Environment for templates/configmap.yaml bootstrap.sh.
       key: password
 {{- end }}
 {{- end }}
+
+{{/*
+Pod securityContext. Without hostNetwork the pod may bind ports below 1024 as
+non-root through the (namespaced, "safe") unprivileged port sysctl. Host
+network pods cannot set it, so they run as root.
+*/}}
+{{- define "madmail.podSecurityContext" -}}
+{{- $sc := deepCopy (default dict .Values.podSecurityContext) }}
+{{- if .Values.hostNetwork }}
+{{- $_ := set $sc "runAsNonRoot" false }}
+{{- $_ := set $sc "runAsUser" 0 }}
+{{- $_ := set $sc "runAsGroup" 0 }}
+{{- else }}
+{{- $sysctls := list }}
+{{- $found := false }}
+{{- range (default list $sc.sysctls) }}
+{{- if eq .name "net.ipv4.ip_unprivileged_port_start" }}{{ $found = true }}{{ end }}
+{{- $sysctls = append $sysctls . }}
+{{- end }}
+{{- if not $found }}
+{{- $sysctls = append $sysctls (dict "name" "net.ipv4.ip_unprivileged_port_start" "value" "0") }}
+{{- end }}
+{{- $_ := set $sc "sysctls" $sysctls }}
+{{- end }}
+{{- toYaml $sc }}
+{{- end }}
+
+{{/*
+Container securityContext. Root on the host network still needs
+NET_BIND_SERVICE for the low ports.
+*/}}
+{{- define "madmail.securityContext" -}}
+{{- $sc := deepCopy (default dict .Values.securityContext) }}
+{{- if .Values.hostNetwork }}
+{{- $caps := deepCopy (default dict $sc.capabilities) }}
+{{- $add := default list $caps.add }}
+{{- if not (has "NET_BIND_SERVICE" $add) }}
+{{- $add = append $add "NET_BIND_SERVICE" }}
+{{- end }}
+{{- $_ := set $caps "add" $add }}
+{{- $_ := set $sc "capabilities" $caps }}
+{{- end }}
+{{- toYaml $sc }}
+{{- end }}

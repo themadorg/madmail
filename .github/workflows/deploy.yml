@@ -58,6 +58,24 @@ jobs:
           [ "$(grep -c 'publishNotReadyAddresses: true' <<<"$out")" -ge 2 ]
           grep -A1 'name: MADMAIL_TLS_MODE' <<<"$out" | grep -q '"autocert"'
 
+      - name: Pods run as non-root unless hostNetwork is on
+        working-directory: deploy/helm/madmail
+        run: |
+          out="$(helm template mm . --set madmail.publicIp=1.2.3.4)"
+          grep -q 'runAsNonRoot: true' <<<"$out"
+          grep -q 'name: net.ipv4.ip_unprivileged_port_start' <<<"$out"
+          if grep -q 'NET_BIND_SERVICE' <<<"$out"; then
+            echo "non-root pod should not need NET_BIND_SERVICE" >&2
+            exit 1
+          fi
+          out="$(helm template mm . --set madmail.publicIp=1.2.3.4 --set hostNetwork=true)"
+          grep -q 'runAsUser: 0' <<<"$out"
+          [ "$(grep -c -- '- NET_BIND_SERVICE' <<<"$out")" -eq 2 ]
+          if grep -q 'ip_unprivileged_port_start' <<<"$out"; then
+            echo "host-network pods cannot set namespaced sysctls" >&2
+            exit 1
+          fi
+
       - name: Render and validate value permutations
         working-directory: deploy/helm/madmail
         run: |

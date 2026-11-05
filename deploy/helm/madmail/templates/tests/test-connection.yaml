@@ -10,10 +10,21 @@ metadata:
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: probe
       image: {{ include "madmail.image" . }}
       imagePullPolicy: {{ .Values.image.pullPolicy }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
       command: ["/bin/sh", "-ec"]
       args:
         - |

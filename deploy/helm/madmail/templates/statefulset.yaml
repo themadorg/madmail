@@ -45,19 +45,15 @@ spec:
       priorityClassName: {{ . }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
-      {{- with .Values.podSecurityContext }}
       securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- include "madmail.podSecurityContext" . | nindent 8 }}
       initContainers:
         - name: bootstrap
           image: {{ include "madmail.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/bin/sh", "/bootstrap/bootstrap.sh"]
-          {{- /* install writes the binary, man pages and shell completions to
-                 the root filesystem, so this container keeps it writable. */}}
           securityContext:
-            {{- toYaml (mergeOverwrite (deepCopy .Values.securityContext) (dict "readOnlyRootFilesystem" false)) | nindent 12 }}
+            {{- include "madmail.securityContext" . | nindent 12 }}
           env:
             {{- include "madmail.bootstrapEnv" . | nindent 12 }}
           {{- if eq (include "madmail.tlsMode" .) "autocert" }}
@@ -72,6 +68,8 @@ spec:
             - name: bootstrap
               mountPath: /bootstrap
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           {{- with .Values.bootstrap.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -80,10 +78,8 @@ spec:
         - name: madmail
           image: {{ include "madmail.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- with .Values.securityContext }}
           securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- include "madmail.securityContext" . | nindent 12 }}
           {{- with $m.extraEnv }}
           env:
             {{- toYaml . | nindent 12 }}

@@ -20,7 +20,11 @@ data:
     if [ -f "$CONF" ]; then
       echo "bootstrap: $CONF exists; skipping install"
     else
-      set -- install --simple --non-interactive --skip-systemd --skip-user \
+      # --local: write only the config, TLS files and state; the image
+      # already has the binary, and there is no service account or systemd.
+      # It also runs without root.
+      set -- install --simple --non-interactive --local \
+        --config-dir /etc/madmail --state-dir /var/lib/madmail \
         --ip "$MADMAIL_PUBLIC_IP" --lang "$MADMAIL_LANG"
       if [ -n "${MADMAIL_DOMAIN:-}" ]; then
         set -- "$@" --domain "$MADMAIL_DOMAIN" --hostname "${MADMAIL_HOSTNAME:-$MADMAIL_DOMAIN}"
@@ -67,6 +71,8 @@ data:
       mv "$CONF.tmp" "$CONF"
       echo "bootstrap: TURN relay range set to $MADMAIL_RELAY_PORT_MIN-$MADMAIL_RELAY_PORT_MAX"
     fi
+    # madmail.conf holds the TURN and Shadowsocks secrets.
+    chmod 0600 "$CONF"
 
     # admin-web writes the settings DB and then tries to soft-reload a running
     # server through the public admin URL. Nothing is running yet, so only

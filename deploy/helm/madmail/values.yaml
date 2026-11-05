@@ -6,10 +6,11 @@
 
 image:
   repository: ghcr.io/themadorg/madmail
-  # `latest` is the newest stable release. Pin an immutable stable version
-  # (X.Y.Z) for production; testing builds are tagged X.Y.Z-unstable. Stable
-  # images are currently published for linux/amd64 only. Empty = appVersion.
-  tag: latest
+  # Empty = the chart's appVersion (the Madmail release this chart ships
+  # with). Stable images are tagged X.Y.Z and `latest`; testing builds are
+  # X.Y.Z-unstable. Stable images are currently published for linux/amd64
+  # only.
+  tag: ""
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -146,18 +147,27 @@ serviceAccount:
 podAnnotations: {}
 podLabels: {}
 
+# Madmail runs as a non-root user with no capabilities. The chart adds the
+# safe sysctl net.ipv4.ip_unprivileged_port_start=0 to the pod so it can bind
+# the mail ports below 1024. With hostNetwork=true that sysctl is not
+# available, so the chart runs the pod as root (runAsUser 0) and adds only
+# NET_BIND_SERVICE. Choose hostNetwork before the first install: files
+# written by one user are not readable by the other.
 podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 999
+  runAsGroup: 999
+  fsGroup: 999
+  fsGroupChangePolicy: OnRootMismatch
   seccompProfile:
     type: RuntimeDefault
 
-# The image runs as root (it binds ports < 1024 and owns its volumes). The
-# defaults drop every capability except binding low ports.
+# Used by the bootstrap and madmail containers.
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   capabilities:
     drop: [ALL]
-    add: [NET_BIND_SERVICE]
 
 resources: {}
 #  requests:
