@@ -164,7 +164,8 @@ pub fn build_failure_report(
     let headers = original_headers(notice.original);
     // A delimiter line is exactly `--` plus the boundary, so a boundary that
     // occurs nowhere in the parts cannot be forged by a reason or header line,
-    // even one that starts with `--`. Every value placed in a part is checked.
+    // even one that starts with `--`. Every value placed in a part is checked:
+    // keep this list in step with each variable the report template below uses.
     let boundary = pick_boundary(
         &[&text, domain, &recipient, status, &diagnostic, &headers],
         (0..8).map(|_| format!("dsn{}", Uuid::new_v4().simple())),
@@ -232,8 +233,9 @@ fn bounded(value: &str, max: usize) -> &str {
 /// The reason as CRLF lines for the 8bit text part, at most `max` bytes.
 ///
 /// CRLF, a bare CR and a bare LF each end one line, so no bare CR or LF is
-/// left. Tab is kept, other control characters are dropped, and a line longer than the
-/// RFC 5322 limit of 998 bytes is split. The cut at `max` falls between
+/// left. A tab inside a line is kept, trailing whitespace on each line and at
+/// both ends of the reason is trimmed, other control characters are dropped,
+/// and a line longer than the RFC 5322 limit of 998 bytes is split. The cut at `max` falls between
 /// lines or on a char boundary inside one, never inside a CRLF pair.
 fn report_reason(reason: &str, max: usize) -> String {
     const MAX_LINE: usize = 998;
