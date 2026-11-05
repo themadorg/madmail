@@ -102,6 +102,10 @@ export async function buildLlmsTxt() {
 	if (blog.length) parts.push(`## Blog\n\n${blog.join('\n')}`);
 
 	parts.push(
+		`## Madmail Mobile\n\n- [Madmail Mobile](${siteOrigin}/phone): Android app (ARM64, Android 8+) that hosts a Madmail server on the phone for Wi-Fi and hotspot guests, or manages remote Madmail servers over SSH or the admin API. It is not a chat client; guests use Delta Chat.\n- [Install Madmail Mobile](${siteOrigin}/phone/install): Signed APK download, signature check and setup steps.\n- [Madmail Mobile questions](${siteOrigin}/phone/faq): Addresses, mobile data, battery, root, iPhone and security.`
+	);
+
+	parts.push(
 		`## Releases\n\n- [Release notes](${siteOrigin}/releases): Changelog and downloads for every version.\n- [GitHub releases](${repoUrl}/releases): Prebuilt Linux binaries and checksums.`
 	);
 

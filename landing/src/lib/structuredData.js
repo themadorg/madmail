@@ -77,6 +77,68 @@ export function homeJsonLd(latest) {
 	};
 }
 
+/**
+ * Madmail Mobile, the Android host and management app.
+ * @param {{ version: string, date?: string, apk?: { browser_download_url: string } | null } | null} latest
+ * @param {string} description
+ */
+export function phoneJsonLd(latest, description) {
+	return {
+		'@context': 'https://schema.org',
+		'@graph': [
+			organization,
+			{
+				'@type': 'MobileApplication',
+				'@id': `${siteOrigin}/phone#app`,
+				name: 'Madmail Mobile',
+				alternateName: ['madmail phone', 'Madmail for Android'],
+				description,
+				url: `${siteOrigin}/phone`,
+				image: ogImageUrl,
+				applicationCategory: 'CommunicationApplication',
+				applicationSubCategory: 'Mail server',
+				operatingSystem: 'Android 8.0 or later (ARM64)',
+				isAccessibleForFree: true,
+				offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+				codeRepository: 'https://github.com/themadorg/madmail-phone',
+				downloadUrl: latest?.apk?.browser_download_url ?? 'https://github.com/themadorg/madmail-phone/releases',
+				...(latest ? { softwareVersion: latest.version } : {}),
+				...(latest?.date ? { dateModified: latest.date } : {}),
+				isRelatedTo: { '@id': softwareId },
+				author: { '@id': organizationId },
+				publisher: { '@id': organizationId }
+			},
+			breadcrumbList([
+				{ label: 'Madmail', href: '/' },
+				{ label: 'Madmail Mobile', href: '/phone' }
+			])
+		]
+	};
+}
+
+/** @param {{ question: string, answer: string }[]} items */
+export function faqJsonLd(items) {
+	return {
+		'@context': 'https://schema.org',
+		'@graph': [
+			{
+				'@type': 'FAQPage',
+				url: `${siteOrigin}/phone/faq`,
+				mainEntity: items.map((item) => ({
+					'@type': 'Question',
+					name: item.question,
+					acceptedAnswer: { '@type': 'Answer', text: item.answer }
+				}))
+			},
+			breadcrumbList([
+				{ label: 'Madmail', href: '/' },
+				{ label: 'Madmail Mobile', href: '/phone' },
+				{ label: 'Questions', href: '/phone/faq' }
+			])
+		]
+	};
+}
+
 /** @param {{ label: string, href: string }[]} items */
 function breadcrumbList(items) {
 	return {

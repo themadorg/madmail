@@ -11,7 +11,7 @@ import { siteOrigin } from '$lib/siteMeta.js';
  * @returns {string[]}
  */
 export function getSitemapPathnames() {
-	const paths = new Set(['/', '/docs', '/docs/quick-setup', '/blog', '/releases']);
+	const paths = new Set(['/', '/docs', '/docs/quick-setup', '/blog', '/releases', '/phone', '/phone/install', '/phone/faq']);
 	for (const post of posts) {
 		paths.add(`/blog/${post.slug}`);
 	}
