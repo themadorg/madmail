@@ -3,9 +3,9 @@
 
 Build first: CARGO_PROFILE_DEV_DEBUG=0 cargo build --locked -p chatmail \
     -p chatmail-www --bin madmail --features rust-embed/debug-embed
-Run: python3 tests/database-guide-docker.py [--image ubuntu:24.04] [--keep]
+Run: python3 tests/database-guide-docker.py [--image ubuntu:24.04|debian:13|fedora:44] [--keep]
 Requires Docker, Python 3, OpenSSL and a Linux binary compatible with the image.
-Containers have no systemd: start PostgreSQL with pg_ctlcluster and Madmail
+Containers have no systemd: start PostgreSQL with pg_ctlcluster / pg_ctl and Madmail
 with its real `run` command instead of the guide's systemctl commands.
 """
 
@@ -25,6 +25,8 @@ class Guide(HTMLParser):
     def __init__(self, source):
         super().__init__()
         self.blocks = []
+        self.named_blocks = {}
+        self.block_id = None
         self.in_pre = False
         self.feed(source)
 
@@ -32,9 +34,12 @@ class Guide(HTMLParser):
         if tag == "pre":
             self.in_pre = True
             self.blocks.append("")
+            self.block_id = dict(attrs).get("id")
 
     def handle_endtag(self, tag):
         if tag == "pre":
+            if self.block_id:
+                self.named_blocks[self.block_id] = self.blocks[-1]
             self.in_pre = False
 
     def handle_data(self, data):
@@ -57,11 +62,18 @@ def main():
         "--keep", action="store_true", help="Keep server for browser inspection"
     )
     args = parser.parse_args()
+    fedora = args.image.startswith("fedora:")
     binary = args.binary.resolve(strict=True)
     source = (ROOT / "crates/chatmail-www/www-src/docs/fa/database.html").read_text()
-    install, psql, sql, connect, backup, migrate, config, start, _logs = Guide(
-        source
-    ).blocks
+    blocks = Guide(source).named_blocks
+    install = blocks["postgres-debian-install"]
+    psql = blocks["postgres-native-psql"]
+    sql = blocks["postgres-create-database"]
+    connect = blocks["postgres-native-connect"]
+    backup = blocks["madmail-backup"]
+    migrate = blocks["madmail-migrate"]
+    config = blocks["madmail-postgres-config"]
+    start = blocks["madmail-start"]
     name = args.container or f"madmail-guide-{time.time_ns()}"
     evidence_dir = ROOT / "target/database-guide-tests"
     evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -137,15 +149,41 @@ def main():
                 "infinity",
             )
             # Base images have neither sudo nor systemd as PID 1.
-            shell(
-                install.split("sudo systemctl")[0].replace("sudo ", "")
-                + "\nDEBIAN_FRONTEND=noninteractive apt-get install -y sudo python3 ca-certificates"
-            )
+            if fedora:
+                shell(
+                    blocks["postgres-fedora-install"]
+                    .split("sudo postgresql-setup")[0]
+                    .replace("sudo ", "")
+                    + "\ndnf install -y sudo python3 procps-ng"
+                )
+            else:
+                shell(
+                    install.split("sudo systemctl")[0].replace("sudo ", "")
+                    + "\nDEBIAN_FRONTEND=noninteractive apt-get install -y sudo python3 ca-certificates"
+                )
+        elif fedora:
+            shell("dnf install -y python3 procps-ng")
         else:
             shell("DEBIAN_FRONTEND=noninteractive apt-get install -y python3")
-        shell(
-            "pg_isready -q || pg_ctlcluster $(ls /etc/postgresql | sort -V | tail -1) main start"
-        )
+        if fedora:
+            shell(
+                "test -f /var/lib/pgsql/data/PG_VERSION || sudo postgresql-setup --initdb"
+            )
+            # Apply the guide's instruction to replace the existing IPv4 loopback rule.
+            shell(
+                "python3 - <<'CODE'\nfrom pathlib import Path\np=Path('/var/lib/pgsql/data/pg_hba.conf')\n"
+                "lines=p.read_text().splitlines()\n"
+                f"rule={blocks['postgres-fedora-auth']!r}\n"
+                "p.write_text('\\n'.join(rule if line.split()[:4]==['host','all','all','127.0.0.1/32'] else line for line in lines)+'\\n')\nCODE"
+            )
+            shell(
+                "install -d -o postgres -g postgres /run/postgresql; "
+                "pg_isready -q || sudo -u postgres pg_ctl -D /var/lib/pgsql/data -l /var/lib/pgsql/test.log start"
+            )
+        else:
+            shell(
+                "pg_isready -q || pg_ctlcluster $(ls /etc/postgresql | sort -V | tail -1) main start"
+            )
         shell(psql, input=sql + "\n")
         shell("export PGPASSWORD=choose-a-secret\n" + connect.replace(" -W ", " "))
         shell("cat /etc/os-release; psql --version")
