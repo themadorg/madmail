@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Smoke-test deploy/docker/compose.yaml against a local image:
-# bootstrap install (IP relay, self-signed), start, health, SMTP banner,
-# IMAPS/HTTPS handshake, then tear everything down.
+# bootstrap install (IP relay, self-signed), start, health, non-root runtime
+# and file modes, SMTP banner, IMAPS greeting, HTTPS page, admin defaults,
+# then tear everything down.
 #
 #   deploy/docker/smoke-test.sh [image]      # default: madmail-local:smoke
 #
@@ -40,6 +41,9 @@ services:
       - "127.0.0.1:11993:993"
 EOF
 
+# HTTP status of a request to the self-signed listener.
+https_code() { curl -sk --max-time 10 -o /dev/null -w '%{http_code}' "$@"; }
+
 export MADMAIL_IMAGE="$IMAGE"
 export MADMAIL_PUBLIC_IP=127.0.0.1
 export MADMAIL_TLS_MODE=self_signed
@@ -68,6 +72,29 @@ for port in 11993 11443; do
 	grep -q 'BEGIN CERTIFICATE' <<<"$out" || { echo "no TLS on $port" >&2; exit 1; }
 	echo "   ok: $port"
 done
+
+echo "-- runs as non-root, state and config closed to other users"
+uid="$(compose exec -T madmail id -u)"
+[[ "$uid" != 0 ]] || { echo "madmail runs as root" >&2; exit 1; }
+modes="$(compose exec -T madmail stat -c '%a %n' /var/lib/madmail /etc/madmail /etc/madmail/madmail.conf)"
+sed 's/^/   /' <<<"$modes"
+[[ "$modes" == $'700 /var/lib/madmail\n700 /etc/madmail\n600 /etc/madmail/madmail.conf' ]] ||
+	{ echo "unexpected modes" >&2; exit 1; }
+
+echo "-- IMAPS greeting"
+greeting="$(printf 'a LOGOUT\r\n' | openssl s_client -connect 127.0.0.1:11993 -quiet 2>/dev/null | head -n1 || true)"
+echo "   $greeting"
+[[ "$greeting" == '* OK'* ]] || { echo "no IMAP greeting" >&2; exit 1; }
+
+echo "-- HTTPS registration page and admin defaults"
+[[ "$(https_code https://127.0.0.1:11443/)" == 200 ]] || { echo "no registration page" >&2; exit 1; }
+# The admin web UI stays off until `madmail admin-web enable`.
+[[ "$(https_code https://127.0.0.1:11443/admin/)" == 404 ]] || { echo "admin web UI is exposed" >&2; exit 1; }
+# The admin API refuses requests without the token.
+body="$(curl -sk --max-time 10 -H 'content-type: application/json' \
+	-d '{"method":"GET","resource":"/admin/status"}' https://127.0.0.1:11443/api/admin)"
+[[ "$body" == *'"status":401'* ]] || { echo "admin API answered without a token: $body" >&2; exit 1; }
+echo "   ok"
 
 echo "-- admin token"
 token="$(compose exec -T madmail madmail admin-token --raw)"

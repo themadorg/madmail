@@ -9,8 +9,10 @@
 #
 # The one-shot `bootstrap` service runs `madmail install` the first time
 # (when ${MADMAIL_CONFIG_DIR}/madmail.conf does not exist yet) and exits.
-# `madmail` starts only after bootstrap succeeds. Later `up` runs skip the
-# install because the config is already present.
+# On every run it also gives both host directories to MADMAIL_UID:MADMAIL_GID
+# and closes them to other host users. `madmail` starts only after bootstrap
+# succeeds, as that non-root user, with no capabilities and a read-only root
+# filesystem. Later `up` runs skip the install because the config is present.
 #
 # Full guide: docs/guide/docker.md#docker-compose-example
 
@@ -20,8 +22,10 @@ services:
   bootstrap:
     image: *madmail-image
     restart: "no"
-    cap_add:
-      - NET_BIND_SERVICE
+    # Root, so it can bind :80 for Let's Encrypt and hand the directories to
+    # MADMAIL_UID:MADMAIL_GID. It runs for a few seconds and exits.
+    security_opt:
+      - no-new-privileges:true
     # Host networking instead of a published :80, which would clash with
     # `madmail` on every later `docker compose up`. Port 80 is only bound
     # during the first install (Let's Encrypt HTTP-01); later runs skip it.
@@ -39,17 +43,36 @@ services:
       # UDP range below. Empty (host-network override) keeps madmail's default.
       MADMAIL_RELAY_PORT_MIN: ${MADMAIL_TURN_RELAY_MIN-50000}
       MADMAIL_RELAY_PORT_MAX: ${MADMAIL_TURN_RELAY_MAX-50099}
+      # Owner of the state and config directories; must match `user` below.
+      MADMAIL_UID: ${MADMAIL_UID:-999}
+      MADMAIL_GID: ${MADMAIL_GID:-999}
     volumes:
       - ${MADMAIL_STATE_DIR:-/var/lib/madmail}:/var/lib/madmail
       - ${MADMAIL_CONFIG_DIR:-/etc/madmail}:/etc/madmail
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        if [ -f /etc/madmail/madmail.conf ]; then
-          echo "madmail: /etc/madmail/madmail.conf exists; skipping install"
+        conf=/etc/madmail/madmail.conf
+        own() {
+          # Hand both trees to the runtime user (only when the top-level owner
+          # differs, so later runs stay fast) and keep other host users out:
+          # madmail.conf holds the TURN and Shadowsocks secrets.
+          for d in /var/lib/madmail /etc/madmail; do
+            if [ "$$(stat -c %u:%g "$$d")" != "$$MADMAIL_UID:$$MADMAIL_GID" ]; then
+              chown -R "$$MADMAIL_UID:$$MADMAIL_GID" "$$d"
+            fi
+            chmod 0700 "$$d"
+          done
+        }
+        if [ -f "$$conf" ]; then
+          echo "madmail: $$conf exists; skipping install"
+          own
           exit 0
         fi
-        set -- install --simple --non-interactive --skip-systemd --skip-user \
+        # --local: write only the config, TLS files and state; the image
+        # already has the binary, and there is no service account or systemd.
+        set -- install --simple --non-interactive --local \
+          --config-dir /etc/madmail --state-dir /var/lib/madmail \
           --ip "$$MADMAIL_PUBLIC_IP" --lang "$$MADMAIL_LANG"
         if [ -n "$$MADMAIL_DOMAIN" ]; then
           set -- "$$@" --domain "$$MADMAIL_DOMAIN" --hostname "$${MADMAIL_HOSTNAME:-$$MADMAIL_DOMAIN}"
@@ -72,7 +95,6 @@ services:
         set -- "$$@" $$MADMAIL_INSTALL_EXTRA_ARGS
         echo "madmail: running madmail $$*"
         /bin/madmail "$$@"
-        conf=/etc/madmail/madmail.conf
         if [ -n "$$MADMAIL_RELAY_PORT_MIN" ] && ! grep -q relay_port_min "$$conf"; then
           awk -v min="$$MADMAIL_RELAY_PORT_MIN" -v max="$$MADMAIL_RELAY_PORT_MAX" '
             { print }
@@ -86,6 +108,8 @@ services:
           mv "$$conf.tmp" "$$conf"
           echo "madmail: TURN relay range set to $$MADMAIL_RELAY_PORT_MIN-$$MADMAIL_RELAY_PORT_MAX"
         fi
+        chmod 0600 "$$conf"
+        own
 
   madmail:
     image: *madmail-image
@@ -94,8 +118,18 @@ services:
     depends_on:
       bootstrap:
         condition: service_completed_successfully
-    cap_add:
-      - NET_BIND_SERVICE
+    # Non-root with no capabilities: Docker lets containers on a bridge
+    # network bind ports below 1024 (net.ipv4.ip_unprivileged_port_start=0).
+    # compose.host-network.yaml switches to root with NET_BIND_SERVICE only.
+    user: "${MADMAIL_UID:-999}:${MADMAIL_GID:-999}"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/madmail:uid=${MADMAIL_UID:-999},gid=${MADMAIL_GID:-999},mode=0700
     stop_grace_period: 30s
     ports:
       - "${MADMAIL_BIND_IP:-0.0.0.0}:25:25"
@@ -108,6 +142,7 @@ services:
       - "${MADMAIL_BIND_IP:-0.0.0.0}:8388:8388"
       - "${MADMAIL_BIND_IP:-0.0.0.0}:3340:3340"
       - "${MADMAIL_BIND_IP:-0.0.0.0}:3478:3478/udp"
+      - "${MADMAIL_BIND_IP:-0.0.0.0}:3478:3478/tcp"
       # TURN relay media: a small range, pinned in madmail.conf by bootstrap.
       # For the full range and real client IPs use compose.host-network.yaml.
       - "${MADMAIL_BIND_IP:-0.0.0.0}:${MADMAIL_TURN_RELAY_MIN:-50000}-${MADMAIL_TURN_RELAY_MAX:-50099}:${MADMAIL_TURN_RELAY_MIN:-50000}-${MADMAIL_TURN_RELAY_MAX:-50099}/udp"
@@ -117,7 +152,6 @@ services:
       # /etc/madmail/certs/*.pem, and `madmail monitor enable` / `iroh install`
       # edit madmail.conf.
       - ${MADMAIL_CONFIG_DIR:-/etc/madmail}:/etc/madmail
-      - madmail-run:/run/madmail
     healthcheck:
       # No HTTP health route exists; a TCP connect to IMAPS is the liveness signal.
       test: ["CMD", "nc", "-z", "127.0.0.1", "993"]
@@ -125,6 +159,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-volumes:
-  madmail-run:

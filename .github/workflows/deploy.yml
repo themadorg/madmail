@@ -114,9 +114,16 @@ jobs:
       - name: Validate compose files
         working-directory: deploy/docker
         run: |
+          # An unedited .env must be refused: MADMAIL_PUBLIC_IP is required.
           cp .env.example .env
+          if docker compose config -q 2>/dev/null; then
+            echo "compose accepted an empty MADMAIL_PUBLIC_IP" >&2
+            exit 1
+          fi
+          sed -i 's/^MADMAIL_PUBLIC_IP=$/MADMAIL_PUBLIC_IP=203.0.113.50/' .env
           docker compose config -q
           docker compose -f compose.yaml -f compose.host-network.yaml config -q
+          rm .env
 
       - uses: docker/setup-buildx-action@v3
 
