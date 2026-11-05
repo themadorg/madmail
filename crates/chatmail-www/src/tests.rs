@@ -1282,79 +1282,33 @@ async fn ipv6_existing_bare_account_is_shared_by_page_new_and_login() {
 }
 
 #[tokio::test]
-async fn documentation_language_is_per_reader_and_preserves_redirects() {
+async fn documentation_follows_admin_language_even_with_reader_query() {
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
     let pool = init_memory_db().await.unwrap();
-    set_setting(&pool, settings_keys::LANGUAGE, "fa")
-        .await
-        .unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let app = Arc::new(AppState::new(dir.path(), pool.clone()));
-    let router = crate::www_router(crate::WwwState::new(
-        pool.clone(),
-        app,
-        AppConfig::default(),
-        dir.path(),
-    ));
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/docs?lang=en")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
-    assert_eq!(response.headers()["location"], "/docs/?lang=en");
-    for (uri, language, direction) in [
-        ("/docs/database", "fa", "rtl"),
-        ("/docs/database?lang=en", "en", "ltr"),
-        ("/docs/database?lang=ru", "ru", "ltr"),
-        ("/docs/database?lang=es", "es", "ltr"),
-        ("/docs/database?lang=invalid", "fa", "rtl"),
-        ("/docs/database?lang=..%2F..%2F", "fa", "rtl"),
-        ("/docs/?lang=en", "en", "ltr"),
-        ("/docs/index?lang=fa", "fa", "rtl"),
-    ] {
-        let response = router
-            .clone()
-            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+    for language in ["fa", "en", "ru", "es"] {
+        set_setting(&pool, settings_keys::LANGUAGE, language)
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::OK, "{uri}");
-        let html = String::from_utf8(
-            to_bytes(response.into_body(), usize::MAX)
-                .await
-                .unwrap()
-                .to_vec(),
-        )
-        .unwrap();
-        assert!(
-            html.contains(&format!("lang=\"{language}\" dir=\"{direction}\"")),
-            "{uri}"
-        );
-        assert!(
-            html.contains(&format!("hreflang=\"{language}\" aria-current=\"page\"")),
-            "{uri}"
-        );
-        assert_eq!(html.matches("aria-current=\"page\"").count(), 1);
-        assert!(html.contains("فارسی") && html.contains("English"));
-    }
-    for document in ["general", "admin", "serve", "database", "docker", "relay"] {
-        for language in ["en", "fa", "ru", "es"] {
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let router = crate::www_router(crate::WwwState::new(
+            pool.clone(),
+            app,
+            AppConfig::default(),
+            dir.path(),
+        ));
+        for uri in [
+            "/docs/database",
+            "/docs/database?lang=en",
+            "/docs/database?lang=fa",
+            "/docs/",
+        ] {
             let response = router
                 .clone()
-                .oneshot(
-                    Request::builder()
-                        .uri(format!("/docs/{document}?lang={language}"))
-                        .body(Body::empty())
-                        .unwrap(),
-                )
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::OK);
@@ -1366,87 +1320,10 @@ async fn documentation_language_is_per_reader_and_preserves_redirects() {
             )
             .unwrap();
             assert!(
-                html.contains("class=\"document-languages\""),
-                "{document}/{language}"
+                html.contains(&format!("lang=\"{language}\"")),
+                "{uri}: {language}"
             );
-            assert!(
-                html.contains(&format!("hreflang=\"{language}\" aria-current=\"page\"")),
-                "{document}/{language}"
-            );
+            assert!(!html.contains("document-languages"));
         }
     }
-    assert_eq!(
-        chatmail_db::get_setting(&pool, settings_keys::LANGUAGE)
-            .await
-            .unwrap()
-            .as_deref(),
-        Some("fa")
-    );
-}
-
-#[tokio::test]
-async fn documentation_only_offers_existing_translations_and_falls_back_to_english() {
-    use axum::body::{to_bytes, Body};
-    use axum::http::{Request, StatusCode};
-    use tower::ServiceExt;
-
-    let pool = init_memory_db().await.unwrap();
-    let dir = tempfile::tempdir().unwrap();
-    let www = tempfile::tempdir().unwrap();
-    for (language, source) in [
-        ("en", include_str!("../www-src/docs/en/database.html")),
-        ("fa", include_str!("../www-src/docs/fa/database.html")),
-    ] {
-        let path = www.path().join(format!("docs/{language}"));
-        std::fs::create_dir_all(&path).unwrap();
-        std::fs::write(path.join("database.html"), source).unwrap();
-    }
-    let app = Arc::new(AppState::new(dir.path(), pool.clone()));
-    let cfg = AppConfig {
-        www_dir: Some(www.path().into()),
-        ..Default::default()
-    };
-    let router = crate::www_router(crate::WwwState::new(pool, app, cfg, dir.path()));
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/docs/database?lang=ru")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let html = String::from_utf8(
-        to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap()
-            .to_vec(),
-    )
-    .unwrap();
-    assert!(html.contains("lang=\"en\" dir=\"ltr\""));
-    assert!(html.contains("hreflang=\"en\" aria-current=\"page\""));
-    assert!(html.contains("hreflang=\"fa\""));
-    assert!(!html.contains("hreflang=\"ru\""));
-    assert!(!html.contains("hreflang=\"es\""));
-    std::fs::remove_file(www.path().join("docs/fa/database.html")).unwrap();
-    let response = router
-        .oneshot(
-            Request::builder()
-                .uri("/docs/database?lang=en")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let html = String::from_utf8(
-        to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap()
-            .to_vec(),
-    )
-    .unwrap();
-    assert!(!html.contains("class=\"document-languages\""));
 }

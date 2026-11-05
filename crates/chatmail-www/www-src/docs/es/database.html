@@ -40,15 +40,6 @@
         </ul>
     </header>
 
-    {% if DocumentLanguages|length > 1 %}
-    <nav class="document-languages" aria-label="Language" dir="ltr">
-        {% for language in DocumentLanguages %}
-        <a href="{{ language.href }}" lang="{{ language.code }}" hreflang="{{ language.code }}"{% if language.code == Language %} aria-current="page"{% endif %}>{{ language.label }}</a>
-        {% endfor %}
-    </nav>
-    {% endif %}
-
-
     <div class="card card--wide">
         <h1>Configuración de la base de datos</h1>
         <p><strong>Madmail</strong> guarda cuentas, ajustes, cuotas, tokens y el estado de federación en <strong>una</strong> base SQL de aplicación: <strong>SQLite</strong> (predeterminada) o <strong>PostgreSQL</strong>. Los cuerpos de los mensajes siguen en disco (Maildir). Las páginas de compartir contactos usan otro SQLite (<code>sharing.db</code>).</p>

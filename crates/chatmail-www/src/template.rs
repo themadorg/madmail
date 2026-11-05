@@ -49,7 +49,6 @@ pub struct WwwContext {
     /// is what IMAP and SMTP enforce until the next reload.
     pub PasswordSignupEnabled: bool,
     pub Language: String,
-    pub DocumentLanguages: Vec<DocumentLanguage>,
     /// HTTP Host clients used to open the registration page (for dclogin `ih`/`sh`).
     pub ClientHost: String,
     pub ImapPortTLS: String,
@@ -69,14 +68,6 @@ pub struct WwwContext {
     pub MessageRetentionLine: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub Custom: Option<CustomFields>,
-}
-
-/// An available translation of the current documentation page.
-#[derive(Debug, Clone, Serialize)]
-pub struct DocumentLanguage {
-    pub code: &'static str,
-    pub label: &'static str,
-    pub href: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -325,7 +316,6 @@ pub async fn build_context(
         JitRegistrationEnabled: cached.signup.jit_enabled,
         PasswordSignupEnabled: cached.signup.password_signup_allowed(),
         Language: cached.language,
-        DocumentLanguages: Vec::new(),
         ClientHost: mail.client_host,
         ImapPortTLS: mail.imap_port_tls,
         ImapPortStartTLS: mail.imap_port_starttls,

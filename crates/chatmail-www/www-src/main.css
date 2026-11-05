@@ -611,23 +611,3 @@ input:focus {
     padding: 16px;
   }
 }
-
-/* Available documentation translations */
-.document-languages {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 20px;
-}
-
-.document-languages a {
-  padding: 4px 10px;
-  border: 1px solid var(--card-border);
-  border-radius: 4px;
-  text-decoration: none;
-}
-
-.document-languages a[aria-current="page"] {
-  background: var(--primary);
-  color: var(--primary-foreground);
-}

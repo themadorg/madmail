@@ -67,7 +67,9 @@ pub fn read_asset(path: &str) -> Option<rust_embed::EmbeddedFile> {
 /// Whether an HTML template exists (external `www_dir` or embedded).
 pub fn www_html_exists(path: &str, www_dir: Option<&Path>) -> bool {
     if let Some(dir) = www_dir {
-        return dir.join(path).is_file();
+        if dir.join(path).is_file() {
+            return true;
+        }
     }
     WwwAssets::get(path).is_some()
 }
