@@ -284,22 +284,43 @@ top-level one is a family name or the binary's name), checked on the path as
 given and on the physical path after the operator's links (for a missing
 directory, on the path it would be created at after a dangling link); one with
 the device and inode of a `DENIED_DIRS` entry (`is_denied_dir_id`); an existing
-root-owned directory that has entries (`secure_fs::read_names` on its
-descriptor) and whose name, as given and physically, is not named for madmail
-(`is_named_for_madmail`), unless `--skip-user` is given (there is then no walk);
-and an existing directory whose owner is neither root nor the service uid and
-has an account name (`secure_fs::account_name`: `getpwuid_r`, then
-`getent passwd <uid>` when it finds no entry, because the static musl build's
-`getpwuid_r` reads only `/etc/passwd` and never asks NSS modules). Only a NULL
-result or `ENOENT` from `getpwuid_r`, and exit status 2 from `getent` or a
-missing `getent`, mean "no account"; any other result refuses the directory.
+directory whose owner is neither root nor the service uid and has an account
+name (`secure_fs::account_name`: `getpwuid_r`, then `getent passwd -- <uid>`
+when it finds no entry, because the static musl build's `getpwuid_r` reads only
+`/etc/passwd` and never asks NSS modules); and an existing directory that does
+not belong to the service uid (root's, or a uid's without an account name), has
+entries (`secure_fs::read_names` on its descriptor) and whose physical path is
+not named for madmail (`is_named_for_madmail`; the name as given does not count,
+so a link `/srv/madmail` to `/var/lib/dpkg` is refused), unless `--skip-user` is
+given (there is then no walk) or `may_take_unnamed_dir` accepts it: its only
+entry is a root-owned `lost+found` directory, or it has `.madmail-state`
+(`system::STATE_MARKER`) as a regular file with one link that belongs to root
+(`fstatat(AT_SYMLINK_NOFOLLOW)` on the directory descriptor). `SecureInstall::open`
+creates that file with `secure_fs::create_new_file` (`O_CREAT | O_EXCL |
+O_NOFOLLOW`, mode 0644, empty) right after the checks, when its
+`Resolver::ensure_dir_created` made the state directory or when the directory
+is root-owned (not with `--skip-user`); a `--skip-user`
+install without the account creates it with `O_CREAT | O_EXCL | O_NOFOLLOW` by
+path when it creates the state directory. The walk leaves a root-owned,
+single-link marker directly in the state directory unchanged and does not list
+it, so only a file root made counts, and a directory a `--cert-only` run or an
+install that stopped at the certificate step left behind is taken by the next
+run. `getent` is run from `/usr/bin/getent`, then `/bin/getent`, then `PATH`,
+and its entry must be the one asked for (field 0 equal to the name, field 2 to
+the uid; otherwise an error). Only a NULL result or `ENOENT` from
+`getpwuid_r`, and exit status 2 from `getent`, or no `getent` at all when
+`/etc/nsswitch.conf` is missing or lists only `files` for passwd and group
+(`nsswitch_is_files_only`), mean "no account"; any other result refuses the
+directory.
 `getent` exits with 2 also when the NSS service is down, which is a residual
 (see the TDD 12 security notes). The case of a named owner is a service account
 that was deleted and whose uid was given to another account; the message tells
 the operator to give the directory itself to `root:root` and run again, after
 which the files of that uid are listed by the walk and left unchanged (for a
-directory not named for madmail it adds that the data must first move to one
-that is). `SecureInstall::open` repeats these checks on the directory it opens
+directory not named for madmail it adds that such a root-owned directory is
+accepted only when empty, holding only `lost+found` or with a root-owned
+`.madmail-state` file, so the data must otherwise first move to one that is
+named for madmail). The account name is escaped in that message. `SecureInstall::open` repeats these checks on the directory it opens
 and refuses when its second open of the state directory (with the previous
 owner counted as untrusted) reaches a different device and inode. Uninstall
 uses the same `system_dir_reason`.
@@ -341,7 +362,7 @@ never run when a component is refused:
   (or by the previous owner of the state directory), is a directory writable by
   a group of the service account (primary or supplementary, from
   `secure_fs::account_groups_checked`: `getpwnam_r` for the account, then
-  `getent passwd <name>` when it finds none, then `id -G`; install stops when
+  `getent passwd -- <name>` when it finds none, then `id -G`; install stops when
   the account exists but its groups cannot be read, and when `id -u` finds the
   account but this lookup does not), or is
   world-writable without the sticky bit. Uid 0 and gid 0 never count as the
@@ -458,14 +479,20 @@ directory of another account is followed by a line saying that it was not entere
 and that its contents were left unchanged and need manual inspection. A file of
 another account is followed by the steps to give it to the service account
 (`file_chown_hint`): stop the service (`systemctl stop <unit>`) and every
-process of the account (`stop_account_steps`: `usermod -L -e 1 <user>`, so cron
-and at, which check the account with PAM, start no job for it;
-`crontab -r -u <user>` and `atrm` for its `atq` jobs where cron or at is
-installed; `pkill -KILL -u <user>`, since a process can ignore `SIGTERM`;
-`ps -u <user>` must then list none), and, when the file's uid has an account
-name other than root's and the service's, the same for that account; end the
-expiry afterwards (`usermod -e ''`; the unit has no `PAMName=`, so the service
-starts while the account is expired); do not change the file if `stat -c %h <path>` prints more than
+process of the account (`stop_account_steps`: `usermod -L -e 1970-01-02 <user>`,
+so cron and at, which check the account with PAM, start no job for it, with a
+note that `usermod` cannot change an account that exists only in a directory
+service, which must be locked there; `crontab -r -u <user>` and `atrm` for its
+`atq` jobs where cron or at is installed; `loginctl terminate-user <user>` for
+its systemd user manager; `pkill -KILL -u <user>`, since a process can ignore
+`SIGTERM`; `ps -u <user>` must then list none), and, when the file's uid has an
+account name other than root's and the service's, the same for that account
+after noting its expiry (`chage -l`); end the service account's expiry
+afterwards (`usermod -e ''`; the unit has no `PAMName=`, so the service starts
+while the account is expired) and give the other account its old expiry back
+and unlock it if it was not locked before (`usermod -U`). Account names are
+quoted with `shell_quote` in the commands and escaped with `shown` in the
+text; do not change the file if `stat -c %h <path>` prints more than
 1, and since one link does not prove it is madmail's file, compare its content
 with what madmail writes there or remove it and let madmail create it again;
 then `chown -h <user>:<group> <path>`, which ends the line. `chown -h` does not

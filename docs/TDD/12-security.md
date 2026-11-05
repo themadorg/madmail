@@ -146,11 +146,21 @@ loops), link and hard-link anything there while root runs, and
   none of whose components below the top-level one is named for madmail (as
   given or after links, also when a dangling link names a directory install
   would create; `/etc/madmail/data` passes, `/etc/systemd` does not), an
-  existing root-owned directory that is not empty and not named for madmail
-  (such as `/var/lib/dpkg` or `/var/spool/cron`; the walk would give every
+  existing directory of root or of a uid without an account name that is not
+  empty and whose physical path (after links) is not named for madmail (such as
+  `/var/lib/dpkg`, `/var/spool/cron`, a link `/srv/madmail` to one of them, or a
+  deleted package account's `/var/lib/oldapp`; the walk would give every
   root-owned directory in it to the service; not with `--skip-user`, which has
   no walk), or an existing directory that belongs to another named account or
-  whose owner cannot be looked up. `SecureInstall::open` makes these checks on
+  whose owner cannot be looked up. Such a directory is taken when it holds only
+  a root-owned `lost+found` or carries `.madmail-state` as a regular file with
+  one link that belongs to root (`fstatat(AT_SYMLINK_NOFOLLOW)` on the opened
+  directory). `SecureInstall::open` creates that file (`O_CREAT | O_EXCL |
+  O_NOFOLLOW` through the directory descriptor) before anything else in a state
+  directory it creates, or in a root-owned one it accepts (not with
+  `--skip-user`); the walk leaves it root's. Only root can create a root-owned
+  file, and the link count rules out a hard link to one, so a file the service
+  account made never counts. `SecureInstall::open` makes these checks on
   the directory it opens first and refuses to go on when the directory it then
   keeps open is a different one. Install
   gives the state directory and what is in it to the service account, so such a
@@ -181,18 +191,21 @@ loops), link and hard-link anything there while root runs, and
   is never handed over. A state directory whose owner's uid now names another
   account is refused before the walk, and so is one whose owner lookup reports
   an error. The lookup asks `getpwuid_r` and, when that finds no entry,
-  `getent passwd <uid>`: the release binaries are linked statically with musl,
-  whose `getpwuid_r` reads only `/etc/passwd` and never asks NSS modules (LDAP,
-  sssd, winbind, systemd-userdb), while `getent` uses the host's NSS
-  configuration. Only a NULL result or `ENOENT` from `getpwuid_r`, and exit
-  status 2 from `getent` (or no `getent` installed, as on BusyBox hosts, which
-  have no NSS modules), count as "no account"; any other result refuses the
-  directory. Residual: `getent` exits with 2 both for a missing entry and when
+  `getent passwd -- <uid>` (`/usr/bin/getent`, then `/bin/getent`, then
+  `PATH`): the release binaries are linked statically with musl, whose
+  `getpwuid_r` reads only `/etc/passwd` and never asks NSS modules (LDAP, sssd,
+  winbind, systemd-userdb), while `getent` uses the host's NSS configuration.
+  The entry `getent` prints must be the one asked for (field 0 equal to the
+  name, or field 2 to the uid). Only a NULL result or `ENOENT` from
+  `getpwuid_r`, and exit status 2 from `getent` (or no `getent` installed when
+  `/etc/nsswitch.conf` is missing or lists only `files` for passwd and group,
+  as on BusyBox hosts, which have no NSS modules), count as "no account"; any
+  other result refuses the directory. Residual: `getent` exits with 2 both for a missing entry and when
   the NSS service is down, so while an LDAP or sssd server is unreachable, a
   directory of an account only it knows looks like one of the previous service
   uid and its files of that uid are given to the service. Install also stops
   when the service account exists but its groups cannot be read
-  (`getpwnam_r`, then `getent passwd <name>`, then `id -G`), or when `id` finds
+  (`getpwnam_r`, then `getent passwd -- <name>`, then `id -G`), or when `id` finds
   the account and that lookup does not, since a group it does not know of could
   write a directory it would trust. The state directory itself is changed last,
   and not when the walk fails.
@@ -207,10 +220,17 @@ loops), link and hard-link anything there while root runs, and
   process of its account, and of the account that now has the file's uid when
   one has, before `chown -h`, because `chown` resolves the directories on the way
   again by name; they end with the command. Each account is locked and expired
-  (`usermod -L -e 1`), so cron and at, which check the account with PAM, start
-  no new job for it, its cron and at jobs are removed, and its processes are
-  killed with `SIGKILL`, which they cannot ignore; a check of `ps` alone would
-  miss a job started after it. The steps say to end the expiry afterwards; the
+  (`usermod -L -e 1970-01-02`; an account that exists only in a directory
+  service must be locked there, as `usermod` cannot change it), so cron and at,
+  which check the account with PAM, start no new job for it, its cron and at
+  jobs are removed, its systemd user manager is stopped
+  (`loginctl terminate-user`), and its processes are killed with `SIGKILL`,
+  which they cannot ignore; a check of `ps` alone would miss a job started
+  after it. Account names are shell-quoted in the commands and escaped in the
+  text. For the account that now has the file's uid, the steps say to note its
+  expiry first (`chage -l`) and afterwards to give it back and to unlock the
+  account if it was not locked before (`usermod -U`). The steps say to end the
+  service account's expiry afterwards; the
   unit has no `PAMName=`, so systemd starts the service while it is expired. They say not to change a file with
   more than one hard link, and that one link does not prove the file is
   madmail's. A file inside the state directory that is reached through a

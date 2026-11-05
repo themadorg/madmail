@@ -524,11 +524,49 @@ of `/var/lib/dpkg` and `/var/lib/dpkg/info` unchanged; a dangling link
 directory of `ldapuser`, an account served only by `libnss-extrausers`
 (checked with `getent passwd 4242` first), refused by install and by
 `--user-only` with its owners unchanged; whole printed lines for the new
-steps; the recovery with `usermod -L -e 1`, a third account's directory in the
+steps; the recovery with `usermod -L -e 1970-01-02`, a third account's directory in the
 tree and the `find ... -prune` recipe, which leaves that directory's file
 unchanged; and `path_shown` in uninstall's JSON. There are 51
 `ctl::install`, 36 `ctl::uninstall`, 13 `ctl::secure_fs` and 3
 `ctl::host_paths` unit tests on a Unix host after these fixes.
+
+The next fixes let install take a state directory it made itself. A
+`--cert-only` run, or an install that stopped at the certificate step, leaves a
+root-owned state directory with `messages/`, `dkim/` and so on when install
+created it (an existing account whose home is the missing directory), and the
+rule above refused that directory on the next run when it was not named for
+madmail; a fresh file system holding only `lost+found` was refused too. Install
+now creates a root-owned `.madmail-state` file in a state directory it creates
+or in a root-owned one it accepts, before anything else, and takes a directory
+that holds only a root-owned `lost+found` or has that file as a root-owned
+regular file with one link; the walk leaves it root's. The madmail-name
+exemption looks at the physical path only, and the rule applies to every owner
+other than the service uid (so a deleted package account's directory, owned by
+a uid without a name, is refused unless marked). `getent` is run as
+`getent passwd -- <key>` from `/usr/bin`, `/bin`, then `PATH`; its entry must be
+the one asked for, and a missing `getent` means "no account" only when
+`/etc/nsswitch.conf` is missing or lists only `files` for passwd and group. The
+printed steps quote account names for the shell and escape them in the text,
+use `usermod -L -e 1970-01-02`, stop the systemd user manager
+(`loginctl terminate-user`), say that an account known only to a directory
+service must be locked there, and, for the account that now has the old uid,
+say to note its expiry with `chage -l` first and to restore it and unlock the
+account (`usermod -U`) afterwards. The `find` recipe in the docs uses `-H` and
+also prunes directories a group or others can write. New unit tests cover
+`ensure_dir_created`, the marker, `lost+found`, hard-linked, linked and
+directory markers and the name as given versus physically, `parse_getent`
+entries of another account, `nsswitch_is_files_only` and quoted account names.
+New Docker cases: a madmail-named link `/srv/madmail` to `/var/lib/dpkg` and a
+non-empty `/var/lib/oldapp` of uid 4999 refused; `--cert-only` into
+`/srv/mailstate`, then a full install, a repair, and a repair after the account
+is recreated with a new uid, all taking it through its root-owned marker (which
+the walk leaves root's without a note); a marker of the service account in the
+directory, once it is root's, refused with the "interrupted" advice; and a
+fresh file system with only `lost+found` accepted and marked by a run that stops
+at the certificate step, then taken by a full install; the uid-squatter recovery
+also prunes a group-writable directory. There are 52 `ctl::install`, 36
+`ctl::uninstall`, 14 `ctl::secure_fs` and 3 `ctl::host_paths` unit tests on a
+Unix host after these fixes.
 
 The full Docker suite passed with a Linux aarch64 musl debug build of these fixes.
 Its output was:
@@ -539,6 +577,7 @@ PASS: dry-run side effects, non-root system rejection and local host isolation
 PASS: missing parents, home paths, migration data preservation, failed-move rollback and pre-created state refusal
 PASS: system, top-level, home, system-tree (such as /etc/systemd) and linked system directories and another account's directory are refused as state directory before the account or any owner changes
 PASS: a non-empty root-owned directory not named for madmail (/var/lib/dpkg), a dangling link into a system tree and a directory of an NSS-only account are refused as state directory before the account or any owner changes
+PASS: a madmail-named link to another program's directory and a non-empty directory of a uid without a name are refused, a --cert-only state directory not named for madmail is taken by the next install and by repair (also after the account is recreated) through its root-owned .madmail-state marker, which the walk leaves root's (a service-owned one does not count), and a fresh file system holding only lost+found is accepted and marked
 PASS: custom-path account, ownership, binary/docs, unit verification, service-user boot and idempotence
 PASS: each skip flag independently and combined, JSON results, escaped binary and state paths
 PASS: non-root local install and propagated systemd failure

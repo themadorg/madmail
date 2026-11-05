@@ -72,9 +72,12 @@ Extended documentation:
 	its own: a well-known system directory, a directory directly under /,
 	a user's home directory, a directory below /etc, /usr, /lib, /bin,
 	/sbin, /boot, /dev, /proc, /sys or /run that is not named for madmail,
-	a path that resolves to one of these, a root\-owned directory that is
-	not empty and not named for madmail (such as /var/lib/dpkg; not with
-	*--skip-user*), or a directory of another named account. Account names
+	a path that resolves to one of these, a directory of root or of a uid
+	without an account name that is not empty and whose physical path is
+	not named for madmail (such as /var/lib/dpkg; not with *--skip-user*),
+	unless it holds only lost+found or the root\-owned marker file
+	.madmail\-state that install creates in a state directory it creates,
+	or a directory of another named account. Account names
 	are looked up with the C library and then with *getent passwd*, so
 	accounts from LDAP or sssd count too; *getent* cannot tell a directory
 	service that is down from a missing account. It also stops when a

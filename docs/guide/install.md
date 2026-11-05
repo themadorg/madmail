@@ -137,8 +137,10 @@ service account's home is elsewhere and still exists, before changing anything; 
 `--state-dir` that is not a directory of its own (a system directory such as
 `/var/lib`, a directory directly under `/`, a user's home directory, a
 directory below `/etc`, `/usr` or another system directory that is not named
-for madmail, a root-owned directory that is not empty and not named for madmail
-such as `/var/lib/dpkg`, or a directory of another named account, looked up
+for madmail, a directory of root or of a uid without an account name that is
+not empty and whose physical path is not named for madmail, such as
+`/var/lib/dpkg`, unless it holds only `lost+found` or install's root-owned
+`.madmail-state` file, or a directory of another named account, looked up
 with the C library and then with `getent passwd`, so that LDAP and sssd
 accounts count too). Install treats the state directory as
 controlled by the service account: as root it never reads, writes or changes the

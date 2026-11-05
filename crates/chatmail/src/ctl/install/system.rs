@@ -1165,9 +1165,9 @@ fn state_dir_refusal(cfg: &InstallConfig, why: &str) -> ChatmailError {
 /// `/usr` or another system directory that is not named for madmail); one with the
 /// device and inode of a well-known directory ([`host_paths::is_denied_dir_id`]);
 /// a missing one whose physical path (after a dangling operator link) is a
-/// system directory; a root-owned one that is not empty and not named for
-/// madmail; and one that belongs to another named account (see
-/// [`check_state_root`]).
+/// system directory; one of root or of a uid without an account name that is
+/// not empty, not named for madmail (physically) and not marked as madmail's;
+/// and one that belongs to another named account (see [`check_state_root`]).
 /// Install and both repair modes run it before the account is created or
 /// changed (`useradd` / `usermod -d` name the state directory) and
 /// [`SecureInstall::open`] runs the same checks on the directory it opens.
