@@ -27,6 +27,15 @@
     <link rel="stylesheet" href="/main.css">
     <script src="/translations.js"></script>
     <script src="/main.js"></script>
+    <style>
+        [data-db-guide] .db-choices { margin: 20px 0; }
+        [data-db-guide] .db-choices[hidden] { display: none; }
+        [data-db-guide] .db-choices fieldset { border: 0; padding: 0; margin: 12px 0; }
+        [data-db-guide] .db-choices legend { margin-bottom: 8px; font-weight: 600; }
+        [data-db-guide] .db-choices button { margin: 0 0 6px 6px; }
+        [data-db-guide] .db-choices button[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); }
+        [data-db-guide] .db-choices button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+    </style>
 </head>
 
 <body>
@@ -40,7 +49,7 @@
         </ul>
     </header>
 
-    <div class="card card--wide">
+    <div class="card card--wide" data-db-guide>
         <h1>نصب PostgreSQL و انتقال از SQLite</h1>
         <p>Madmail از <strong>SQLite</strong> (پیش‌فرض) و <strong>PostgreSQL</strong> پشتیبانی می‌کند؛ <strong>MySQL فعلا پشتیبانی نمی‌شود</strong>. این راهنما برای Madmail v2 است؛ Madmail روی میزبان نصب است و PostgreSQL را روی همان سرور، با Docker یا به‌صورت مستقیم نصب می‌کنید.</p>
         <p>حساب‌ها، تنظیمات و سهمیه‌ها در پایگاه دادهٔ برنامه ذخیره می‌شوند. نامه‌ها در Maildir و صفحه‌های اشتراک مخاطب در <code>sharing.db</code> می‌مانند.</p>
@@ -48,6 +57,21 @@
         <h2>۱. نصب PostgreSQL: یکی از دو روش</h2>
         <p>فقط یکی از روش‌های زیر را انتخاب کنید. رمزهای نمونه را با رمز تصادفی بلند از حروف و عدد عوض کنید تا نیاز به تغییر نقل‌قول‌های دستورها نباشد؛ رمز کاربر <code>madmail</code> باید در مرحله‌های بعد یکسان باشد.</p>
 
+
+        <div class="db-choices" data-db-choices hidden>
+            <fieldset>
+                <legend>سیستم‌عامل سرور</legend>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="os" data-value="debian" aria-pressed="true">Debian</button>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="os" data-value="ubuntu" aria-pressed="false">Ubuntu</button>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="os" data-value="fedora" aria-pressed="false">Fedora</button>
+            </fieldset>
+            <fieldset>
+                <legend>روش نصب PostgreSQL</legend>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="method" data-value="docker" aria-pressed="true">Docker</button>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="method" data-value="native" aria-pressed="false">مدیر بستهٔ سیستم‌عامل</button>
+            </fieldset>
+        </div>
+        <section data-db-method="docker">
         <h3>روش اول: Docker</h3>
         <p>Docker باید نصب و فعال باشد و پورت ۵۴۳۲ میزبان آزاد باشد. این دستور PostgreSQL 17 را با فضای ذخیره‌سازی پایدار اجرا می‌کند؛ پورت ۵۴۳۲ فقط روی همین میزبان در دسترس است.</p>
         <pre id="postgres-docker-install"><code>sudo docker volume create madmail-postgres-data
@@ -60,11 +84,17 @@ sudo docker run -d --name madmail-postgres --restart unless-stopped \
         <pre id="postgres-docker-ready"><code>sudo docker exec madmail-postgres pg_isready -h 127.0.0.1 -U postgres</code></pre>
         <p>داده‌ها در volume می‌مانند؛ آن را حذف نکنید و جداگانه از PostgreSQL پشتیبان بگیرید. برای این روش، به نصب PostgreSQL روی میزبان نیازی نیست.</p>
 
-        <h3>روش دوم: نصب مستقیم</h3>
+        </section>
+
+        <section data-db-method="native">
+        <h3>نصب با مدیر بستهٔ سیستم‌عامل</h3>
+        <div data-db-os="debian ubuntu">
         <p><strong>Debian / Ubuntu:</strong></p>
         <pre id="postgres-debian-install"><code>sudo apt-get update
 sudo apt-get install -y postgresql postgresql-client
 sudo systemctl enable --now postgresql</code></pre>
+        </div>
+        <div data-db-os="fedora">
         <p><strong>Fedora:</strong> مقداردهی اولیه را فقط برای نصب تازه اجرا کنید.</p>
         <pre id="postgres-fedora-install"><code>sudo dnf install -y postgresql-server postgresql
 sudo postgresql-setup --initdb</code></pre>
@@ -72,23 +102,34 @@ sudo postgresql-setup --initdb</code></pre>
         <pre id="postgres-fedora-auth"><code>host    all    all    127.0.0.1/32    scram-sha-256</code></pre>
         <pre id="postgres-fedora-start"><code>sudo systemctl enable --now postgresql</code></pre>
 
+        </div>
+        </section>
+
         <p class="text-sm text-muted">راهنمای رسمی: <a href="https://hub.docker.com/_/postgres">PostgreSQL در Docker</a> · <a href="https://developer.fedoraproject.org/tech/database/postgresql/about.html">PostgreSQL در Fedora</a></p>
 
         <h2>۲. ساخت کاربر و پایگاه داده</h2>
         <p>با توجه به روش نصب، یکی از دستورهای زیر را اجرا کنید:</p>
+        <div data-db-method="native">
         <p><strong>نصب مستقیم:</strong></p>
         <pre id="postgres-native-psql"><code>sudo -u postgres psql -v ON_ERROR_STOP=1</code></pre>
+        </div>
+        <div data-db-method="docker">
         <p><strong>Docker:</strong></p>
         <pre id="postgres-docker-psql"><code>sudo docker exec -it madmail-postgres psql -U postgres -v ON_ERROR_STOP=1</code></pre>
+        </div>
         <p>سپس این دستورهای SQL را وارد کنید؛ <code>choose-a-secret</code> رمز کاربر Madmail است:</p>
         <pre id="postgres-create-database"><code>CREATE USER madmail WITH PASSWORD 'choose-a-secret';
 CREATE DATABASE madmail OWNER madmail;
 \q</code></pre>
         <p>اتصال و رمز را بررسی کنید؛ رمز کاربر Madmail را هنگام درخواست وارد کنید.</p>
+        <div data-db-method="native">
         <p><strong>نصب مستقیم:</strong></p>
         <pre id="postgres-native-connect"><code>psql -h 127.0.0.1 -U madmail -d madmail -W -c 'SELECT current_user, current_database();'</code></pre>
+        </div>
+        <div data-db-method="docker">
         <p><strong>Docker:</strong></p>
         <pre id="postgres-docker-connect"><code>sudo docker exec -it madmail-postgres psql -h 127.0.0.1 -U madmail -d madmail -W -c 'SELECT current_user, current_database();'</code></pre>
+        </div>
         <p>از اینجا به بعد، تنظیمات و فرمان‌های انتقال برای هر دو روش یکسان است.</p>
 
         <h2>۳. توقف و پشتیبان‌گیری</h2>
@@ -144,6 +185,33 @@ sudo madmail --config /etc/madmail/madmail.conf accounts status</code></pre>
         <p>اگر انتقال ناموفق بود، سرویس را متوقف نگه دارید و تنظیمات قبلی SQLite را برگردانید. تا پایان بررسی، فایل SQLite و نسخهٔ پشتیبان را حذف نکنید. اگر داده‌های جدیدی در PostgreSQL ثبت شود، بازگشت به SQLite آن‌ها را منتقل نمی‌کند.</p>
 
     </div>
+    <script>
+        (function () {
+            const guide = document.querySelector('[data-db-guide]');
+            if (!guide) return;
+            const selection = { os: 'debian', method: 'docker' };
+            const buttons = guide.querySelectorAll('[data-db-choice]');
+            function update() {
+                buttons.forEach(function (button) {
+                    button.setAttribute('aria-pressed', String(selection[button.dataset.dbChoice] === button.dataset.value));
+                });
+                guide.querySelectorAll('[data-db-method]').forEach(function (panel) {
+                    panel.hidden = panel.dataset.dbMethod !== selection.method;
+                });
+                guide.querySelectorAll('[data-db-os]').forEach(function (panel) {
+                    panel.hidden = !panel.dataset.dbOs.split(' ').includes(selection.os);
+                });
+            }
+            buttons.forEach(function (button) {
+                button.addEventListener('click', function () {
+                    selection[button.dataset.dbChoice] = button.dataset.value;
+                    update();
+                });
+            });
+            update();
+            guide.querySelector('[data-db-choices]').hidden = false;
+        })();
+    </script>
 </body>
 
 </html>
