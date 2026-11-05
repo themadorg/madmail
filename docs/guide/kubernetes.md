@@ -15,6 +15,7 @@ The Helm chart in [`deploy/helm/madmail`](../../deploy/helm/madmail/) runs Madma
   - [TURN relay ports](#turn-relay-ports)
   - [Outbound traffic](#outbound-traffic)
 - [Admin UI, metrics and Iroh](#admin-ui-metrics-and-iroh)
+- [Security](#security)
 - [Day-2 operations](#day-2-operations)
 - [Values reference](#values-reference)
 - [Limitations](#limitations)
@@ -24,7 +25,7 @@ The Helm chart in [`deploy/helm/madmail`](../../deploy/helm/madmail/) runs Madma
 | Object | Purpose |
 |--------|---------|
 | `StatefulSet` (1 replica) | Madmail keeps its state in SQLite and binds mail ports itself, so there is exactly one pod. Do not scale it. |
-| init container `bootstrap` | First start: runs `madmail install --simple …` and writes `/etc/madmail/madmail.conf`, TLS PEMs, DKIM keys and the databases. Every start: applies `adminWeb` and `metrics` settings. |
+| init container `bootstrap` | First start: runs `madmail install --simple --local …` and writes `/etc/madmail/madmail.conf`, TLS PEMs, DKIM keys and the databases. Every start: applies `adminWeb` and `metrics` settings. |
 | PVC `state` → `/var/lib/madmail` | SQLite databases, maildirs, DKIM keys, `admin_token`. |
 | PVC `config` → `/etc/madmail` | `madmail.conf` and `certs/` (writable: ACME renewal rewrites the PEMs). |
 | `Service` (LoadBalancer) | SMTP, submission, IMAP, HTTP/HTTPS, TURN, Shadowsocks, Iroh. `externalTrafficPolicy: Local` keeps client IPs. |
@@ -139,6 +140,8 @@ nodeSelector:
 
 Madmail binds directly on the node, so the full TURN relay range (`49152–65535`) works without listing ports, and clients see real IPs. The Service becomes `ClusterIP` (in-cluster access only). Open the ports in the node and cloud firewall ([port list](docker.md#ports)), and pin the pod to one node so its IP stays stable.
 
+A host-network pod cannot set the sysctl that lets the default non-root pod bind ports below 1024 (see [Security](#security)), so with `hostNetwork: true` the chart runs the pod as root with only `NET_BIND_SERVICE`. Choose the mode before the first install: files written as one user are not readable by the other.
+
 ### TURN relay ports
 
 A Kubernetes Service cannot publish a port range, so without `hostNetwork` the chart lists every relay port on the Service and writes the same range into `madmail.conf` at first install (`relay_port_min` / `relay_port_max` in the `turn` block). The default is `50000–50019` (20 concurrent call legs). Cloud load balancers cap listener counts (AWS NLB: 50 by default), so raise `madmail.turn.relayPortMax` carefully. The chart refuses ranges over 1000 ports.
@@ -178,6 +181,13 @@ Turning `adminWeb.enabled` or `metrics.enabled` off in a later `helm upgrade` di
 
 `madmail.iroh.enabled: true` passes `--enable-iroh` at first install and publishes TCP 3340. On an existing install run `kubectl exec madmail-0 -- madmail iroh install`, set the value, and `helm upgrade`.
 
+## Security
+
+- The pod runs as uid and gid `999` (`runAsNonRoot`, `fsGroup: 999`) with every capability dropped, `allowPrivilegeEscalation: false`, the `RuntimeDefault` seccomp profile and a read-only root filesystem in both containers. The chart adds the sysctl `net.ipv4.ip_unprivileged_port_start=0` (one of the Kubernetes "safe" sysctls) so Madmail can bind the mail ports. The pod passes the `restricted` Pod Security level.
+- With `hostNetwork: true` the pod runs as root with only `NET_BIND_SERVICE` added; see [Host networking](#host-networking-recommended-for-calls).
+- No Secret value is stored in a ConfigMap. The bootstrap ConfigMap holds only the install script; TLS keys and metrics credentials come from the Secrets you name in `tls.existingSecret` and `metrics.existingSecret`. `install` writes the TURN and Shadowsocks secrets into `madmail.conf` on the config PVC and makes it `0600`.
+- The admin web UI is off (`/admin` answers 404) and metrics are not on the public Service. The admin API at `/api/admin` is part of every Madmail server and refuses requests without the token from `madmail admin-token`.
+
 ## Day-2 operations
 
 | Task | Command |
@@ -214,11 +224,12 @@ See [`values.yaml`](../../deploy/helm/madmail/values.yaml) for every option with
 | `service.loadBalancerIP` | `""` | Static IP, normally equal to `madmail.publicIp`. |
 | `service.separateUdpService` | `false` | Put TURN on its own Service. |
 | `persistence.state.size` / `persistence.config.size` | `10Gi` / `1Gi` | PVC sizes; `existingClaim` reuses a PVC. |
-| `image.tag` | `latest` | Madmail image version; pin `X.Y.Z` in production. |
+| `image.tag` | `""` | Madmail image version; empty = the chart's `appVersion` (the release it ships with). |
+| `podSecurityContext` / `securityContext` | uid `999`, no capabilities | See [Security](#security). |
 
 ## Limitations
 
 - One replica only; there is no high-availability mode.
 - No Ingress: Madmail terminates TLS itself and shares the certificate between HTTPS, IMAP and SMTP. Route TCP 80/443 straight to the Service.
 - With the default LoadBalancer setup, TURN capacity is bounded by the number of published relay ports.
-- The image runs as root with every capability dropped except `NET_BIND_SERVICE`; the main container has a read-only root filesystem, the bootstrap container does not (`install` writes the binary, man pages and completions there).
+- With `hostNetwork: true` the pod runs as root (with only `NET_BIND_SERVICE`); see [Host networking](#host-networking-recommended-for-calls).

@@ -496,6 +496,7 @@ For IP/self-signed relays, Delta Chat clients may need to accept self-signed cer
 - [DNS and Mail Authentication](../project/user-guide/12-dns-mail-auth.md) — records, SPF/DKIM/DMARC, federation checks
 - [Sending and federation](../project/user-guide/05-sending-receiving-and-federation.md) — how `/mxdeliv` works
 - [Docker deployment guide](docker.md) — container layout, volumes, `install` with `--skip-systemd`
+- [Kubernetes (Helm) guide](kubernetes.md) — the `deploy/helm/madmail` chart
 - [Install: public IP + Let's Encrypt](../install-simple-ip-acme.md) — `--auto-ip-cert` details
 - [CLI command reference](cli/README.md) — one page per `madmail` subcommand
 - [CLI JSON output](cli/json-output.md) — `--json` schemas for scripting

@@ -516,6 +516,7 @@ Set `tls_mode file` in the config and ensure `tls file` points at those paths (t
 | `993` | IMAPS |
 | `80` / `443` | HTTP / HTTPS — Delta Chat registration page, chatmail API, Admin API |
 | `3478` / **udp** | TURN/STUN control (Delta Chat voice/video calls) |
+| `3478` / **tcp** | TURN over TCP (the same `turn` listener; optional) |
 | `49152–65535` / **udp** | TURN relay media (default range; configurable in admin/config) |
 | `3340` / **tcp** | Iroh relay (WebXDC) — optional; off unless `install --enable-iroh` or `madmail iroh install` |
 
@@ -739,7 +740,7 @@ Use `--user 999:988` only if host paths are owned by the `madmail` system user f
 
 ## Docker Compose example
 
-The repository ships a ready-to-use Compose project in [`deploy/docker/`](../../deploy/docker/). Its one-shot `bootstrap` service runs `madmail install` on the first `up` (only when `/etc/madmail/madmail.conf` does not exist yet), and `madmail` starts after it succeeds. `bootstrap` uses host networking so it can answer the Let's Encrypt HTTP-01 challenge on port 80 without clashing with `madmail` on later `up` runs:
+The repository ships a ready-to-use Compose project in [`deploy/docker/`](../../deploy/docker/). Its one-shot `bootstrap` service runs `madmail install` on the first `up` (only when `/etc/madmail/madmail.conf` does not exist yet), and `madmail` starts after it succeeds. `bootstrap` uses host networking so it can answer the Let's Encrypt HTTP-01 challenge on port 80 without clashing with `madmail` on later `up` runs. It runs `madmail install --simple --local`, which writes only `madmail.conf`, the TLS files and the state (the image already has the binary, and there is no service account or systemd unit):
 
 ```bash
 cd deploy/docker
@@ -752,22 +753,31 @@ docker compose exec madmail madmail admin-token
 
 | `.env` variable | Install flag | Notes |
 |-----------------|--------------|-------|
-| `MADMAIL_PUBLIC_IP` | `--ip` | **Required.** Public IP clients reach (TURN, Iroh, setup hints). |
+| `MADMAIL_IMAGE` | — | Image for both services (default `ghcr.io/themadorg/madmail:latest`); pin `X.Y.Z` in production. |
+| `MADMAIL_PUBLIC_IP` | `--ip` | **Required.** Public IP clients reach (TURN, Iroh, setup hints). Empty in `.env.example`; Compose refuses to start until you set it. |
 | `MADMAIL_DOMAIN` / `MADMAIL_HOSTNAME` | `--domain` / `--hostname` | Empty domain = IP relay. Hostname defaults to the domain. |
 | `MADMAIL_TLS_MODE` | `--tls-mode` | Empty = install default (`autocert` for a domain, `self_signed` for an IP). For `file`, put `fullchain.pem` / `privkey.pem` in `${MADMAIL_CONFIG_DIR}/certs` first. |
 | `MADMAIL_ACME_EMAIL` | `--acme-email` | Defaults to `admin@<domain>`. |
+| `MADMAIL_LANG` | `--lang` | Registration page language: `en`, `fa`, `ru`, `es` (default `en`). |
 | `MADMAIL_ENABLE_IROH` | `--enable-iroh` | `true` turns on the WebXDC relay; `compose.yaml` already publishes TCP 3340. |
 | `MADMAIL_INSTALL_EXTRA_ARGS` | — | Appended to `madmail install`. |
 | `MADMAIL_STATE_DIR` / `MADMAIL_CONFIG_DIR` | — | Host paths (default `/var/lib/madmail`, `/etc/madmail`). |
+| `MADMAIL_UID` / `MADMAIL_GID` | — | Non-root user and group `madmail` runs as (default `999` / `999`, every run). Ignored by the host-network override. |
+| `MADMAIL_BIND_IP` | — | Host address the ports are published on (default `0.0.0.0`, bridged mode only). |
 | `MADMAIL_TURN_RELAY_MIN` / `MADMAIL_TURN_RELAY_MAX` | — | TURN media UDP range (default `50000-50099`, bridged mode only). Published by Compose and written into `madmail.conf` at first install. |
+| `MADMAIL_CONTAINER_NAME` | — | Name of the `madmail` container (default `madmail`). |
 
-The install variables only matter for the first run. Afterwards change settings with the CLI (`docker compose exec madmail madmail …`), the admin API, or by editing `madmail.conf`, then `docker compose restart madmail`.
+`madmail` runs as `MADMAIL_UID:MADMAIL_GID` with every capability dropped, `no-new-privileges` and a read-only root filesystem; Docker lets containers on a bridge network bind ports below 1024 without privileges. On every run `bootstrap` gives `MADMAIL_STATE_DIR` and `MADMAIL_CONFIG_DIR` to that user and group and makes them `0700` (and `madmail.conf`, which holds the TURN and Shadowsocks secrets, `0600`), so other users on the host cannot read them. To reuse directories from a native install, set the two variables to the uid and gid of its `madmail` account. Compose publishes TCP 25, 80, 143, 443, 465, 587, 993, 3340, 3478 and 8388, UDP 3478 and the TURN relay range.
+
+The install variables only matter for the first run. Afterwards change settings with the CLI (`docker compose exec madmail madmail …`), the admin API, or by editing `madmail.conf` (as root on the host), then `docker compose restart madmail`.
 
 For production calls use host networking, which needs no port mappings and keeps real client IPs:
 
 ```bash
 docker compose -f compose.yaml -f compose.host-network.yaml up -d
 ```
+
+On the host network only root can bind ports below 1024, so the override runs `madmail` as root, still with every capability dropped except `NET_BIND_SERVICE`, and `bootstrap` gives the directories to root. It also keeps Madmail's default TURN relay range (49152–65535).
 
 The minimal hand-written equivalent (after a one-off `madmail install`, see [Quick start (domain name)](#quick-start-domain-name)):
 
