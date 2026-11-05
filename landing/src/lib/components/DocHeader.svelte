@@ -44,7 +44,7 @@
 			<div class="docs-label">
 				<a href={homePath(i18n.lang)} lang="en">Madmail</a>
 				<span aria-hidden="true"> / </span>
-				<a href={section === 'Blog' ? blogHref : section === 'Releases' ? '/releases' : '/docs'}>{sectionLabel}</a>
+				<a href={section === 'Blog' ? blogHref : section === 'Releases' ? '/releases' : '/docs'} lang={i18n.lang}>{sectionLabel}</a>
 			</div>
 			<HeaderDropdown id="section-navigation" label={i18n.t('chrome_switch_section')} menuLabel={i18n.t('chrome_sections')} icon={chevronDown} items={[
 				{ label: i18n.t('chrome_docs'), href: '/docs', current: section === 'Docs', icon: bookOpen },
@@ -64,7 +64,7 @@
 		</div>
 		<button type="button" class="search-bar" aria-label={i18n.t('chrome_search_pages')} onclick={() => openCommandPalette()}>
 			<span class="icon" aria-hidden="true">{@html magnifyingGlass}</span>
-			<span>{i18n.t('chrome_search_docs')}</span>
+			<span lang={i18n.lang} dir={i18n.dir}>{i18n.t('chrome_search_docs')}</span>
 			<kbd>Ctrl K</kbd>
 		</button>
 		<div class="brand-end">
