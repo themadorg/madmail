@@ -354,6 +354,60 @@ sha256sum -c /tmp/repair-unit.before >/dev/null
 reject 'systemctl daemon-reload failed' env MADMAIL_TEST_SYSTEMCTL_EXIT=1 /tmp/madmail install --systemd-only "${repair_paths[@]}"
 echo 'PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, home repointing, planted-link and masked-unit refusal, unit mode, content preservation, repeatability and failure propagation'
 
+# The state walk changes a hard-linked file only when it belongs to the service
+# account. A root-owned file outside the tree, linked into it (here by root; the
+# service can do the same itself when fs.protected_hardlinks is 0), keeps its
+# owner and mode.
+printf 'victim\n' > /var/xyzzy/hl-victim
+chmod 600 /var/xyzzy/hl-victim
+ln /var/xyzzy/hl-victim /var/xyzzy/lib/madmail/hl-planted
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-hardlink.log
+grep -q '^   ! Ownership of /var/xyzzy/lib/madmail/hl-planted left unchanged: has 2 hard links and belongs to uid 0, not to the service account' /tmp/user-hardlink.log
+[[ "$(stat -c '%U:%G:%a' /var/xyzzy/hl-victim)" = root:root:600 ]]
+rm /var/xyzzy/lib/madmail/hl-planted /var/xyzzy/hl-victim
+# A planted link to a root-owned file outside the tree changes neither its
+# owner nor its content.
+shadow_sum="$(sha256sum /etc/shadow)"
+shadow_meta="$(stat -c '%U:%G:%a' /etc/shadow)"
+ln -s /etc/shadow /var/xyzzy/lib/madmail/planted-shadow
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-symlink.log
+[[ "$(sha256sum /etc/shadow)" = "$shadow_sum" && "$(stat -c '%U:%G:%a' /etc/shadow)" = "$shadow_meta" ]]
+rm /var/xyzzy/lib/madmail/planted-shadow
+# When the account is recreated with a new uid (the old one is taken by another
+# account), the service's own hard-linked files still follow: they belong to the
+# previous owner of the state directory.
+old_uid="$(id -u madmail)"
+install -o madmail -g madmail -m 640 /dev/null /var/xyzzy/lib/madmail/own-a
+ln /var/xyzzy/lib/madmail/own-a /var/xyzzy/lib/madmail/own-b
+userdel madmail
+useradd -r -M -N -u "$old_uid" -d /nonexistent uidsquatter
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-newuid.log
+new_uid="$(id -u madmail)"
+[[ "$new_uid" != "$old_uid" ]]
+[[ "$(stat -c '%u:%h' /var/xyzzy/lib/madmail/own-a)" = "$new_uid:2" ]]
+[[ "$(stat -c '%u' /var/xyzzy/lib/madmail)" = "$new_uid" ]]
+[[ "$(stat -c '%U:%G' /var/xyzzy/lib/madmail/credentials.db)" = madmail:madmail ]]
+rm /var/xyzzy/lib/madmail/own-a /var/xyzzy/lib/madmail/own-b
+userdel uidsquatter
+# An operator link from the config directory to a TLS file in the state tree,
+# whose target the service account then replaced with a link to /etc/shadow, is
+# never written, chowned or chmodded through, by a full reinstall or by repair.
+mv /var/xyzzy/etc/madmail/certs/fullchain.pem /tmp/fullchain.saved
+install -d -o madmail -g madmail /var/xyzzy/lib/madmail/certs
+cp /tmp/fullchain.saved /var/xyzzy/lib/madmail/certs/fullchain.pem
+ln -s /var/xyzzy/lib/madmail/certs/fullchain.pem /var/xyzzy/etc/madmail/certs/fullchain.pem
+runuser -u madmail -- ln -sfn /etc/shadow /var/xyzzy/lib/madmail/certs/fullchain.pem
+/tmp/madmail "${args[@]}" > /tmp/reinstall-op-link.log
+[[ "$(sha256sum /etc/shadow)" = "$shadow_sum" && "$(stat -c '%U:%G:%a' /etc/shadow)" = "$shadow_meta" ]]
+runuser -u madmail -- ln -sfn /etc/shadow /var/xyzzy/lib/madmail/certs/fullchain.pem
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/repair-op-link.log
+grep -q 'Skipping ownership of /var/xyzzy/etc/madmail/certs/fullchain.pem: inside the service-writable state directory' /tmp/repair-op-link.log
+[[ "$(sha256sum /etc/shadow)" = "$shadow_sum" && "$(stat -c '%U:%G:%a' /etc/shadow)" = "$shadow_meta" ]]
+rm /var/xyzzy/etc/madmail/certs/fullchain.pem
+rm -r /var/xyzzy/lib/madmail/certs
+mv /tmp/fullchain.saved /var/xyzzy/etc/madmail/certs/fullchain.pem
+echo 'PASS: state walk skips foreign hard links and planted links, follows a new service uid, and never writes through an operator link into the tree'
+
 # Uninstall after an install with a shared --config-dir removes only the files
 # install put there and leaves the directory and everything else in it.
 mkdir -p /usr/local/etc
@@ -369,6 +423,11 @@ grep -qx 'Left in place: /usr/local/etc (well-known system directory; only madma
 grep -q '^Left in place: /usr/local/etc/certs/privkey.pem (TLS file' /tmp/uninstall-plan.log
 grep -qx 'State dir (removed with all contents): /var/xyzzy/lib/madmail' /tmp/uninstall-plan.log
 if grep -q '^Config dir.*/usr/local/etc$' /tmp/uninstall-plan.log; then fail 'shared config dir planned for removal'; fi
+# A shared state directory is kept even when named with --state-dir.
+mkdir -p /srv/shared-data
+/tmp/madmail uninstall --dry-run --state-dir /srv/shared-data > /tmp/uninstall-shared-state.log
+grep -qx 'Left in place: /srv/shared-data (shared directory, not named for madmail; remove it yourself)' /tmp/uninstall-shared-state.log
+if grep -q '^State dir.*/srv/shared-data$' /tmp/uninstall-shared-state.log; then fail 'shared state dir planned for removal'; fi
 /tmp/madmail --json uninstall --dry-run > /tmp/uninstall-plan.json
 python3 - /tmp/uninstall-plan.json <<'PYJSON'
 import json, sys
@@ -383,6 +442,7 @@ PYJSON
 grep -q '^Left in place: /usr/local/etc/certs/fullchain.pem (TLS file' /tmp/uninstall.log
 [[ ! -e /var/xyzzy/lib/madmail && ! -e /etc/systemd/system/madmail.service && ! -e /var/xyzzy/bin/madmail ]]
 absent_user madmail
-echo 'PASS: uninstall keeps a shared config directory and its other files, removes the dedicated state directory'
+[[ -d /srv/shared-data ]]
+echo 'PASS: uninstall keeps a shared config directory and its other files and a shared state directory, removes the dedicated state directory'
 echo 'PASS: complete Unix installer E2E matrix'
 INNER
