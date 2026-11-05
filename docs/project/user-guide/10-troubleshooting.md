@@ -17,8 +17,8 @@ unit settings in drop-ins. See the [complete repair procedure](../../guide/cli/i
 and [error reference](../../guide/cli/install.md#troubleshooting).
 
 A full install stops before changing anything if the unit file is masked (run
-`systemctl unmask madmail`), or if the service account's home is elsewhere while
-`--state-dir` already exists, so data in the old home is not left behind. Move the
+`systemctl unmask madmail`), or if the service account's home is elsewhere and still
+exists while `--state-dir` already exists, so data in the old home is not left behind. Move the
 data if needed, run `--user-only` with the same paths, then retry. A state directory
 that is a symlink to a data volume is fine.
 

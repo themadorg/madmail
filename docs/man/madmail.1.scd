@@ -67,7 +67,8 @@ Extended documentation:
 	mode and planned actions. *--skip-user* and *--skip-systemd* remain
 	independent opt-outs. Before changing the host, a system install refuses
 	a masked unit file, and an existing *--state-dir* while the service
-	account's home is elsewhere (repoint it with *--user-only* first).
+	account's home is elsewhere and still exists (repoint it with
+	*--user-only* first).
 	See EXAMPLES and NOTES.
 
 	For existing Unix installations, *--user-only* repairs the service account

@@ -283,9 +283,8 @@ only daemon-reload is stubbed. Windows service installation remains a separate f
 
 Expanded matrix verification: `make test-install-docker` passed after a clean
 compact build, and the installer unit tests (17 at the time) passed with the same
-compact profiles. After the #220 review fixes there are 19 `ctl::install` unit tests
-and 18 `ctl::uninstall` unit tests; the spaced state-directory Docker case added with
-those fixes has not yet been run in the Docker suite. The test Docker build context was 2 KiB. No production/release profile
+compact profiles. After the #220 review fixes there were 19 `ctl::install` unit tests
+and 18 `ctl::uninstall` unit tests. The test Docker build context was 2 KiB. No production/release profile
 settings were changed. Failure-path checks include invalid mode/path input,
 non-root system installation, and a nonzero daemon-reload result.
 
@@ -311,8 +310,33 @@ cover the `usermod` arguments (no `-m` into an existing state directory, full-in
 refusal to abandon a previous home), symlink-safe `chown_tree` including a symlinked
 state directory root, planted-link detection on any component below the state
 directory, symlink refusal, mode and atomic replacement of the unit file, and repair
-`from_args` without a domain; there are 25 `ctl::install` unit tests after these
-fixes.
+`from_args` without a domain.
+
+The state-tree and uninstall path-safety fixes add Docker cases for links planted
+in nested state directories (`nested/deeper/planted-passwd -> /etc/passwd`,
+`nested/planted-etc -> /etc`), which keep their targets' owners while the real
+directories get the service owner; for a `--cert-path` outside the state
+directory that reaches the tree through an operator link and ends in a link the
+service planted to `/etc/shadow`, which is skipped with a `Skipping ownership of`
+note and leaves `/etc/shadow` unchanged; and for `uninstall` after an install with
+`--config-dir /usr/local/etc`. That last case checks the dry-run plan and the
+`left_in_place` JSON, then that uninstall removes `madmail.conf`, the dedicated
+state directory, unit, binary and account, and keeps `/usr/local/etc`, an
+unrelated `other.conf` and the generated `certs/` files it reports. Unit tests
+cover the descriptor walk (nested links, a root replaced by a link, entries that
+change or vanish, the depth limit, listing without `.`/`..`), service-tree
+detection (a link in an intermediate component, canonical paths under a
+symlinked state root, an ancestor resolving into the tree with a final link out
+of it), the canonical-equal passwd home, and uninstall classification (dedicated
+directories removed whole, a shared config directory losing only its config file,
+denied system and home directories, and a shared `WorkingDirectory=` kept unless
+given as `--state-dir`). There are 32 Unix `ctl::install` unit tests and 22
+`ctl::uninstall` unit tests after these fixes.
+
+The full Docker suite, including the space-containing state directory case, passed
+with a Linux aarch64 musl debug build of these fixes (`PASS: complete Unix
+installer E2E matrix`). Run against a binary built before them, it fails at the
+`--cert-path` case.
 Systemd uses the same recording stub and real unit syntax verification as the full
 installer suite; running a service under systemd PID 1 is not covered here.
 

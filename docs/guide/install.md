@@ -84,7 +84,7 @@ Choose full system setup, local bootstrap or isolated account/unit repair using 
 overwrite configuration; use repair modes for existing host provisioning.
 With custom paths, the state directory may be a symlink to a data volume. A full
 install refuses a masked unit, and refuses an existing `--state-dir` when the
-service account's home is elsewhere, before changing anything; see
+service account's home is elsewhere and still exists, before changing anything; see
 [custom paths](cli/install.md#new-server-with-custom-paths).
 
 | Mode | Flag | Required inputs | Notes |
@@ -155,7 +155,7 @@ Choose installation intent explicitly when using custom paths:
 
 - `--system`: Unix system install, requiring root, regardless of directory layout.
 - `--local`: local bootstrap; skip host account/ownership, binary, CLI docs and unit installation.
-- The flags are mutually exclusive. `--skip-user` and `--skip-systemd` still opt out of their respective system steps. System config, state and binary paths must be absolute and must not contain control characters or end with whitespace or a backslash (systemd cannot represent them). Spaces, quotes and `%` inside a path are escaped in the generated unit.
+- The flags are mutually exclusive. `--skip-user` and `--skip-systemd` still opt out of their respective system steps. System config, state and binary paths must be absolute and must not contain control characters or end with whitespace or a backslash (systemd cannot represent them). In the generated unit, `ExecStart=` and `ReadWritePaths=` put a path in double quotes when it contains whitespace, a quote or a backslash, while `WorkingDirectory=` takes the path verbatim without quotes. `%` is written as `%%` in all three, and `$` as `$$` in `ExecStart=`.
 
 For example, the custom-path bootstrap in issue #216 becomes:
 
