@@ -82,8 +82,12 @@ Extended documentation:
 	Repeat custom *--cert-path*/*--key-path* values: account repair only
 	chowns TLS files at the given paths, and they also decide the unit's
 	ProtectHome= setting. Account repair repoints an existing account at the
-	existing state directory without moving it and never follows symlinks
-	inside it. Unit repair refuses a symlinked or masked unit file.
+	existing state directory without moving it. Install and account repair
+	never read, write or change the owner or mode of a file through a link
+	inside the state directory, and change the owner of a file there with more
+	than one hard link only when it belongs to the service account. A path
+	outside it is not followed through a directory or link the service account
+	controls. Unit repair refuses a symlinked or masked unit file.
 	These modes conflict with each other, local/cert-only/skip and Windows
 	service/firewall flags. Stop the service before account repair. Unit
 	customizations belong in drop-ins; a failed reload leaves the written unit.
@@ -93,12 +97,16 @@ Extended documentation:
 	Remove the service, configuration, and data.
 	Confirmation is required; use keep flags such as *--keep-data* to
 	preserve selected artifacts.
-	A config or state directory named in a unit is removed as a whole only
-	when its name is the binary name, or madmail or chatmail optionally
-	followed by a suffix starting with - or \_. From any other config
-	directory only the config file is removed, and a shared state directory
-	is kept. Well-known system directories and user homes are never removed
-	as a whole. The plan lists every path removed or left in place.
+	A config or state directory is removed as a whole only when its name is
+	the binary name, or madmail or chatmail optionally followed by a suffix
+	starting with - or \_, whatever found it (a unit, discovery, *--state-dir*
+	or the config file). From any other config directory only the config file
+	is removed, and any other state directory is kept. Well-known system
+	directories and user homes are never removed as a whole. A directory that
+	contains a path kept by *--keep-data* or *--keep-config* is not removed as
+	a whole. A *state_dir* from a config file that is not owned by root, or is
+	writable by others, is not used. The plan lists every path removed or left
+	in place.
 
 *upgrade*, *update*
 	Replace this executable from a signed local file or URL

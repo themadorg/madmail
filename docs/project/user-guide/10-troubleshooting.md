@@ -22,6 +22,22 @@ exists while `--state-dir` already exists, so data in the old home is not left b
 data if needed, run `--user-only` with the same paths, then retry. A state directory
 that is a symlink to a data volume is fine.
 
+Install and repair print `Skipping ownership of <path>: <reason>` for a TLS file
+they will not change by path, and `Ownership of <path> left unchanged: <reason>`
+for an entry in the state directory they left alone, for example a file that has
+several hard links and belongs to another account. These are protections, not
+errors: the service account can write to its state directory, so install does not
+follow links there. Keep certificates and the config file in root-owned
+directories outside the state directory, or check the named file and fix its
+owner yourself. An error that starts with `refusing to` names the
+directory or link on the path that the service account can change (or says that
+the config file has several hard links); move the file to a root-owned directory
+outside the state directory and run the command again.
+
+Uninstall leaves a directory in place when its name does not show that it belongs
+to madmail, and lists it as `Left in place: <path> (<reason>)`. Check the listed
+directory and remove what madmail created yourself.
+
 ## Users Cannot Register or Log In
 
 ### Possible causes

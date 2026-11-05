@@ -36,27 +36,35 @@ From each unit it takes `User=`, the state directory (`WorkingDirectory=`), the
 binary (first word of `ExecStart=`) and the config file (the `--config` path in
 `ExecStart=`). It also finds `/etc/madmail*`, `/etc/chatmail*`, `/var/lib/madmail*`,
 `/var/lib/chatmail*`, family binaries in `/usr/local/bin` and `/usr/bin`, and the
-`--state-dir` given to uninstall (or the `state_dir` of the config it reads).
+state directory in use: the `state_dir` of the config file uninstall reads
+(`--config`) when it sets one, otherwise `--state-dir`.
+
+`state_dir` from the config file is used only when the config file, and every
+directory and link on its path, is owned by root, is not group-writable unless
+the group is root, and is not world-writable (a directory with the sticky bit,
+such as `/tmp`, may be). Otherwise uninstall uses `--state-dir`, and lists the
+ignored directory as left in place with the reason
+`named by state_dir in <config>, which is not used: <component> is <reason>`
+(unless another source plans that directory for removal). A `--dry-run` without
+root also accepts the caller's own files and directories in this check.
 
 ## What is removed
 
-A directory is removed with all its contents only when it clearly belongs to
-madmail:
+The same rule applies to every config and state directory, whatever found it
+(a unit, `/etc` or `/var/lib` discovery, `--state-dir`, or the config file). A
+directory is removed with all its contents only when its name is `madmail`,
+`chatmail`, `madmail-*`, `madmail_*`, `chatmail-*`, `chatmail_*` or the name of
+the running binary (for example `/var/xyzzy/etc/madmail`), and it is not one of
+the directories listed below that are never removed as a whole.
 
-- **Config directory from a unit** (parent of `--config`): removed as a whole
-  when its name is `madmail`, `chatmail`, `madmail-*`, `madmail_*`, `chatmail-*`,
-  `chatmail_*` or the name of the running binary (for example
-  `--config-dir /var/xyzzy/etc/madmail`). Any other directory, such as
-  `--config-dir /usr/local/etc`, is shared: only the config file install wrote
-  there (`<binary>.conf`) is removed. TLS files in its `certs/` subdirectory are
-  left in place, because the unit does not show whether install created them; the
-  plan names them so you can remove them yourself.
-- **State directory from a unit** (`WorkingDirectory=`): removed as a whole under
-  the same naming rule. A shared state directory is left in place, since install's
-  files are mixed with the service's mail data there. To remove it with all its
-  contents, pass it as `--state-dir` to uninstall.
-- **Discovered directories** (`/etc/madmail*`, `/var/lib/madmail*`, …) and the
-  `--state-dir` given to uninstall are removed as a whole.
+- **Other config directories**, such as `--config-dir /usr/local/etc`: only the
+  config file install wrote there (`<binary>.conf`) is removed. TLS files in its
+  `certs/` subdirectory are left in place, because nothing shows whether install
+  created them; the plan names them so you can remove them yourself. A `--config`
+  file with another name is not removed.
+- **Other state directories**, such as `/srv/data`: left in place, also when
+  given with `--state-dir`, since the service's mail data may be mixed with other
+  files there. Remove it yourself.
 
 Some directories are never removed as a whole, whatever their source: `/`,
 `/etc`, `/usr`, `/usr/local`, `/usr/local/etc`, `/opt`, `/srv`, `/var`,
@@ -65,20 +73,56 @@ other top-level system directories, every `/home/<name>`, and the home of root,
 of each regular account (uid 1000 or more) in `/etc/passwd`, of `$HOME` and of the
 `sudo` caller. The service accounts being removed are excluded, because their
 home is the state directory. Both the path as written and its resolved form are
-checked. For a unit config file in such a directory (for example
-`/etc/madmail.conf`), only that file is removed.
+checked. For a config file in such a directory (for example `/etc/madmail.conf`),
+only that file is removed.
+
+`--keep-data` and `--keep-config` always hold. A directory that is, or contains,
+a path that stays (a path left in place, a state directory under `--keep-data`,
+or a config directory or file under `--keep-config`) is not removed as a whole: a
+config directory then loses only its config file, and a state, log, cache or
+runtime directory is left in place.
+
+Before each removal, every directory and link on the way to the path must pass
+the same check as the config file above; otherwise uninstall stops with an error
+that names the failing component. The last component is not followed: a link is
+removed itself, not its target, and a directory is removed without following
+links inside it.
 
 `/run/<name>`, `/var/log/<name>` and `/var/cache/<name>` are removed for unit names
 and for the names of removed state directories that follow the naming rule above.
 Service accounts are deleted with `userdel` without `-r`: the home is the state
-directory, and is removed (or kept with `--keep-data`) by the rules above.
+directory, and is removed (or kept) by the rules above.
 
 The plan printed before confirmation lists each directory removed with all its
 contents, each single file removed, and each path left in place with the reason.
 The paths left in place are printed again when uninstall finishes. If the unit
 file was removed or edited by hand, custom config and state directories outside
-the default locations are not found; pass `--state-dir` and remove the config
-directory yourself. Check the plan with `--dry-run` first.
+the default locations are not found; pass `--state-dir` (it is removed only when
+its name follows the rule above) and remove the config directory yourself. Check
+the plan with `--dry-run` first.
+
+## Reasons for paths left in place
+
+The plan, the final output (`Left in place: <path> (<reason>)`) and the JSON
+`left_in_place` list use these reasons:
+
+| Reason | Meaning |
+|--------|---------|
+| `well-known system directory` | A directory from the deny list, such as `/var/lib`. |
+| `user home directory` | `/home/<name>`, `/Users/<name>` or a real account's home. |
+| `shared directory, not named for madmail; remove it yourself` | A state directory that does not follow the naming rule. |
+| `<why>; only <binary>.conf is removed` | A config directory that is not removed as a whole; `<why>` is one of the two reasons above, `shared directory, not named for madmail`, or a `contains ...` reason below. |
+| `<why>; <file> is not a config file name install writes` | A unit's `--config` file in such a directory, with another name. |
+| `<why>; nothing in it is removed` | A config directory that contains a path that stays, where no config file install wrote is known. |
+| `TLS file in a shared directory; install may not have created it, remove it yourself if it did` | `certs/fullchain.pem` or `certs/privkey.pem` in a config directory that is not removed as a whole. |
+| `contains <path>, which is left in place; remove the rest yourself` | A state, log, cache or runtime directory that contains a path left in place. |
+| `contains <path>, which --keep-config keeps; remove the rest yourself` | A state, log, cache or runtime directory that contains the config. |
+| `named by state_dir in <config>, which is not used: <why>` | `state_dir` from a config file that failed the check above. |
+
+For a config directory the `contains` reasons read
+`contains <path>, which is left in place` or
+`contains <path>, which --keep-data keeps`, followed by
+`; only <binary>.conf is removed` or `; nothing in it is removed`.
 
 ## Examples
 

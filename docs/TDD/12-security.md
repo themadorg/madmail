@@ -130,6 +130,39 @@ Tests: `p12_it04_alpn_less_client_still_reaches_imap`,
 - Configuration injection prevention (sanitize values written to config)
 - Self-signed cert acceptance only for federation (not for submission)
 
+### Installer and uninstaller running as root
+
+System install, `install --user-only` and `uninstall` run as root next to the
+service account. The threat model assumes that account is compromised: it owns the
+state directory and can create, rename (including `renameat2(RENAME_EXCHANGE)`
+loops), link and hard-link anything there while root runs, and
+`fs.protected_hardlinks` may be 0.
+
+- Install resolves every path it writes or changes one component at a time
+  (`ctl/secure_fs.rs`) and does not follow a directory or link owned by the
+  service account (current or previous uid), a directory writable by its group, or
+  a world-writable directory without the sticky bit. Inside the state directory,
+  recognized by device and inode, every component is opened with `O_NOFOLLOW`, and
+  files are written by create-new-then-rename with `fchmod` / `fchown` on the new
+  descriptor. Ownership and modes elsewhere are changed through the opened
+  descriptor.
+- The ownership walk of the state tree (`ctl/install/chown_walk.rs`) checks and
+  changes each entry through a descriptor for that entry, skips links, and skips a
+  file with more than one hard link that does not belong to the service account.
+- The ACME client writes only into a root-owned 0700 staging directory, and the
+  install language is written to the database with the service account's
+  effective ids.
+- Directories outside the state directory are re-owned or re-moded only when they
+  are dedicated to madmail by name (`ctl/host_paths.rs`).
+- Uninstall applies the same naming rule to every directory it would remove,
+  never removes a directory that is or contains a kept path, uses a config file's
+  `state_dir` only when that file and its path are owned by root and not writable
+  by others, and removes a path only after checking every directory and link on
+  the way to it, without following the last component.
+
+With `--skip-user` or a local install there is no service account; those modes
+write by path as the caller. See [CLI tools](14-cli-tools.md) for the details.
+
 ## Rust-Specific Security
 - Prefer crates with good audit history (`rustls`, `tokio`, `axum`, `sqlx`)
 - Use `zeroize` for sensitive data in memory where appropriate

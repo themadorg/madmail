@@ -307,8 +307,8 @@ data elsewhere, is refused with the home and data left in place. These cases pas
 in the Docker suite with a Linux (aarch64 musl) build of the #222 review fixes; the
 pre-created state directory case fails against the build before them. Unit tests
 cover the `usermod` arguments (no `-m` into an existing state directory, full-install
-refusal to abandon a previous home), symlink-safe `chown_tree` including a symlinked
-state directory root, planted-link detection on any component below the state
+refusal to abandon a previous home), the descriptor-based `chown_tree` including a
+state directory root reached through a link, planted-link detection on any component below the state
 directory, symlink refusal, mode and atomic replacement of the unit file, and repair
 `from_args` without a domain.
 
@@ -329,14 +329,61 @@ detection (a link in an intermediate component, canonical paths under a
 symlinked state root, an ancestor resolving into the tree with a final link out
 of it), the canonical-equal passwd home, and uninstall classification (dedicated
 directories removed whole, a shared config directory losing only its config file,
-denied system and home directories, and a shared `WorkingDirectory=` kept unless
-given as `--state-dir`). There are 32 Unix `ctl::install` unit tests and 22
-`ctl::uninstall` unit tests after these fixes.
+denied system and home directories, and a shared `WorkingDirectory=` kept). There
+were 32 Unix `ctl::install` unit tests and 22 `ctl::uninstall` unit tests after
+those fixes.
 
 The full Docker suite, including the space-containing state directory case, passed
 with a Linux aarch64 musl debug build of these fixes (`PASS: complete Unix
 installer E2E matrix`). Run against a binary built before them, it fails at the
 `--cert-path` case.
+
+The descriptor-based install and uninstall fixes (checked path resolver in
+`ctl/secure_fs.rs`, shared naming rule in `ctl/host_paths.rs`) add Docker cases
+for: a file outside the tree, owned by root and hard-linked into the state
+directory (`hl-planted`), which keeps `root:root` and mode `0600` and is reported as
+`Ownership of ... left unchanged: has 2 hard links and belongs to uid 0`; a planted
+link to `/etc/shadow`, after which the hash, owner and mode of `/etc/shadow` are
+unchanged; account repair with a new uid while another account holds the old one,
+after which the service's own file with two hard links belongs to the new uid; an
+operator link from `/var/xyzzy/etc/madmail/certs/fullchain.pem` to a file in the
+state tree that the service account replaced with a link to `/etc/shadow`, through
+a full reinstall and an account repair, after which the hash, owner and mode of
+`/etc/shadow` are unchanged and repair notes
+`Skipping ownership of ...: inside the service-writable state directory`; and an
+uninstall dry run with `--state-dir /srv/shared-data`, which leaves that directory
+in place as a shared directory. Unit tests cover the trust rules, refusal of a
+service-owned directory or link anywhere on a path (also on a second link hop and
+when the target is outside the tree), the hop limit, recognition of the state
+directory by device and inode, writes in the tree that replace planted links
+instead of following them, directory creation only in trusted directories, the
+hard-link decision for the walk (links skipped, foreign hard links skipped, the
+service's hard links changed for the current and the previous uid), TLS files
+reached through the tree, config files outside the tree behind a service
+directory, directories that are not dedicated to madmail, and, for uninstall, a
+config `state_dir` naming a shared directory, a `state_dir` from a world-writable
+directory that is ignored, `--keep-data` with a config directory that is or
+contains the state directory, `--keep-config` with a state directory that
+contains the config, and removal that refuses a path through a world-writable
+directory and removes a link instead of its target. There are 37 Unix
+`ctl::install`, 27 `ctl::uninstall`, 10 `ctl::secure_fs` and 1 `ctl::host_paths`
+unit tests after these fixes.
+
+The full Docker suite passed with a Linux aarch64 musl debug build of these fixes.
+Its output was:
+
+```text
+PASS: mode conflicts, automatic/explicit modes, JSON plans, invalid paths and certificate-only plan
+PASS: dry-run side effects, non-root system rejection and local host isolation
+PASS: missing parents, home paths, migration data preservation, failed-move rollback and pre-created state refusal
+PASS: custom-path account, ownership, binary/docs, unit verification, service-user boot and idempotence
+PASS: each skip flag independently and combined, JSON results, escaped binary and state paths
+PASS: non-root local install and propagated systemd failure
+PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, home repointing, planted-link and masked-unit refusal, unit mode, content preservation, repeatability and failure propagation
+PASS: state walk skips foreign hard links and planted links, follows a new service uid, and never writes through an operator link into the tree
+PASS: uninstall keeps a shared config directory and its other files and a shared state directory, removes the dedicated state directory
+PASS: complete Unix installer E2E matrix
+```
 Systemd uses the same recording stub and real unit syntax verification as the full
 installer suite; running a service under systemd PID 1 is not covered here.
 

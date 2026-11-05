@@ -302,9 +302,13 @@ selects account/permission actions and leaves systemd actions false. See
 
 ### `uninstall`
 
-A dry-run or completed uninstall returns its flags and the paths it left in place
-(`left_in_place`, empty when nothing was kept; see
-[what is removed](uninstall.md#what-is-removed)):
+On Unix, a dry-run or completed uninstall returns its flags and the paths it left
+in place (`left_in_place`). The list holds the paths kept from the removal steps
+that run: config paths are listed unless `--keep-config` is given, and state paths
+unless `--keep-data` is given. It is empty when nothing was kept. See
+[what is removed](uninstall.md#what-is-removed) and
+[the reasons](uninstall.md#reasons-for-paths-left-in-place). This is the result
+after an install with `--config-dir /usr/local/etc`:
 
 ```json
 {
@@ -319,14 +323,22 @@ A dry-run or completed uninstall returns its flags and the paths it left in plac
     "left_in_place": [
       {
         "path": "/usr/local/etc",
-        "reason": "shared directory, not named for madmail; only madmail.conf is removed"
+        "reason": "well-known system directory; only madmail.conf is removed"
+      },
+      {
+        "path": "/usr/local/etc/certs/fullchain.pem",
+        "reason": "TLS file in a shared directory; install may not have created it, remove it yourself if it did"
+      },
+      {
+        "path": "/usr/local/etc/certs/privkey.pem",
+        "reason": "TLS file in a shared directory; install may not have created it, remove it yourself if it did"
       }
     ]
   }
 }
 ```
 
-When nothing to uninstall:
+When nothing to uninstall (Unix):
 
 ```json
 {
@@ -337,6 +349,10 @@ When nothing to uninstall:
   }
 }
 ```
+
+On Windows the result has no `left_in_place` and no `found`: a dry run returns
+`uninstalled`, `dry_run` and `keep_data`, and a completed uninstall returns
+`uninstalled`, `binary`, `dry_run`, `keep_data` and `"platform": "windows"`.
 
 ---
 

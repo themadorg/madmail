@@ -65,7 +65,12 @@ sudo ./madmail install --simple --system --domain mail.example.org \
 Run the same command without `--dry-run` to provision. It creates the service
 account, applies permissions, installs the binary and CLI docs, and writes a unit
 using these paths. The state directory may be a symlink to a data volume; it is
-resolved once, and links inside it are never followed. Before changing anything,
+resolved once. The service account owns the state directory, so install treats
+everything in it as untrusted: it never reads, writes, or changes the owner or
+mode of a file through a link inside it (it only checks whether some paths exist,
+which follows links). Files are written under a new temporary name and renamed
+into place, so a link or hard link planted at the target is replaced, not written
+through. See [Path safety](#path-safety). Before changing anything,
 a full install refuses a symlinked or masked unit file (`systemctl unmask` it
 first). If the service account already exists with a home elsewhere that still
 exists, and the `--state-dir` already exists (for example a pre-created mount
@@ -85,6 +90,48 @@ sudo systemctl status madmail
 For the default layout omit the three path flags. For IP-only self-signed setup,
 replace domain/email with `--ip YOUR_PUBLIC_IP --tls-mode self_signed`. For trusted
 IP certificates, see [IP ACME setup](../../install-simple-ip-acme.md).
+
+## Path safety
+
+These rules apply to a system install and to `--user-only` repair when install
+creates or uses the service account. They assume the service account may be
+compromised and may change its state directory while install runs.
+
+- Every path install writes or changes is resolved one component at a time.
+  A directory or link on the way that is owned by the service account, a
+  directory writable by its group, or a world-writable directory without the
+  sticky bit is never followed. When install would write through such a path
+  (the config file, a generated certificate or key) or change the config file's
+  owner, it stops with an error. A TLS file whose owner install only adjusts is
+  left unchanged instead, and the output notes
+  `Skipping ownership of <path>: <reason>`.
+- A TLS or config path that reaches the state directory (it is below
+  `--state-dir`, or a link on its path points into it) is not changed by path.
+  The ownership walk gives it the service owner, and the output notes
+  `Skipping ownership of <path>: inside the service-writable state directory`.
+- The state tree is walked by file descriptor. Links are skipped. A file with
+  more than one hard link is changed only when it belongs to the service account
+  (or to the previous owner of the state directory, after the account was
+  recreated with a new uid); any other one is listed as
+  `Ownership of <path> left unchanged: has <n> hard links and belongs to uid <uid>, ...`.
+  Mail files, which the store hard-links between folders, belong to the service
+  and are changed.
+- The config file ends with mode `0640`: owned by `root:<group>` outside the
+  state directory, by the service account inside it. Outside the state
+  directory, a config file with more than one hard link is refused.
+- The config and certs directories are re-owned to `root:<group>` and lose
+  their group and other write bits only when they are dedicated to madmail
+  (named `madmail`, `chatmail`, either followed by `-` or `_` and a suffix, or the
+  binary name, and not a well-known directory such as `/etc` or `/usr/local/etc`;
+  a `certs` directory directly inside such a directory also counts). Any other
+  directory keeps its owner and mode, and the output says so.
+- ACME certificates are obtained into a private temporary directory and then
+  copied into place. The install language is stored in the database with the
+  service account's user and group ids, not as root.
+
+With `--skip-user` (and for a local install) there is no service account to
+guard against: files are written by path as the calling user, and the config file
+is written with mode `0640` without following a link at its own name.
 
 ## Local bootstrap
 
@@ -122,17 +169,9 @@ No `--simple`, `--non-interactive`, domain, IP or ACME options are needed.
   stopped if its account needs repair. An existing account whose home differs is
   repointed at the existing state directory; nothing is moved. Ownership is only
   applied to TLS files at the given paths, so repeat custom `--cert-path` and
-  `--key-path` values (the plan output lists the paths it will use). Symlinks
-  inside the state directory are never followed or chowned through: the state
-  tree is walked by file descriptor, so an entry swapped for a link during the
-  walk is skipped with a warning. A TLS or config path inside the state tree
-  (written below `--state-dir`, with the path or one of its parent directories
-  resolving below it, or reached through a link that points into it) is not
-  chowned by path; the
-  walk gives it the service owner, and the output notes `Skipping ownership of
-  <path>`. A symlinked state directory itself is resolved once. TLS paths outside
-  the state tree, such as `/etc/madmail/certs` or an ACME client's live directory,
-  are root-owned, so links there are the operator's and are followed.
+  `--key-path` values (the plan output lists the paths it will use). The state
+  tree is walked by file descriptor and links in it are never followed or
+  chowned through (see [Path safety](#path-safety)).
 - `--systemd-only` replaces the unit and runs `systemctl daemon-reload`. It requires
   an existing executable binary and service user/group. Keep local unit changes in
   systemd drop-ins. It does not enable, start or restart the service. Repeat custom
