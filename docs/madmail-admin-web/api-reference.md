@@ -85,7 +85,7 @@ From `src/lib/pageRefresh.ts` — used for prefetch and header **Refresh**:
 
 | Resource | Methods | Body | Pages |
 |----------|---------|------|-------|
-| `/admin/settings/federation` | GET | — (returns `enabled`, `policy`, size fields, `transports: { https, http, smtp }`) | Federation layout |
+| `/admin/settings/federation` | GET | — (returns `enabled`, `policy`, size fields, `transports: { https, http, smtp }`, `transport_overrides: [{ domain, https?, http?, smtp? }]` with only the overridden modes present) | Federation layout |
 | `/admin/settings/federation` | POST | `{ "enabled"?, "policy"?, "domain"?, "transports"?: { "https"?, "http"?, "smtp"? } }` (`policy`: `ACCEPT` \| `REJECT`; modes: `allow` \| `block`, plus `inherit` when `domain` is set). Every field is checked before any is saved: a bad `policy`, a bad mode, a bad `domain`, a `domain` without `transports`, or a `domain` update over a corrupt stored overrides row returns 400 and saves nothing | Federation layout |
 | `/admin/federation/rules` | GET | — | Rules, traffic |
 | `/admin/federation/rules` | POST | `{ "domain" }` | Rules, traffic |
