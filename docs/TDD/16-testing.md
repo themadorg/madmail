@@ -376,8 +376,9 @@ renamed over by a copy, so the inode has one link, after which `/etc/shadow`
 stays `root` and repair prints `left unchanged: belongs to uid 0, not to the
 service account;`; account repair with a new uid on a pre-created account; a
 reused uid (the old service uid given to another account, `uidsquatter`), after
-which install prints `belonged to uid <n>, which is now account uidsquatter` and
-leaves that uid's files unchanged; `--binary-path` inside the state directory,
+which install then printed `belonged to uid <n>, which is now account uidsquatter`
+and left that uid's files unchanged (the later fixes below refuse that state
+directory instead, until the operator gives it to root); `--binary-path` inside the state directory,
 which is refused before anything changes; `--skip-user` with a DNS domain and the
 account present, where `dkim/default.txt` is planted as a link to `/etc/shadow`:
 the hash, owner and mode of `/etc/shadow` are unchanged, the record is written
@@ -413,19 +414,53 @@ stops with `refusing to change config file ...: it has <n> hard links`; a run th
 `madmail:madmail` mode 0600, and after the next run `madmail` can still read it;
 root-owned TLS files under `--state-dir` with `--tls-mode file`, for which install
 prints `Skipping ownership of <path>: inside the state directory and belongs to
-uid 0, not to the service account` and the `chown madmail:madmail <path>`
-command and leaves the key `root:root` mode 0600; and a config directory under
+uid 0, not to the service account` and a command to change its owner, and
+leaves the key `root:root` mode 0600; and a config directory under
 `--state-dir`, where the config file is `madmail:madmail` mode 0640 after an
 install and still after a `--skip-user` reinstall. The repair case with a planted
 link from the config directory into the tree now expects `a link inside the
 state directory; links there are not followed`. New unit tests cover the walk
 decision for directories (root and service directories changed, another
-account's not entered), the walk reaching the state directory last, a config file
+account's not entered), a config file
 written outside the tree and hard-linked into it (not changed by the walk, then
 refused for its two links), the in-tree owner on creation and its `--skip-user`
 rule, and in-tree reads of another account's file. There are 44 `ctl::install`,
 30 `ctl::uninstall`, 10 `ctl::secure_fs` and 1 `ctl::host_paths` unit tests on a
 Unix host after these fixes.
+
+The next fixes refuse, before `useradd` or `usermod`, a `--state-dir` that is a
+system, top-level or home directory (also through a link) or that belongs to
+another named account; print every path escaped and every printed command
+shell-quoted, with steps that stop the service and its processes before
+`chown -h`, and say that another account's directory was not entered; give an
+operator's TLS file of another account to the service only in a madmail or Let's
+Encrypt directory; make uninstall fail closed on groups it cannot read, refuse a
+hard-linked config file and group-writable directories without the sticky bit
+(except `/var/log` and `/var/mail` by device and inode), remove trees through
+descriptors, leave a path whose way is not trusted in place and go on, and let a
+config directory inside the state directory go with it. New unit tests cover the
+state directory refusals, `shown` and `shell_quote` (no raw control bytes, JSON
+escaping), the TLS directory rule, the recorded chown order of the walk (the root
+is changed once and last, and not at all after a failure in the middle, through
+an injected `chown_walk::Chown`), descriptor-based tree removal, the uninstall
+trust groups and allowlist, refused removals and in-tree config planning. The
+order in which install runs `setup_permissions` (the walk) before
+`setup_config_permissions` (the config file's final owner and mode) is covered
+only by the Docker suite, through the config file hard-linked into the tree during
+the walk. Docker cases: the refused state directories (`/var/lib`, `/`, `/etc`,
+`/data`, `/home/alice`, a link to `/var/lib` and another account's directory) with
+the account and owners unchanged, the squatted state directory given to root and
+then repaired, a root-owned file whose name has a newline (printed as `\n`, with
+`$'...\x0a...'` in the command), another account's directory (not entered, no
+command), a root-owned operator TLS file in `/srv` (left `root:root` with the
+command printed) and one in `/etc/letsencrypt/archive` (changed), and an
+uninstall with `--config-dir` inside the state directory (listed as kept with
+`--keep-data`, removed with the state directory otherwise). The `--skip-user`
+case without an account now expects the refusal of a `nobody`-owned state
+directory by account name, and the old refusal for a state directory of a uid
+with no name. There are 47 `ctl::install`, 33 `ctl::uninstall`, 11
+`ctl::secure_fs` and 3 `ctl::host_paths` unit tests on a Unix host after these
+fixes.
 
 The full Docker suite passed with a Linux aarch64 musl debug build of these fixes.
 Its output was:
@@ -434,13 +469,15 @@ Its output was:
 PASS: mode conflicts, automatic/explicit modes, JSON plans, invalid paths and certificate-only plan
 PASS: dry-run side effects, non-root system rejection and local host isolation
 PASS: missing parents, home paths, migration data preservation, failed-move rollback and pre-created state refusal
+PASS: system, top-level, home and linked system directories and another account's directory are refused as state directory before the account or any owner changes
 PASS: custom-path account, ownership, binary/docs, unit verification, service-user boot and idempotence
 PASS: each skip flag independently and combined, JSON results, escaped binary and state paths
 PASS: non-root local install and propagated systemd failure
 PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, home repointing, planted-link and masked-unit refusal, unit mode, content preservation, repeatability and failure propagation
-PASS: state walk skips foreign files (hard-linked or renamed), planted links and files of a reused uid, follows a new service uid, never writes through an operator link into the tree, and --skip-user writes through descriptors
+PASS: state walk skips foreign files (hard-linked or renamed), planted links and files of a reused uid, follows a new service uid, prints escaped names with quoted commands, does not enter another account's directory, never writes through an operator link into the tree, chowns operator TLS files only in madmail or Let's Encrypt directories, and --skip-user writes through descriptors
 PASS: config hard-linked into the tree (before and during the walk) stays root:madmail 640, DKIM keys survive a failed run, root-owned in-tree TLS files are reported, and an in-tree config keeps the service owner with --skip-user
 PASS: uninstall keeps a shared config directory and its other files and a shared state directory, removes the dedicated state directory
+PASS: uninstall removes a config directory inside the state directory with it, lists it as kept with --keep-data, and does not stop
 PASS: complete Unix installer E2E matrix
 ```
 Systemd uses the same recording stub and real unit syntax verification as the full

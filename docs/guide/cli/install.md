@@ -66,11 +66,22 @@ Run the same command without `--dry-run` to provision. It creates the service
 account, applies permissions, installs the binary and CLI docs, and writes a unit
 using these paths. The state directory may be a symlink to a data volume; it is
 resolved once. The service account owns the state directory, so install treats
-everything in it as untrusted: it never reads, writes, or changes the owner or
-mode of a file through a link inside it (it only checks whether some paths exist,
-which follows links). Files are written under a new temporary name and renamed
-into place, so a link or hard link planted at the target is replaced, not written
-through. See [Path safety](#path-safety). Before changing anything,
+everything in it as untrusted: root never reads, writes, or changes the owner or
+mode of a file as root through a link inside it (it only checks whether some
+paths exist, which follows links). The database is opened with the service
+account's effective user and group ids whenever the service account controls the
+state directory, so a link there reaches only what the service account could
+reach itself. Files are written under a new temporary name
+and renamed into place, so a link or hard link planted at the target is
+replaced, not written through. The files written there belong to the service
+account; with `--skip-user`, only when the file they replace belongs to the
+service account. See [Path safety](#path-safety). Before changing anything,
+install refuses a `--state-dir` that is not a directory of its own: a well-known
+system directory such as `/var/lib` or `/etc`, any directory directly under `/`
+(such as `/data`), a user's home directory (`/home/<name>`), a path that resolves
+to one of these, and an existing directory that belongs to another named account
+(neither root nor the service account). Use a directory of its own, such as
+`/var/lib/madmail`. Before changing anything,
 a full install refuses a symlinked or masked unit file (`systemctl unmask` it
 first). If the service account already exists with a home elsewhere that still
 exists, and the `--state-dir` already exists (for example a pre-created mount
@@ -119,8 +130,20 @@ directory while install runs.
   certificates and keys there with that owner. A root-owned certificate or key
   you copied into the state directory is left as it is, and the output notes
   `Skipping ownership of <path>: inside the state directory and belongs to uid 0, not to the service account, ...`
-  with the `chown` command to run after you check the file. For a link there it
-  notes `a link inside the state directory; links there are not followed`.
+  with the steps to run after you check the file (see the ownership walk below).
+  For a link there it notes
+  `a link inside the state directory; links there are not followed`.
+- A TLS file outside the state directory that belongs to the service account is
+  given to it again. One that belongs to another account (root, for example) is
+  given to the service account only when it has one hard link and, after your
+  links are resolved, sits in a directory dedicated to madmail (see the config
+  and certs directories below) or in `/etc/letsencrypt/live/<name>/` or
+  `/etc/letsencrypt/archive/<name>/`. Otherwise it is left unchanged and the
+  output notes
+  `Skipping ownership of <path>: <file> belongs to uid <uid> and is not in a directory dedicated to madmail or in /etc/letsencrypt/live or archive, ...`
+  with the `chown <user>:<group> <file>` command to run if it is your
+  certificate or key. Install writes the certificates and keys it generates or
+  obtains with the service account as owner.
 - A config path given outside `--state-dir` that resolves into the state
   directory through a link is refused. A config path below `--state-dir` is
   allowed.
@@ -137,17 +160,36 @@ directory while install runs.
   recreated with a new uid); the link count does not matter. A directory is also
   changed when root owns it. Any other file or directory is listed as
   `Ownership of <path> left unchanged: belongs to uid <uid>, not to the service account; ...`
-  (with `and has <n> hard links` when it has more than one); a directory listed
-  this way is not entered. Each listed file is followed by the
-  `chown <user>:<group> <path>` command. Check such a file (it may be a hard link
-  to another account's file) and run the command if madmail needs it, for
-  example for a database file that a root command created. Mail files, which the
-  store hard-links between folders, belong to the service and are changed. The
-  state directory itself is changed last, so an interrupted run can be repeated.
-- When the previous owner's uid now belongs to another account, install says so
-  (`<state dir> belonged to uid <uid>, which is now account <name>`) and does not
-  count that uid as the service's: files and directories of that uid are listed
-  and left alone.
+  (with `and has <n> hard links` when it has more than one). A directory listed
+  this way is not entered, and the next line says
+  `This directory was not entered: its contents were left unchanged and need manual inspection.`
+  Each listed file is followed by the steps to give it to the service account:
+  stop the service (`systemctl stop <unit>`) and every process of the service
+  account (`pkill -u <user>`; `ps -u <user>` must then list none), check that
+  the file has one link (`stat -c %h <path>` must print 1), then run
+  `chown -h <user>:<group> <path>`. `chown -h` does not follow a link at the
+  file's own name, but the directories on the way to it are looked up again by
+  name, which is why the service account must not be running. Check such a file
+  (it may be a hard link to another account's file) and do this only if madmail
+  needs it, for example for a database file that a root command created. Mail
+  files, which the store hard-links between folders, belong to the service and
+  are changed. The state directory itself is changed last, and not at all when
+  the walk stops with an error, so an interrupted run can be repeated.
+- An existing state directory that belongs to another named account is refused
+  before the account is created or changed:
+  `it belongs to account <name> (uid <uid>), not to root or to the service account`.
+  This happens when the service account was deleted and its old uid was given
+  to another account. To keep the data, give the directory itself to root
+  (`chown -h root:root <state dir>`) and run install again: the files of that
+  uid in it are then listed and left unchanged for you to check.
+- Paths in the output are printed with control characters and bytes that are
+  not UTF-8 escaped (`\n`, `\t`, `\xNN`, `\u{NNNN}`), so a file name in the
+  state directory cannot add a line to the output. In the commands printed for
+  you, such a path is quoted for the shell as `$'...'` with `\xNN` escapes; any
+  other path that needs quoting is put in single quotes.
+- On Linux, a file inside the state directory is opened with `O_PATH` and then
+  reopened through `/proc/self/fd`, so `/proc` must be mounted. Without it,
+  install stops with an error that says so.
 - The config file ends with mode `0640`: owned by `root:<group>` outside the
   state directory, by the service account inside it. Its owner and mode are set
   after the ownership walk. Outside the state directory, a config file with more

@@ -30,17 +30,31 @@ Install gives a file in the state directory to the service account only when it
 already belongs to that account (or to the previous owner of the state directory);
 files install writes there belong to the service account from the start. So a
 file a root command created there, or a link to another account's file, keeps its
-owner, and the output shows the `chown` command to run after you check it. These are protections, not errors: the
-service account can write to its state directory, so install does not follow
-links there. Check the named file and, if madmail needs it, change its owner
-yourself. Keep certificates and the config file in root-owned directories outside
-the state directory.
+owner. These are protections, not errors: the service account can write to its
+state directory, so install does not follow links there. Check the named file
+and, if madmail needs it, change its owner yourself with the steps the output
+prints: stop the service (`systemctl stop madmail`) and every process of the
+service account (`pkill -u madmail`; `ps -u madmail` must then list none), check
+the link count (`stat -c %h <path>` must print 1), then run
+`chown -h madmail:madmail <path>`. The service must be stopped first because
+`chown` looks up the directories on the way to the file again by name, and a
+running service account could replace one of them with a link. For a directory
+of another account the output says that it was not entered and that its contents
+were left unchanged; inspect it yourself. Keep certificates and the config file
+in root-owned directories outside the state directory.
 
-When install prints `<state> belonged to uid <n>, which is now account <name>`,
-the old service uid was reused by another account; files and directories of that
-uid in the state directory are left as they are. Give them to the service account yourself after
-checking them, for example
-`find <state> -uid <n> -exec chown -h madmail:madmail {} +`.
+When install refuses the state directory because
+`it belongs to account <name> (uid <n>), not to root or to the service account`,
+the old service uid was reused by another account. To keep the data, give the
+directory itself to root (`chown -h root:root <state>`) and run install again:
+files and directories of uid `<n>` in it are then listed and left as they are.
+Give them to the service account yourself after checking them, with the service
+stopped as above, for example
+`find <state> -uid <n> -exec chown -h madmail:madmail {} +`. `find` also looks up
+each path again by name, so the service account must not be running. Install
+also refuses a well-known system directory, a directory directly under `/` or a
+user's home directory as `--state-dir`; use a directory of its own such as
+`/var/lib/madmail`.
 
 An error that starts with `refusing to` stops install before it writes the file.
 It names the directory or link on the path that the service account can change,

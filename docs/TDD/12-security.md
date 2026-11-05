@@ -138,6 +138,12 @@ state directory and can create, rename (including `renameat2(RENAME_EXCHANGE)`
 loops), link and hard-link anything there while root runs, and
 `fs.protected_hardlinks` may be 0.
 
+- Install and both repair modes refuse, before `useradd` or `usermod`, a state
+  directory that is not madmail's own: a well-known system directory, a direct
+  child of `/`, a user's home directory (as given, after links, or by device and
+  inode), or an existing directory that belongs to another named account. Install
+  gives the state directory and what is in it to the service account, so such a
+  directory would hand system or another account's files to it.
 - Install resolves every path it writes into the state directory, and the paths
   of the config file, the TLS files and their directories and the binary, one
   component at a time (`ctl/secure_fs.rs`) and does not follow a directory or link
@@ -161,8 +167,17 @@ loops), link and hard-link anything there while root runs, and
   hard link to another account's file becomes that inode's only link once the
   original name is replaced by a rename. So a file root owns, for example the
   config file root just wrote outside the tree and the service linked into it,
-  is never handed over. When the previous owner's uid now names another account
-  (`id -nu`), that uid's files and directories are not changed.
+  is never handed over. A state directory whose owner's uid now names another
+  account (`id -nu`) is refused before the walk. The state directory itself is
+  changed last, and not when the walk fails.
+- A TLS file of another account outside the state directory is given to the
+  service account only in a directory dedicated to madmail or in the Let's
+  Encrypt `live`/`archive` layout, and only with one hard link.
+- Paths are printed escaped and commands are printed shell-quoted, so a file name
+  the service account chose cannot add lines to the output or to a command the
+  operator copies. The printed steps for a file stop the service and every
+  process of its account before `chown -h`, because `chown` resolves the
+  directories on the way again by name.
 - The config file's owner and mode are set after the walk, so they are final.
 - The ACME client writes only into a root-owned 0700 staging directory.
 - Directories outside the state directory are re-owned or re-moded only when they
@@ -170,9 +185,27 @@ loops), link and hard-link anything there while root runs, and
   well-known system directory by device and inode (`ctl/host_paths.rs`).
 - Uninstall applies the same naming rule to every directory it would remove,
   never removes a directory that is or contains a kept path (also through links),
-  uses a config file's `state_dir` only when that file and its path are owned by
-  root and not writable by others, and removes a path only after checking every
-  directory and link on the way to it, without following the last component.
+  uses a config file's `state_dir` only when that file and its path pass the
+  root-only trust rule below and the file has one hard link, and removes a path
+  only after checking every directory and link on the way to it under the same
+  rule, without following the last component. A path whose way fails the check
+  is left in place and reported, and uninstall goes on. Directories are removed
+  through descriptors (`openat` with `O_NOFOLLOW`, `unlinkat`) from the checked
+  parent down. A config path inside a state directory goes with that directory.
+- The root-only trust rule (`Trust::root_only`, used by uninstall and for the
+  ACME staging directory) needs root as owner, and refuses a directory writable
+  by a group of the service, one writable by any other group except root without
+  the sticky bit, and one world-writable without the sticky bit. For uninstall
+  the groups of the service are those of every service account found, the group of the config
+  file's directory and the groups of the state directories; when an account
+  exists but its groups cannot be read, the config file's `state_dir` is not
+  used. Two directories are allowed to be group-writable by another system group:
+  `/var/log` and `/var/mail`, matched by device and inode
+  (`secure_fs::WELL_KNOWN_GROUP_DIRS`), and only when that group is not a group
+  of the service. Ubuntu ships `/var/log` as `root:syslog` 0775 and Debian ships
+  `/var/mail` as `root:mail` 2775; a member of such a group could otherwise
+  rename madmail's directory there between the check and the removal, which
+  the allowance accepts for these two directories only.
 
 Known limits:
 

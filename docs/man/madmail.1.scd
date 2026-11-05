@@ -66,9 +66,13 @@ Extended documentation:
 	for bootstrap without host changes. *--dry-run* reports the selected
 	mode and planned actions. *--skip-user* and *--skip-systemd* remain
 	independent opt-outs. Before changing the host, a system install refuses
-	a masked unit file, and an existing *--state-dir* while the service
+	a masked unit file, an existing *--state-dir* while the service
 	account's home is elsewhere and still exists (repoint it with
-	*--user-only* first).
+	*--user-only* first), and a *--state-dir* that is not a directory of
+	its own: a well-known system directory, a directory directly under /,
+	a user's home directory, a path that resolves to one of these, or a
+	directory of another named account. Install and both repair modes
+	check this before they create or change the account.
 	See EXAMPLES and NOTES.
 
 	For existing Unix installations, *--user-only* repairs the service account
@@ -82,11 +86,15 @@ Extended documentation:
 	Repeat custom *--cert-path*/*--key-path* values: account repair only
 	chowns TLS files at the given paths, and they also decide the unit's
 	ProtectHome= setting. Account repair repoints an existing account at the
-	existing state directory without moving it. Install and account repair
-	never read, write or change the owner or mode of a file through a link
-	inside the state directory, write their own files there owned by the
-	service account, and give an existing file there to the service account
-	only when it already belongs to the service account or its previous uid.
+	existing state directory without moving it. As root, install and
+	account repair never read, write or change the owner or mode of a file
+	through a link inside the state directory; when the service account
+	controls that directory, install opens the database with its effective
+	user and group ids. Files they write
+	there are owned by the service account (with *--skip-user*, only when
+	the file they replace belongs to the service account), and an existing
+	file there is given to the service account only when it already belongs
+	to the service account or its previous uid.
 	A path outside it is not followed through a directory or link
 	the service account controls, and a *--binary-path* inside it is
 	refused. Unit repair refuses a symlinked or masked unit file.

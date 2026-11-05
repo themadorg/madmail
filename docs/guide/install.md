@@ -85,10 +85,16 @@ overwrite configuration; use repair modes for existing host provisioning.
 With custom paths, the state directory may be a symlink to a data volume. A full
 install refuses a masked unit, and refuses an existing `--state-dir` when the
 service account's home is elsewhere and still exists, before changing anything; see
-[custom paths](cli/install.md#new-server-with-custom-paths). Install treats the
-state directory as controlled by the service account: it never reads, writes or
-changes the owner or mode of a file through a link inside it, writes its own
-files there owned by the service account, and gives an existing file there to the
+[custom paths](cli/install.md#new-server-with-custom-paths). It also refuses a
+`--state-dir` that is not a directory of its own (a system directory such as
+`/var/lib`, a directory directly under `/`, a user's home directory, or a
+directory of another named account). Install treats the state directory as
+controlled by the service account: as root it never reads, writes or changes the
+owner or mode of a file through a link inside it, and it opens the database with
+the service account's effective user and group ids when that account controls
+the state directory. Files it writes there are
+owned by the service account (with `--skip-user`, only when the file it replaces
+belongs to the service account), and it gives an existing file there to the
 service account only when it already belongs to the service account (or to its
 previous uid); see
 [path safety](cli/install.md#path-safety). Uninstall removes a config or state

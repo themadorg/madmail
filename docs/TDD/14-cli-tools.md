@@ -273,6 +273,19 @@ the previous home is gone; otherwise it refuses before `usermod`, so data in the
 home is not left behind while the install continues with an empty state directory
 (`--user-only` adopts an existing state directory on purpose). Units are written
 with mode 0644 regardless of the process umask.
+Install and both repair modes run `system::check_state_dir` before `useradd` or
+`usermod` (which name the state directory as the home) and before the dry-run
+return. It refuses a `--state-dir` for which `host_paths::system_dir_reason`
+gives a reason (a directory in `DENIED_DIRS`, any direct child of `/`, or a
+direct child of `/home` or `/Users`), checked on the path as given and on the
+physical path after the operator's links; one with the device and inode of a
+`DENIED_DIRS` entry (`is_denied_dir_id`); and an existing directory whose owner
+is neither root nor the service uid and has an account name (`id -nu`). The last
+case is a service account that was deleted and whose uid was given to another
+account; the message tells the operator to give the directory itself to
+`root:root` and run again, after which the files of that uid are listed by the
+walk and left unchanged. `SecureInstall::open` repeats these checks on the
+directory it opens. Uninstall uses the same `system_dir_reason`.
 Tests cover CLI conflicts, default/auto/explicit modes, custom unit paths, dry-run
 side-effect absence, root enforcement and isolated installation/idempotence.
 
@@ -332,10 +345,13 @@ never run when a component is refused:
 - A file inside the tree is read as root (the DKIM private key, the ACME account
   file) only when it is a regular file with one link that belongs to the service
   uid or the previous service uid (with `--skip-user` also root); otherwise
-  install refuses to read it and prints the `chown` command to run after
-  checking it. On Linux the entry is opened with `O_PATH | O_NOFOLLOW`, checked
-  with `fstat`, and only a regular file is reopened for reading through
-  `/proc/self/fd`, so a device node placed there is never opened. On other
+  install refuses to read it and prints the steps to give it to the service
+  account after checking it (the same as for the walk below). On Linux the entry
+  is opened with `O_PATH | O_NOFOLLOW`, checked with `fstat`, and only a regular
+  file is reopened for reading through `/proc/self/fd`, so a device node placed
+  there is never opened. `/proc` must be mounted: when the reopen fails with
+  `ENOENT` or `ENOTDIR`, install stops with an error that says so, and there is
+  no fallback to opening by name. On other
   systems it is checked with `fstatat` and opened with
   `O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY`; the type is checked again on
   the descriptor.
@@ -359,15 +375,23 @@ never run when a component is refused:
   the tree install writes it owned by the service account and sets mode 0640; an
   in-tree config file that belongs to another account is refused, and so is a
   config path outside `--state-dir` that resolves into the tree.
-- A TLS file outside the tree is given to the service account through its
-  descriptor. A TLS path with a refused component is not changed; the output
+- A TLS file outside the tree that belongs to the service uid or the previous
+  service uid is given to the service account through its descriptor. One of
+  another account is changed only when it has one hard link and its physical
+  directory (after the operator's links) passes `host_paths::is_dedicated_dir`
+  or is `/etc/letsencrypt/live/<name>` or `/etc/letsencrypt/archive/<name>`;
+  otherwise it is left unchanged and the output notes `Skipping ownership of
+  <path>` with the `chown <user>:<group> <file>` command, the file shell-quoted.
+  Install writes the TLS files it generates or obtains with the service owner
+  (`SecureInstall::tls_owner`), so these need no change. A TLS path with a
+  refused component is not changed; the output
   notes `Skipping ownership of <path>`. A TLS path that reaches the tree is not
   changed by path: a file there that belongs to the service uid or the previous
   service uid was handled by the walk (install writes its own TLS files there
   with that owner). For a link there, or a file of another account (for example a
   root-owned certificate the operator copied in), the output notes
-  `Skipping ownership of <path>` with the reason and, for a file, the `chown`
-  command to run after checking it. A TLS file whose final object is owned by the
+  `Skipping ownership of <path>` with the reason and, for a file, the steps to
+  run after checking it. A TLS file whose final object is owned by the
   service uid is accepted, so repair and reinstall keep working. Outside the tree a TLS file with more than one hard link
   is changed only when it belongs to the service uid or the previous service uid;
   its directory is trusted, so the service account cannot have placed it there.
@@ -382,14 +406,18 @@ never run when a component is refused:
   into a change. Any other directory keeps its owner and mode.
 
 The state tree is chowned by a descriptor walk (`ctl/install/chown_walk.rs`). The
-owner of the state directory before the walk is recorded as the previous service
-uid, unless `id -nu` names another account for that uid; the trust rule above
-counts the previous owner as untrusted in both cases. Each directory is opened relative to its parent with
-`O_NOFOLLOW | O_DIRECTORY`, checked with `fstat` and changed with `fchown` when it
-belongs to the service uid, the previous service uid or root; a directory of
-another account is reported and not descended into. The state directory itself
-is changed last, so a run that stops half way can be repeated with the same
-previous uid. Every other entry is opened
+owner of the state directory before the walk, when it is neither root nor the
+service uid, is recorded as the previous service uid (`check_state_dir` has
+already refused an owner with an account name); the trust rule above counts the
+previous owner as untrusted. Each directory is opened relative to its parent with
+`O_NOFOLLOW | O_DIRECTORY`, checked with `fstat` and changed through that
+descriptor when it belongs to the service uid, the previous service uid or root;
+a directory of another account is reported and not descended into. The state
+directory itself is changed last, and not at all when the walk stops with an
+error, so a run that stops half way can be repeated with the same previous uid.
+The change is made by a `chown_walk::Chown` implementation (`ByDescriptor`:
+`fchownat(fd, "", AT_EMPTY_PATH)` on Linux, `fchown` elsewhere), which tests
+replace to record the order of the calls and to fail one. Every other entry is opened
 by itself and checked with `fstat` on that descriptor before it is changed: on
 Linux with `openat(O_PATH | O_NOFOLLOW)` and `fchownat(fd, "", AT_EMPTY_PATH)`; on
 other systems regular files are opened with
@@ -401,10 +429,24 @@ example `/etc/shadow`, or the config file root just wrote, when
 `fs.protected_hardlinks` is 0) becomes the inode's only link once the original
 name is replaced by a rename. The mail store hard-links every message into the
 maildirs, and those files belong to the service. Skipped entries are listed as
-`Ownership of <path> left unchanged: <reason>` (the first 50, then a count), each
-file of another account followed by the `chown <user>:<group> <path>` command; a
-file a root command created in the tree is among them, and the operator runs the
-command after checking that it is madmail's own file.
+`Ownership of <path> left unchanged: <reason>` (the first 50, then a count). A
+directory of another account is followed by a line saying that it was not entered
+and that its contents were left unchanged and need manual inspection. A file of
+another account is followed by the steps to give it to the service account: stop
+the service and every process of the account (`systemctl stop <unit>`,
+`pkill -u <user>`, `ps -u <user>`), check `stat -c %h <path>` prints 1, then
+`chown -h <user>:<group> <path>`. `chown -h` does not follow a link at the last
+component, but the directories on the way are resolved again by name, so the
+service account must not be running. A file a root command created in the tree is
+among them, and the operator runs these steps after checking that it is
+madmail's own file. Every path in the human output of install and uninstall goes
+through `host_paths::shown`, which escapes `\`, `\n`, `\r`, `\t`, other
+control characters (`\xNN`, or `\u{NNNN}` beyond ASCII), bidirectional and
+line-separator characters and bytes that are not UTF-8; the commands printed use
+`host_paths::shell_quote`, which leaves a path of safe characters as it is,
+single-quotes other UTF-8 text and writes any path with such characters or bytes
+as `$'...'` with `\xNN` escapes. JSON output carries the path as a string, and
+serde escapes the control characters below U+0020.
 An entry that is replaced or removed during the walk (`ELOOP`, `ENOTDIR`,
 `ENOENT`) is skipped with a warning. The walk is iterative and stops descending
 after 64 levels, each open level holding one descriptor.
