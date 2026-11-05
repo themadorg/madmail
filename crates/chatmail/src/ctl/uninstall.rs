@@ -80,6 +80,9 @@ struct UninstallPlan {
     log_dirs: Vec<PathBuf>,
     cache_dirs: Vec<PathBuf>,
     service_users: Vec<String>,
+    /// Groups (primary and supplementary) of the service accounts: a directory
+    /// one of them can write is not trusted on the way to a path to remove.
+    service_groups: Vec<u32>,
 }
 
 /// Which removal step a kept path belongs to.
@@ -122,7 +125,7 @@ async fn uninstall_unix(args: &Args, flags: &UninstallArgs) -> Result<()> {
     println!("🗑️  {primary} — uninstall");
     println!("====================================");
 
-    let (state_dir, untrusted) = uninstall_state_dir(args, &ctx);
+    let (state_dir, untrusted) = uninstall_state_dir(args, &ctx, &primary);
     let plan = detect_installation(&state_dir, untrusted, &primary, flags)?;
 
     if !plan.installation_found {
@@ -331,20 +334,20 @@ async fn uninstall_windows(args: &Args, flags: &UninstallArgs) -> Result<()> {
         println!("\n[3/4] Removing configuration…");
         println!("\n[4/4] Removing state / mail data and ProgramData\\Madmail…");
         if madmail_root.exists() {
-            match remove_path(&madmail_root, false) {
+            match remove_path(&madmail_root, false, &[]) {
                 Ok(()) => println!("✅ Removed {}", madmail_root.display()),
                 Err(e) => {
                     // Best-effort partial cleanup if something is locked.
                     println!("⚠️  Full tree remove failed ({e}); trying config + data…");
                     if config_dir.exists() {
-                        let _ = remove_path(&config_dir, false);
+                        let _ = remove_path(&config_dir, false, &[]);
                     }
                     if state_dir.exists() {
-                        let _ = remove_path(&state_dir, false);
+                        let _ = remove_path(&state_dir, false, &[]);
                     }
                     let log = madmail_root.join("install.log");
                     if log.exists() {
-                        let _ = remove_path(&log, false);
+                        let _ = remove_path(&log, false, &[]);
                     }
                     if madmail_root.is_dir() {
                         let _ = fs::remove_dir_all(&madmail_root);
@@ -358,7 +361,7 @@ async fn uninstall_windows(args: &Args, flags: &UninstallArgs) -> Result<()> {
         if !flags.keep_config {
             println!("\n[3/4] Removing configuration…");
             if config_dir.exists() {
-                remove_path(&config_dir, false)?;
+                remove_path(&config_dir, false, &[])?;
             }
             println!("✅ Configuration removed");
         } else {
@@ -368,7 +371,7 @@ async fn uninstall_windows(args: &Args, flags: &UninstallArgs) -> Result<()> {
         if !flags.keep_data {
             println!("\n[4/4] Removing state / mail data…");
             if state_dir.exists() {
-                remove_path(&state_dir, false)?;
+                remove_path(&state_dir, false, &[])?;
             }
             println!("✅ State removed");
         } else {
@@ -378,7 +381,7 @@ async fn uninstall_windows(args: &Args, flags: &UninstallArgs) -> Result<()> {
         // Drop install.log and other loose files; remove root if empty.
         let install_log = madmail_root.join("install.log");
         if install_log.exists() && !flags.keep_config {
-            let _ = remove_path(&install_log, false);
+            let _ = remove_path(&install_log, false, &[]);
         }
         if madmail_root.is_dir() {
             match fs::remove_dir(&madmail_root) {
@@ -441,11 +444,15 @@ fn current_binary_name() -> String {
 /// world-writable unless a sticky directory); otherwise anyone who can edit
 /// that file could point uninstall at any directory. An ignored value is returned as a kept entry, and the
 /// `--state-dir` value is used instead.
-fn uninstall_state_dir(args: &Args, ctx: &CtlContext) -> (PathBuf, Option<Kept>) {
+fn uninstall_state_dir(args: &Args, ctx: &CtlContext, primary: &str) -> (PathBuf, Option<Kept>) {
     let Some(from_config) = ctx.config.state_dir.clone() else {
         return (ctx.state_dir.clone(), None);
     };
-    match config_file_untrusted(&args.config) {
+    let mut users = unit_service_users();
+    for name in [primary, DEFAULT_BINARY_NAME, "chatmail"] {
+        push_unique_string(&mut users, name.to_string());
+    }
+    match config_file_untrusted(&args.config, &groups_of(&users)) {
         None => (from_config, None),
         Some(why) => {
             let kept = Kept {
@@ -461,10 +468,63 @@ fn uninstall_state_dir(args: &Args, ctx: &CtlContext) -> (PathBuf, Option<Kept>)
     }
 }
 
-/// Why the config file at `path` cannot be trusted to name paths for removal,
-/// or `None` when it can.
+/// The `User=` values of madmail/chatmail units, read before the full
+/// detection so the trust check of the config file knows the service accounts.
+fn unit_service_users() -> Vec<String> {
+    let mut users = Vec::new();
+    for base in SYSTEMD_UNIT_DIRS {
+        let Ok(entries) = fs::read_dir(base) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let family = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_suffix(".service"))
+                .is_some_and(is_family_stem);
+            if !family {
+                continue;
+            }
+            let Ok(content) = fs::read_to_string(&path) else {
+                continue;
+            };
+            for line in content.lines() {
+                if let Some(user) = line.trim().strip_prefix("User=") {
+                    let user = user.trim();
+                    if !user.is_empty() {
+                        push_unique_string(&mut users, user.to_string());
+                    }
+                }
+            }
+        }
+    }
+    users
+}
+
+/// Primary and supplementary groups of the accounts that exist among `users`.
 #[cfg(unix)]
-fn config_file_untrusted(path: &Path) -> Option<String> {
+fn groups_of(users: &[String]) -> Vec<u32> {
+    let mut groups = Vec::new();
+    for user in users {
+        for g in super::secure_fs::account_groups(user) {
+            if !groups.contains(&g) {
+                groups.push(g);
+            }
+        }
+    }
+    groups
+}
+
+#[cfg(not(unix))]
+fn groups_of(_users: &[String]) -> Vec<u32> {
+    Vec::new()
+}
+
+/// Why the config file at `path` cannot be trusted to name paths for removal,
+/// or `None` when it can. `groups` are the service accounts' groups.
+#[cfg(unix)]
+fn config_file_untrusted(path: &Path, groups: &[u32]) -> Option<String> {
     use super::secure_fs::{Resolved, Resolver, Trust, Want};
 
     let absolute = if path.is_absolute() {
@@ -475,7 +535,7 @@ fn config_file_untrusted(path: &Path) -> Option<String> {
             Err(e) => return Some(format!("cannot resolve {}: {e}", path.display())),
         }
     };
-    let trust = Trust::root_or_caller();
+    let trust = Trust::root_or_caller(groups.iter().copied());
     let resolver = Resolver {
         trust: &trust,
         state_root: None,
@@ -494,7 +554,7 @@ fn config_file_untrusted(path: &Path) -> Option<String> {
 }
 
 #[cfg(not(unix))]
-fn config_file_untrusted(_path: &Path) -> Option<String> {
+fn config_file_untrusted(_path: &Path, _groups: &[u32]) -> Option<String> {
     None
 }
 
@@ -627,6 +687,11 @@ fn detect_installation(
     if !plan.service_users.is_empty() {
         plan.installation_found = true;
     }
+    let mut accounts = plan.service_users.clone();
+    for name in [primary, DEFAULT_BINARY_NAME] {
+        push_unique_string(&mut accounts, name.to_string());
+    }
+    plan.service_groups = groups_of(&accounts);
 
     protect_preserved(&mut plan, flags.keep_data, flags.keep_config);
     // Only a note: the directory may still be found (and removed) another way.
@@ -898,9 +963,41 @@ fn add_kept(plan: &mut UninstallPlan, kind: KeptKind, path: &Path, reason: Strin
     }
 }
 
-/// Whether removing `dir` as a whole would also remove `path`.
+/// Whether removing `dir` as a whole would also remove `path`: as written
+/// (normalized), or after resolving links in both, so a config directory that
+/// is a link into the state directory (or the other way round) is seen as
+/// contained. When either cannot be resolved the answer is yes, which keeps
+/// the path.
 fn covers(dir: &Path, path: &Path) -> bool {
-    normalize(path).starts_with(normalize(dir))
+    if normalize(path).starts_with(normalize(dir)) {
+        return true;
+    }
+    match (physical(dir), physical(path)) {
+        (Some(dir), Some(path)) => path.starts_with(dir),
+        _ => true,
+    }
+}
+
+/// `path` with links resolved: the longest existing prefix canonicalized, and
+/// the missing rest appended. `None` when the prefix cannot be resolved.
+fn physical(path: &Path) -> Option<PathBuf> {
+    let mut existing = normalize(path);
+    let mut rest = Vec::new();
+    loop {
+        match fs::canonicalize(&existing) {
+            Ok(mut resolved) => {
+                resolved.extend(rest.iter().rev());
+                return Some(resolved);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                rest.push(existing.file_name()?.to_os_string());
+                if !existing.pop() {
+                    return None;
+                }
+            }
+            Err(_) => return None,
+        }
+    }
 }
 
 /// Make sure no whole-directory removal takes a path that must stay: a kept
@@ -1159,20 +1256,20 @@ fn disable_services(plan: &UninstallPlan, flags: &UninstallArgs) -> Result<()> {
 
 fn remove_systemd_files(plan: &UninstallPlan, flags: &UninstallArgs) -> Result<()> {
     for f in &plan.timer_files {
-        remove_path(f, flags.dry_run)?;
+        remove_path(f, flags.dry_run, &plan.service_groups)?;
     }
     for f in &plan.service_files {
-        remove_path(f, flags.dry_run)?;
+        remove_path(f, flags.dry_run, &plan.service_groups)?;
     }
     Ok(())
 }
 
 fn remove_config(plan: &UninstallPlan, flags: &UninstallArgs) -> Result<()> {
     for dir in &plan.config_dirs {
-        remove_path(dir, flags.dry_run)?;
+        remove_path(dir, flags.dry_run, &plan.service_groups)?;
     }
     for file in &plan.config_files {
-        remove_path(file, flags.dry_run)?;
+        remove_path(file, flags.dry_run, &plan.service_groups)?;
     }
     Ok(())
 }
@@ -1190,23 +1287,23 @@ fn kept_paths<'a>(plan: &'a UninstallPlan, flags: &UninstallArgs) -> Vec<&'a Kep
 
 fn remove_data(plan: &UninstallPlan, flags: &UninstallArgs) -> Result<()> {
     for dir in &plan.state_dirs {
-        remove_path(dir, flags.dry_run)?;
+        remove_path(dir, flags.dry_run, &plan.service_groups)?;
     }
     for dir in &plan.log_dirs {
-        remove_path(dir, flags.dry_run)?;
+        remove_path(dir, flags.dry_run, &plan.service_groups)?;
     }
     for dir in &plan.cache_dirs {
-        remove_path(dir, flags.dry_run)?;
+        remove_path(dir, flags.dry_run, &plan.service_groups)?;
     }
     for dir in &plan.runtime_dirs {
-        remove_path(dir, flags.dry_run)?;
+        remove_path(dir, flags.dry_run, &plan.service_groups)?;
     }
     Ok(())
 }
 
 fn remove_binaries(plan: &UninstallPlan, flags: &UninstallArgs) -> Result<()> {
     for p in &plan.binary_paths {
-        remove_path(p, flags.dry_run)?;
+        remove_path(p, flags.dry_run, &plan.service_groups)?;
     }
     Ok(())
 }
@@ -1248,29 +1345,48 @@ fn run_systemctl(dry_run: bool, args: &[&str]) -> Result<()> {
     }
 }
 
-fn remove_path(path: &Path, dry_run: bool) -> Result<()> {
+fn remove_path(path: &Path, dry_run: bool, groups: &[u32]) -> Result<()> {
     if dry_run {
         println!("Would remove: {}", path.display());
         return Ok(());
     }
-    remove_entry(path)
-        .map_err(|e| ChatmailError::config(format!("failed to remove {}: {e}", path.display())))?;
-    println!("Removed: {}", path.display());
+    match remove_entry(path, groups)
+        .map_err(|e| ChatmailError::config(format!("failed to remove {}: {e}", path.display())))?
+    {
+        Removed::Entry => println!("Removed: {}", path.display()),
+        Removed::Link(target) => println!(
+            "Removed link {} (its target {} was left in place)",
+            path.display(),
+            target.display()
+        ),
+        Removed::Nothing => {}
+    }
     Ok(())
+}
+
+/// What [`remove_entry`] removed.
+#[derive(Debug, PartialEq, Eq)]
+enum Removed {
+    /// A file, or a directory with all its contents.
+    Entry,
+    /// Only a symbolic link; what it points at was not touched.
+    Link(PathBuf),
+    /// The path did not exist.
+    Nothing,
 }
 
 /// Remove `path` (a directory with all its contents, or a file or link) after
 /// checking every directory and link on the way to it with
 /// [`Trust::root_or_caller`](super::secure_fs::Trust::root_or_caller): owned by
-/// root, not group-writable unless the group is root, not world-writable unless
-/// a sticky directory (when uninstall is not run as root, the caller's own
-/// directories count as well). The last component is looked
+/// root, not world-writable unless a sticky directory, and not group-writable
+/// by one of the service accounts' `groups` (when uninstall is not run as root,
+/// the caller's own directories count as well). The last component is looked
 /// at through the opened parent and never followed: a link is removed itself,
 /// a file is unlinked through the parent descriptor, and a directory is
 /// removed with [`fs::remove_dir_all`], which does not follow links inside it.
 /// A missing path is not an error.
 #[cfg(unix)]
-fn remove_entry(path: &Path) -> std::io::Result<()> {
+fn remove_entry(path: &Path, groups: &[u32]) -> std::io::Result<Removed> {
     use std::io::{Error, ErrorKind};
     use std::os::fd::AsRawFd;
 
@@ -1283,7 +1399,7 @@ fn remove_entry(path: &Path) -> std::io::Result<()> {
     if !path.is_absolute() {
         return Err(Error::new(ErrorKind::InvalidInput, "not an absolute path"));
     }
-    let trust = Trust::root_or_caller();
+    let trust = Trust::root_or_caller(groups.iter().copied());
     let resolver = Resolver {
         trust: &trust,
         state_root: None,
@@ -1291,8 +1407,8 @@ fn remove_entry(path: &Path) -> std::io::Result<()> {
     };
     let dir = match resolver.resolve(parent, Want::Dir) {
         Ok(Resolved::Found(dir)) => dir,
-        Ok(Resolved::Missing { .. }) => return Ok(()),
-        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
+        Ok(Resolved::Missing { .. }) => return Ok(Removed::Nothing),
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Removed::Nothing),
         Ok(Resolved::Controlled { component, reason }) => {
             return Err(Error::other(format!(
                 "{} is {reason}; check it and remove the path yourself",
@@ -1305,26 +1421,38 @@ fn remove_entry(path: &Path) -> std::io::Result<()> {
     let cname = secure_fs::cstring(name)?;
     let st = match secure_fs::fstatat_nofollow(dir.fd.as_raw_fd(), &cname) {
         Ok(st) => st,
-        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Removed::Nothing),
         Err(e) => return Err(e),
     };
-    if secure_fs::kind(&st) == libc::S_IFDIR {
-        // The parent passed the check, so nobody but root can replace this
-        // entry between the check and the removal.
-        fs::remove_dir_all(dir.path.join(name))
-    } else {
-        secure_fs::unlinkat(dir.fd.as_raw_fd(), &cname, false)
+    match secure_fs::kind(&st) {
+        libc::S_IFDIR => {
+            // The parent passed the check, so nobody but root can replace this
+            // entry between the check and the removal.
+            fs::remove_dir_all(dir.path.join(name))?;
+            Ok(Removed::Entry)
+        }
+        libc::S_IFLNK => {
+            let target = fs::read_link(dir.path.join(name)).unwrap_or_default();
+            secure_fs::unlinkat(dir.fd.as_raw_fd(), &cname, false)?;
+            Ok(Removed::Link(target))
+        }
+        _ => {
+            secure_fs::unlinkat(dir.fd.as_raw_fd(), &cname, false)?;
+            Ok(Removed::Entry)
+        }
     }
 }
 
 #[cfg(not(unix))]
-fn remove_entry(path: &Path) -> std::io::Result<()> {
+fn remove_entry(path: &Path, _groups: &[u32]) -> std::io::Result<Removed> {
     if path.is_dir() {
-        fs::remove_dir_all(path)
+        fs::remove_dir_all(path)?;
+        Ok(Removed::Entry)
     } else if path.exists() {
-        fs::remove_file(path)
+        fs::remove_file(path)?;
+        Ok(Removed::Entry)
     } else {
-        Ok(())
+        Ok(Removed::Nothing)
     }
 }
 
@@ -1667,7 +1795,7 @@ mod tests {
         ])
         .unwrap();
         let ctx = CtlContext::from_args(&args).unwrap();
-        let (state_dir, untrusted) = uninstall_state_dir(&args, &ctx);
+        let (state_dir, untrusted) = uninstall_state_dir(&args, &ctx, "madmail");
         assert_eq!(state_dir, shared);
         assert!(untrusted.is_none());
 
@@ -1700,7 +1828,7 @@ mod tests {
         ])
         .unwrap();
         let ctx = CtlContext::from_args(&args).unwrap();
-        let (state_dir, untrusted) = uninstall_state_dir(&args, &ctx);
+        let (state_dir, untrusted) = uninstall_state_dir(&args, &ctx, "madmail");
         assert_eq!(state_dir, cli);
         let kept = untrusted.unwrap();
         assert_eq!(kept.path, PathBuf::from("/var/lib/madmail-elsewhere"));
@@ -1780,6 +1908,98 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn containment_through_links_is_respected_by_keep_flags() {
+        use std::os::unix::fs::symlink;
+        let base = tempfile::tempdir().unwrap();
+        let base = fs::canonicalize(base.path()).unwrap();
+        // --keep-config: the config dir is a link into the state dir.
+        let state_dir = base.join("madmail");
+        fs::create_dir_all(state_dir.join("etc")).unwrap();
+        fs::write(state_dir.join("etc/madmail.conf"), "x").unwrap();
+        let etc = base.join("etc");
+        fs::create_dir_all(&etc).unwrap();
+        let config_dir = etc.join("madmail");
+        symlink(state_dir.join("etc"), &config_dir).unwrap();
+        let mut plan = unit_plan(&[&config_dir.join("madmail.conf")], &[&state_dir]);
+        plan_with(&mut plan, false, true);
+        assert!(plan.state_dirs.is_empty(), "{:?}", plan.state_dirs);
+        let kept = plan.kept.iter().find(|k| k.path == state_dir).unwrap();
+        assert!(
+            kept.reason.contains("which --keep-config keeps"),
+            "{kept:?}"
+        );
+        let mut flags = sample_flags(false, base.join("log"));
+        flags.keep_config = true;
+        remove_data(&plan, &flags).unwrap();
+        assert!(state_dir.join("etc/madmail.conf").is_file());
+
+        // --keep-data: the state dir is a link into a dedicated config dir.
+        let conf2 = base.join("madmail-conf");
+        fs::create_dir_all(conf2.join("data/messages")).unwrap();
+        fs::write(conf2.join("madmail.conf"), "x").unwrap();
+        let lib = base.join("lib");
+        fs::create_dir_all(&lib).unwrap();
+        let state2 = lib.join("madmail");
+        symlink(conf2.join("data"), &state2).unwrap();
+        let mut plan = unit_plan(&[&conf2.join("madmail.conf")], &[&state2]);
+        plan_with(&mut plan, true, false);
+        assert!(plan.config_dirs.is_empty(), "{:?}", plan.config_dirs);
+        assert_eq!(plan.config_files, vec![conf2.join("madmail.conf")]);
+        let mut flags = sample_flags(false, base.join("log"));
+        flags.keep_data = true;
+        remove_config(&plan, &flags).unwrap();
+        assert!(!conf2.join("madmail.conf").exists());
+        assert!(conf2.join("data/messages").is_dir());
+
+        // Unrelated paths are not contained; a missing path is resolved
+        // through its existing parent.
+        assert!(!covers(&etc, &state_dir));
+        assert!(covers(&config_dir, &state_dir.join("etc/missing/x")));
+        assert!(!covers(&base.join("missing"), &state_dir));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removing_a_link_reports_that_only_the_link_went() {
+        let base = tempfile::tempdir().unwrap();
+        let target = base.path().join("volume");
+        fs::create_dir_all(&target).unwrap();
+        let link = base.path().join("madmail");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert_eq!(
+            remove_entry(&link, &[]).unwrap(),
+            Removed::Link(target.clone())
+        );
+        assert!(target.is_dir());
+        assert_eq!(remove_entry(&link, &[]).unwrap(), Removed::Nothing);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_parent_writable_by_a_system_group_does_not_block_removal() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        // Like Ubuntu's /var/log (root:syslog 0775): a group-writable parent
+        // whose group is not one of the service accounts' groups.
+        let base = tempfile::tempdir().unwrap();
+        let logs = base.path().join("log");
+        fs::create_dir_all(logs.join("madmail")).unwrap();
+        fs::set_permissions(&logs, fs::Permissions::from_mode(0o775)).unwrap();
+        let gid = fs::metadata(&logs).unwrap().gid();
+        // The same directory is refused when its group is the service's.
+        if gid != 0 {
+            let err = remove_path(&logs.join("madmail"), false, &[gid]).unwrap_err();
+            assert!(
+                err.to_string().contains("group of the service account"),
+                "{err}"
+            );
+            assert!(logs.join("madmail").is_dir());
+        }
+        remove_path(&logs.join("madmail"), false, &[gid.wrapping_add(1)]).unwrap();
+        assert!(!logs.join("madmail").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn removal_checks_the_path_and_does_not_follow_the_last_link() {
         use std::os::unix::fs::PermissionsExt;
 
@@ -1787,7 +2007,7 @@ mod tests {
         let open_dir = base.path().join("open");
         fs::create_dir_all(open_dir.join("madmail")).unwrap();
         fs::set_permissions(&open_dir, fs::Permissions::from_mode(0o777)).unwrap();
-        let err = remove_path(&open_dir.join("madmail"), false).unwrap_err();
+        let err = remove_path(&open_dir.join("madmail"), false, &[]).unwrap_err();
         assert!(
             err.to_string()
                 .contains("world-writable without the sticky bit"),
@@ -1800,11 +2020,11 @@ mod tests {
         fs::write(target.join("keep"), "x").unwrap();
         let link = base.path().join("madmail-link");
         std::os::unix::fs::symlink(&target, &link).unwrap();
-        remove_path(&link, false).unwrap();
+        remove_path(&link, false, &[]).unwrap();
         assert!(fs::symlink_metadata(&link).is_err());
         assert!(target.join("keep").is_file());
 
-        remove_path(&base.path().join("missing"), false).unwrap();
+        remove_path(&base.path().join("missing"), false, &[]).unwrap();
     }
 
     #[test]
@@ -1834,9 +2054,9 @@ mod tests {
         let file = dir.path().join("keep.txt");
         fs::write(&file, b"x").unwrap();
 
-        remove_path(&file, true).unwrap();
+        remove_path(&file, true, &[]).unwrap();
         assert!(file.is_file());
-        remove_path(dir.path(), true).unwrap();
+        remove_path(dir.path(), true, &[]).unwrap();
         assert!(dir.path().is_dir());
     }
 
@@ -1848,10 +2068,10 @@ mod tests {
         let nested = dir.path().join("nested");
         fs::create_dir(&nested).unwrap();
 
-        remove_path(&file, false).unwrap();
+        remove_path(&file, false, &[]).unwrap();
         assert!(!file.exists());
 
-        remove_path(&nested, false).unwrap();
+        remove_path(&nested, false, &[]).unwrap();
         assert!(!nested.exists());
     }
 

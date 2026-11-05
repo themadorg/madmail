@@ -185,7 +185,9 @@ pub fn file_id(st: &libc::stat) -> FileId {
 #[derive(Debug, Clone)]
 pub struct Trust {
     uids: Vec<u32>,
-    gid: Option<u32>,
+    /// The service account's groups (primary and supplementary, never 0): a
+    /// directory one of them can write is controlled by the service.
+    groups: Vec<u32>,
     root_only: bool,
     /// With `root_only`: one more owner that counts as trusted (the caller, when
     /// not root; used by tests and dry runs).
@@ -196,10 +198,22 @@ pub struct Trust {
     marked: Vec<FileId>,
 }
 
+fn service_gids(groups: impl IntoIterator<Item = u32>) -> Vec<u32> {
+    let mut out = Vec::new();
+    for g in groups {
+        if g != 0 && !out.contains(&g) {
+            out.push(g);
+        }
+    }
+    out
+}
+
 impl Trust {
     /// The service account: its uid and, when the account was recreated, the
-    /// previous owner of the state directory (`old_uid`). Uid and gid 0 are
-    /// never counted as the service, so root-owned files stay trusted.
+    /// previous owner of the state directory (`old_uid`), and its primary group
+    /// `gid`. Uid and gid 0 are never counted as the service, so root-owned
+    /// files stay trusted. Add the supplementary groups with
+    /// [`Trust::with_groups`].
     pub fn service(uid: u32, gid: u32, old_uid: Option<u32>) -> Self {
         let mut uids = Vec::new();
         for u in [Some(uid), old_uid].into_iter().flatten() {
@@ -209,12 +223,18 @@ impl Trust {
         }
         Self {
             uids,
-            gid: (gid != 0).then_some(gid),
+            groups: service_gids([gid]),
             root_only: false,
             also: None,
             #[cfg(test)]
             marked: Vec::new(),
         }
+    }
+
+    /// Also count directories writable by these groups as the service's.
+    pub fn with_groups(mut self, groups: impl IntoIterator<Item = u32>) -> Self {
+        self.groups = service_gids(self.groups.iter().copied().chain(groups));
+        self
     }
 
     /// Count the objects with these ids as the service account's (tests).
@@ -224,12 +244,16 @@ impl Trust {
         self
     }
 
-    /// Stricter rule for uninstall: anything not owned by root, and anything
-    /// but a link writable by a group other than root, is untrusted.
-    pub fn root_only() -> Self {
+    /// Stricter rule for uninstall and staging: anything not owned by root is
+    /// untrusted, and so is a file (not a directory or link) that a group other
+    /// than root can write. Directories follow the same group rule as for
+    /// [`Trust::service`], with `service_groups` the groups of the service
+    /// accounts, so a system directory such as Ubuntu's `/var/log` (mode 0775,
+    /// group `syslog`) is not refused.
+    pub fn root_only(service_groups: impl IntoIterator<Item = u32>) -> Self {
         Self {
             uids: Vec::new(),
-            gid: None,
+            groups: service_gids(service_groups),
             root_only: true,
             also: None,
             #[cfg(test)]
@@ -239,18 +263,23 @@ impl Trust {
 
     /// [`Trust::root_only`] for the effective user: when it is not root, its
     /// own files count as trusted too, since it can change them anyway.
-    pub fn root_or_caller() -> Self {
+    pub fn root_or_caller(service_groups: impl IntoIterator<Item = u32>) -> Self {
         // SAFETY: geteuid has no preconditions.
         let euid = unsafe { libc::geteuid() };
         Self {
             also: (euid != 0).then_some(euid),
-            ..Self::root_only()
+            ..Self::root_only(service_groups)
         }
     }
 
     /// Why a component with this `stat` must not be followed or changed by
     /// path, or `None` when it is trusted. `/` and root-owned directories with
     /// mode 0755 pass. Link permission bits carry no meaning and are ignored.
+    ///
+    /// Only the mode bits are read: a POSIX ACL entry that lets the service
+    /// account write a directory is seen only as group write permission (the
+    /// ACL mask), so it is caught only when the directory's group is one of the
+    /// service account's groups.
     pub fn verdict(&self, st: &libc::stat) -> Option<&'static str> {
         if self.root_only && st.st_uid != 0 && Some(st.st_uid) != self.also {
             return Some("not owned by root");
@@ -266,22 +295,52 @@ impl Trust {
         let group_writable = mode & 0o020 != 0;
         match kind(st) {
             libc::S_IFLNK => None,
-            _ if group_writable && self.root_only && st.st_gid != 0 && self.also.is_none() => {
-                Some("group-writable by a group other than root")
-            }
             libc::S_IFDIR => {
-                if group_writable && Some(st.st_gid) == self.gid {
-                    Some("group-writable by the service group")
+                if group_writable && self.groups.contains(&st.st_gid) {
+                    Some("group-writable by a group of the service account")
                 } else if mode & 0o002 != 0 && mode & 0o1000 == 0 {
                     Some("world-writable without the sticky bit")
                 } else {
                     None
                 }
             }
+            _ if group_writable && self.root_only && st.st_gid != 0 && self.also.is_none() => {
+                Some("group-writable by a group other than root")
+            }
             _ if mode & 0o002 != 0 => Some("world-writable"),
             _ => None,
         }
     }
+}
+
+/// The groups of account `user` (primary and supplementary) from `id -G`;
+/// empty when the account does not exist.
+pub fn account_groups(user: &str) -> Vec<u32> {
+    std::process::Command::new("id")
+        .arg("-G")
+        .arg(user)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .split_whitespace()
+                .filter_map(|g| g.parse().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The name of the account with uid `uid`, if there is one (`id -nu`).
+pub fn account_name(uid: u32) -> Option<String> {
+    std::process::Command::new("id")
+        .arg("-nu")
+        .arg(uid.to_string())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|n| !n.is_empty())
 }
 
 // ---------------------------------------------------------------------------
@@ -585,8 +644,7 @@ fn write_all(fd: RawFd, mut data: &[u8]) -> io::Result<()> {
         }
         data = &data[n as usize..];
     }
-    // SAFETY: `fd` is open.
-    check(unsafe { libc::fsync(fd) })
+    Ok(())
 }
 
 /// Create `name` in `dir` with `data`, replacing any existing entry: a new file
@@ -594,13 +652,26 @@ fn write_all(fd: RawFd, mut data: &[u8]) -> io::Result<()> {
 /// given `mode` (and `owner`) through its descriptor, written, and renamed
 /// over `name`. The previous entry, whatever it was (a link, a hard link to
 /// another file), is unlinked by the rename and never opened or written.
+/// Returns the new file's `stat`.
 pub fn replace_file(
     dir: RawFd,
     name: &OsStr,
     data: &[u8],
     mode: u32,
     owner: Option<(u32, u32)>,
-) -> io::Result<()> {
+) -> io::Result<libc::stat> {
+    replace_file_with(dir, name, mode, owner, |fd| write_all(fd, data))
+}
+
+/// [`replace_file`] with the content written by `fill` on the new file's
+/// descriptor (which is then synced).
+pub fn replace_file_with(
+    dir: RawFd,
+    name: &OsStr,
+    mode: u32,
+    owner: Option<(u32, u32)>,
+    fill: impl FnOnce(RawFd) -> io::Result<()>,
+) -> io::Result<libc::stat> {
     let target = cstring(name)?;
     let tmp = temp_name(name)?;
     let fd = openat(
@@ -614,8 +685,12 @@ pub fn replace_file(
         if let Some((uid, gid)) = owner {
             fchown(fd.as_raw_fd(), uid, gid)?;
         }
-        write_all(fd.as_raw_fd(), data)?;
-        renameat(dir, &tmp, &target)
+        fill(fd.as_raw_fd())?;
+        // SAFETY: `fd` is open.
+        check(unsafe { libc::fsync(fd.as_raw_fd()) })?;
+        let st = fstat(fd.as_raw_fd())?;
+        renameat(dir, &tmp, &target)?;
+        Ok(st)
     })();
     if result.is_err() {
         let _ = unlinkat(dir, &tmp, false);
@@ -624,9 +699,15 @@ pub fn replace_file(
 }
 
 /// Create `name` in `dir` only if it does not exist (`O_CREAT | O_EXCL |
-/// O_NOFOLLOW`), with `mode` set through the descriptor. Returns false when
-/// an entry of that name (of any kind) already exists.
-pub fn create_new_file(dir: RawFd, name: &OsStr, data: &[u8], mode: u32) -> io::Result<bool> {
+/// O_NOFOLLOW`), with `mode` set through the descriptor. Returns the new
+/// file's `stat`, or `None` when an entry of that name (of any kind) already
+/// exists.
+pub fn create_new_file(
+    dir: RawFd,
+    name: &OsStr,
+    data: &[u8],
+    mode: u32,
+) -> io::Result<Option<libc::stat>> {
     let c_name = cstring(name)?;
     let fd = match openat(
         dir,
@@ -635,14 +716,20 @@ pub fn create_new_file(dir: RawFd, name: &OsStr, data: &[u8], mode: u32) -> io::
         mode,
     ) {
         Ok(fd) => fd,
-        Err(e) if e.raw_os_error() == Some(libc::EEXIST) => return Ok(false),
+        Err(e) if e.raw_os_error() == Some(libc::EEXIST) => return Ok(None),
         Err(e) => return Err(e),
     };
-    let result = fchmod(fd.as_raw_fd(), mode).and_then(|()| write_all(fd.as_raw_fd(), data));
+    let result = (|| {
+        fchmod(fd.as_raw_fd(), mode)?;
+        write_all(fd.as_raw_fd(), data)?;
+        // SAFETY: `fd` is open.
+        check(unsafe { libc::fsync(fd.as_raw_fd()) })?;
+        fstat(fd.as_raw_fd())
+    })();
     if result.is_err() {
         let _ = unlinkat(dir, &c_name, false);
     }
-    result.map(|()| true)
+    result.map(Some)
 }
 
 /// Open `name` in `dir` as a regular file without following a link
@@ -833,6 +920,15 @@ mod tests {
         );
         set(&mut st, libc::S_IFDIR, 0o775, 0, 50);
         assert_eq!(trust.verdict(&st), None, "another group");
+        // A supplementary group of the service account counts as its own.
+        let with_groups = Trust::service(990, 990, None).with_groups([50, 0]);
+        assert!(with_groups.verdict(&st).is_some(), "supplementary group");
+        set(&mut st, libc::S_IFDIR, 0o775, 0, 0);
+        assert_eq!(
+            with_groups.verdict(&st),
+            None,
+            "gid 0 is never the service's"
+        );
         set(&mut st, libc::S_IFDIR, 0o777, 0, 0);
         assert!(trust.verdict(&st).is_some(), "world-writable");
         set(&mut st, libc::S_IFDIR, 0o1777, 0, 0);
@@ -845,11 +941,17 @@ mod tests {
         let fresh = Trust::service(990, 990, Some(0));
         set(&mut st, libc::S_IFDIR, 0o755, 0, 0);
         assert_eq!(fresh.verdict(&st), None);
-        let strict = Trust::root_only();
+        let strict = Trust::root_only([990]);
         set(&mut st, libc::S_IFDIR, 0o755, 1000, 0);
         assert!(strict.verdict(&st).is_some());
+        // Ubuntu's /var/log (root:syslog 0775) and Debian's /var/mail (root:mail
+        // 2775) are trusted: the service account is not in those groups.
         set(&mut st, libc::S_IFDIR, 0o775, 0, 4);
-        assert!(strict.verdict(&st).is_some());
+        assert_eq!(strict.verdict(&st), None, "system group directory");
+        set(&mut st, libc::S_IFDIR, 0o2775, 0, 8);
+        assert_eq!(strict.verdict(&st), None, "setgid system group directory");
+        set(&mut st, libc::S_IFDIR, 0o775, 0, 990);
+        assert!(strict.verdict(&st).is_some(), "service group directory");
         set(&mut st, libc::S_IFREG, 0o660, 0, 4);
         assert!(strict.verdict(&st).is_some(), "group-writable file");
         set(&mut st, libc::S_IFREG, 0o640, 0, 4);
@@ -1078,7 +1180,14 @@ mod tests {
         symlink(out.join("victim"), state.join("dkim/default.private")).unwrap();
         let created =
             create_new_file(dkim.as_raw_fd(), OsStr::new("default.private"), b"k", 0o600).unwrap();
-        assert!(!created);
+        assert!(created.is_none());
+        // A new file's stat is returned, so callers can record what they made.
+        let st = create_new_file(dkim.as_raw_fd(), OsStr::new("fresh"), b"k", 0o600)
+            .unwrap()
+            .unwrap();
+        assert_eq!(file_id(&st), id(&state.join("dkim/fresh")));
+        let st = replace_file(dkim.as_raw_fd(), OsStr::new("fresh"), b"k2", 0o600, None).unwrap();
+        assert_eq!(file_id(&st), id(&state.join("dkim/fresh")));
         assert_eq!(fs::read_to_string(out.join("victim")).unwrap(), "keep");
         // A link, a hard-linked file and a missing file are not read.
         assert!(open_single_link_file(dkim.as_raw_fd(), OsStr::new("hard")).is_ok());

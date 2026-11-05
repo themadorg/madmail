@@ -231,12 +231,20 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         if cfg.system_install && !args.skip_systemd && !args.cert_only {
             systemd::check_unit_path(&cfg)?;
         }
+        if !args.cert_only {
+            system::check_binary_path(&cfg, None)?;
+        }
         system::create_service_user(&cfg, false, false)?;
     }
     // From here on, root changes files for a system install only through this
-    // handle (checked resolution, descriptors, no links followed).
+    // handle (checked resolution, descriptors, no links followed), also with
+    // `--skip-user` when the service account exists.
     #[cfg(unix)]
     let sec = SecureInstall::open(&cfg, true)?;
+    #[cfg(unix)]
+    if !args.cert_only {
+        system::check_binary_path(&cfg, sec.as_ref())?;
+    }
     #[cfg(not(unix))]
     let sec: Option<SecureInstall> = None;
     let sec = sec.as_ref();
@@ -275,7 +283,7 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
     seed_install_language(&cfg, sec).await?;
     #[cfg(unix)]
     {
-        system::install_binary(&cfg, false)?;
+        system::install_binary(&cfg, sec, false)?;
         if cfg.system_install {
             docs::install_cli_docs(&cfg.binary_name, false)?;
         }
@@ -594,7 +602,7 @@ async fn obtain_into_staging(
     mut opts: ObtainOptions,
     sec: &SecureInstall,
 ) -> Result<()> {
-    let staging = system::StagingDir::create()?;
+    let staging = system::StagingDir::create(sec)?;
     let account = cfg.state_dir.join("autocert/le-account.json");
     let staged_account = staging.path().join("autocert/le-account.json");
     let io = |op: &str, path: &std::path::Path, e: std::io::Error| {
@@ -729,11 +737,16 @@ fn create_directories(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Resul
     Ok(())
 }
 
-/// SQLite opens files by path and follows links, so with a service account
-/// the database is opened with the service account's effective uid, gid and
-/// groups ([`secure_fs::AsService`](super::secure_fs::AsService)): whatever a
-/// link planted in the state tree points at, the open can only reach what the
+/// SQLite opens files by path and follows links, so when the state directory
+/// is controlled by the service account (after the ownership walk, or on a
+/// `--skip-user` reinstall into a tree the service already owns) the database
+/// is opened with the service account's effective uid, gid and groups
+/// ([`secure_fs::AsService`](super::secure_fs::AsService)): whatever a link
+/// planted in the state tree points at, the open can only reach what the
 /// service account could reach itself, and new database files belong to it.
+/// Only the effective ids change; the saved uid stays 0 (see
+/// `docs/TDD/12-security.md`). A root-owned state directory (`--skip-user`
+/// into a new directory) is used as root.
 async fn seed_install_language(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let app_config = AppConfig {
         state_dir: Some(cfg.state_dir.clone()),
@@ -743,7 +756,7 @@ async fn seed_install_language(cfg: &InstallConfig, sec: Option<&SecureInstall>)
 
     let database = effective_database_config(&cfg.state_dir, &app_config);
     #[cfg(unix)]
-    let identity = match sec {
+    let identity = match sec.filter(|s| s.state_dir_is_service_controlled()) {
         Some(sec) => Some(
             super::secure_fs::AsService::enter(sec.uid, sec.gid).map_err(|e| {
                 ChatmailError::config(format!("switch to the service account: {e}"))
@@ -777,13 +790,19 @@ async fn seed_install_language(cfg: &InstallConfig, sec: Option<&SecureInstall>)
 
 /// The config file holds `ss_password` and `turn_secret`, so it is created
 /// with mode 0640 from the start. With a service account it is written with
-/// [`SecureInstall::write_file`] (owner `root:gid` outside the state tree);
-/// otherwise it is opened with `O_NOFOLLOW` and keeps the caller as owner.
+/// [`SecureInstall::write_config_file`] (owner `root:gid` outside the state
+/// tree; with `--skip-user` the previous file's owner, or root); otherwise it
+/// is opened with `O_NOFOLLOW` and keeps the caller as owner.
 fn write_config(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let text = render_maddy_conf(cfg);
     #[cfg(unix)]
     if let Some(sec) = sec {
-        sec.write_file(&cfg.config_path, text.as_bytes(), 0o640, Some((0, sec.gid)))?;
+        let owner = if cfg.skip_user {
+            sec.existing_owner(&cfg.config_path)
+        } else {
+            Some((0, sec.gid))
+        };
+        sec.write_config_file(&cfg.config_path, text.as_bytes(), owner)?;
         println!("✓ Wrote {}", cfg.config_path.display());
         return Ok(());
     }

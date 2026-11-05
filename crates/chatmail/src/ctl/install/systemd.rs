@@ -215,12 +215,12 @@ pub fn daemon_reload() -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
     use super::super::config::InstallConfig;
 
-    fn sample_cfg() -> InstallConfig {
+    pub(in crate::ctl::install) fn sample_cfg() -> InstallConfig {
         InstallConfig {
             binary_name: "madmail".into(),
             binary_path: PathBuf::from("/usr/local/bin/madmail"),

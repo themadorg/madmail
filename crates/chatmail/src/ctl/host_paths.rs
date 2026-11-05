@@ -96,6 +96,19 @@ pub fn is_denied_dir(path: &Path) -> bool {
     DENIED_DIRS.iter().any(|d| normalized == Path::new(d))
 }
 
+/// Whether the directory with this device and inode is one of [`DENIED_DIRS`]
+/// (each looked up with `stat`, so `/bin` matches `/usr/bin` where it is a
+/// link). Catches an operator link with a madmail name that leads to one.
+#[cfg(unix)]
+pub fn is_denied_dir_id(id: (u64, u64)) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    DENIED_DIRS.iter().any(|d| {
+        std::fs::metadata(d)
+            .map(|m| (m.dev(), m.ino()) == id)
+            .unwrap_or(false)
+    })
+}
+
 /// Whether the last component of `path` (normalized) is a family name or the
 /// binary name `primary`.
 pub fn is_named_for_madmail(path: &Path, primary: &str) -> bool {
