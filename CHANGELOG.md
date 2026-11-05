@@ -1,3 +1,11 @@
+# [2.39.1](https://github.com/themadorg/madmail/compare/v2.39.0-unstable...v2.39.1-unstable) (2026-11-04)
+
+### Bug Fixes
+
+* upgrade ctutils to 0.4.7 ([9fece62](https://github.com/themadorg/madmail/commit/9fece628d927889823ee9e7b0ff92c881ec5c849))
+* **auth:** require open registration and JIT for password sign-up ([40be1af](https://github.com/themadorg/madmail/commit/40be1af8f3a3f2ce962e2d9dcd4cff16ca810929)), [#235](https://github.com/themadorg/madmail/issues/235)
+* **auth:** share the sign-up gate and keep the page in step with it ([7b4f513](https://github.com/themadorg/madmail/commit/7b4f5138ae7ac7a90dd4911a0c6a22baceedeee7)), [#235](https://github.com/themadorg/madmail/issues/235)
+
 # [2.39.0](https://github.com/themadorg/madmail/compare/v2.38.2-unstable...v2.39.0-unstable) (2026-11-04)
 
 ### Features
