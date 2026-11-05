@@ -280,6 +280,13 @@ impl Trust {
         }
     }
 
+    /// Trust no well-known group-writable directory ([`WELL_KNOWN_GROUP_DIRS`]),
+    /// for when the service accounts' groups may be incomplete.
+    pub fn without_group_dirs(mut self) -> Self {
+        self.group_dirs.clear();
+        self
+    }
+
     /// Count these directories (by device and inode) as well-known
     /// group-writable directories (tests).
     #[cfg(test)]
@@ -352,61 +359,105 @@ impl Trust {
 /// root can write them (see there).
 pub const WELL_KNOWN_GROUP_DIRS: &[&str] = &["/var/log", "/var/mail"];
 
-/// The groups of account `user` (primary and supplementary) from `id -G`:
-/// `Ok(None)` when the account does not exist, an error when it exists but its
-/// groups cannot be read.
-pub fn account_groups_checked(user: &str) -> io::Result<Option<Vec<u32>>> {
-    let exists = std::process::Command::new("id")
-        .arg("-u")
-        .arg(user)
-        .output()?
-        .status
-        .success();
-    if !exists {
-        return Ok(None);
+/// Whether a passwd lookup error code means "no such entry". POSIX lets
+/// `getpwuid_r` and `getpwnam_r` report that with these codes as well as with
+/// a NULL result.
+fn not_found_code(rc: libc::c_int) -> bool {
+    matches!(rc, libc::ENOENT | libc::ESRCH | libc::EBADF | libc::EPERM)
+}
+
+/// Run a passwd lookup (`getpwuid_r` or `getpwnam_r`, given as `call`) with a
+/// buffer that grows on `ERANGE`, and give the entry found to `read`. `Ok(None)`
+/// when there is no entry; an error when the account database cannot be read
+/// (for example an NSS service that is down), so a caller can fail closed.
+fn passwd_lookup<T>(
+    call: impl Fn(&mut libc::passwd, &mut [libc::c_char], &mut *mut libc::passwd) -> libc::c_int,
+    read: impl FnOnce(&libc::passwd) -> T,
+) -> io::Result<Option<T>> {
+    let mut buf = vec![0 as libc::c_char; 1024];
+    loop {
+        // SAFETY: `passwd` is plain old data; zero is a valid value to overwrite.
+        let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut result: *mut libc::passwd = std::ptr::null_mut();
+        let rc = call(&mut pwd, &mut buf, &mut result);
+        if rc == libc::ERANGE && buf.len() < (1 << 20) {
+            let len = buf.len() * 2;
+            buf.resize(len, 0);
+            continue;
+        }
+        return match rc {
+            0 if result.is_null() => Ok(None),
+            0 => Ok(Some(read(&pwd))),
+            rc if not_found_code(rc) => Ok(None),
+            rc => Err(io::Error::from_raw_os_error(rc)),
+        };
     }
+}
+
+/// The name of the account with uid `uid` (`getpwuid_r`): `Ok(None)` when no
+/// account has that uid, an error when the account database cannot be read.
+pub fn account_name(uid: u32) -> io::Result<Option<String>> {
+    passwd_lookup(
+        |pwd, buf, result| {
+            // SAFETY: `pwd`, `buf` and `result` are valid for writes, and
+            // `buf.len()` is the buffer's size.
+            unsafe {
+                libc::getpwuid_r(uid as libc::uid_t, pwd, buf.as_mut_ptr(), buf.len(), result)
+            }
+        },
+        // SAFETY: a successful lookup sets pw_name to a NUL-terminated string
+        // in `buf`, which is still alive here.
+        |pwd| {
+            unsafe { CStr::from_ptr(pwd.pw_name) }
+                .to_string_lossy()
+                .into_owned()
+        },
+    )
+    .map_err(|e| io::Error::new(e.kind(), format!("cannot look up uid {uid}: {e}")))
+}
+
+/// The primary gid of account `user` (`getpwnam_r`): `Ok(None)` when there is
+/// no such account, an error when the account database cannot be read.
+fn account_gid(user: &str) -> io::Result<Option<u32>> {
+    let name = CString::new(user).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    passwd_lookup(
+        |pwd, buf, result| {
+            // SAFETY: `name` is NUL-terminated; `pwd`, `buf` and `result` are
+            // valid for writes, and `buf.len()` is the buffer's size.
+            unsafe { libc::getpwnam_r(name.as_ptr(), pwd, buf.as_mut_ptr(), buf.len(), result) }
+        },
+        |pwd| pwd.pw_gid,
+    )
+    .map_err(|e| io::Error::new(e.kind(), format!("cannot look up account {user}: {e}")))
+}
+
+/// The groups of account `user` (primary and supplementary): `Ok(None)` when
+/// the account does not exist (`getpwnam_r`), an error when it exists but its
+/// groups cannot be read (`id -G`) or the account database cannot be read.
+/// Callers fail closed on an error: a group they do not know of could write a
+/// directory they then trust.
+pub fn account_groups_checked(user: &str) -> io::Result<Option<Vec<u32>>> {
+    let Some(primary) = account_gid(user)? else {
+        return Ok(None);
+    };
     let out = std::process::Command::new("id")
         .arg("-G")
         .arg(user)
-        .output()?;
+        .output()
+        .map_err(|e| io::Error::other(format!("cannot read the groups of account {user}: {e}")))?;
     let text = String::from_utf8_lossy(&out.stdout);
     let groups: Option<Vec<u32>> = text.split_whitespace().map(|g| g.parse().ok()).collect();
     match groups {
-        Some(groups) if out.status.success() && !groups.is_empty() => Ok(Some(groups)),
+        Some(mut groups) if out.status.success() && !groups.is_empty() => {
+            if !groups.contains(&primary) {
+                groups.push(primary);
+            }
+            Ok(Some(groups))
+        }
         _ => Err(io::Error::other(format!(
             "cannot read the groups of account {user}"
         ))),
     }
-}
-
-/// The groups of account `user` (primary and supplementary) from `id -G`;
-/// empty when the account does not exist.
-pub fn account_groups(user: &str) -> Vec<u32> {
-    std::process::Command::new("id")
-        .arg("-G")
-        .arg(user)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .split_whitespace()
-                .filter_map(|g| g.parse().ok())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// The name of the account with uid `uid`, if there is one (`id -nu`).
-pub fn account_name(uid: u32) -> Option<String> {
-    std::process::Command::new("id")
-        .arg("-nu")
-        .arg(uid.to_string())
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|n| !n.is_empty())
 }
 
 // ---------------------------------------------------------------------------
@@ -483,7 +534,10 @@ impl Resolver<'_> {
         if !path.is_absolute() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("{} is not an absolute path", path.display()),
+                format!(
+                    "{} is not an absolute path",
+                    crate::ctl::host_paths::shown(path)
+                ),
             ));
         }
         let root_fd = openat(libc::AT_FDCWD, c"/", BASE_DIR_FLAGS, 0)?;
@@ -590,7 +644,10 @@ impl Resolver<'_> {
                 _ => {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
-                        format!("{} is not a regular file or directory", here.display()),
+                        format!(
+                            "{} is not a regular file or directory",
+                            crate::ctl::host_paths::shown(&here)
+                        ),
                     ))
                 }
             }
@@ -653,7 +710,10 @@ pub fn tree_open_dir(root: &OwnedFd, rel: &Path, create: bool) -> io::Result<Own
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    format!("{} leaves the state directory", rel.display()),
+                    format!(
+                        "{} leaves the state directory",
+                        crate::ctl::host_paths::shown(rel)
+                    ),
                 ))
             }
         };
@@ -682,7 +742,10 @@ pub fn split_file(rel: &Path) -> io::Result<(PathBuf, OsString)> {
         )),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("{} does not name a file", rel.display()),
+            format!(
+                "{} does not name a file",
+                crate::ctl::host_paths::shown(rel)
+            ),
         )),
     }
 }
@@ -1322,6 +1385,24 @@ mod tests {
         assert_eq!(strict.verdict(&st), None, "installed config file");
         set(&mut st, libc::S_IFDIR, 0o1777, 0, 0);
         assert_eq!(strict.verdict(&st), None, "sticky /tmp");
+    }
+
+    #[test]
+    fn account_lookups_tell_a_missing_account_from_a_named_one() {
+        assert_eq!(account_name(0).unwrap().as_deref(), Some("root"));
+        assert_eq!(account_name(NOBODY_UID).unwrap(), None);
+        let root = account_groups_checked("root").unwrap().unwrap();
+        assert!(root.contains(&0), "{root:?}");
+        assert_eq!(
+            account_groups_checked("madmail-test-no-such-account").unwrap(),
+            None
+        );
+        // A lookup error is an error, not "no account".
+        let e = passwd_lookup(|_, _, _| libc::EIO, |_| ()).unwrap_err();
+        assert_eq!(e.raw_os_error(), Some(libc::EIO));
+        assert!(passwd_lookup(|_, _, _| libc::ENOENT, |_| ())
+            .unwrap()
+            .is_none());
     }
 
     #[test]

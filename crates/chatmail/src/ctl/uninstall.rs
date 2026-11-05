@@ -85,6 +85,11 @@ struct UninstallPlan {
     /// Groups (primary and supplementary) of the service accounts: a directory
     /// one of them can write is not trusted on the way to a path to remove.
     service_groups: Vec<u32>,
+    /// The groups of a service account could not be read, so `service_groups`
+    /// may be incomplete: then no directory writable by a group other than
+    /// root is trusted, not even a well-known one such as `/var/log` (see
+    /// [`Trust::root_only`](super::secure_fs::Trust::root_only)).
+    service_groups_unknown: bool,
 }
 
 /// Which removal step a kept path belongs to.
@@ -195,9 +200,7 @@ async fn uninstall_unix(args: &Args, flags: &UninstallArgs) -> Result<()> {
     if args.json {
         let left: Vec<_> = kept
             .iter()
-            .map(
-                |k| serde_json::json!({ "path": k.path.display().to_string(), "reason": k.reason }),
-            )
+            .map(|k| serde_json::json!({ "path": shown(&k.path), "reason": k.reason }))
             .collect();
         CtlOut::from_args(args, "uninstall").done_msg(
             "",
@@ -459,6 +462,16 @@ fn current_binary_name() -> String {
 /// trusted. An ignored value is returned as a kept entry, and the
 /// `--state-dir` value is used instead.
 fn uninstall_state_dir(args: &Args, ctx: &CtlContext, primary: &str) -> (PathBuf, Option<Kept>) {
+    uninstall_state_dir_with(args, ctx, primary, &groups_of)
+}
+
+/// [`uninstall_state_dir`] with the group lookup given (see [`groups_of`]).
+fn uninstall_state_dir_with(
+    args: &Args,
+    ctx: &CtlContext,
+    primary: &str,
+    groups_of: &GroupLookup,
+) -> (PathBuf, Option<Kept>) {
     let Some(from_config) = ctx.config.state_dir.clone() else {
         return (ctx.state_dir.clone(), None);
     };
@@ -527,6 +540,9 @@ fn unit_service_users() -> Vec<String> {
     users
 }
 
+/// A lookup of the groups of service accounts, as [`groups_of`] does it.
+type GroupLookup = dyn Fn(&[String]) -> std::result::Result<Vec<u32>, String>;
+
 /// Primary and supplementary groups of the accounts that exist among `users`,
 /// or why they cannot be known: an account that exists but whose groups cannot
 /// be read.
@@ -545,23 +561,6 @@ fn groups_of(users: &[String]) -> std::result::Result<Vec<u32>, String> {
 #[cfg(not(unix))]
 fn groups_of(_users: &[String]) -> std::result::Result<Vec<u32>, String> {
     Ok(Vec::new())
-}
-
-/// [`groups_of`] that skips an account whose groups cannot be read.
-#[cfg(unix)]
-fn groups_of_lossy(users: &[String]) -> Vec<u32> {
-    let mut groups = Vec::new();
-    for user in users {
-        for g in super::secure_fs::account_groups(user) {
-            push_gid(&mut groups, g);
-        }
-    }
-    groups
-}
-
-#[cfg(not(unix))]
-fn groups_of_lossy(_users: &[String]) -> Vec<u32> {
-    Vec::new()
 }
 
 fn push_gid(groups: &mut Vec<u32>, gid: u32) {
@@ -764,16 +763,10 @@ fn detect_installation(
         push_unique_string(&mut accounts, name.to_string());
     }
     // A directory one of these groups can write is not trusted on the way to a
-    // path to remove: the groups of the accounts (those that can be read) and
-    // the groups owning the state directories.
-    let mut groups = groups_of(&accounts).unwrap_or_else(|why| {
-        println!("⚠️  {why}");
-        groups_of_lossy(&accounts)
-    });
-    for gid in owning_gids(plan.state_dirs.iter().map(PathBuf::as_path)) {
-        push_gid(&mut groups, gid);
-    }
-    plan.service_groups = groups;
+    // path to remove: the groups of the accounts and the groups owning the
+    // state directories. When an account's groups cannot be read, no
+    // group-writable directory is trusted at all.
+    set_service_groups(&mut plan, &accounts, &groups_of);
 
     protect_preserved(&mut plan, flags.keep_data, flags.keep_config);
     // Only a note: the directory may still be found (and removed) another way.
@@ -790,7 +783,46 @@ fn detect_installation(
     Ok(plan)
 }
 
+/// Fill in `plan.service_groups` from the groups of `accounts` (looked up with
+/// `groups_of`) and the groups owning the state directories.
+fn set_service_groups(plan: &mut UninstallPlan, accounts: &[String], groups_of: &GroupLookup) {
+    let mut groups = match groups_of(accounts) {
+        Ok(groups) => groups,
+        Err(why) => {
+            println!(
+                "⚠️  {why}; no directory writable by a group other than root is trusted on \
+                 the way to a path to remove"
+            );
+            plan.service_groups_unknown = true;
+            Vec::new()
+        }
+    };
+    for gid in owning_gids(plan.state_dirs.iter().map(PathBuf::as_path)) {
+        push_gid(&mut groups, gid);
+    }
+    plan.service_groups = groups;
+}
+
 impl UninstallPlan {
+    /// Remove `path` with this plan's trust rule (see [`remove_path`]). A
+    /// removal that fails (a file that cannot be unlinked, a mount point, a
+    /// directory that keeps getting new entries) leaves the path in place with
+    /// the error as reason, so uninstall goes on with the other steps.
+    fn remove(&self, path: &Path, dry_run: bool) -> Result<Option<Kept>> {
+        match remove_path_in(
+            path,
+            dry_run,
+            &self.service_groups,
+            !self.service_groups_unknown,
+        ) {
+            Ok(kept) => Ok(kept),
+            Err(e) => Ok(Some(left_in_place(
+                path,
+                format!("removing it failed: {e}; remove it yourself"),
+            ))),
+        }
+    }
+
     fn config_dir_present(&self) -> bool {
         !self.config_dirs.is_empty()
     }
@@ -846,8 +878,10 @@ fn enrich_from_unit_file(plan: &mut UninstallPlan, path: &Path) {
 
 /// Directories uninstall must never remove as a whole: those of
 /// [`system_dir_reason`] (the rule install applies to `--state-dir`: the
-/// well-known system directories, top-level directories and any direct child
-/// of `/home` or `/Users`), and the homes of real users.
+/// well-known system directories, top-level directories, any direct child of
+/// `/home` or `/Users`, and directories below `/etc`, `/usr` and the other
+/// system directories that are not named for madmail), and the homes of real
+/// users.
 #[derive(Debug, Default)]
 struct DenyList {
     homes: Vec<PathBuf>,
@@ -884,13 +918,13 @@ impl DenyList {
 
     /// Why `path` must not be removed as a whole, or `None` when it may be.
     /// Both the path as written (normalized) and its resolved form are checked.
-    fn reason(&self, path: &Path) -> Option<&'static str> {
+    fn reason(&self, path: &Path, primary: &str) -> Option<&'static str> {
         let mut forms = vec![normalize(path)];
         if let Ok(resolved) = fs::canonicalize(path) {
             forms.push(resolved);
         }
         forms.iter().find_map(|form| {
-            if let Some(reason) = system_dir_reason(form) {
+            if let Some(reason) = system_dir_reason(form, primary) {
                 return Some(reason);
             }
             if self.homes.iter().any(|h| h == form) {
@@ -927,7 +961,7 @@ enum DirClass {
 }
 
 fn classify_dir(path: &Path, primary: &str, deny: &DenyList) -> DirClass {
-    if let Some(reason) = deny.reason(path) {
+    if let Some(reason) = deny.reason(path, primary) {
         return DirClass::Denied(reason);
     }
     if is_named_for_madmail(path, primary) {
@@ -1410,20 +1444,20 @@ fn remove_systemd_files(
     left: &mut Vec<Kept>,
 ) -> Result<()> {
     for f in &plan.timer_files {
-        left.extend(remove_path(f, flags.dry_run, &plan.service_groups)?);
+        left.extend(plan.remove(f, flags.dry_run)?);
     }
     for f in &plan.service_files {
-        left.extend(remove_path(f, flags.dry_run, &plan.service_groups)?);
+        left.extend(plan.remove(f, flags.dry_run)?);
     }
     Ok(())
 }
 
 fn remove_config(plan: &UninstallPlan, flags: &UninstallArgs, left: &mut Vec<Kept>) -> Result<()> {
     for dir in &plan.config_dirs {
-        left.extend(remove_path(dir, flags.dry_run, &plan.service_groups)?);
+        left.extend(plan.remove(dir, flags.dry_run)?);
     }
     for file in &plan.config_files {
-        left.extend(remove_path(file, flags.dry_run, &plan.service_groups)?);
+        left.extend(plan.remove(file, flags.dry_run)?);
     }
     Ok(())
 }
@@ -1442,16 +1476,16 @@ fn kept_paths<'a>(plan: &'a UninstallPlan, flags: &UninstallArgs) -> Vec<&'a Kep
 
 fn remove_data(plan: &UninstallPlan, flags: &UninstallArgs, left: &mut Vec<Kept>) -> Result<()> {
     for dir in &plan.state_dirs {
-        left.extend(remove_path(dir, flags.dry_run, &plan.service_groups)?);
+        left.extend(plan.remove(dir, flags.dry_run)?);
     }
     for dir in &plan.log_dirs {
-        left.extend(remove_path(dir, flags.dry_run, &plan.service_groups)?);
+        left.extend(plan.remove(dir, flags.dry_run)?);
     }
     for dir in &plan.cache_dirs {
-        left.extend(remove_path(dir, flags.dry_run, &plan.service_groups)?);
+        left.extend(plan.remove(dir, flags.dry_run)?);
     }
     for dir in &plan.runtime_dirs {
-        left.extend(remove_path(dir, flags.dry_run, &plan.service_groups)?);
+        left.extend(plan.remove(dir, flags.dry_run)?);
     }
     Ok(())
 }
@@ -1462,7 +1496,7 @@ fn remove_binaries(
     left: &mut Vec<Kept>,
 ) -> Result<()> {
     for p in &plan.binary_paths {
-        left.extend(remove_path(p, flags.dry_run, &plan.service_groups)?);
+        left.extend(plan.remove(p, flags.dry_run)?);
     }
     Ok(())
 }
@@ -1504,16 +1538,31 @@ fn run_systemctl(dry_run: bool, args: &[&str]) -> Result<()> {
     }
 }
 
-/// Remove `path`. When a directory on its way is not trusted, nothing is
-/// removed and the path is returned as left in place, so the run can go on.
+/// Remove `path` (see [`remove_entry`]; `groups` are the service accounts'
+/// groups). When a directory on its way is not trusted, nothing is removed and
+/// the path is returned as left in place, so the run can go on. A removal that
+/// fails is an error; the removal steps of a Unix uninstall use
+/// [`UninstallPlan::remove`] instead, which leaves the path in place.
+#[cfg(any(windows, test))]
 fn remove_path(path: &Path, dry_run: bool, groups: &[u32]) -> Result<Option<Kept>> {
+    remove_path_in(path, dry_run, groups, true)
+        .map_err(|e| ChatmailError::config(format!("failed to remove {}: {e}", shown(path))))
+}
+
+/// [`remove_path`] with the io error; `group_dirs` is false when the service
+/// accounts' groups may be incomplete (see
+/// [`UninstallPlan::service_groups_unknown`]).
+fn remove_path_in(
+    path: &Path,
+    dry_run: bool,
+    groups: &[u32],
+    group_dirs: bool,
+) -> std::io::Result<Option<Kept>> {
     if dry_run {
         println!("Would remove: {}", shown(path));
         return Ok(None);
     }
-    match remove_entry(path, groups)
-        .map_err(|e| ChatmailError::config(format!("failed to remove {}: {e}", shown(path))))?
-    {
+    match remove_entry(path, groups, group_dirs)? {
         Removed::Entry => println!("Removed: {}", shown(path)),
         Removed::Link(target) => println!(
             "Removed link {} (its target {} was left in place)",
@@ -1521,16 +1570,19 @@ fn remove_path(path: &Path, dry_run: bool, groups: &[u32]) -> Result<Option<Kept
             shown(&target)
         ),
         Removed::Nothing => {}
-        Removed::Refused(reason) => {
-            println!("⚠️  Left in place: {} ({reason})", shown(path));
-            return Ok(Some(Kept {
-                kind: KeptKind::Refused,
-                path: path.to_path_buf(),
-                reason,
-            }));
-        }
+        Removed::Refused(reason) => return Ok(Some(left_in_place(path, reason))),
     }
     Ok(None)
+}
+
+/// Report `path` as left in place by a removal step.
+fn left_in_place(path: &Path, reason: String) -> Kept {
+    println!("⚠️  Left in place: {} ({reason})", shown(path));
+    Kept {
+        kind: KeptKind::Refused,
+        path: path.to_path_buf(),
+        reason,
+    }
 }
 
 /// What [`remove_entry`] removed.
@@ -1558,12 +1610,18 @@ enum Removed {
 /// ([`secure_fs::remove_dir_tree`](super::secure_fs::remove_dir_tree)), so no
 /// path below the checked parent is resolved again. A missing path is not an
 /// error.
+///
+/// `group_dirs` false turns off the well-known group-writable directories
+/// (`/var/log`, `/var/mail`) the trust rule otherwise allows.
 #[cfg(unix)]
-fn remove_entry(path: &Path, groups: &[u32]) -> std::io::Result<Removed> {
-    remove_entry_trusted(
-        path,
-        &super::secure_fs::Trust::root_or_caller(groups.iter().copied()),
-    )
+fn remove_entry(path: &Path, groups: &[u32], group_dirs: bool) -> std::io::Result<Removed> {
+    let trust = super::secure_fs::Trust::root_or_caller(groups.iter().copied());
+    let trust = if group_dirs {
+        trust
+    } else {
+        trust.without_group_dirs()
+    };
+    remove_entry_trusted(path, &trust)
 }
 
 /// [`remove_entry`] with the trust rule given.
@@ -1627,7 +1685,7 @@ fn remove_entry_trusted(path: &Path, trust: &super::secure_fs::Trust) -> std::io
 }
 
 #[cfg(not(unix))]
-fn remove_entry(path: &Path, _groups: &[u32]) -> std::io::Result<Removed> {
+fn remove_entry(path: &Path, _groups: &[u32], _group_dirs: bool) -> std::io::Result<Removed> {
     if path.is_dir() {
         fs::remove_dir_all(path)?;
         Ok(Removed::Entry)
@@ -2037,6 +2095,86 @@ mod tests {
     }
 
     #[test]
+    fn config_state_dir_is_not_used_when_a_service_accounts_groups_cannot_be_read() {
+        let base = tempfile::tempdir().unwrap();
+        let named = base.path().join("madmail-data");
+        let config = base.path().join("madmail.conf");
+        fs::write(&config, format!("state_dir {}\n", named.display())).unwrap();
+        let cli = base.path().join("cli-state");
+        let args = Args::try_parse_from([
+            "madmail",
+            "--config",
+            config.to_str().unwrap(),
+            "--state-dir",
+            cli.to_str().unwrap(),
+        ])
+        .unwrap();
+        let ctx = CtlContext::from_args(&args).unwrap();
+        // With the groups known the config file is trusted (or refused for
+        // its own path, not for the lookup).
+        let known = |_: &[String]| -> std::result::Result<Vec<u32>, String> { Ok(Vec::new()) };
+        let (_, untrusted) = uninstall_state_dir_with(&args, &ctx, "madmail", &known);
+        assert!(
+            untrusted
+                .as_ref()
+                .is_none_or(|k| !k.reason.contains("cannot read the groups")),
+            "{untrusted:?}"
+        );
+        let failing = |_: &[String]| -> std::result::Result<Vec<u32>, String> {
+            Err("cannot read the groups of account madmail".into())
+        };
+        let (state_dir, untrusted) = uninstall_state_dir_with(&args, &ctx, "madmail", &failing);
+        assert_eq!(state_dir, cli);
+        let kept = untrusted.unwrap();
+        assert_eq!((kept.kind, &kept.path), (KeptKind::State, &named));
+        assert!(
+            kept.reason
+                .contains("cannot read the groups of account madmail"),
+            "{kept:?}"
+        );
+        // The removal trust then allows no group-writable directory.
+        let mut plan = UninstallPlan::default();
+        set_service_groups(&mut plan, &["madmail".to_string()], &failing);
+        assert!(plan.service_groups_unknown && plan.service_groups.is_empty());
+        let mut plan = UninstallPlan::default();
+        set_service_groups(&mut plan, &["madmail".to_string()], &|_| Ok(vec![4242]));
+        assert!(!plan.service_groups_unknown);
+        assert_eq!(plan.service_groups, vec![4242]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_removal_that_fails_is_left_in_place_and_the_run_goes_on() {
+        use std::os::unix::fs::PermissionsExt;
+        // SAFETY: getuid has no preconditions.
+        if unsafe { libc::getuid() } == 0 {
+            return;
+        }
+        let base = tempfile::tempdir().unwrap();
+        let stuck = base.path().join("madmail");
+        let locked = stuck.join("locked");
+        fs::create_dir_all(&locked).unwrap();
+        fs::write(locked.join("file"), "x").unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+        let other = base.path().join("madmail-cache");
+        fs::create_dir_all(&other).unwrap();
+        let plan = UninstallPlan {
+            state_dirs: vec![stuck.clone()],
+            cache_dirs: vec![other.clone()],
+            ..Default::default()
+        };
+        let flags = sample_flags(false, base.path().join("log"));
+        let mut left = Vec::new();
+        remove_data(&plan, &flags, &mut left).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(left.len(), 1, "{left:?}");
+        assert_eq!((left[0].kind, &left[0].path), (KeptKind::Refused, &stuck));
+        assert!(left[0].reason.contains("removing it failed"), "{left:?}");
+        assert!(locked.join("file").is_file());
+        assert!(!other.exists());
+    }
+
+    #[test]
     fn keep_data_wins_over_a_config_dir_that_contains_the_state_dir() {
         let base = tempfile::tempdir().unwrap();
         let config_dir = base.path().join("madmail");
@@ -2273,11 +2411,11 @@ mod tests {
         let link = base.path().join("madmail");
         std::os::unix::fs::symlink(&target, &link).unwrap();
         assert_eq!(
-            remove_entry(&link, &[]).unwrap(),
+            remove_entry(&link, &[], true).unwrap(),
             Removed::Link(target.clone())
         );
         assert!(target.is_dir());
-        assert_eq!(remove_entry(&link, &[]).unwrap(), Removed::Nothing);
+        assert_eq!(remove_entry(&link, &[], true).unwrap(), Removed::Nothing);
     }
 
     #[cfg(unix)]
@@ -2313,6 +2451,13 @@ mod tests {
             panic!("removal through a service group's directory");
         };
         assert!(why.contains("group of the service account"), "{why}");
+        assert!(target.is_dir());
+        // Not when the service accounts' groups could not all be read.
+        assert!(matches!(
+            remove_entry_trusted(&target, &known([gid.wrapping_add(1)]).without_group_dirs())
+                .unwrap(),
+            Removed::Refused(_)
+        ));
         assert!(target.is_dir());
         assert_eq!(
             remove_entry_trusted(&target, &known([gid.wrapping_add(1)])).unwrap(),

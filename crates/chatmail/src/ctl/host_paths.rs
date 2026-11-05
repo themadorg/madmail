@@ -27,8 +27,9 @@ use std::path::{Component, Path, PathBuf};
 /// Well-known directories that install never re-owns or re-modes (as a config,
 /// certificate or state directory) and uninstall never removes as a whole,
 /// whatever a flag, a unit or a config file says. See [`system_dir_reason`]
-/// for the full rule, which also covers top-level directories and the
-/// directories directly inside `/home` and `/Users`.
+/// for the full rule, which also covers top-level directories, the
+/// directories directly inside `/home` and `/Users`, and directories below
+/// `/etc`, `/usr` and the other [`SYSTEM_TREES`] that are not named for madmail.
 pub const DENIED_DIRS: &[&str] = &[
     "/",
     "/bin",
@@ -100,23 +101,47 @@ pub fn is_denied_dir(path: &Path) -> bool {
     DENIED_DIRS.iter().any(|d| normalized == Path::new(d))
 }
 
+/// Top-level directories that hold the system itself. A directory below one
+/// of them is a system directory unless one of its components below the
+/// top-level one is named for madmail (see [`system_dir_reason`]).
+pub const SYSTEM_TREES: &[&str] = &[
+    "bin", "boot", "dev", "etc", "lib", "lib32", "lib64", "libx32", "proc", "run", "sbin", "sys",
+    "usr",
+];
+
 /// Why `path` (normalized) must never be used as a state directory or removed
 /// as a whole, or `None`: one of [`DENIED_DIRS`] ("well-known system
 /// directory"), a directory directly inside `/` ("top-level directory", such as
-/// `/data` or a mount point that may hold other software), or a directory
-/// directly inside `/home` or `/Users` ("user home directory").
-pub fn system_dir_reason(path: &Path) -> Option<&'static str> {
+/// `/data` or a mount point that may hold other software), a directory
+/// directly inside `/home` or `/Users` ("user home directory"), or a directory
+/// below one of [`SYSTEM_TREES`] (such as `/etc/systemd`, `/usr/local/sbin` or
+/// `/lib/systemd/system`) none of whose components below the top-level one is
+/// named for madmail ([`is_named_for_madmail`] with `primary`): `/etc/madmail`
+/// and `/etc/madmail/data` pass this rule, `/etc/ssl` does not.
+pub fn system_dir_reason(path: &Path, primary: &str) -> Option<&'static str> {
     let normalized = normalize(path);
     if is_denied_dir(&normalized) {
         return Some("well-known system directory");
     }
     match normalized.parent() {
-        Some(p) if p == Path::new("/") => Some("top-level directory"),
+        Some(p) if p == Path::new("/") => return Some("top-level directory"),
         Some(p) if p == Path::new("/home") || p == Path::new("/Users") => {
-            Some("user home directory")
+            return Some("user home directory")
         }
-        _ => None,
+        _ => {}
     }
+    let mut names = normalized.components().filter_map(|c| match c {
+        Component::Normal(n) => Some(n),
+        _ => None,
+    });
+    let in_system_tree = names
+        .next()
+        .is_some_and(|top| SYSTEM_TREES.iter().any(|t| top == std::ffi::OsStr::new(t)));
+    let named = names.any(|n| {
+        n.to_str()
+            .is_some_and(|n| is_family_stem(n) || n == primary)
+    });
+    (in_system_tree && !named).then_some("directory below /etc, /usr or another system directory")
 }
 
 /// Whether the directory with this device and inode is one of [`DENIED_DIRS`]
@@ -298,7 +323,8 @@ mod tests {
     }
 
     #[test]
-    fn system_dirs_cover_denied_top_level_and_home_dirs() {
+    fn system_dirs_cover_denied_top_level_home_and_system_tree_dirs() {
+        let tree = "directory below /etc, /usr or another system directory";
         for (dir, why) in [
             ("/", "well-known system directory"),
             ("/var/lib", "well-known system directory"),
@@ -308,16 +334,35 @@ mod tests {
             ("/madmail", "top-level directory"),
             ("/home/alice", "user home directory"),
             ("/Users/alice/", "user home directory"),
+            ("/etc/systemd", tree),
+            ("/etc/systemd/system", tree),
+            ("/etc/ssl/private", tree),
+            ("/lib/systemd/system", tree),
+            ("/usr/local/sbin", tree),
+            ("/run/systemd", tree),
+            ("/etc/madmail/..", "well-known system directory"),
         ] {
-            assert_eq!(system_dir_reason(Path::new(dir)), Some(why), "{dir}");
+            assert_eq!(
+                system_dir_reason(Path::new(dir), "mymail"),
+                Some(why),
+                "{dir}"
+            );
         }
         for dir in [
             "/var/lib/madmail",
             "/srv/madmail",
+            "/srv/m2",
             "/home/alice/madmail",
             "/data/x",
+            "/opt/x",
+            "/etc/madmail",
+            "/etc/madmail-data",
+            "/etc/madmail/data",
+            "/etc/mymail",
+            "/usr/local/lib/chatmail_x/state",
+            "/var/www",
         ] {
-            assert_eq!(system_dir_reason(Path::new(dir)), None, "{dir}");
+            assert_eq!(system_dir_reason(Path::new(dir), "mymail"), None, "{dir}");
         }
     }
 
@@ -348,6 +393,17 @@ mod tests {
         // characters below U+0020, so the line structure stays intact.
         let json = serde_json::json!({ "path": "/s/x\nrun\r\u{1b}[2K" }).to_string();
         assert_eq!(json, r#"{"path":"/s/x\nrun\r\u001b[2K"}"#);
+        // serde leaves DEL, C1 controls and bidirectional overrides as they
+        // are, so JSON output carries paths through `shown` as well.
+        let raw = p("/s/\u{9b}2K\u{7f}x\u{202e}y\u{2028}".as_bytes());
+        let plain = serde_json::json!({ "path": raw.to_string_lossy() }).to_string();
+        assert!(has_raw_control(&plain), "{plain:?}");
+        let json = serde_json::json!({ "path": shown(&raw) }).to_string();
+        assert!(!has_raw_control(&json), "{json:?}");
+        assert_eq!(
+            json,
+            r#"{"path":"/s/\\u{009b}2K\\x7fx\\u{202e}y\\u{2028}"}"#
+        );
         for raw in [
             &b"/s/x\nchown -h root /etc"[..],
             b"/s/a\rb",

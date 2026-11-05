@@ -94,6 +94,8 @@ pub struct Skipped {
     pub reason: String,
     /// The entry belongs to another account ([`Action::SkipForeignOwner`]).
     pub foreign_owner: bool,
+    /// The entry's owner, for an entry of another account.
+    pub owner: Option<u32>,
     /// The entry is a directory, so it was not entered either.
     pub is_dir: bool,
 }
@@ -255,6 +257,10 @@ pub fn chown_tree_fd_with(
                     path: path.clone(),
                     reason,
                     foreign_owner: matches!(action, Action::SkipForeignOwner { .. }),
+                    owner: match action {
+                        Action::SkipForeignOwner { owner, .. } => Some(owner),
+                        _ => None,
+                    },
                     is_dir,
                 })
             }
@@ -276,6 +282,7 @@ pub fn chown_tree_fd_with(
                         path: path.clone(),
                         reason: format!("deeper than {MAX_DEPTH} levels"),
                         foreign_owner: false,
+                        owner: None,
                         is_dir: true,
                     });
                     continue;
@@ -344,6 +351,7 @@ fn push_changed(skipped: &mut Vec<Skipped>, path: &Path, e: &io::Error) {
         path: path.to_path_buf(),
         reason: changed_reason(e),
         foreign_owner: false,
+        owner: None,
         is_dir: false,
     });
 }

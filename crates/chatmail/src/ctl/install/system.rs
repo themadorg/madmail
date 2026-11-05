@@ -164,7 +164,7 @@ fn ensure_state_parent(cfg: &InstallConfig) -> Result<()> {
     };
     let trust = match lookup_uid_gid(&cfg.maddy_user) {
         Ok((uid, gid)) => {
-            Trust::service(uid, gid, None).with_groups(secure_fs::account_groups(&cfg.maddy_user))
+            Trust::service(uid, gid, None).with_groups(service_groups(&cfg.maddy_user)?)
         }
         // Uid and gid 0 are never counted as the service account.
         Err(_) => Trust::service(0, 0, None),
@@ -397,7 +397,7 @@ impl SecureInstall {
             }
             Err(e) => return Err(e),
         };
-        let groups = secure_fs::account_groups(&cfg.maddy_user);
+        let groups = service_groups(&cfg.maddy_user)?;
         let first = Trust::service(uid, gid, None).with_groups(groups.iter().copied());
         let (_, st, physical) = open_state_root(&cfg.state_dir, &first, create)?;
         check_state_root(cfg, &physical, &st, Some(uid))?;
@@ -671,10 +671,15 @@ impl SecureInstall {
                         return Err(ChatmailError::config(format!(
                             "refusing to read {} as root: it belongs to uid {}, not to the \
                              service account, so it may be another account's file linked \
-                             there. Check it; if it is madmail's own file, {}",
+                             there. {}",
                             shown(path),
                             st.st_uid,
-                            self.file_chown_hint(path)
+                            self.in_tree_file_hint(
+                                path,
+                                &dir,
+                                st.st_uid,
+                                "If it is madmail's own file"
+                            )
                         )));
                     }
                     Some((fd, _)) => Some(fd),
@@ -829,6 +834,7 @@ impl SecureInstall {
     /// writes its own TLS files there with that owner); for anything else the
     /// operator is told what to check and change.
     fn note_in_tree_tls_file(&self, path: &Path, rest: &Path) {
+        let dir_rel = rest.parent().map(Path::to_path_buf).unwrap_or_default();
         let st = secure_fs::split_file(rest).and_then(|(dir, name)| {
             let dir = secure_fs::tree_open_dir(&self.state_root, &dir, false)?;
             secure_fs::fstatat_nofollow(dir.as_raw_fd(), &secure_fs::cstring(&name)?)
@@ -845,9 +851,14 @@ impl SecureInstall {
             Ok(st) if self.is_service_uid(st.st_uid) => return,
             Ok(st) => format!(
                 "inside the state directory and belongs to uid {}, not to the service account, \
-                 so the state walk leaves it unchanged. If it is your certificate or key, {}",
+                 so the state walk leaves it unchanged. {}",
                 st.st_uid,
-                self.file_chown_hint(path)
+                self.in_tree_file_hint(
+                    path,
+                    &dir_rel,
+                    st.st_uid,
+                    "If it is your certificate or key"
+                )
             ),
         };
         skip_note(path, &why);
@@ -899,21 +910,89 @@ impl SecureInstall {
         Ok(())
     }
 
-    /// What to do, in order, to give a file inside the state directory to the
-    /// service account by hand. `chown -h` does not follow a link in the last
-    /// component, but the directories on the way are resolved again by path,
-    /// so the service and every process of its account are stopped first.
-    fn file_chown_hint(&self, path: &Path) -> String {
+    /// What to do, in order, to give the file at `path` inside the state
+    /// directory (owned by uid `owner`) to the service account by hand. The
+    /// text ends with the command, with nothing after it, so it can be copied.
+    /// `chown -h` does not follow a link in the last component, but the
+    /// directories on the way are resolved again by path, so the service and
+    /// every process of its account are stopped first, and so is every
+    /// process of the account that now has uid `owner`, if one has.
+    fn file_chown_hint(&self, path: &Path, owner: u32) -> String {
         let quoted = shell_quote(path);
+        let other = match secure_fs::account_name(owner) {
+            Ok(Some(name)) if owner != 0 && name != self.user => format!(
+                ", and lock and stop every process of {name}, the account that has uid \
+                 {owner} (usermod -L {name}; pkill -u {name}; ps -u {name} must then list none)"
+            ),
+            _ => String::new(),
+        };
         format!(
             "stop the service (systemctl stop {unit}) and every process of {user} \
-             (pkill -u {user}; ps -u {user} must then list none), check that the file is \
-             not a hard link to another file (stat -c %h {quoted} must print 1), then run: \
-             chown -h {user}:{group} {quoted}",
+             (pkill -u {user}; ps -u {user} must then list none){other}. Do not change the \
+             file if it has more than one hard link (stat -c %h {quoted} prints more than \
+             1); one link does not prove that it is madmail's file, so compare its content \
+             with what madmail writes there, or remove it and let madmail create it again. \
+             To keep it as madmail's file, run: chown -h {user}:{group} {quoted}",
             unit = self.primary,
             user = self.user,
             group = self.group,
         )
+    }
+
+    /// For a file of uid `owner` at `path`, in the directory `dir` (relative to
+    /// the state root): `intro` followed by [`Self::file_chown_hint`] when
+    /// every directory from the state root down to `dir` belongs to root or
+    /// the service account and no other account can write it; otherwise a note
+    /// that the file needs manual inspection. An account that owns or can
+    /// write a directory on the way could redirect a `chown` made by path
+    /// while it runs, and no step printed here would stop it.
+    fn in_tree_file_hint(&self, path: &Path, dir: &Path, owner: u32, intro: &str) -> String {
+        if self.tree_dirs_are_root_or_service(dir) {
+            format!("{intro}, {}", self.file_chown_hint(path, owner))
+        } else {
+            "A directory on the way to it belongs to another account or can be written by \
+             one, so no command is printed: the file needs manual inspection"
+                .to_string()
+        }
+    }
+
+    /// Whether the state root and every directory down to `dir` (relative to
+    /// it, opened without following links) belong to root or the service
+    /// account, and are writable by no group but root's and the service
+    /// account's, and by others only with the sticky bit.
+    fn tree_dirs_are_root_or_service(&self, dir: &Path) -> bool {
+        use std::path::Component;
+        let ok = |fd: &OwnedFd| {
+            secure_fs::fstat(fd.as_raw_fd()).is_ok_and(|st| {
+                let mode = secure_fs::perm_bits(&st);
+                (st.st_uid == 0 || self.is_service_uid(st.st_uid))
+                    && (mode & 0o020 == 0 || st.st_gid == 0 || self.groups.contains(&st.st_gid))
+                    && (mode & 0o002 == 0 || mode & 0o1000 != 0)
+            })
+        };
+        let Ok(mut cur) =
+            secure_fs::openat(self.state_root.as_raw_fd(), c".", secure_fs::DIR_FLAGS, 0)
+        else {
+            return false;
+        };
+        if !ok(&cur) {
+            return false;
+        }
+        for component in dir.components() {
+            let name = match component {
+                Component::CurDir => continue,
+                Component::Normal(name) => name,
+                _ => return false,
+            };
+            let Ok(c_name) = secure_fs::cstring(name) else {
+                return false;
+            };
+            match secure_fs::openat(cur.as_raw_fd(), &c_name, secure_fs::DIR_FLAGS, 0) {
+                Ok(next) if ok(&next) => cur = next,
+                _ => return false,
+            }
+        }
+        true
     }
 
     /// A new descriptor for the state directory, for the ownership walk.
@@ -1025,7 +1104,8 @@ fn state_dir_refusal(cfg: &InstallConfig, why: &str) -> ChatmailError {
 /// Refuse a state directory that is not madmail's own, before anything is
 /// changed: one that is, by path as given or physically after the operator's
 /// links, a system directory ([`host_paths::system_dir_reason`]: a well-known
-/// directory, a top-level one or a user's home directory); one with the
+/// directory, a top-level one, a user's home directory, or one below `/etc`,
+/// `/usr` or another system directory that is not named for madmail); one with the
 /// device and inode of a well-known directory ([`host_paths::is_denied_dir_id`]);
 /// and one that belongs to another named account (see [`check_state_root`]).
 /// Install and both repair modes run it before the account is created or
@@ -1035,13 +1115,13 @@ pub fn check_state_dir(cfg: &InstallConfig) -> Result<()> {
     if !cfg.system_install {
         return Ok(());
     }
-    if let Some(reason) = host_paths::system_dir_reason(&cfg.state_dir) {
+    if let Some(reason) = host_paths::system_dir_reason(&cfg.state_dir, &cfg.binary_name) {
         return Err(state_dir_refusal(cfg, &format!("it is a {reason}")));
     }
     let service = lookup_uid_gid(&cfg.maddy_user).ok();
     let trust = match service {
         Some((uid, gid)) => {
-            Trust::service(uid, gid, None).with_groups(secure_fs::account_groups(&cfg.maddy_user))
+            Trust::service(uid, gid, None).with_groups(service_groups(&cfg.maddy_user)?)
         }
         // Uid and gid 0 are never counted as the service account.
         None => Trust::service(0, 0, None),
@@ -1077,10 +1157,23 @@ fn check_state_root(
     st: &libc::stat,
     service_uid: Option<u32>,
 ) -> Result<()> {
-    if let Some(reason) = host_paths::system_dir_reason(&cfg.state_dir) {
+    check_state_root_with(cfg, physical, st, service_uid, &secure_fs::account_name)
+}
+
+/// [`check_state_root`] with the account lookup given (`lookup(uid)` is the
+/// account name of `uid`, `None` when it has none). A lookup that fails
+/// refuses the directory.
+fn check_state_root_with(
+    cfg: &InstallConfig,
+    physical: &Path,
+    st: &libc::stat,
+    service_uid: Option<u32>,
+    lookup: &dyn Fn(u32) -> io::Result<Option<String>>,
+) -> Result<()> {
+    if let Some(reason) = host_paths::system_dir_reason(&cfg.state_dir, &cfg.binary_name) {
         return Err(state_dir_refusal(cfg, &format!("it is a {reason}")));
     }
-    if let Some(reason) = host_paths::system_dir_reason(physical) {
+    if let Some(reason) = host_paths::system_dir_reason(physical, &cfg.binary_name) {
         return Err(state_dir_refusal(
             cfg,
             &format!("it resolves to {}, a {reason}", shown(physical)),
@@ -1094,7 +1187,16 @@ fn check_state_root(
     }
     let owner = st.st_uid;
     if owner != 0 && Some(owner) != service_uid {
-        if let Some(name) = secure_fs::account_name(owner) {
+        let name = lookup(owner).map_err(|e| {
+            ChatmailError::config(format!(
+                "refusing to use state directory {}: cannot look up the owner (uid {owner}) \
+                 of {}: {e}; refusing to give its files to the service account {}",
+                shown(&cfg.state_dir),
+                shown(physical),
+                cfg.maddy_user
+            ))
+        })?;
+        if let Some(name) = name {
             return Err(ChatmailError::config(format!(
                 "refusing to use state directory {}: it belongs to account {name} (uid \
                  {owner}), not to root or to the service account {}. Install would give \
@@ -1394,10 +1496,12 @@ pub fn setup_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Re
                 "     This directory was not entered: its contents were left unchanged and \
                  need manual inspection."
             );
-        } else if entry.foreign_owner {
+        } else if let (true, Some(owner)) = (entry.foreign_owner, entry.owner) {
+            // Every directory on the way was entered and given to the service
+            // account by the walk; the hint ends with the command.
             println!(
-                "     If it is madmail's own file, {}.",
-                sec.file_chown_hint(&entry.path)
+                "     If it is madmail's own file, {}",
+                sec.file_chown_hint(&entry.path, owner)
             );
         }
     }
@@ -1436,6 +1540,20 @@ fn lookup_uid_gid(name: &str) -> Result<(u32, u32)> {
         .map_err(|_| ChatmailError::config(format!("invalid gid for {name}")))?;
 
     Ok((uid, gid))
+}
+
+/// The groups (primary and supplementary) of the existing service account
+/// `user`. When they cannot be read install stops: a group it does not know of
+/// could write a directory it would then trust.
+fn service_groups(user: &str) -> Result<Vec<u32>> {
+    secure_fs::account_groups_checked(user)
+        .map(Option::unwrap_or_default)
+        .map_err(|e| {
+            ChatmailError::config(format!(
+                "refusing to continue: {e}. Install needs the groups of the service account \
+                 {user} to tell which directories it can write"
+            ))
+        })
 }
 
 fn io_error(op: &str, path: &Path, e: io::Error) -> ChatmailError {
@@ -1816,16 +1934,71 @@ mod tests {
         // Nor an in-tree file of another account (the caller's, for a service
         // account with another uid): it may be a hard link to a file whose
         // original name was replaced.
+        // The state root belongs to the caller, another account here, which
+        // could redirect a chown by path: no command is printed.
         let foreign = handle(&state, None, &[&state]);
         let err = foreign
             .read_file(&state.join("acct.json"), 64)
             .unwrap_err()
             .to_string();
         assert!(err.contains("refusing to read"), "{err}");
-        assert!(err.contains("systemctl stop madmail"), "{err}");
-        assert!(err.contains("pkill -u madmail; ps -u madmail"), "{err}");
-        assert!(err.contains("stat -c %h "), "{err}");
-        assert!(err.contains("chown -h madmail:madmail "), "{err}");
+        assert!(err.contains("needs manual inspection"), "{err}");
+        assert!(!err.contains("chown"), "{err}");
+    }
+
+    #[test]
+    fn chown_hints_stop_every_account_and_end_with_the_command() {
+        let (_b, b) = base();
+        let state = b.join("state");
+        fs::create_dir_all(state.join("sub")).unwrap();
+        // SAFETY: getuid has no preconditions.
+        let me = unsafe { libc::getuid() };
+        // The caller's directories count as the service account's (its old uid).
+        let sec = handle(&state, Some(me), &[]);
+        let path = state.join("sub/x.db");
+        let hint = sec.in_tree_file_hint(&path, Path::new("sub"), UNUSED_UID, "If it is madmail's");
+        assert!(hint.starts_with("If it is madmail's, stop the service (systemctl stop madmail) and every process of madmail (pkill -u madmail; ps -u madmail must then list none). "), "{hint}");
+        assert!(
+            hint.contains("Do not change the file if it has more than one hard link"),
+            "{hint}"
+        );
+        assert!(
+            hint.contains("one link does not prove that it is madmail's file"),
+            "{hint}"
+        );
+        let command = format!("chown -h madmail:madmail {}", shell_quote(&path));
+        assert!(hint.ends_with(&format!("run: {command}")), "{hint}");
+        // A file of a uid that now belongs to another account: that account is
+        // stopped too.
+        if let Some(other) =
+            (1..1000).find(|&u| u != me && matches!(secure_fs::account_name(u), Ok(Some(_))))
+        {
+            let name = secure_fs::account_name(other).unwrap().unwrap();
+            let hint = sec.file_chown_hint(&path, other);
+            assert!(
+                hint.contains(&format!(
+                    "usermod -L {name}; pkill -u {name}; ps -u {name} must then list none"
+                )),
+                "{hint}"
+            );
+        }
+        // Root's files need no other account stopped.
+        assert!(!sec.file_chown_hint(&path, 0).contains("usermod -L"));
+        // A directory on the way that belongs to another account: no command.
+        fs::create_dir(state.join("sub/foreign")).unwrap();
+        let strict = handle(&state, None, &[]);
+        let hint = strict.in_tree_file_hint(&path, Path::new("sub"), UNUSED_UID, "If");
+        assert!(
+            hint.contains("needs manual inspection") && !hint.contains("chown"),
+            "{hint}"
+        );
+        // A group-writable directory of a group other than root's.
+        fs::set_permissions(state.join("sub"), fs::Permissions::from_mode(0o775)).unwrap();
+        // (On macOS a new directory takes the group of its parent, wheel here.)
+        if fs::metadata(state.join("sub")).unwrap().gid() != 0 {
+            let hint = sec.in_tree_file_hint(&path, Path::new("sub"), UNUSED_UID, "If");
+            assert!(hint.contains("needs manual inspection"), "{hint}");
+        }
     }
 
     #[test]
@@ -2111,10 +2284,11 @@ mod tests {
             check_state_root(&cfg, &b, &st, service).unwrap();
         }
         // Owned by another named account: refused, naming it.
-        let named = (1..1000).find(|&u| u != me && secure_fs::account_name(u).is_some());
+        let named =
+            (1..1000).find(|&u| u != me && matches!(secure_fs::account_name(u), Ok(Some(_))));
         if let Some(other) = named {
             st.st_uid = other;
-            let name = secure_fs::account_name(other).unwrap();
+            let name = secure_fs::account_name(other).unwrap().unwrap();
             let err = check_state_root(&cfg, &b, &st, Some(me))
                 .unwrap_err()
                 .to_string();
@@ -2129,6 +2303,26 @@ mod tests {
         if me != 0 {
             st.st_uid = me;
             assert!(check_state_root(&cfg, &b, &st, None).is_err());
+        }
+        // When the owner cannot be looked up (an NSS service that is down, or
+        // an `id` that only takes names), the directory is refused, not taken
+        // for one of a uid without a name.
+        st.st_uid = UNUSED_UID;
+        let failing = |_: u32| -> io::Result<Option<String>> { Err(io::Error::other("NSS down")) };
+        let err = check_state_root_with(&cfg, &b, &st, Some(me), &failing)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("cannot look up the owner (uid {UNUSED_UID})"))
+                && err.contains("NSS down"),
+            "{err}"
+        );
+        let unnamed = |_: u32| -> io::Result<Option<String>> { Ok(None) };
+        check_state_root_with(&cfg, &b, &st, Some(me), &unnamed).unwrap();
+        // Root and the service account are never looked up.
+        for owner in [0, me] {
+            st.st_uid = owner;
+            check_state_root_with(&cfg, &b, &st, Some(me), &failing).unwrap();
         }
     }
 
