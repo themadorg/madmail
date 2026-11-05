@@ -139,9 +139,10 @@ loops), link and hard-link anything there while root runs, and
 `fs.protected_hardlinks` may be 0.
 
 - Install and both repair modes refuse, before `useradd` or `usermod`, a state
-  directory that is not madmail's own: a well-known system directory, a direct
-  child of `/`, a user's home directory (as given, after links, or by device and
-  inode), or an existing directory that belongs to another named account. Install
+  directory that is not madmail's own: a well-known system directory (as given,
+  after links, or by device and inode), a direct child of `/` or a user's home
+  directory (as given or after links), or an existing directory that belongs to
+  another named account. Install
   gives the state directory and what is in it to the service account, so such a
   directory would hand system or another account's files to it.
 - Install resolves every path it writes into the state directory, and the paths
