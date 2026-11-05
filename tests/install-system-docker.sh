@@ -503,7 +503,7 @@ chown -R nobody:nogroup /var/xyzzy/lib/madmail/nobody-dir
 grep -qF '   ! Ownership of /var/xyzzy/lib/madmail/evil\nname left unchanged: belongs to uid 0' /tmp/user-escaped.log
 evil_q="\$'/var/xyzzy/lib/madmail/evil\\x0aname'"
 # The printed steps end with the command, so it can be copied as it is.
-grep -qxF "     If it is madmail's own file, stop the service (systemctl stop madmail) and every process of madmail: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1 madmail); where cron or at is installed, remove its jobs (crontab -r -u madmail; atq lists the jobs, atrm removes them); kill its processes (pkill -KILL -u madmail); ps -u madmail must then list none. When you are done, end the expiry again (usermod -e '' madmail); the service unit does not use PAM, so the service starts while its account is locked and expired. Do not change the file if it has more than one hard link (stat -c %h ${evil_q} prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail ${evil_q}" /tmp/user-escaped.log
+grep -qxF "     If it is madmail's own file, stop the service (systemctl stop madmail) and every process of madmail: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1970-01-02 madmail; usermod cannot change an account that exists only in a directory service such as LDAP or sssd: lock and expire it there); where cron or at is installed, remove its jobs (crontab -r -u madmail; atq lists the jobs, atrm removes them); stop its systemd user manager where there is one (loginctl terminate-user madmail); kill its processes (pkill -KILL -u madmail); ps -u madmail must then list none. When you are done, end the expiry again (usermod -e '' madmail); the service unit does not use PAM, so the service starts while its account is locked and expired. Do not change the file if it has more than one hard link (stat -c %h ${evil_q} prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail ${evil_q}" /tmp/user-escaped.log
 if grep -q '^name' /tmp/user-escaped.log; then fail "raw newline from a file name in the output"; fi
 grep -qF '   ! Ownership of /var/xyzzy/lib/madmail/nobody-dir left unchanged: belongs to uid 65534' /tmp/user-escaped.log
 grep -qF '     This directory was not entered: its contents were left unchanged and need manual inspection.' /tmp/user-escaped.log
@@ -565,7 +565,8 @@ absent_user madmail
 # stop its processes (and the service), give the directory itself to root, and
 # run repair. (The image has no procps, cron or at: look for its processes in
 # /proc instead of ps -u.)
-usermod -L -e 1 uidsquatter
+chage -l uidsquatter > /tmp/squat-expiry.log
+usermod -L -e 1970-01-02 uidsquatter
 [[ "$(getent shadow uidsquatter | cut -d: -f8)" = 1 ]]
 [[ -z "$(find /proc -mindepth 1 -maxdepth 1 -regex '/proc/[0-9]+' -user uidsquatter -print -quit)" ]]
 # A third account's directory in the tree, with a file of the old uid in it.
@@ -578,17 +579,23 @@ grep -q "^   ! Ownership of /var/xyzzy/lib/madmail/.* left unchanged: belongs to
 [[ "$(stat -c '%u' /var/xyzzy/lib/madmail/own-a)" = "$squat_uid" ]]
 [[ "$(stat -c '%U' /var/xyzzy/lib/madmail)" = madmail ]]
 # The printed steps also stop the account that now has that uid.
-grep -qF "Do the same for uidsquatter, the account that has uid $squat_uid: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1 uidsquatter); where cron or at is installed, remove its jobs (crontab -r -u uidsquatter; atq lists the jobs, atrm removes them); kill its processes (pkill -KILL -u uidsquatter); ps -u uidsquatter must then list none. When you are done, end the expiry again (usermod -e '' madmail and usermod -e '' uidsquatter);" /tmp/user-squatted.log
+grep -qF "Do the same for uidsquatter, the account that has uid $squat_uid: note its expiry first (chage -l uidsquatter), then lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1970-01-02 uidsquatter; usermod cannot change an account that exists only in a directory service such as LDAP or sssd: lock and expire it there); where cron or at is installed, remove its jobs (crontab -r -u uidsquatter; atq lists the jobs, atrm removes them); stop its systemd user manager where there is one (loginctl terminate-user uidsquatter); kill its processes (pkill -KILL -u uidsquatter); ps -u uidsquatter must then list none. When you are done, end the expiry again (usermod -e '' madmail); give uidsquatter its old expiry back (usermod -e <date> uidsquatter, or usermod -e '' uidsquatter when it had none) and, if it was not locked before, unlock it (usermod -U uidsquatter);" /tmp/user-squatted.log
 # The operator lists and checks the rest, then hands over directories and
 # single-link files; files with several links are checked one by one. A
 # directory of a third account is not entered, as the walk does not enter it.
 find /var/xyzzy/lib/madmail -xdev -uid "$squat_uid" -ls > /tmp/squat-list.log
 grep -q 'own-a' /tmp/squat-list.log
-find /var/xyzzy/lib/madmail -xdev \( -type d ! -uid 0 ! -uid "$squat_uid" ! -user madmail -prune \) \
+# A directory a group can write is not entered either.
+install -d -o madmail -g madmail -m 775 /var/xyzzy/lib/madmail/groupw
+install -o "$squat_uid" -m 600 /dev/null /var/xyzzy/lib/madmail/groupw/y
+find -H /var/xyzzy/lib/madmail -xdev \( -type d \( ! -uid 0 ! -uid "$squat_uid" ! -user madmail \
+    -o -perm -g+w -o -perm -o+w \) -prune \) \
     -o -uid "$squat_uid" \( -type d -o -type f -links 1 \) -exec chown -h madmail:madmail {} +
 [[ "$(stat -c '%u:%h' /var/xyzzy/lib/madmail/own-a)" = "$squat_uid:2" ]]
-[[ "$(stat -c '%u' /var/xyzzy/lib/madmail/third/x)" = "$squat_uid" ]]
-rm -r /var/xyzzy/lib/madmail/own-a /var/xyzzy/lib/madmail/own-b /var/xyzzy/lib/madmail/third
+[[ "$(stat -c '%u' /var/xyzzy/lib/madmail/third/x /var/xyzzy/lib/madmail/groupw/y)" = "$squat_uid
+$squat_uid" ]]
+rm -r /var/xyzzy/lib/madmail/own-a /var/xyzzy/lib/madmail/own-b /var/xyzzy/lib/madmail/third \
+    /var/xyzzy/lib/madmail/groupw
 [[ -z "$(find /var/xyzzy/lib/madmail -xdev -uid "$squat_uid" \( -type d -o -type f -links 1 \) -print -quit)" ]]
 userdel uidsquatter
 # An operator link from the config directory to a TLS file in the state tree,
@@ -676,7 +683,7 @@ install -m 600 /var/xyzzy/etc/madmail/certs/privkey.pem "$S/opcerts/privkey.pem"
 /tmp/madmail "${dns_file_args[@]}" \
     --cert-path "$S/opcerts/fullchain.pem" --key-path "$S/opcerts/privkey.pem" > /tmp/in-tree-tls.log
 grep -q "Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account" /tmp/in-tree-tls.log
-grep -qxF "   ! Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account, so the state walk leaves it unchanged. If it is your certificate or key, stop the service (systemctl stop madmail) and every process of madmail: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1 madmail); where cron or at is installed, remove its jobs (crontab -r -u madmail; atq lists the jobs, atrm removes them); kill its processes (pkill -KILL -u madmail); ps -u madmail must then list none. When you are done, end the expiry again (usermod -e '' madmail); the service unit does not use PAM, so the service starts while its account is locked and expired. Do not change the file if it has more than one hard link (stat -c %h $S/opcerts/privkey.pem prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail $S/opcerts/privkey.pem" /tmp/in-tree-tls.log
+grep -qxF "   ! Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account, so the state walk leaves it unchanged. If it is your certificate or key, stop the service (systemctl stop madmail) and every process of madmail: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1970-01-02 madmail; usermod cannot change an account that exists only in a directory service such as LDAP or sssd: lock and expire it there); where cron or at is installed, remove its jobs (crontab -r -u madmail; atq lists the jobs, atrm removes them); stop its systemd user manager where there is one (loginctl terminate-user madmail); kill its processes (pkill -KILL -u madmail); ps -u madmail must then list none. When you are done, end the expiry again (usermod -e '' madmail); the service unit does not use PAM, so the service starts while its account is locked and expired. Do not change the file if it has more than one hard link (stat -c %h $S/opcerts/privkey.pem prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail $S/opcerts/privkey.pem" /tmp/in-tree-tls.log
 [[ "$(stat -c '%U:%G:%a' "$S/opcerts/privkey.pem")" = root:root:600 ]]
 [[ "$(stat -c '%U' "$S/opcerts")" = madmail ]]
 rm -r "$S/opcerts"

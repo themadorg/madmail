@@ -942,28 +942,39 @@ impl SecureInstall {
     /// expired, which PAM's account check refuses, and its jobs are removed.
     fn file_chown_hint(&self, path: &Path, owner: u32) -> String {
         let quoted = shell_quote(path);
-        let (other, other_expiry) = match secure_fs::account_name(owner) {
-            Ok(Some(name)) if owner != 0 && name != self.user => (
-                format!(
-                    ". Do the same for {name}, the account that has uid {owner}: {}",
-                    stop_account_steps(&name)
-                ),
-                format!(" and usermod -e '' {name}"),
-            ),
+        let user = shell_quote(Path::new(&self.user));
+        let (other, other_restore) = match secure_fs::account_name(owner) {
+            Ok(Some(name)) if owner != 0 && name != self.user => {
+                let q = shell_quote(Path::new(&name));
+                (
+                    format!(
+                        ". Do the same for {}, the account that has uid {owner}: note its \
+                         expiry first (chage -l {q}), then {}",
+                        shown(Path::new(&name)),
+                        stop_account_steps(&name)
+                    ),
+                    format!(
+                        "; give {} its old expiry back (usermod -e <date> {q}, or \
+                         usermod -e '' {q} when it had none) and, if it was not locked \
+                         before, unlock it (usermod -U {q})",
+                        shown(Path::new(&name))
+                    ),
+                )
+            }
             _ => (String::new(), String::new()),
         };
         format!(
-            "stop the service (systemctl stop {unit}) and every process of {user}: {steps}\
-             {other}. When you are done, end the expiry again (usermod -e '' {user}\
-             {other_expiry}); the service unit does not use PAM, so the service starts while \
+            "stop the service (systemctl stop {unit}) and every process of {user_shown}: \
+             {steps}{other}. When you are done, end the expiry again (usermod -e '' {user})\
+             {other_restore}; the service unit does not use PAM, so the service starts while \
              its account is locked and expired. Do not change the file if it has more than \
              one hard link (stat -c %h {quoted} prints more than 1); one link does not prove \
              that it is madmail's file, so compare its content with what madmail writes \
              there, or remove it and let madmail create it again. To keep it as madmail's \
              file, run: chown -h {user}:{group} {quoted}",
-            unit = self.primary,
-            user = self.user,
-            group = self.group,
+            unit = shell_quote(Path::new(&self.primary)),
+            user_shown = shown(Path::new(&self.user)),
+            group = shell_quote(Path::new(&self.group)),
             steps = stop_account_steps(&self.user),
         )
     }
@@ -1034,11 +1045,15 @@ impl SecureInstall {
 /// starting, for the commands printed to the operator (see
 /// [`SecureInstall::file_chown_hint`]).
 fn stop_account_steps(name: &str) -> String {
+    let name = shell_quote(Path::new(name));
     format!(
         "lock and expire the account, so that cron and at, which check the account with \
-         PAM, start no job for it (usermod -L -e 1 {name}); where cron or at is installed, \
-         remove its jobs (crontab -r -u {name}; atq lists the jobs, atrm removes them); \
-         kill its processes (pkill -KILL -u {name}); ps -u {name} must then list none"
+         PAM, start no job for it (usermod -L -e 1970-01-02 {name}; usermod cannot change \
+         an account that exists only in a directory service such as LDAP or sssd: lock and \
+         expire it there); where cron or at is installed, remove its jobs (crontab -r -u \
+         {name}; atq lists the jobs, atrm removes them); stop its systemd user manager \
+         where there is one (loginctl terminate-user {name}); kill its processes (pkill \
+         -KILL -u {name}); ps -u {name} must then list none"
     )
 }
 
@@ -2153,7 +2168,7 @@ mod tests {
         let sec = handle(&state, Some(me), &[]);
         let path = state.join("sub/x.db");
         let hint = sec.in_tree_file_hint(&path, Path::new("sub"), UNUSED_UID, "If it is madmail's");
-        assert!(hint.starts_with("If it is madmail's, stop the service (systemctl stop madmail) and every process of madmail: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1 madmail); where cron or at is installed, remove its jobs (crontab -r -u madmail; atq lists the jobs, atrm removes them); kill its processes (pkill -KILL -u madmail); ps -u madmail must then list none. When you are done, end the expiry again (usermod -e '' madmail); "), "{hint}");
+        assert!(hint.starts_with("If it is madmail's, stop the service (systemctl stop madmail) and every process of madmail: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1970-01-02 madmail; usermod cannot change an account that exists only in a directory service such as LDAP or sssd: lock and expire it there); where cron or at is installed, remove its jobs (crontab -r -u madmail; atq lists the jobs, atrm removes them); stop its systemd user manager where there is one (loginctl terminate-user madmail); kill its processes (pkill -KILL -u madmail); ps -u madmail must then list none. When you are done, end the expiry again (usermod -e '' madmail); "), "{hint}");
         assert!(
             hint.contains("Do not change the file if it has more than one hard link"),
             "{hint}"
@@ -2171,19 +2186,35 @@ mod tests {
         {
             let name = secure_fs::account_name(other).unwrap().unwrap();
             let hint = sec.file_chown_hint(&path, other);
+            let q = shell_quote(Path::new(&name));
             assert!(
                 hint.contains(&format!(
-                    "Do the same for {name}, the account that has uid {other}: lock and expire \
-                     the account, so that cron and at, which check the account with PAM, start \
-                     no job for it (usermod -L -e 1 {name}); where cron or at is installed, \
-                     remove its jobs (crontab -r -u {name}; atq lists the jobs, atrm removes \
-                     them); kill its processes (pkill -KILL -u {name}); ps -u {name} must then \
-                     list none. When you are done, end the expiry again (usermod -e '' madmail \
-                     and usermod -e '' {name})"
+                    "Do the same for {}, the account that has uid {other}: note its expiry \
+                     first (chage -l {q}), then lock and expire the account, so that cron and \
+                     at, which check the account with PAM, start no job for it (usermod -L -e \
+                     1970-01-02 {q}; usermod cannot change an account that exists only in a \
+                     directory service such as LDAP or sssd: lock and expire it there); where \
+                     cron or at is installed, remove its jobs (crontab -r -u {q}; atq lists \
+                     the jobs, atrm removes them); stop its systemd user manager where there \
+                     is one (loginctl terminate-user {q}); kill its processes (pkill -KILL -u \
+                     {q}); ps -u {q} must then list none. When you are done, end the expiry \
+                     again (usermod -e '' madmail); give {} its old expiry back (usermod -e \
+                     <date> {q}, or usermod -e '' {q} when it had none) and, if it was not \
+                     locked before, unlock it (usermod -U {q});",
+                    shown(Path::new(&name)),
+                    shown(Path::new(&name)),
                 )),
                 "{hint}"
             );
         }
+        // Account names go into the commands quoted for the shell and into the
+        // text escaped.
+        assert_eq!(
+            stop_account_steps("we ird\n"),
+            stop_account_steps("x")
+                .replace(" x", " $'we ird\\x0a'")
+                .replace("(x)", "($'we ird\\x0a')")
+        );
         // Root's files need no other account stopped.
         let hint = sec.file_chown_hint(&path, 0);
         assert!(!hint.contains("Do the same for"), "{hint}");
