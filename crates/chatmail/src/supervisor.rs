@@ -130,6 +130,9 @@ impl ServerSupervisor {
     ) -> Result<(Self, mpsc::Sender<ReloadRequest>)> {
         let (reload_tx, mut reload_rx) = mpsc::channel(1);
 
+        // `file_config.hostname` already carries a protected `smtp_hostname`
+        // (settings block / environment). A database `__SMTP_HOSTNAME__` row stays
+        // informational, as before, so it cannot change the mail identity.
         let hostname = file_config
             .hostname
             .clone()

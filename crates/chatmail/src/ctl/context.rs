@@ -39,7 +39,9 @@ impl CtlContext {
         let config = if args.config.is_file() {
             load_config(&args.config)?
         } else {
-            AppConfig::default()
+            let mut cfg = AppConfig::default();
+            cfg.apply_deployment_environment()?;
+            cfg
         };
         let state_dir = resolve_state_dir(args.state_dir.clone(), &config);
         let database = effective_database_config(&state_dir, &config);
@@ -70,7 +72,11 @@ impl CtlContext {
 
     /// Open the application DB, creating it and running migrations when missing.
     pub async fn open_pool(&self) -> Result<DbPool> {
-        init_db_from_config(&self.database).await
+        let pool = init_db_from_config(&self.database)
+            .await?
+            .with_policy(self.config.deployment_policy()?);
+        let locks = crate::configuration_policy::read(&self.state_dir)?;
+        Ok(pool.with_mutation_locks(locks))
     }
 
     pub async fn load_settings_map(&self) -> Result<HashMap<String, String>> {

@@ -95,8 +95,8 @@ impl FederationSilentDismissCache {
 
     pub async fn remove(&self, pool: &DbPool, domain: &str) -> Result<bool> {
         let domain = normalize_federation_domain(domain);
-        let removed_db = match pool {
-            DbPool::Sqlite(p) => {
+        let removed_db = match pool.connection() {
+            chatmail_db::pool::DbConnection::Sqlite(p) => {
                 sqlx::query("DELETE FROM federation_silent_dismiss WHERE domain = ?")
                     .bind(&domain)
                     .execute(p)
@@ -104,7 +104,7 @@ impl FederationSilentDismissCache {
                     .rows_affected()
                     > 0
             }
-            DbPool::Postgres(p) => {
+            chatmail_db::pool::DbConnection::Postgres(p) => {
                 sqlx::query(&pg_sql(
                     "DELETE FROM federation_silent_dismiss WHERE domain = ?",
                 ))

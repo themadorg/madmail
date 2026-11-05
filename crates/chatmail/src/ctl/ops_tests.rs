@@ -1031,6 +1031,42 @@ fn cli_language_and_registration_parse() {
 }
 
 #[tokio::test]
+async fn deployment_file_blocks_admin_enable_and_compound_size_without_partial_write() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+    let config = dir.path().join("protected.toml");
+    std::fs::write(
+        &config,
+        "admin_web_enabled = false\nmax_message_size = \"10M\"\n",
+    )
+    .unwrap();
+    let cli = parse_cli_with_config(dir.path(), &config, &["admin-web", "enable"]);
+    assert!(dispatch(&cli)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("configuration_locked"));
+    let before = get_setting(&pool, settings_keys::APPENDLIMIT)
+        .await
+        .unwrap();
+    let cli = parse_cli_with_config(dir.path(), &config, &["message-size", "set", "20M"]);
+    assert!(dispatch(&cli)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("configuration_locked"));
+    assert_eq!(
+        before,
+        get_setting(&pool, settings_keys::APPENDLIMIT)
+            .await
+            .unwrap()
+    );
+    assert!(get_setting(&pool, settings_keys::ADMIN_WEB_ENABLED)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
 async fn dispatch_websocket_bridge_toggle() {
     let (dir, _args, _db, pool) = setup_ctl_env().await;
     assert!(
@@ -1051,4 +1087,46 @@ async fn dispatch_websocket_bridge_toggle() {
     dispatch(&parse_cli(dir.path(), &["websocket-bridge", "status"]))
         .await
         .unwrap();
+}
+
+/// Proxy settings follow the general rule (#219): `chatmail { ss_* }` directives are
+/// file defaults the CLI may override; a `settings { }` value protects only its key.
+#[tokio::test]
+async fn proxy_settings_protected_only_by_explicit_settings_block() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+    let config = dir.path().join("proxy_protected.conf");
+    std::fs::write(
+        &config,
+        "chatmail tcp://0.0.0.0:80 {\n    mail_domain test.example\n    ss_addr 0.0.0.0:8388\n    ss_cipher aes-128-gcm\n}\nsettings {\n    ss_password operator-pass\n}\n",
+    )
+    .unwrap();
+    for args in [
+        &["proxy", "password", "set", "new-pass"][..],
+        &["proxy", "password", "reset"][..],
+    ] {
+        let cli = parse_cli_with_config(dir.path(), &config, args);
+        let err = dispatch(&cli).await.unwrap_err().to_string();
+        assert!(err.contains("configuration_locked"), "{args:?}: {err}");
+    }
+    assert!(
+        chatmail_db::settings::get_stored_setting(&pool, settings_keys::SS_PASSWORD)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let cli = parse_cli_with_config(
+        dir.path(),
+        &config,
+        &["proxy", "cipher", "set", "chacha20-ietf-poly1305"],
+    );
+    dispatch(&cli).await.unwrap();
+    assert_eq!(
+        get_setting(&pool, settings_keys::SS_CIPHER)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("chacha20-ietf-poly1305")
+    );
+    let cli = parse_cli_with_config(dir.path(), &config, &["proxy", "status"]);
+    dispatch(&cli).await.unwrap();
 }

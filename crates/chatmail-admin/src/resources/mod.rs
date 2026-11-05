@@ -42,6 +42,22 @@ use crate::AdminState;
 pub type AdminResult = Result<(u16, Option<Value>), (u16, String)>;
 
 pub async fn dispatch(st: &AdminState, method: &str, resource: &str, body: &Value) -> AdminResult {
+    if !matches!(method, "GET" | "HEAD") {
+        use chatmail_db::settings_keys as k;
+        let keys: &[&str] = match resource {
+            "/admin/message-size" => &[k::APPENDLIMIT, k::MAX_MESSAGE_SIZE],
+            "/admin/services/webmail_dev" => &[
+                k::WEBIMAP_ENABLED,
+                k::WEBSMTP_ENABLED,
+                k::WEBMAIL_CORS_ORIGINS,
+            ],
+            "/admin/services/push" => &[k::PUSH_MODE, k::PUSH_ENABLED],
+            _ => &[],
+        };
+        st.pool
+            .check_settings_writable(keys)
+            .map_err(status_storage::db_err)?;
+    }
     match resource {
         "/admin/status" => status_storage::status(st, method).await,
         "/admin/overview" => status_storage::overview(st, method).await,

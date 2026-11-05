@@ -187,6 +187,24 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
                 .transports
                 .map(|body| parse_transport_post(body, req.domain.clone()))
                 .transpose()?;
+            // Refuse protected keys before anything is written, so a lock saves nothing.
+            let mut keys = Vec::new();
+            if req.enabled.is_some() {
+                keys.push(settings_keys::FEDERATION_ENABLED);
+            }
+            if policy.is_some() {
+                keys.push(settings_keys::FEDERATION_POLICY);
+            }
+            match &transports {
+                Some(TransportUpdate::Domain { .. }) => {
+                    keys.push(settings_keys::FEDERATION_TRANSPORT_DOMAINS);
+                }
+                Some(TransportUpdate::Global(parsed)) => {
+                    keys.extend(parsed.iter().map(|(name, _)| name.settings_key()));
+                }
+                None => {}
+            }
+            st.pool.check_settings_writable(&keys).map_err(db_err)?;
             if let Some(TransportUpdate::Domain { .. }) = transports {
                 let raw = get_setting(&st.pool, settings_keys::FEDERATION_TRANSPORT_DOMAINS)
                     .await

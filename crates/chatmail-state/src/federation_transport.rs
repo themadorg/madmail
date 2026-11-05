@@ -66,7 +66,7 @@ impl TransportName {
         }
     }
 
-    fn settings_key(self) -> &'static str {
+    pub fn settings_key(self) -> &'static str {
         match self {
             Self::Https => settings_keys::FEDERATION_TRANSPORT_HTTPS,
             Self::Http => settings_keys::FEDERATION_TRANSPORT_HTTP,

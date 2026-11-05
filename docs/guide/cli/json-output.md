@@ -716,12 +716,13 @@ With `-o file`: file contains JSON array (unchanged). Without `-o` and `--json`:
     "allowed": false,
     "file_default": false,
     "db_override": null,
+    "protected_by": null,
     "reload_required": false
   }
 }
 ```
 
-`db_override` is `true` / `false` when `__ALLOW_INBOUND_REMOTE_RCPT__` is set, or `null` when the file default is used.
+`db_override` is the stored `__ALLOW_INBOUND_REMOTE_RCPT__` row (`true` / `false`), or `null` when no row exists. `protected_by` names the explicit source (for example `CHATMAIL_ALLOW_INBOUND_REMOTE_RCPT` or a `settings { }` entry) that controls the value, or is `null`; a protected value wins over the row.
 
 ### `openrelay enable` / `disable`
 
@@ -1194,7 +1195,7 @@ madmail-v2 writes `quotas`.
 }
 ```
 
-`source` is `"db"` or `"config"`. Null `appendlimit` / `max_message_size` when unset in DB.
+`source` is `"protected"` (an environment variable or `settings { }` entry controls the limit), `"db"`, or `"config"`. `appendlimit` / `max_message_size` are the protected or stored values, or null when neither exists.
 
 ### `message-size set` / `reset`
 
@@ -1225,7 +1226,7 @@ madmail-v2 writes `quotas`.
 }
 ```
 
-`source` is `"db"` when a DB override is active.
+`source` is `"protected"` when an environment variable or `settings { }` entry controls the language, `"db"` when a DB override is active, and `"config"` otherwise.
 
 ### `language set` / `reset`
 
@@ -1363,12 +1364,13 @@ When Shadowsocks is not configured (`ss_addr` / `ss_password` missing), `configu
   "data": {
     "cipher": "aes-128-gcm",
     "db_override": null,
-    "source": "config"
+    "source": "config",
+    "protected_by": null
   }
 }
 ```
 
-`source` is `"db"` when a DB override is active. `db_override` holds the stored value when set.
+`source` is `"protected"` when an explicit source controls the cipher, `"db"` when a DB override is active, and `"config"` otherwise. `db_override` holds the stored value when a row exists; `protected_by` names the protecting source or is `null`. `proxy status` reports the same three values as `cipher_source`; its `password_db_override` is `true` only when a stored password row exists.
 
 ### `proxy cipher set` / `reset`
 
@@ -1395,12 +1397,13 @@ When Shadowsocks is not configured (`ss_addr` / `ss_password` missing), `configu
   "data": {
     "configured": true,
     "db_override": false,
-    "source": "config"
+    "source": "config",
+    "protected_by": null
   }
 }
 ```
 
-Password values are never included in JSON output.
+`db_override` is `true` when a stored password row exists. `source` and `protected_by` follow `proxy cipher status`. Password values are never included in JSON output.
 
 ### `proxy password set` / `reset`
 

@@ -32,7 +32,15 @@ pub fn parse_maddy_conf_str(content: &str) -> AppConfig {
 /// Parse `maddy.conf` and return an error if the file is syntactically invalid.
 pub fn parse_maddy_config(content: &str) -> Result<AppConfig, madmail_parse::ParseError> {
     let ast = madmail_parse::read(content)?;
-    Ok(apply_config(&ast.nodes, &ast.macros))
+    let mut cfg = apply_config(&ast.nodes, &ast.macros);
+    collect_settings(&ast.nodes, "", &mut cfg.settings_policy)?;
+    cfg.validate_deployment()
+        .map_err(|e| madmail_parse::ParseError {
+            message: e.to_string(),
+            line: 1,
+        })?;
+    cfg.apply_policy_fields();
+    Ok(cfg)
 }
 
 fn apply_config(nodes: &[Node], macros: &HashMap<String, Vec<String>>) -> AppConfig {
@@ -513,6 +521,34 @@ pub fn resolve_state_path(state_dir: &std::path::Path, path: &str) -> PathBuf {
     } else {
         state_dir.join(p)
     }
+}
+
+/// Collect the explicit `settings { name value }` block without collapsing absent
+/// booleans into false.
+///
+/// Only this block protects settings. Legacy module directives (listener lines,
+/// `alpn_*`, `turn_*`, `ss_*`, `retention`, `appendlimit`, ...) are parsed by
+/// `apply_config` as file defaults that database-backed settings may override.
+fn collect_settings(
+    nodes: &[Node],
+    block: &str,
+    policy: &mut crate::SettingsPolicy,
+) -> Result<(), madmail_parse::ParseError> {
+    for node in nodes {
+        if let Some(children) = &node.children {
+            collect_settings(children, &node.name, policy)?;
+            continue;
+        }
+        if block == "settings" {
+            policy
+                .insert(&node.name, &node.args.join(" "), "file")
+                .map_err(|e| madmail_parse::ParseError {
+                    message: e.to_string(),
+                    line: node.line,
+                })?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

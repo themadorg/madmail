@@ -18,6 +18,7 @@ It is written in the same spirit as the original Madmail "chatmail" documentatio
 | Topic | Document | For |
 |-------|----------|-----|
 | What this server is and why it exists | [01-what-is-chatmail.md](./01-what-is-chatmail.md) | Everyone |
+| Configuration sources, protected settings, and migration | [Configuration guide](../../guide/configuration.md) | Operators |
 | Getting a server running (local or public) | [02-quick-start.md](./02-quick-start.md) | Operators |
 | Accounts, registration (JIT), invites, blocking | [03-accounts-and-registration.md](./03-accounts-and-registration.md) | Operators & power users |
 | Privacy model: PGP-only + No-Log explained | [04-privacy-and-security.md](./04-privacy-and-security.md) | Everyone |

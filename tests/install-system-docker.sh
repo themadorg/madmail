@@ -103,6 +103,31 @@ systemd-analyze verify /etc/systemd/system/madmail.service
 install -d -o madmail -g madmail /run/madmail
 runuser -u madmail -- /var/xyzzy/bin/madmail --config /var/xyzzy/etc/madmail/madmail.conf \
     --state-dir /var/xyzzy/lib/madmail --boot-once > /tmp/boot.log 2>&1
+# The generated config protects nothing: CLI settings stay writable after boot
+# has published configuration-locks.json. Only an explicit settings {} entry locks.
+mm=(runuser -u madmail -- /var/xyzzy/bin/madmail --config /var/xyzzy/etc/madmail/madmail.conf
+    --state-dir /var/xyzzy/lib/madmail)
+[[ -f /var/xyzzy/lib/madmail/configuration-locks.json ]]
+"${mm[@]}" port smtp set 2525 > /tmp/port-set.log
+"${mm[@]}" --json port smtp status > /tmp/port-status.log
+json_check /tmp/port-status.log port '"2525"'
+"${mm[@]}" port imap local > /tmp/port-imap-local.log
+"${mm[@]}" port turn local > /tmp/port-turn-local.log
+"${mm[@]}" port smtp reset > /tmp/port-reset.log
+"${mm[@]}" --json port smtp status > /tmp/port-status.log
+json_check /tmp/port-status.log port '"25"'
+command cp -f /var/xyzzy/etc/madmail/madmail.conf /tmp/madmail.conf.saved
+printf '\nsettings {\n    smtp_port 2526\n}\n' >> /var/xyzzy/etc/madmail/madmail.conf
+runuser -u madmail -- /var/xyzzy/bin/madmail --config /var/xyzzy/etc/madmail/madmail.conf \
+    --state-dir /var/xyzzy/lib/madmail --boot-once > /tmp/boot-locked.log 2>&1
+reject 'configuration_locked' "${mm[@]}" port smtp set 2525
+"${mm[@]}" port imap public > /tmp/port-imap-public.log
+command cp -f /tmp/madmail.conf.saved /var/xyzzy/etc/madmail/madmail.conf
+runuser -u madmail -- /var/xyzzy/bin/madmail --config /var/xyzzy/etc/madmail/madmail.conf \
+    --state-dir /var/xyzzy/lib/madmail --boot-once > /tmp/boot.log 2>&1
+"${mm[@]}" port smtp set 2525 > /tmp/port-set.log
+"${mm[@]}" port smtp reset > /tmp/port-reset.log
+echo 'PASS: installed config keeps CLI port settings writable; settings {} locks'
 uid_before="$(id -u madmail)"
 /tmp/madmail "${args[@]}" > /tmp/reinstall.log
 [[ "$(id -u madmail)" = "$uid_before" ]]

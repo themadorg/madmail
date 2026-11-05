@@ -803,9 +803,9 @@ async fn seed_install_language(cfg: &InstallConfig, sec: Option<&SecureInstall>)
         let pool = init_db_from_config(&database).await?;
         let result = set_setting(&pool, settings_keys::LANGUAGE, &cfg.language).await;
         // Close every connection before the identity changes back.
-        match &pool {
-            chatmail_db::DbPool::Sqlite(p) => p.close().await,
-            chatmail_db::DbPool::Postgres(p) => p.close().await,
+        match pool.connection() {
+            chatmail_db::pool::DbConnection::Sqlite(p) => p.close().await,
+            chatmail_db::pool::DbConnection::Postgres(p) => p.close().await,
         }
         result
     }
@@ -1718,6 +1718,209 @@ mod tests {
         assert_eq!(cfg.language, "fa");
         let conf = render_maddy_conf(&cfg);
         assert!(conf.contains("language fa"));
+    }
+
+    /// Fresh-install regression (#219 review): the generated configuration keeps
+    /// listener lines, `alpn_*`, TURN, Shadowsocks and Iroh directives, and none of
+    /// them may lock the database-backed CLI settings.
+    #[tokio::test]
+    async fn generated_config_keeps_cli_settings_writable() {
+        use crate::ctl::dispatch;
+        use crate::ctl::test_harness::{parse_cli_with_config, setup_ctl_env};
+        use chatmail_db::{get_setting, settings_keys};
+
+        let global = Args {
+            config: PathBuf::from("/etc/madmail/madmail.conf"),
+            state_dir: PathBuf::from("./data"),
+            boot_once: false,
+            json: false,
+        };
+        let args = InstallArgs {
+            user_only: false,
+            systemd_only: false,
+            system: false,
+            local: false,
+            non_interactive: true,
+            simple: true,
+            domain: None,
+            hostname: None,
+            ip: Some(EXAMPLE_PUBLIC_IP.into()),
+            config_dir: None,
+            state_dir: None,
+            tls_mode: None,
+            cert_path: None,
+            key_path: None,
+            acme_email: None,
+            enable_chatmail: true,
+            enable_ss: true,
+            enable_iroh: true,
+            turn_off_tls: false,
+            dry_run: true,
+            skip_systemd: false,
+            skip_user: false,
+            install_service: false,
+            start_service: false,
+            firewall: false,
+            binary_path: None,
+            obtain_certificate: false,
+            no_obtain_certificate: true,
+            cert_only: false,
+            http_listen: "0.0.0.0:80".into(),
+            auto_ip_cert: false,
+            lang: "en".into(),
+        };
+        let mut cfg = InstallConfig::from_args(&global, &args).unwrap();
+        cfg.turn_secret = "generated-turn-secret".into();
+        cfg.ss_password = "generated-ss-password".into();
+        assert!(cfg.enable_turn && cfg.enable_ss && cfg.enable_iroh && cfg.enable_chatmail);
+        // Keep the test inside its temporary state directory.
+        let conf: String = render_maddy_conf(&cfg)
+            .lines()
+            .filter(|l| !l.starts_with("state_dir") && !l.starts_with("runtime_dir"))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        assert!(conf.contains("smtp tcp://0.0.0.0:25"));
+        assert!(conf.contains("alpn_imap"));
+        // An install from an older template had these lines uncommented.
+        let legacy = conf
+            .replace("# retention 24h", "retention 24h")
+            .replace("# appendlimit 100M", "appendlimit 100M")
+            .replace("# max_message_size 100M", "max_message_size 100M")
+            .replace("# language en", "language en")
+            .replace("# turn_enable yes", "turn_enable yes");
+        for text in [&conf, &legacy] {
+            let parsed = chatmail_config::parse_maddy_config(text).unwrap();
+            assert!(
+                parsed.deployment_policy().unwrap().0.is_empty(),
+                "generated config must not lock settings"
+            );
+        }
+
+        let (dir, _args, _db, pool) = setup_ctl_env().await;
+        let path = dir.path().join("madmail.conf");
+        std::fs::write(&path, &legacy).unwrap();
+        for (argv, key, value) in [
+            (
+                &["port", "smtp", "set", "2525"][..],
+                settings_keys::SMTP_PORT,
+                "2525",
+            ),
+            (
+                &["port", "smtp", "local"][..],
+                settings_keys::SMTP_LOCAL_ONLY,
+                "true",
+            ),
+            (
+                &["port", "imap", "set", "1143"][..],
+                settings_keys::IMAP_PORT,
+                "1143",
+            ),
+            (
+                &["port", "https", "set", "8443"][..],
+                settings_keys::HTTPS_PORT,
+                "8443",
+            ),
+            (
+                &["port", "turn", "set", "3479"][..],
+                settings_keys::TURN_PORT,
+                "3479",
+            ),
+            (
+                &["port", "turn", "local"][..],
+                settings_keys::TURN_LOCAL_ONLY,
+                "true",
+            ),
+            (
+                &["port", "iroh", "set", "3341"][..],
+                settings_keys::IROH_PORT,
+                "3341",
+            ),
+            (
+                &["port", "shadowsocks", "set", "8389"][..],
+                settings_keys::SS_PORT,
+                "8389",
+            ),
+            (
+                &["port", "http", "disable"][..],
+                settings_keys::HTTP_ENABLED,
+                "false",
+            ),
+            (
+                &["shared-port", "disable", "imap"][..],
+                settings_keys::SHARED_PORT_IMAP,
+                "false",
+            ),
+            (
+                &["proxy", "password", "set", "new-pass"][..],
+                settings_keys::SS_PASSWORD,
+                "new-pass",
+            ),
+            (
+                &["proxy", "cipher", "set", "chacha20-ietf-poly1305"][..],
+                settings_keys::SS_CIPHER,
+                "chacha20-ietf-poly1305",
+            ),
+            (
+                &["message-size", "set", "20M"][..],
+                settings_keys::APPENDLIMIT,
+                "20M",
+            ),
+            (
+                &["language", "set", "fa"][..],
+                settings_keys::LANGUAGE,
+                "fa",
+            ),
+        ] {
+            let cli = parse_cli_with_config(dir.path(), &path, argv);
+            dispatch(&cli)
+                .await
+                .unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+            assert_eq!(
+                get_setting(&pool, key).await.unwrap().as_deref(),
+                Some(value),
+                "{argv:?}"
+            );
+        }
+        let cli = parse_cli_with_config(dir.path(), &path, &["port", "smtp", "reset"]);
+        dispatch(&cli).await.unwrap();
+        assert!(get_setting(&pool, settings_keys::SMTP_PORT)
+            .await
+            .unwrap()
+            .is_none());
+
+        // The legacy `retention 24h` line does not override the database value.
+        chatmail_db::set_setting(&pool, settings_keys::MESSAGE_RETENTION_ENABLED, "true")
+            .await
+            .unwrap();
+        chatmail_db::set_setting(&pool, settings_keys::MESSAGE_RETENTION, "7d")
+            .await
+            .unwrap();
+        let parsed = chatmail_config::parse_maddy_config(&legacy).unwrap();
+        let service_pool = pool
+            .clone()
+            .with_policy(parsed.deployment_policy().unwrap());
+        let retention = chatmail_db::effective_message_retention(&service_pool)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retention.as_secs(), 7 * 86_400);
+
+        // An explicit settings value still protects exactly that key.
+        let protected = dir.path().join("protected.conf");
+        std::fs::write(
+            &protected,
+            format!("{legacy}settings {{\n    smtp_port 2525\n}}\n"),
+        )
+        .unwrap();
+        let cli = parse_cli_with_config(dir.path(), &protected, &["port", "smtp", "set", "2526"]);
+        let err = dispatch(&cli).await.unwrap_err().to_string();
+        assert!(err.contains("configuration_locked"), "{err}");
+        assert!(get_setting(&pool, settings_keys::SMTP_PORT)
+            .await
+            .unwrap()
+            .is_none());
+        let cli = parse_cli_with_config(dir.path(), &protected, &["port", "smtp", "public"]);
+        dispatch(&cli).await.unwrap();
     }
 
     #[test]

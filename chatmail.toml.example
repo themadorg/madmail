@@ -13,8 +13,11 @@ submission_listen = "127.0.0.1:1025"
 imap_listen = "127.0.0.1:1143"
 http_listen = "127.0.0.1:8080"
 
-admin_path = "/api/admin"
-admin_web_path = "/admin"
+# Listener addresses above are bind defaults; `madmail port` changes override them.
+# Top-level registry settings (see docs/guide/configuration.md) protect their value
+# from CLI/admin changes, so these defaults stay commented out:
+# admin_path = "/api/admin"
+# admin_web_path = "/admin"
 
 # Raw IMAP/SMTP over secure WebSocket; disabled unless explicitly enabled.
 # CLI/Admin API DB override takes precedence over this value.

@@ -2,7 +2,7 @@
 
 Parent: [`message-size`](message-size.md)
 
-Clear DB overrides (revert to config file / default)
+Clear unprotected DB values (inherit defaults)
 
 ## Synopsis
 

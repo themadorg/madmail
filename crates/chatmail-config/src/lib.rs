@@ -75,15 +75,19 @@ pub use maddy::{
 };
 pub use madmail_parse::{read as read_maddy_ast, ConfigAst, Node, ParseError};
 pub use parse::load_config;
+pub mod settings_policy;
 pub use paths::{
     apply_cli_defaults, detect_default_config_path, detect_default_state_dir,
     is_local_dev_state_dir,
 };
 pub use queue::QueueSettings;
+pub use settings_policy::SettingsPolicy;
 
 /// Server configuration (static `maddy.conf` / `chatmail.toml` + derived paths).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AppConfig {
+    /// Explicit deployment settings; absence is distinct from false/defaults.
+    pub settings_policy: SettingsPolicy,
     pub hostname: Option<String>,
     pub primary_domain: Option<String>,
     /// Complete normalized primary list, before selecting the canonical identity.
