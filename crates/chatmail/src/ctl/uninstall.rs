@@ -534,18 +534,70 @@ fn enrich_from_unit_file(plan: &mut UninstallPlan, path: &Path) {
             }
         }
         if let Some(dir) = line.strip_prefix("WorkingDirectory=") {
-            let dir = dir.trim();
+            // Written verbatim by install; only specifiers are escaped.
+            let dir = dir.trim().replace("%%", "%");
             if !dir.is_empty() {
                 push_unique_path(&mut plan.state_dirs, PathBuf::from(dir));
             }
         }
         if let Some(exec) = line.strip_prefix("ExecStart=") {
-            let binary = exec.split_whitespace().next().unwrap_or(exec).trim();
-            if !binary.is_empty() && Path::new(binary).is_file() {
-                push_unique_path(&mut plan.binary_paths, PathBuf::from(binary));
+            let words = split_exec_words(exec);
+            if let Some(binary) = words.first() {
+                if Path::new(binary).is_file() {
+                    push_unique_path(&mut plan.binary_paths, PathBuf::from(binary));
+                }
+            }
+            // Custom-path installs keep config (secrets, TLS key) outside /etc.
+            let config = words.iter().enumerate().find_map(|(i, w)| {
+                if w == "--config" {
+                    words.get(i + 1).cloned()
+                } else {
+                    w.strip_prefix("--config=").map(str::to_string)
+                }
+            });
+            if let Some(dir) = config.as_deref().and_then(|c| Path::new(c).parent()) {
+                // Never derive a top-level directory such as `/` or `/etc`.
+                if dir.is_absolute() && dir.components().count() > 2 {
+                    push_unique_path(&mut plan.config_dirs, dir.to_path_buf());
+                }
             }
         }
     }
+}
+
+/// Split an `ExecStart=` value the way install writes it: whitespace-separated
+/// words, double quotes with `\\` / `\"` escapes, and `%%` / `$$` escaping.
+fn split_exec_words(exec: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut chars = exec.trim().chars().peekable();
+    while chars.peek().is_some() {
+        while chars.next_if(|c| c.is_whitespace()).is_some() {}
+        let mut word = String::new();
+        let mut started = false;
+        let mut quoted = false;
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => {
+                    quoted = !quoted;
+                    started = true;
+                }
+                '\\' if quoted => {
+                    if let Some(next) = chars.next() {
+                        word.push(next);
+                    }
+                }
+                c if c.is_whitespace() && !quoted => break,
+                c => {
+                    word.push(c);
+                    started = true;
+                }
+            }
+        }
+        if started || !word.is_empty() {
+            words.push(word.replace("%%", "%").replace("$$", "$"));
+        }
+    }
+    words
 }
 
 fn discover_family_dirs(parent: &str, stems: &[&str]) -> Vec<PathBuf> {
@@ -873,6 +925,55 @@ mod tests {
         assert_eq!(plan.service_users, vec!["madmail".to_string()]);
         assert!(plan.state_dirs.iter().any(|p| p == dir.path()));
         assert!(plan.binary_paths.iter().any(|p| p == &binary));
+    }
+
+    #[test]
+    fn enrich_from_unit_file_finds_custom_config_dir_and_quoted_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_dir = dir.path().join("bin dir");
+        fs::create_dir(&bin_dir).unwrap();
+        let binary = bin_dir.join("madmail");
+        fs::write(&binary, b"").unwrap();
+        let config_dir = dir.path().join("etc").join("mad%mail");
+        let state_dir = dir.path().join("lib").join("mail 100%");
+        let unit = dir.path().join("madmail.service");
+        let unit_body = format!(
+            "[Service]\nWorkingDirectory={state}\nExecStart=\"{bin}\" --config {cfg}/madmail.conf run --libexec \"{state}\"\n",
+            state = state_dir.display().to_string().replace('%', "%%"),
+            bin = binary.display(),
+            cfg = config_dir.display().to_string().replace('%', "%%"),
+        );
+        fs::write(&unit, unit_body).unwrap();
+
+        let mut plan = UninstallPlan::default();
+        enrich_from_unit_file(&mut plan, &unit);
+
+        assert_eq!(plan.binary_paths, vec![binary]);
+        assert_eq!(plan.config_dirs, vec![config_dir]);
+        assert_eq!(plan.state_dirs, vec![state_dir]);
+    }
+
+    #[test]
+    fn enrich_from_unit_file_ignores_top_level_config_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        let unit = dir.path().join("madmail.service");
+        fs::write(
+            &unit,
+            "[Service]\nExecStart=/usr/local/bin/madmail --config=/etc/madmail.conf run\n",
+        )
+        .unwrap();
+
+        let mut plan = UninstallPlan::default();
+        enrich_from_unit_file(&mut plan, &unit);
+        assert!(plan.config_dirs.is_empty());
+    }
+
+    #[test]
+    fn split_exec_words_reverses_unit_escaping() {
+        assert_eq!(
+            split_exec_words(r#""/srv/a \"b\"" --config /srv/%%n/$$HOME run """#),
+            vec!["/srv/a \"b\"", "--config", "/srv/%n/$HOME", "run", ""]
+        );
     }
 
     #[test]
