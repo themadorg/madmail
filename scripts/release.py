@@ -71,11 +71,11 @@ def version_tuple(value):
     return tuple(map(int, value.split(".")))
 
 
-def bump(version, level):
+def bump(version, level, *, allow_major=False):
     major, minor, patch = version_tuple(version)
-    if level == 3:
+    if level == 3 and allow_major:
         return f"{major + 1}.0.0"
-    if level == 2:
+    if level >= 2:
         return f"{major}.{minor + 1}.0"
     return f"{major}.{minor}.{patch + 1}"
 
@@ -98,7 +98,7 @@ class Change:
 
 
 def changes_from_commits(commits):
-    """Angular defaults: feat minor; fix/perf/revert patch; breaking major."""
+    """Classify changes; breaking severity is capped to minor unless opted in."""
     cancelled = set()
     # Match real Git revert trailers; do not suppress an arbitrary same subject.
     for commit in reversed(commits):
@@ -541,6 +541,7 @@ def release(
     name="Madmail-CI",
     email="ci@madmail.chat",
     check=False,
+    allow_major=False,
 ):
     identity = identity_env(name, email)
     if push and not write:
@@ -588,7 +589,11 @@ def release(
                 and git(root, "rev-parse", f"{tag}^{{commit}}").strip() == head
                 else "",
             }
-        version = bump(tag[1:].removesuffix("-unstable"), level) if tag else "1.0.0"
+        version = (
+            bump(tag[1:].removesuffix("-unstable"), level, allow_major=allow_major)
+            if tag
+            else "1.0.0"
+        )
         # Permit the first release only in a fresh 0.x/1.0.0 repository.
         if version_tuple(version) < version_tuple(current):
             raise ReleaseError("Planned version would downgrade the manifests")
@@ -639,6 +644,11 @@ def main(argv=None):
     parser.add_argument(
         "--sign", action="store_true", help="sign release commit and annotated tag"
     )
+    parser.add_argument(
+        "--allow-major",
+        action="store_true",
+        help="explicitly allow breaking changes to increase the major version",
+    )
     parser.add_argument("--name", default="Madmail-CI")
     parser.add_argument("--email", default="ci@madmail.chat")
     parser.add_argument(
@@ -669,6 +679,7 @@ def main(argv=None):
             name=args.name,
             email=args.email,
             check=args.check,
+            allow_major=args.allow_major,
         )
         print(json.dumps(result, indent=2))
         if args.github_output:

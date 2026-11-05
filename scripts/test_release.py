@@ -57,7 +57,8 @@ class ConventionalCommitTests(unittest.TestCase):
     def test_bump_and_validation(self):
         self.assertEqual(release.bump("2.31.3", 1), "2.31.4")
         self.assertEqual(release.bump("2.31.3", 2), "2.32.0")
-        self.assertEqual(release.bump("2.31.3", 3), "3.0.0")
+        self.assertEqual(release.bump("2.31.3", 3), "2.32.0")
+        self.assertEqual(release.bump("2.31.3", 3, allow_major=True), "3.0.0")
         self.assertEqual(release.highest_version(["2.0.0", "2.1.0", "1.9.9"]), "2.1.0")
         for bad in [
             "2.01.0",
@@ -247,7 +248,7 @@ class GitIntegrationTests(unittest.TestCase):
         for message, expected in [
             ("fix: patch", "1.2.4"),
             ("feat: feature", "1.3.0"),
-            ("feat!: new API", "2.0.0"),
+            ("feat!: new API", "1.4.0"),
         ]:
             with self.subTest(message=message):
                 self.commit(message)
@@ -267,6 +268,24 @@ class GitIntegrationTests(unittest.TestCase):
                 )
                 self.assertIn("[skip ci]", self.git("log", "-1", "--format=%s"))
                 self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_breaking_fix_stays_in_major_and_preserves_warning(self):
+        self.commit("fix(config)!: precedence\n\nBREAKING CHANGE: file overrides database")
+        result = release.release(self.root, write=True)
+        self.assertEqual(result["version"], "1.3.0")
+        self.assertIn("### BREAKING CHANGES", result["notes"])
+        self.assertIn("file overrides database", result["notes"])
+        self.assertFalse(release.release(self.root)["released"])
+
+    def test_cli_explicit_major_opt_in(self):
+        self.commit("fix!: incompatible correction")
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release.main([
+                "--repo", str(self.root), "--write", "--allow-major"
+            ]), 0)
+        self.assertEqual((self.root / ".version").read_text().strip(), "2.0.0")
+        self.assertEqual(self.git("rev-parse", "v2.0.0-unstable^{commit}"),
+                         self.git("rev-parse", "HEAD"))
 
     def test_helm_chart_versions_follow_release(self):
         chart = (
@@ -581,7 +600,10 @@ class GitIntegrationTests(unittest.TestCase):
         self.commit("fix: small change")
         self.commit("feat: another feature")
         self.commit("refactor!: incompatible")
-        self.assertEqual(release.release(self.root)["version"], "2.0.0")
+        self.assertEqual(release.release(self.root)["version"], "1.1.0")
+        self.assertEqual(
+            release.release(self.root, allow_major=True)["version"], "2.0.0"
+        )
 
     def test_channel_tip_keeps_stable_and_unstable_apart(self):
         self.commit("fix: patch")
