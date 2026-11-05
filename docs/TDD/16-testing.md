@@ -492,6 +492,44 @@ then change directories and single-link files). There are 48 `ctl::install`,
 a Unix host after these fixes. Uninstall's removal error path and the
 unreadable-groups path are covered only by unit tests.
 
+The next fixes keep the in-process `getpwuid_r` lookup (BusyBox `id` takes no
+numeric uid) and add `getent passwd` when it finds no entry. The release and
+test binaries are linked statically with musl, whose `getpwuid_r` and
+`getpwnam_r` read only `/etc/passwd` and never ask NSS modules, so without
+`getent` an LDAP or sssd account looked like a uid without a name and its
+directory was taken for the previous service uid's. `getent` uses the host's
+NSS configuration; a host without it (BusyBox) has no NSS modules either. The
+trade-off is that `getent` exits with 2 both for a missing entry and for an NSS
+service that is down, so that case still looks like "no account". Only
+`ENOENT` and a NULL result from the C library now mean "not found" (`EPERM`,
+`EBADF` and `ESRCH` are errors). The fixes also refuse a root-owned state
+directory that is not empty and not named for madmail (unless `--skip-user`),
+a dangling `--state-dir` link into a system tree, a groups lookup that finds no
+account `id` found, and a state directory that changes between the two opens
+in `SecureInstall::open`; reword the refusal of a config path that resolves
+into the state directory; print steps that lock and expire each account,
+remove its cron and at jobs and kill its processes with `SIGKILL`; print
+`chown -h` for an operator's TLS file; give uninstall's JSON `left_in_place`
+entries the raw `path` and an escaped `path_shown`; and build the uninstall
+trust accounts with one helper. New unit tests cover `parse_getent` (exit
+status 0, 2 and others), the lookup codes that are now errors (also through
+`check_state_root_with`), `service_groups_with` with an injected lookup, the
+non-empty root-owned rule (refused, empty, named for madmail, `--skip-user`),
+the dangling link to `/usr/newstate-for-test`, the config refusal for a
+`--state-dir` link to the physical config path, the new printed steps and
+`trust_accounts`. Docker cases: `--state-dir /var/lib/dpkg` refused by install
+and by `--user-only` with passwd, group, shadow and the owner, mode and inode
+of `/var/lib/dpkg` and `/var/lib/dpkg/info` unchanged; a dangling link
+`/srv/m2` to `/etc/ssl/newstate` refused with nothing created; a state
+directory of `ldapuser`, an account served only by `libnss-extrausers`
+(checked with `getent passwd 4242` first), refused by install and by
+`--user-only` with its owners unchanged; whole printed lines for the new
+steps; the recovery with `usermod -L -e 1`, a third account's directory in the
+tree and the `find ... -prune` recipe, which leaves that directory's file
+unchanged; and `path_shown` in uninstall's JSON. There are 51
+`ctl::install`, 36 `ctl::uninstall`, 13 `ctl::secure_fs` and 3
+`ctl::host_paths` unit tests on a Unix host after these fixes.
+
 The full Docker suite passed with a Linux aarch64 musl debug build of these fixes.
 Its output was:
 
@@ -500,6 +538,7 @@ PASS: mode conflicts, automatic/explicit modes, JSON plans, invalid paths and ce
 PASS: dry-run side effects, non-root system rejection and local host isolation
 PASS: missing parents, home paths, migration data preservation, failed-move rollback and pre-created state refusal
 PASS: system, top-level, home, system-tree (such as /etc/systemd) and linked system directories and another account's directory are refused as state directory before the account or any owner changes
+PASS: a non-empty root-owned directory not named for madmail (/var/lib/dpkg), a dangling link into a system tree and a directory of an NSS-only account are refused as state directory before the account or any owner changes
 PASS: custom-path account, ownership, binary/docs, unit verification, service-user boot and idempotence
 PASS: each skip flag independently and combined, JSON results, escaped binary and state paths
 PASS: non-root local install and propagated systemd failure

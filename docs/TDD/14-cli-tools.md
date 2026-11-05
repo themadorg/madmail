@@ -281,16 +281,28 @@ child of `/home` or `/Users`, or a directory below one of `SYSTEM_TREES`
 (`/bin`, `/boot`, `/dev`, `/etc`, `/lib`, `/lib32`, `/lib64`, `/libx32`,
 `/proc`, `/run`, `/sbin`, `/sys`, `/usr`) none of whose components below the
 top-level one is a family name or the binary's name), checked on the path as
-given and on the physical path after the operator's links; one with the device
-and inode of a `DENIED_DIRS` entry (`is_denied_dir_id`); and an existing
-directory whose owner is neither root nor the service uid and has an account
-name (`secure_fs::account_name`, which calls `getpwuid_r`). An owner whose
-lookup fails (an error other than "not found", for example an NSS service that
-is down) is refused as well. The case of a named owner is a service account
+given and on the physical path after the operator's links (for a missing
+directory, on the path it would be created at after a dangling link); one with
+the device and inode of a `DENIED_DIRS` entry (`is_denied_dir_id`); an existing
+root-owned directory that has entries (`secure_fs::read_names` on its
+descriptor) and whose name, as given and physically, is not named for madmail
+(`is_named_for_madmail`), unless `--skip-user` is given (there is then no walk);
+and an existing directory whose owner is neither root nor the service uid and
+has an account name (`secure_fs::account_name`: `getpwuid_r`, then
+`getent passwd <uid>` when it finds no entry, because the static musl build's
+`getpwuid_r` reads only `/etc/passwd` and never asks NSS modules). Only a NULL
+result or `ENOENT` from `getpwuid_r`, and exit status 2 from `getent` or a
+missing `getent`, mean "no account"; any other result refuses the directory.
+`getent` exits with 2 also when the NSS service is down, which is a residual
+(see the TDD 12 security notes). The case of a named owner is a service account
 that was deleted and whose uid was given to another account; the message tells
 the operator to give the directory itself to `root:root` and run again, after
-which the files of that uid are listed by the walk and left unchanged. `SecureInstall::open` repeats these checks on the
-directory it opens. Uninstall uses the same `system_dir_reason`.
+which the files of that uid are listed by the walk and left unchanged (for a
+directory not named for madmail it adds that the data must first move to one
+that is). `SecureInstall::open` repeats these checks on the directory it opens
+and refuses when its second open of the state directory (with the previous
+owner counted as untrusted) reaches a different device and inode. Uninstall
+uses the same `system_dir_reason`.
 Tests cover CLI conflicts, default/auto/explicit modes, custom unit paths, dry-run
 side-effect absence, root enforcement and isolated installation/idempotence.
 
@@ -329,8 +341,9 @@ never run when a component is refused:
   (or by the previous owner of the state directory), is a directory writable by
   a group of the service account (primary or supplementary, from
   `secure_fs::account_groups_checked`: `getpwnam_r` for the account, then
-  `id -G`; install stops when the account exists but its groups cannot be
-  read), or is
+  `getent passwd <name>` when it finds none, then `id -G`; install stops when
+  the account exists but its groups cannot be read, and when `id -u` finds the
+  account but this lookup does not), or is
   world-writable without the sticky bit. Uid 0 and gid 0 never count as the
   service. Only mode bits are read, so a POSIX ACL entry for the service account
   is caught only when the directory's group is one of its groups. Because every directory passed through is trusted, an
@@ -382,14 +395,17 @@ never run when a component is refused:
   the service account made during the walk), stops install with an error. Inside
   the tree install writes it owned by the service account and sets mode 0640; an
   in-tree config file that belongs to another account is refused, and so is a
-  config path outside `--state-dir` that resolves into the tree.
+  config path outside `--state-dir` as written that resolves into the tree
+  (`chosen_in_state_dir` compares the paths as written, so a `--state-dir` that
+  is a link to where the config path leads is refused too; the message says to
+  give a `--config-dir` under `--state-dir` as written).
 - A TLS file outside the tree that belongs to the service uid or the previous
   service uid is given to the service account through its descriptor. One of
   another account is changed only when it has one hard link and its physical
   directory (after the operator's links) passes `host_paths::is_dedicated_dir`
   or is `/etc/letsencrypt/live/<name>` or `/etc/letsencrypt/archive/<name>`;
   otherwise it is left unchanged and the output notes `Skipping ownership of
-  <path>` with the `chown <user>:<group> <file>` command, the file shell-quoted.
+  <path>` with the `chown -h <user>:<group> <file>` command, the file shell-quoted.
   Install writes the TLS files it generates or obtains with the service owner
   (`SecureInstall::tls_owner`), so these need no change. A TLS path with a
   refused component is not changed; the output
@@ -441,11 +457,15 @@ maildirs, and those files belong to the service. Skipped entries are listed as
 directory of another account is followed by a line saying that it was not entered
 and that its contents were left unchanged and need manual inspection. A file of
 another account is followed by the steps to give it to the service account
-(`file_chown_hint`): stop the service and every process of the account
-(`systemctl stop <unit>`, `pkill -u <user>`, `ps -u <user>`), and, when the
-file's uid has an account name other than root's and the service's, lock and
-stop that account too (`usermod -L <name>`, `pkill -u <name>`,
-`ps -u <name>`); do not change the file if `stat -c %h <path>` prints more than
+(`file_chown_hint`): stop the service (`systemctl stop <unit>`) and every
+process of the account (`stop_account_steps`: `usermod -L -e 1 <user>`, so cron
+and at, which check the account with PAM, start no job for it;
+`crontab -r -u <user>` and `atrm` for its `atq` jobs where cron or at is
+installed; `pkill -KILL -u <user>`, since a process can ignore `SIGTERM`;
+`ps -u <user>` must then list none), and, when the file's uid has an account
+name other than root's and the service's, the same for that account; end the
+expiry afterwards (`usermod -e ''`; the unit has no `PAMName=`, so the service
+starts while the account is expired); do not change the file if `stat -c %h <path>` prints more than
 1, and since one link does not prove it is madmail's file, compare its content
 with what madmail writes there or remove it and let madmail create it again;
 then `chown -h <user>:<group> <path>`, which ends the line. `chown -h` does not
@@ -466,8 +486,10 @@ line-separator characters and bytes that are not UTF-8; the commands printed use
 `host_paths::shell_quote`, which leaves a path of safe characters as it is,
 single-quotes other UTF-8 text and writes any path with such characters or bytes
 as `$'...'` with `\xNN` escapes. JSON output carries paths as strings; serde
-escapes only the control characters below U+0020, so the paths of uninstall's
-`left_in_place` list also go through `host_paths::shown`.
+escapes the control characters below U+0020, so a raw path cannot break the
+JSON line structure. Each entry of uninstall's `left_in_place` list has `path`,
+the path itself (bytes that are not UTF-8 become U+FFFD), for scripts, and
+`path_shown`, the path through `host_paths::shown`, for display.
 An entry that is replaced or removed during the walk (`ELOOP`, `ENOTDIR`,
 `ENOENT`) is skipped with a warning. The walk is iterative and stops descending
 after 64 levels, each open level holding one descriptor.
@@ -511,8 +533,9 @@ a group of the service, writable by any other group except root without the
 sticky bit, or world-writable without the sticky bit. `/var/log` and `/var/mail`,
 matched by `(dev, ino)`, may be group-writable by a group that is not a group of
 the service. The groups of the service are the primary and supplementary groups
-of every account found (the `User=` accounts of the units and the accounts named
-like the binary, `madmail` or `chatmail`; read with
+of every account found (`trust_accounts`, one list for the config check and
+the removal: the `User=` accounts of the units, the accounts named after the
+units, and the accounts named like the binary, `madmail` or `chatmail`; read with
 `secure_fs::account_groups_checked`, and when an account exists but its groups
 cannot be read, the config file is not used), the group of
 the config file's directory and the groups of the state directories (from the

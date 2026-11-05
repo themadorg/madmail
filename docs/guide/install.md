@@ -89,7 +89,10 @@ service account's home is elsewhere and still exists, before changing anything; 
 `--state-dir` that is not a directory of its own (a system directory such as
 `/var/lib`, a directory directly under `/`, a user's home directory, a
 directory below `/etc`, `/usr` or another system directory that is not named
-for madmail, or a directory of another named account). Install treats the state directory as
+for madmail, a root-owned directory that is not empty and not named for madmail
+such as `/var/lib/dpkg`, or a directory of another named account, looked up
+with the C library and then with `getent passwd`, so that LDAP and sssd
+accounts count too). Install treats the state directory as
 controlled by the service account: as root it never reads, writes or changes the
 owner or mode of a file through a link inside it, and it opens the database with
 the service account's effective user and group ids when that account controls

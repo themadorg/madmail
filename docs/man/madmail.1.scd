@@ -72,9 +72,14 @@ Extended documentation:
 	its own: a well-known system directory, a directory directly under /,
 	a user's home directory, a directory below /etc, /usr, /lib, /bin,
 	/sbin, /boot, /dev, /proc, /sys or /run that is not named for madmail,
-	a path that resolves to one of these, or a directory of another named
-	account. It also stops when the owner of an existing state directory
-	or the groups of the service account cannot be looked up. Install and both repair modes
+	a path that resolves to one of these, a root\-owned directory that is
+	not empty and not named for madmail (such as /var/lib/dpkg; not with
+	*--skip-user*), or a directory of another named account. Account names
+	are looked up with the C library and then with *getent passwd*, so
+	accounts from LDAP or sssd count too; *getent* cannot tell a directory
+	service that is down from a missing account. It also stops when a
+	lookup of the owner of an existing state directory or of the groups of
+	the service account reports an error. Install and both repair modes
 	check this before they create or change the account.
 	See EXAMPLES and NOTES.
 

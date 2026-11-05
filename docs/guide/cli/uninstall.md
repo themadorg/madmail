@@ -46,8 +46,10 @@ state directory in use: the `state_dir` of the config file uninstall reads
   is root;
 - no directory on the path is group-writable by a group of the service. These
   groups are the primary and supplementary groups of the service accounts (the
-  `User=` accounts of the units and the accounts named like the binary,
-  `madmail` or `chatmail`), the group that owns the config file's directory, and
+  `User=` accounts of the units, the accounts named after the units, and the
+  accounts named like the binary, `madmail` or `chatmail`; the same accounts
+  count when uninstall checks the way to a path it removes), the group that
+  owns the config file's directory, and
   the group that owns the state directory (the one from the config file and the
   one from `--state-dir`). When one of these accounts exists but its groups
   cannot be read, the config file is not used;
