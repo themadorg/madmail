@@ -259,6 +259,86 @@ sha256sum -c /tmp/denied-accounts.before >/dev/null
 command cp -f /tmp/nsswitch.conf.saved /etc/nsswitch.conf
 rm -r /var/xyzzy/nss /var/lib/extrausers
 echo 'PASS: a non-empty root-owned directory not named for madmail (/var/lib/dpkg), a dangling link into a system tree and a directory of an NSS-only account are refused as state directory before the account or any owner changes'
+# A madmail name counts physically only: an operator link named for madmail
+# to another program's directory is refused.
+ln -s /var/lib/dpkg /srv/madmail
+reject 'refusing to use state directory /srv/madmail: it belongs to root, is not empty and is not named for madmail' \
+    /tmp/madmail install --user-only --config-dir /var/xyzzy/etc/madmail --state-dir /srv/madmail
+rm /srv/madmail
+[[ "$(stat -c '%u:%g:%a:%i' /var/lib/dpkg /var/lib/dpkg/info)" = "$dpkg_meta" ]]
+# A state directory install did not create, of a uid without an account name
+# (a deleted package account's), is not taken for the previous service uid's.
+install -d -o 4999 -g 4999 /var/lib/oldapp
+install -o 4999 -g 4999 -m 600 /dev/null /var/lib/oldapp/data
+reject 'it belongs to uid 4999, which has no account name, is not empty and is not named for madmail' \
+    /tmp/madmail install --user-only --config-dir /var/xyzzy/etc/madmail --state-dir /var/lib/oldapp
+[[ "$(stat -c '%u:%g' /var/lib/oldapp /var/lib/oldapp/data)" = "4999:4999
+4999:4999" ]]
+rm -r /var/lib/oldapp
+sha256sum -c /tmp/denied-accounts.before >/dev/null
+# A state directory install created and marked, not named for madmail, left
+# root-owned by --cert-only: a later full install and a repair take it. The
+# account exists already with that home (useradd -m would create the home as
+# the service's), so install creates the directory itself, as root.
+cp /tmp/madmail /tmp/srvmail
+useradd -r -M -U -d /srv/mailstate -s /usr/sbin/nologin srvmail
+srv_args=(install --simple --system --ip 127.0.0.1 --tls-mode self_signed --non-interactive
+          --skip-systemd --config-dir /var/xyzzy/srv/etc --state-dir /srv/mailstate
+          --binary-path /var/xyzzy/srv/bin/srvmail)
+srv_repair=(install --user-only --config-dir /var/xyzzy/srv/etc --state-dir /srv/mailstate)
+/tmp/srvmail "${srv_args[@]}" --cert-only > /tmp/srv-cert-only.log
+[[ "$(stat -c '%U:%G' /srv/mailstate)" = root:root ]]
+[[ "$(stat -c '%U:%G:%a:%h:%F' /srv/mailstate/.madmail-state)" = 'root:root:644:1:regular empty file' ]]
+[[ -d /srv/mailstate/messages && -d /srv/mailstate/dkim ]]
+/tmp/srvmail "${srv_args[@]}" > /tmp/srv-full.log
+[[ "$(stat -c '%U:%G' /srv/mailstate /srv/mailstate/credentials.db)" = "srvmail:srvmail
+srvmail:srvmail" ]]
+# The walk leaves the marker root's, without a note.
+[[ "$(stat -c '%U:%G:%a' /srv/mailstate/.madmail-state)" = root:root:644 ]]
+if grep -q 'madmail-state' /tmp/srv-full.log; then fail 'the walk reported the state marker'; fi
+/tmp/srvmail "${srv_repair[@]}" > /tmp/srv-repair.log
+# After the account is recreated with a new uid, the directory of the old uid
+# (now without a name) is still taken by repair, through its marker.
+old_srv_uid="$(id -u srvmail)"
+userdel srvmail
+getent group srvmail >/dev/null || groupadd -r srvmail
+useradd -r -M -N -g srvmail -u "$((old_srv_uid + 7))" -d /srv/mailstate srvmail
+[[ "$(stat -c '%u' /srv/mailstate)" = "$old_srv_uid" ]]
+/tmp/srvmail "${srv_repair[@]}" > /tmp/srv-repair-new-uid.log
+[[ "$(stat -c '%u' /srv/mailstate /srv/mailstate/credentials.db)" = "$((old_srv_uid + 7))
+$((old_srv_uid + 7))" ]]
+# A marker of the service account (one it replaced) does not make the
+# directory acceptable once it is root's again.
+rm /srv/mailstate/.madmail-state
+runuser -u srvmail -- touch /srv/mailstate/.madmail-state
+chown -h root:root /srv/mailstate
+reject 'it belongs to root, is not empty and is not named for madmail, and has no .madmail-state file' \
+    /tmp/srvmail "${srv_repair[@]}"
+grep -q 'If a previous install was interrupted in a directory madmail did not create' /tmp/rejected.log
+[[ "$(stat -c '%U' /srv/mailstate)" = root ]]
+userdel srvmail
+getent group srvmail >/dev/null && groupdel srvmail
+rm -r /srv/mailstate /var/xyzzy/srv
+# A fresh file system (only lost+found): accepted, and marked by the run that
+# took it, so a run that stops at the certificate step does not block the next.
+install -d -m 700 /srv/freshfs/lost+found
+useradd -r -M -U -d /srv/freshfs -s /usr/sbin/nologin srvmail
+fresh_args=(install --simple --system --ip 127.0.0.1 --domain mail.example.org --non-interactive
+            --skip-systemd --config-dir /var/xyzzy/srv/etc --state-dir /srv/freshfs
+            --binary-path /var/xyzzy/srv/bin/srvmail)
+reject 'tls-mode file requires existing cert and key' /tmp/srvmail "${fresh_args[@]}" \
+    --tls-mode file --no-obtain-certificate --cert-path /var/xyzzy/none/fullchain.pem \
+    --key-path /var/xyzzy/none/privkey.pem
+[[ "$(stat -c '%U:%G' /srv/freshfs /srv/freshfs/.madmail-state)" = "root:root
+root:root" ]]
+[[ -n "$(ls -A /srv/freshfs/dkim)" ]]
+/tmp/srvmail "${fresh_args[@]}" --tls-mode self_signed > /tmp/srv-freshfs.log
+[[ "$(stat -c '%U' /srv/freshfs /srv/freshfs/credentials.db)" = "srvmail
+srvmail" ]]
+userdel srvmail
+getent group srvmail >/dev/null && groupdel srvmail
+rm -r /srv/freshfs /var/xyzzy/srv
+echo 'PASS: a madmail-named link to another program'"'"'s directory and a non-empty directory of a uid without a name are refused, a --cert-only state directory not named for madmail is taken by the next install and by repair (also after the account is recreated) through its root-owned .madmail-state marker, which the walk leaves root'"'"'s (a service-owned one does not count), and a fresh file system holding only lost+found is accepted and marked'
 
 # Independent skip flags still skip system steps while copying the requested binary.
 cp /tmp/madmail /tmp/skippedmail
