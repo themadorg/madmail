@@ -25,6 +25,7 @@ use std::process::Command;
 
 use chatmail_types::{ChatmailError, Result};
 
+use super::chown_walk;
 use super::config::InstallConfig;
 
 pub fn require_root_for_system_install(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
@@ -445,28 +446,21 @@ fn lookup_uid_gid(name: &str) -> Result<(u32, u32)> {
 }
 
 /// Recursively chown the service-writable state tree without following symlinks:
-/// the service account can plant links there, so root must never chown through
-/// them or descend into linked directories. The root itself is chosen by the
-/// operator (e.g. a link to a data volume), so it is resolved once first.
+/// the service account can plant links there and swap entries while root walks,
+/// so the walk works on file descriptors (see [`chown_walk`]). The root itself is
+/// chosen by the operator (e.g. a link to a data volume), so it is resolved once
+/// first; the resolved directory is then opened with `O_NOFOLLOW`, and the walk
+/// fails if it was replaced by a link in between.
 fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<()> {
     let root = fs::canonicalize(root).map_err(|e| io_error("resolve", root, e))?;
-    chown_entries(&root, uid, gid)
-}
-
-fn chown_entries(dir: &Path, uid: u32, gid: u32) -> Result<()> {
-    lchown(dir, Some(uid), Some(gid)).map_err(|e| io_error("chown", dir, e))?;
-    for entry in fs::read_dir(dir).map_err(|e| io_error("read_dir", dir, e))? {
-        let entry = entry.map_err(|e| io_error("read_dir", dir, e))?;
-        let path = entry.path();
-        let file_type = entry.file_type().map_err(|e| io_error("stat", &path, e))?;
-        if file_type.is_symlink() {
-            continue;
-        }
-        if file_type.is_dir() {
-            chown_entries(&path, uid, gid)?;
-        } else {
-            lchown(&path, Some(uid), Some(gid)).map_err(|e| io_error("chown", &path, e))?;
-        }
+    let skipped =
+        chown_walk::chown_tree(&root, uid, gid).map_err(|e| io_error(e.op, &e.path, e.source))?;
+    for entry in skipped {
+        println!(
+            "   ! Ownership of {} left unchanged: {}",
+            entry.path.display(),
+            entry.reason
+        );
     }
     Ok(())
 }

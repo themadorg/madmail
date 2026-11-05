@@ -17,6 +17,8 @@
 
 //! `madmail install` — Madmail `ctl/install.go` parity for `--simple --ip`.
 
+#[cfg(unix)]
+mod chown_walk;
 mod config;
 #[cfg(unix)]
 mod system;
