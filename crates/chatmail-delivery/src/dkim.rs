@@ -478,6 +478,23 @@ fn extract_addr(from_value: &str) -> Option<&str> {
     Some(v)
 }
 
+/// A new 2048-bit DKIM private key as PKCS#8 PEM, for callers that store it
+/// themselves (install writes it through a directory descriptor).
+pub fn generate_private_key_pem() -> Result<String, String> {
+    let mut rng = rand::thread_rng();
+    let key = RsaPrivateKey::new(&mut rng, 2048).map_err(|e| format!("generate DKIM key: {e}"))?;
+    key.to_pkcs8_pem(LineEnding::LF)
+        .map(|pem| pem.to_string())
+        .map_err(|e| format!("serialize DKIM key: {e}"))
+}
+
+/// The `TXT` record (`v=DKIM1; k=rsa; p=…`) for a PKCS#8 PEM private key; fails
+/// when the PEM is not a valid RSA key.
+pub fn public_txt_from_private_pem(pem: &str) -> Result<String, String> {
+    let key = RsaPrivateKey::from_pkcs8_pem(pem).map_err(|e| format!("parse DKIM key: {e}"))?;
+    public_txt_record(&key)
+}
+
 fn write_private_key(path: &Path, key: &RsaPrivateKey) -> Result<(), String> {
     let pem = key
         .to_pkcs8_pem(LineEnding::LF)

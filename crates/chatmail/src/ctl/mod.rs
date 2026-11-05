@@ -34,6 +34,7 @@ mod docs;
 mod endpoint_cache;
 mod federation;
 mod firewall_cmd;
+mod host_paths;
 mod html;
 mod install;
 mod iroh;
@@ -50,6 +51,8 @@ mod registration;
 mod registration_tokens;
 mod reload;
 mod request_reload;
+#[cfg(unix)]
+mod secure_fs;
 mod service_cmd;
 mod service_toggle;
 mod shared_port;

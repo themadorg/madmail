@@ -1,4 +1,4 @@
-//! E2E: language, registration, webimap, html-export, openrelay.
+//! E2E: language, registration, webimap, html-export, openrelay, federation transport.
 
 use std::process::Command;
 
@@ -458,4 +458,173 @@ fn e2e_openrelay_human_status_and_enable() {
         .assert()
         .success()
         .stdout(predicate::str::contains("allowed"));
+}
+
+#[cfg(unix)]
+#[test]
+fn e2e_custom_system_install_dry_run_has_plan_and_no_side_effects() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("etc/madmail");
+    let state = dir.path().join("lib/madmail");
+    let binary = dir.path().join("bin/madmail");
+    chatmail()
+        .args([
+            "install",
+            "--simple",
+            "--system",
+            "--ip",
+            "127.0.0.1",
+            "--tls-mode",
+            "self_signed",
+            "--dry-run",
+        ])
+        .arg("--config-dir")
+        .arg(&config)
+        .arg("--state-dir")
+        .arg(&state)
+        .arg("--binary-path")
+        .arg(&binary)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Install mode:  system"))
+        .stdout(predicate::str::contains("create/update service account"))
+        .stdout(predicate::str::contains(
+            "install and daemon-reload systemd unit",
+        ))
+        .stdout(predicate::str::contains(binary.to_string_lossy().as_ref()));
+    assert!(!config.exists() && !state.exists() && !binary.exists());
+    chatmail()
+        .args([
+            "install",
+            "--simple",
+            "--local",
+            "--ip",
+            "127.0.0.1",
+            "--tls-mode",
+            "self_signed",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Install mode:  local"))
+        .stdout(predicate::str::contains("skip host account"));
+}
+
+#[test]
+fn e2e_federation_transport_set_and_status_json() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    let out = chatmail()
+        .args(base.clone())
+        .args(["federation", "transport", "status", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("transport status");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "federation transport status");
+    assert_eq!(envelope["data"]["https"], "allow");
+    assert_eq!(envelope["data"]["http"], "allow");
+    assert_eq!(envelope["data"]["smtp"], "allow");
+
+    chatmail()
+        .args(base.clone())
+        .args(["federation", "transport", "set", "http", "block", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"reload_required\":true"));
+
+    let db_path = effective_app_db_path(dir.path(), &AppConfig::default());
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let pool = init_db(&db_path).await.unwrap();
+        assert_eq!(
+            get_setting(&pool, settings_keys::FEDERATION_TRANSPORT_HTTP)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("block")
+        );
+    });
+
+    let out = chatmail()
+        .args(base)
+        .args(["federation", "transport", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("transport default status");
+    assert_eq!(envelope["data"]["http"], "block");
+    assert_eq!(envelope["data"]["https"], "allow");
+    assert_eq!(
+        envelope["data"]["overrides"].as_array().map(Vec::len),
+        Some(0)
+    );
+}
+
+#[test]
+fn e2e_federation_transport_domain_override_json() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    let out = chatmail()
+        .args(base.clone())
+        .args([
+            "federation",
+            "transport",
+            "set",
+            "smtp",
+            "block",
+            "--domain",
+            "Evil.TEST",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("domain transport set");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "federation transport set");
+    assert_eq!(envelope["data"]["domain"], "evil.test");
+    assert_eq!(envelope["data"]["transport"], "smtp");
+    assert_eq!(envelope["data"]["mode"], "block");
+    assert_eq!(envelope["data"]["reload_required"], true);
+
+    let out = chatmail()
+        .args(base.clone())
+        .args(["federation", "transport", "status", "evil.test", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("domain transport status");
+    assert_eq!(envelope["command"], "federation transport status");
+    assert_eq!(envelope["data"]["domain"], "evil.test");
+    assert_eq!(envelope["data"]["smtp"], "block");
+    assert_eq!(envelope["data"]["https"], "allow");
+    assert_eq!(envelope["data"]["override"]["smtp"], "block");
+    assert!(envelope["data"]["override"].get("https").is_none());
+
+    let out = chatmail()
+        .args(base)
+        .args(["federation", "transport", "status", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("global status lists override");
+    assert_eq!(envelope["data"]["smtp"], "allow");
+    assert_eq!(envelope["data"]["overrides"][0]["domain"], "evil.test");
+    assert_eq!(envelope["data"]["overrides"][0]["smtp"], "block");
 }

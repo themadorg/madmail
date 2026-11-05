@@ -34,6 +34,7 @@ pub mod schema;
 pub mod settings;
 pub mod settings_keys;
 pub mod sharing;
+pub mod signup;
 pub mod sqlite_to_postgres;
 
 use std::path::Path;
@@ -53,7 +54,8 @@ pub use endpoint_cache::{
     set_endpoint_override, EndpointOverrideRow,
 };
 pub use federation_policy::{
-    federation_policy_label, normalize_federation_domain, set_federation_policy_label,
+    federation_policy_label, normalize_federation_domain, parse_federation_policy_label,
+    set_federation_policy_label,
 };
 pub use inbound::{
     inbound_local_recipient_allowed, is_federation_rcpt_blocked, is_federation_sender_blocked,
@@ -86,6 +88,10 @@ pub use sharing::{
     create_sharing_contact, get_sharing_contact, init_sharing_db, list_sharing_contacts,
     normalize_sharing_url, remove_sharing_contact, sharing_slug_exists, update_sharing_contact,
     validate_slug, SharingContact,
+};
+pub use signup::{
+    SignupSettings, JIT_REGISTRATION_ENABLED_DEFAULT, REGISTRATION_OPEN_DEFAULT,
+    REGISTRATION_TOKEN_REQUIRED_DEFAULT, SIGNUP_SETTINGS_KEYS,
 };
 pub use sqlite_to_postgres::{
     copy_sqlite_to_postgres, inspect_sqlite_tables, CopyOpts, CopyReport, TableCopy, COPY_TABLES,

@@ -62,12 +62,72 @@ Extended documentation:
 	Write configuration, TLS material, databases, optional systemd unit,
 	service user, system\-wide binary, manual page, and shell tab
 	completion scripts.
+	Use *--system* for a Unix host service with custom paths, or *--local*
+	for bootstrap without host changes. *--dry-run* reports the selected
+	mode and planned actions. *--skip-user* and *--skip-systemd* remain
+	independent opt-outs. Before changing the host, a system install refuses
+	a masked unit file, an existing *--state-dir* while the service
+	account's home is elsewhere and still exists (repoint it with
+	*--user-only* first), and a *--state-dir* that is not a directory of
+	its own: a well-known system directory, a directory directly under /,
+	a user's home directory, a directory below /etc, /usr, /lib, /bin,
+	/sbin, /boot, /dev, /proc, /sys or /run that is not named for madmail,
+	a path that resolves to one of these, a directory of root or of a uid
+	without an account name that is not empty and whose physical path is
+	not named for madmail (such as /var/lib/dpkg; not with *--skip-user*),
+	unless it holds only lost+found or the root\-owned marker file
+	.madmail\-state that install creates in a state directory it creates,
+	or a directory of another named account. Account names
+	are looked up with the C library and then with *getent passwd*, so
+	accounts from LDAP or sssd count too; *getent* cannot tell a directory
+	service that is down from a missing account. It also stops when a
+	lookup of the owner of an existing state directory or of the groups of
+	the service account reports an error. Install and both repair modes
+	check this before they create or change the account.
 	See EXAMPLES and NOTES.
+
+	For existing Unix installations, *--user-only* repairs the service account
+	and config/TLS/state permissions; *--systemd-only* replaces the unit and
+	runs daemon-reload without enabling or starting the service. Both imply
+	system mode and preserve config, database, certificates and binary contents.
+	Use the original executable name and config/state/binary paths; paths are
+	not inferred from config contents. Existing config and state are required;
+	unit repair also requires an executable binary and service user/group.
+	No domain/IP or non-interactive flag is needed. Preview with *--dry-run*.
+	Repeat custom *--cert-path*/*--key-path* values: account repair only
+	chowns TLS files at the given paths, and they also decide the unit's
+	ProtectHome= setting. Account repair repoints an existing account at the
+	existing state directory without moving it. As root, install and
+	account repair never read, write or change the owner or mode of a file
+	through a link inside the state directory; when the service account
+	controls that directory, install opens the database with its effective
+	user and group ids. Files they write
+	there are owned by the service account (with *--skip-user*, only when
+	the file they replace belongs to the service account), and an existing
+	file there is given to the service account only when it already belongs
+	to the service account or its previous uid.
+	A path outside it is not followed through a directory or link
+	the service account controls, and a *--binary-path* inside it is
+	refused. Unit repair refuses a symlinked or masked unit file.
+	These modes conflict with each other, local/cert-only/skip and Windows
+	service/firewall flags. Stop the service before account repair. Unit
+	customizations belong in drop-ins; a failed reload leaves the written unit.
+
 
 *uninstall*
 	Remove the service, configuration, and data.
 	Confirmation is required; use keep flags such as *--keep-data* to
 	preserve selected artifacts.
+	A config or state directory is removed as a whole only when its name is
+	the binary name, or madmail or chatmail optionally followed by a suffix
+	starting with - or \_, whatever found it (a unit, discovery, *--state-dir*
+	or the config file). From any other config directory only the config file
+	is removed, and any other state directory is kept. Well-known system
+	directories and user homes are never removed as a whole. A directory that
+	contains a path kept by *--keep-data* or *--keep-config* is not removed as
+	a whole. A *state_dir* from a config file that is not owned by root, or is
+	writable by others, is not used. The plan lists every path removed or left
+	in place.
 
 *upgrade*, *update*
 	Replace this executable from a signed local file or URL
@@ -126,7 +186,11 @@ Extended documentation:
 	*disable*. Run *reload* after enable/disable on a running server.
 
 *federation*
-	Federation policy, domain rules, and silent\-dismiss lists.
+	Federation policy, domain rules, silent\-dismiss lists, and outbound
+	transport allow/block (*transport status [DOMAIN]*, *transport set*). Unset
+	transports stay allowed. *transport set \-\-domain* overrides one
+	destination; a missing override inherits the global mode. Run *reload*
+	after a CLI change on a running server.
 
 *dkim*
 	Print outbound federation DKIM selector, signing domain, and the

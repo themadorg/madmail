@@ -26,7 +26,7 @@ use chatmail_db::{
     seed_install_defaults, settings_keys,
 };
 use chatmail_push::{push_stats_snapshot, record_successful_delivery};
-use chatmail_state::{AppState, ReloadRequest, ReloadScope};
+use chatmail_state::{AppState, PolicyMode, ReloadRequest, ReloadScope};
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -566,6 +566,227 @@ async fn admin_federation_settings_includes_size() {
         body.get("max_federation_size").and_then(|v| v.as_str()),
         Some("70M")
     );
+    assert_eq!(
+        body.pointer("/transports/https").and_then(|v| v.as_str()),
+        Some("allow")
+    );
+}
+
+#[tokio::test]
+async fn admin_federation_transport_block_updates_cache() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let (status, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "transports": { "http": "block", "smtp": "block" } }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status, 200);
+    let body = body.unwrap();
+    assert_eq!(
+        body.pointer("/transports/https").and_then(|v| v.as_str()),
+        Some("allow")
+    );
+    assert_eq!(
+        body.pointer("/transports/http").and_then(|v| v.as_str()),
+        Some("block")
+    );
+    assert_eq!(
+        body.pointer("/transports/smtp").and_then(|v| v.as_str()),
+        Some("block")
+    );
+    let live = st.app.federation_transport.get();
+    assert!(live.https);
+    assert!(!live.http);
+    assert!(!live.smtp);
+
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "transports": { "https": "sometimes" } }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400);
+
+    // A 400 must leave policy, enabled and transports untouched, even when other
+    // fields or other transports in the same body are valid.
+    let before = resources::dispatch(&st, "GET", "/admin/settings/federation", &json!({}))
+        .await
+        .unwrap()
+        .1
+        .unwrap();
+    for bad in [
+        json!({ "policy": "REJECT", "enabled": true, "transports": { "smtp": "nope" } }),
+        json!({ "transports": { "http": "allow", "smtp": "nope" } }),
+        // A bad policy is a 400 (not a 500) and must not let valid fields through.
+        json!({ "policy": "MAYBE", "enabled": true, "transports": { "http": "allow" } }),
+        json!({ "policy": "MAYBE", "enabled": true }),
+        json!({ "policy": "REJECT", "enabled": true, "domain": "evil.test" }),
+        json!({ "enabled": true, "domain": "a@b", "transports": { "smtp": "block" } }),
+        json!({ "enabled": true, "domain": "evil.test", "transports": { "smtp": "nope" } }),
+        json!({ "enabled": true, "domain": "  ", "transports": { "smtp": "block" } }),
+    ] {
+        let err = resources::dispatch(&st, "POST", "/admin/settings/federation", &bad)
+            .await
+            .unwrap_err();
+        assert_eq!(err.0, 400, "{bad}");
+        let after = resources::dispatch(&st, "GET", "/admin/settings/federation", &json!({}))
+            .await
+            .unwrap()
+            .1
+            .unwrap();
+        assert_eq!(after.get("policy"), before.get("policy"), "{bad}");
+        assert_eq!(after.get("enabled"), before.get("enabled"), "{bad}");
+        assert_eq!(after.get("transports"), before.get("transports"), "{bad}");
+        assert_eq!(
+            after.get("transport_overrides"),
+            before.get("transport_overrides"),
+            "{bad}"
+        );
+        assert_eq!(st.app.federation_transport.get(), live, "{bad}");
+        assert!(st.app.federation_transport.overrides().is_empty(), "{bad}");
+        assert_eq!(
+            st.app.federation_policy.global_mode(),
+            PolicyMode::from_label(before["policy"].as_str().unwrap()),
+            "{bad}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn admin_federation_transport_domain_override_updates_cache() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let (status, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({
+            "domain": "Evil.TEST",
+            "transports": { "https": "block", "http": "block", "smtp": "block" }
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status, 200);
+    let body = body.unwrap();
+    assert_eq!(
+        body.pointer("/transports/https").and_then(|v| v.as_str()),
+        Some("allow")
+    );
+    let overrides = body
+        .get("transport_overrides")
+        .and_then(|v| v.as_array())
+        .unwrap();
+    assert_eq!(overrides.len(), 1);
+    assert_eq!(
+        overrides[0].get("domain").and_then(|v| v.as_str()),
+        Some("evil.test")
+    );
+    assert_eq!(
+        overrides[0].get("smtp").and_then(|v| v.as_str()),
+        Some("block")
+    );
+    assert!(st.app.federation_transport.get().any_allowed());
+    assert!(!st
+        .app
+        .federation_transport
+        .effective("evil.test")
+        .any_allowed());
+
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "domain": "evil.test", "transports": { "http": "inherit" } }),
+    )
+    .await;
+    assert!(err.is_ok());
+    assert!(st.app.federation_transport.effective("evil.test").http);
+    assert!(!st.app.federation_transport.effective("evil.test").smtp);
+
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "transports": { "http": "inherit" } }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400);
+    assert!(!st.app.federation_transport.effective("evil.test").smtp);
+
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({ "domain": "evil.test" }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400);
+}
+
+#[tokio::test]
+async fn admin_federation_corrupt_overrides_row_saves_nothing() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let key = chatmail_db::settings_keys::FEDERATION_TRANSPORT_DOMAINS;
+    chatmail_db::set_setting(&st.pool, key, "[1,2]")
+        .await
+        .unwrap();
+    let before = resources::dispatch(&st, "GET", "/admin/settings/federation", &json!({}))
+        .await
+        .unwrap()
+        .1
+        .unwrap();
+    let mode_before = st.app.federation_policy.global_mode();
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({
+            "enabled": true,
+            "policy": "REJECT",
+            "domain": "evil.test",
+            "transports": { "smtp": "block" }
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400, "{}", err.1);
+    assert!(err.1.contains("corrupt"), "{}", err.1);
+    let after = resources::dispatch(&st, "GET", "/admin/settings/federation", &json!({}))
+        .await
+        .unwrap()
+        .1
+        .unwrap();
+    assert_eq!(after.get("enabled"), before.get("enabled"));
+    assert_eq!(after.get("policy"), before.get("policy"));
+    assert_eq!(after.get("transports"), before.get("transports"));
+    assert_eq!(st.app.federation_policy.global_mode(), mode_before);
+    assert_eq!(
+        chatmail_db::get_setting(&st.pool, key)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("[1,2]")
+    );
+    assert!(st.app.federation_transport.overrides().is_empty());
 }
 
 #[tokio::test]

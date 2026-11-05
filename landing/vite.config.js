@@ -20,13 +20,33 @@ function generateDocumentationTree() {
 	}
 }
 
+// Two fetches per build; a token (CI has one) lifts GitHub's 60/hour anonymous limit.
+const githubHeaders = { Accept: 'application/vnd.github+json' };
+const githubToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+if (githubToken) githubHeaders.Authorization = `Bearer ${githubToken}`;
+
+/** @param {string} repo */
+async function fetchReleases(repo) {
+	const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=20`, { headers: githubHeaders });
+	if (!response.ok) throw new Error(`Unable to generate ${repo} releases: GitHub returned ${response.status}`);
+	return (await response.json()).filter((release) => !release.draft);
+}
+
 // Generate one snapshot shared by static pages and the homepage.
-const releaseResponse = await fetch('https://api.github.com/repos/themadorg/madmail/releases?per_page=20', {
-	headers: { Accept: 'application/vnd.github+json' }
-});
-if (!releaseResponse.ok) throw new Error(`Unable to generate releases: GitHub returned ${releaseResponse.status}`);
-const releases = (await releaseResponse.json()).filter((release) => !release.draft && !release.prerelease);
+const releases = (await fetchReleases('themadorg/madmail')).filter((release) => !release.prerelease);
 await writeFile(new URL('./src/lib/assets/releases.json', import.meta.url), JSON.stringify(releases));
+
+// Madmail Mobile ships every 0.x build as a prerelease, so keep them.
+const phoneReleases = (await fetchReleases('themadorg/madmail-phone')).map((release) => ({
+	tag_name: release.tag_name,
+	name: release.name,
+	html_url: release.html_url,
+	published_at: release.published_at,
+	prerelease: release.prerelease,
+	body: release.body ?? '',
+	assets: release.assets.map(({ name, size, browser_download_url }) => ({ name, size, browser_download_url }))
+}));
+await writeFile(new URL('./src/lib/assets/phoneReleases.json', import.meta.url), JSON.stringify(phoneReleases));
 
 export default defineConfig({
 	build: {
@@ -54,9 +74,14 @@ export default defineConfig({
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
 				runes: ({ filename }) => filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter(),
+			adapter: adapter({ fallback: '404.html' }),
 			prerender: {
-				handleHttpError: 'ignore',
+				// Links to missing pages are tolerated, but a page that crashes while
+				// prerendering must fail the build instead of silently 404ing in production.
+				handleHttpError: ({ status, message }) => {
+					if (status === 404) return;
+					throw new Error(message);
+				},
 				handleMissingId: 'ignore',
 				// An empty blog has no /blog/[slug] pages yet. Once a post exists,
 				// entries() prerenders it and this route is no longer unseen.

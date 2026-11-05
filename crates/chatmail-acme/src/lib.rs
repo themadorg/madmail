@@ -37,7 +37,7 @@ pub use obtain_ip::{
     is_public_ip, obtain_ip_certificate, parse_public_ip, IP_CERT_RENEW_WITHIN_DAYS,
     LETS_ENCRYPT_SHORTLIVED_PROFILE,
 };
-pub use self_signed::generate_self_signed;
+pub use self_signed::{generate_self_signed, self_signed_pems};
 pub use status::{read_certificate_info, CertIssuerKind, CertificateInfo};
 
 /// Whether `domain` is suitable for Let's Encrypt DNS identifiers.

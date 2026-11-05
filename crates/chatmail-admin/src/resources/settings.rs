@@ -42,18 +42,26 @@ pub async fn all_settings(st: &AdminState, method: &str) -> AdminResult {
 
     let pool = &st.pool;
 
-    let registration = if get_bool_setting(pool, settings_keys::REGISTRATION_OPEN, false)
-        .await
-        .map_err(db_err)?
+    let registration = if get_bool_setting(
+        pool,
+        settings_keys::REGISTRATION_OPEN,
+        chatmail_db::REGISTRATION_OPEN_DEFAULT,
+    )
+    .await
+    .map_err(db_err)?
     {
         "open"
     } else {
         "closed"
     };
 
-    let jit_registration = if get_bool_setting(pool, settings_keys::JIT_REGISTRATION_ENABLED, true)
-        .await
-        .map_err(db_err)?
+    let jit_registration = if get_bool_setting(
+        pool,
+        settings_keys::JIT_REGISTRATION_ENABLED,
+        chatmail_db::JIT_REGISTRATION_ENABLED_DEFAULT,
+    )
+    .await
+    .map_err(db_err)?
     {
         "enabled"
     } else {

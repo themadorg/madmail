@@ -22,7 +22,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chatmail_config::{AppConfig, DbMailPorts};
-use chatmail_db::{db_ports_from_settings, get_settings_many, settings_keys, DbPool};
+use chatmail_db::{
+    db_ports_from_settings, get_settings_many, settings_keys, DbPool, SignupSettings,
+};
 use chatmail_shadowsocks::{resolve_runtime_from_settings, ShadowsocksRuntime};
 use chatmail_types::Result;
 use tokio::sync::RwLock;
@@ -32,6 +34,7 @@ pub const WWW_SETTINGS_KEYS: &[&str] = &[
     settings_keys::LANGUAGE,
     settings_keys::REGISTRATION_OPEN,
     settings_keys::JIT_REGISTRATION_ENABLED,
+    settings_keys::REGISTRATION_TOKEN_REQUIRED,
     settings_keys::SMTP_PORT,
     settings_keys::SUBMISSION_PORT,
     settings_keys::SUBMISSION_TLS_PORT,
@@ -52,8 +55,7 @@ const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 #[derive(Clone)]
 pub(crate) struct Snapshot {
     pub(crate) language: String,
-    pub(crate) registration_open: bool,
-    pub(crate) jit_registration_enabled: bool,
+    pub(crate) signup: SignupSettings,
     pub(crate) db_ports: DbMailPorts,
     pub(crate) ss_runtime: Option<ShadowsocksRuntime>,
 }
@@ -128,9 +130,7 @@ impl WwwContextCache {
             })
             .unwrap_or_else(|| "en".into());
 
-        let registration_open = bool_setting(&map, settings_keys::REGISTRATION_OPEN, true);
-        let jit_registration_enabled =
-            bool_setting(&map, settings_keys::JIT_REGISTRATION_ENABLED, true);
+        let signup = SignupSettings::from_map(&map);
 
         let mail_domain = config.effective_registration_domain(None);
         let ss_runtime = if config.ss_configured() {
@@ -147,18 +147,11 @@ impl WwwContextCache {
 
         Ok(Snapshot {
             language,
-            registration_open,
-            jit_registration_enabled,
+            signup,
             db_ports,
             ss_runtime,
         })
     }
-}
-
-fn bool_setting(map: &std::collections::HashMap<String, String>, key: &str, default: bool) -> bool {
-    map.get(key)
-        .map(|v| chatmail_config::parse_bool_str(v))
-        .unwrap_or(default)
 }
 
 pub type SharedWwwContextCache = Arc<WwwContextCache>;

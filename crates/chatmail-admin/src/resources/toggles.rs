@@ -138,9 +138,13 @@ fn reload_send_err(err: tokio::sync::mpsc::error::TrySendError<ReloadRequest>) -
 async fn registration_toggle(pool: &DbPool, method: &str, body: &Value) -> AdminResult {
     match method {
         "GET" => {
-            let open = get_bool_setting(pool, settings_keys::REGISTRATION_OPEN, false)
-                .await
-                .map_err(db_err)?;
+            let open = get_bool_setting(
+                pool,
+                settings_keys::REGISTRATION_OPEN,
+                chatmail_db::REGISTRATION_OPEN_DEFAULT,
+            )
+            .await
+            .map_err(db_err)?;
             let status = if open { "open" } else { "closed" };
             Ok((200, Some(json!({ "status": status }))))
         }

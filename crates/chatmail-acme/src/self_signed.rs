@@ -30,6 +30,13 @@ pub fn generate_self_signed(
     cert_path: &Path,
     key_path: &Path,
 ) -> Result<()> {
+    let (cert_pem, key_pem) = self_signed_pems(primary_domain, hostname)?;
+    write_pem_pair(cert_path, key_path, cert_pem.as_bytes(), key_pem.as_bytes())
+}
+
+/// A self-signed ECDSA P-256 certificate and its key as PEM, without writing
+/// files (install stores them through directory descriptors).
+pub fn self_signed_pems(primary_domain: &str, hostname: &str) -> Result<(String, String)> {
     let mut names = vec![
         primary_domain
             .trim_matches(|c| c == '[' || c == ']')
@@ -46,12 +53,7 @@ pub fn generate_self_signed(
         .self_signed(&key_pair)
         .map_err(|e| ChatmailError::config(e.to_string()))?;
 
-    write_pem_pair(
-        cert_path,
-        key_path,
-        cert.pem().as_bytes(),
-        key_pair.serialize_pem().as_bytes(),
-    )
+    Ok((cert.pem(), key_pair.serialize_pem()))
 }
 
 fn write_pem_pair(

@@ -170,7 +170,7 @@ Full steps: [Customizing HTML pages](../../docs/project/user-guide/17-customizin
 | Surface | Windows packaging status |
 |---------|--------------------------|
 | `POST /api/admin` + bearer token | Supported (service running) |
-| Embedded SPA at `/admin` | **Not** shipped in current Windows CI builds (stub / disabled) |
+| Embedded SPA at `/admin` | **Not** shipped in current Windows CI smoke builds or the stable installer (stub / disabled). Unsigned `Madmail TESTING` prerelease servers embed it |
 | Tray “Open admin UI” | **Removed** — no SPA; use token + CLI/API |
 
 Token file: `%ProgramData%\Madmail\data\admin_token`.  
@@ -179,7 +179,7 @@ Do not open `/api/admin` in a browser (GET → **405**).
 ### Installer options (wizard)
 
 - **Shadowsocks** — optional (default on).
-- **Iroh** — **not** offered (no `iroh-relay.exe` on Windows yet; enabling it breaks service boot).
+- **Iroh** — **not** offered in the stable or testing installer; enabling it can break service boot, and `madmail iroh install|enable` refuse on Windows. Testing prerelease servers embed `iroh-relay.exe`, but Iroh stays off there too.
 - Prefer **self-signed** in the lab if port **80** / ACME is not ready; **Let's Encrypt** (public IP or domain) needs inbound TCP 80 during install.
 
 ## CI

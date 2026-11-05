@@ -766,6 +766,38 @@ pub enum FederationCommand {
     /// Remove all silent-dismiss domains.
     #[command(name = "dismiss-flush")]
     DismissFlush,
+    /// Allow or block outbound HTTPS, plain HTTP, and SMTP.
+    ///
+    /// With no subcommand, shows the current mode. Unset transports stay allowed.
+    /// `set --domain` overrides one destination; a missing override inherits.
+    #[command(name = "transport", subcommand_required = false)]
+    Transport {
+        #[command(subcommand)]
+        cmd: Option<FederationTransportCommand>,
+    },
+}
+
+/// `madmail federation transport` — outbound HTTPS / HTTP / SMTP.
+#[derive(Debug, Subcommand, Clone)]
+pub enum FederationTransportCommand {
+    /// Show whether each outbound transport is allowed.
+    Status {
+        /// Destination domain. Omit to show the global modes.
+        #[arg(value_name = "DOMAIN")]
+        domain: Option<String>,
+    },
+    /// Allow or block one outbound transport.
+    Set {
+        /// `https`, `http`, or `smtp`.
+        #[arg(value_name = "https|http|smtp")]
+        transport: String,
+        /// `allow` or `block`. With `--domain`, `inherit` clears that override.
+        #[arg(value_name = "allow|block|inherit")]
+        mode: String,
+        /// Destination domain. Without this flag the mode is global.
+        #[arg(long, value_name = "DOMAIN")]
+        domain: Option<String>,
+    },
 }
 
 /// `chatmail registration-tokens` — invite tokens for `/new`.

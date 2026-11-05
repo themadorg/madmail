@@ -50,11 +50,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{selectedRelease ? `${selectedRelease.tag_name} · madmail` : 'Releases · madmail'}</title>
-	<meta name="description" content="Latest madmail releases, release notes, and downloads." />
-</svelte:head>
-
 <DocHeader section="Releases" />
 
 <div class="release-page">
