@@ -399,8 +399,16 @@ impl SecureInstall {
         };
         let groups = service_groups(&cfg.maddy_user)?;
         let first = Trust::service(uid, gid, None).with_groups(groups.iter().copied());
-        let (first_fd, st, physical) = open_state_root(&cfg.state_dir, &first, create)?;
+        let (first_fd, st, physical, created) = open_state_root(&cfg.state_dir, &first, create)?;
         check_state_root(cfg, &physical, &first_fd, &st, Some(uid))?;
+        // Mark the directory as madmail's before anything is put in it, so a
+        // later run accepts it while it is still root's (see
+        // [`check_state_root`]): when this run created it, or when install
+        // accepted a root-owned one under the rule (not with --skip-user,
+        // which does not apply the rule).
+        if created || (create && st.st_uid == 0 && !cfg.skip_user) {
+            mark_state_root(&cfg.state_dir, &first_fd)?;
+        }
         let first_id = file_id(&st);
         drop(first_fd);
         // A previous owner other than root and the service account has no
@@ -410,7 +418,7 @@ impl SecureInstall {
         let walk_old_uid = old_uid;
         // Check the way to the state directory again with the old uid counted.
         let trust = Trust::service(uid, gid, old_uid).with_groups(groups.iter().copied());
-        let (state_root, st, _) = open_state_root(&cfg.state_dir, &trust, false)?;
+        let (state_root, st, _, _) = open_state_root(&cfg.state_dir, &trust, false)?;
         // The checks above were made on the directory opened first.
         if file_id(&st) != first_id {
             return Err(ChatmailError::config(format!(
@@ -1203,14 +1211,15 @@ pub fn check_state_dir(cfg: &InstallConfig) -> Result<()> {
 
 /// The checks of [`check_state_dir`] on an opened state directory: `physical`
 /// is the path walked to reach it, `dir` its descriptor and `st` its `stat`.
-/// When root owns it and neither `--state-dir` nor `physical` is named for
-/// madmail, it must be empty (unless `--skip-user`, which has no walk). Its
-/// owner must be root,
-/// the service account (`service_uid`, when the account exists) or a uid
-/// without an account name (the service's previous uid after the account was
-/// recreated); a directory of another named account (for example `postgres`,
-/// or a user whose home it is) is refused, so its files are never given to
-/// the service account.
+/// Its owner must be root, the service account (`service_uid`, when the
+/// account exists) or a uid without an account name (the service's previous
+/// uid after the account was recreated); a directory of another named account
+/// (for example `postgres`, or a user whose home it is) is refused, so its
+/// files are never given to the service account. When the owner is not the
+/// service account and `physical` is not named for madmail, the directory must
+/// also be empty, hold only `lost+found`, or carry madmail's [`STATE_MARKER`]
+/// (see [`may_take_unnamed_dir`]); this rule does not apply with
+/// `--skip-user`, which has no walk.
 fn check_state_root(
     cfg: &InstallConfig,
     physical: &Path,
@@ -1255,34 +1264,11 @@ fn check_state_root_with(
         ));
     }
     let owner = st.st_uid;
-    let named = host_paths::is_named_for_madmail(&cfg.state_dir, &cfg.binary_name)
-        || host_paths::is_named_for_madmail(physical, &cfg.binary_name);
-    // A root-owned directory not named for madmail may be another program's
-    // (such as /var/lib/dpkg or /var/spool/cron): the state walk would give
-    // every root-owned directory in it to the service account. With
-    // --skip-user there is no walk.
-    if owner == 0 && !named && !cfg.skip_user {
-        let names = secure_fs::read_names(dir).map_err(|e| {
-            ChatmailError::config(format!(
-                "refusing to use state directory {}: cannot list {}: {e}",
-                shown(&cfg.state_dir),
-                shown(physical)
-            ))
-        })?;
-        if !names.is_empty() {
-            return Err(state_dir_refusal(
-                cfg,
-                &format!(
-                    "it belongs to root, is not empty and is not named for madmail, so it may \
-                     hold another program's files ({} has {} entries). Use an empty directory \
-                     or one named for madmail",
-                    shown(physical),
-                    names.len()
-                ),
-            ));
-        }
-    }
-    if owner != 0 && Some(owner) != service_uid {
+    // Physically only: an operator link with a madmail name (/srv/madmail ->
+    // /var/lib/dpkg) does not make the directory it leads to madmail's.
+    let named = host_paths::is_named_for_madmail(physical, &cfg.binary_name);
+    let is_service = owner != 0 && service_uid == Some(owner);
+    if owner != 0 && !is_service {
         let name = lookup(owner).map_err(|e| {
             ChatmailError::config(format!(
                 "refusing to use state directory {}: cannot look up the owner (uid {owner}) \
@@ -1294,51 +1280,135 @@ fn check_state_root_with(
         })?;
         if let Some(name) = name {
             return Err(ChatmailError::config(format!(
-                "refusing to use state directory {}: it belongs to account {name} (uid \
+                "refusing to use state directory {}: it belongs to account {} (uid \
                  {owner}), not to root or to the service account {}. Install would give \
                  that account's files to {}. Use a directory of its own. If it holds \
-                 madmail's data from before uid {owner} was given to {name}, stop the \
+                 madmail's data from before uid {owner} was given to {}, stop the \
                  service, check the directory, give the directory itself to root \
                  (chown -h root:root {}) and re-run: files of uid {owner} in it are then \
                  listed and left unchanged for you to check{}",
                 shown(&cfg.state_dir),
+                shown(Path::new(&name)),
                 cfg.maddy_user,
                 cfg.maddy_user,
+                shown(Path::new(&name)),
                 shell_quote(physical),
                 if named {
                     ""
                 } else {
-                    ". A root-owned state directory that is not named for madmail must be \
-                     empty, so move the data to one that is, such as /var/lib/madmail"
+                    ". A root-owned state directory that is not named for madmail is \
+                     accepted only when it is empty, holds only lost+found or has a \
+                     root-owned .madmail-state file, so move the data to a directory named \
+                     for madmail, such as /var/lib/madmail"
                 }
             )));
+        }
+    }
+    // A directory not named for madmail and not the service account's may be
+    // another program's: root's (such as /var/lib/dpkg or /var/spool/cron), or
+    // that of a uid without an account name (a deleted package account's
+    // /var/lib/oldapp, which would otherwise be taken for the previous service
+    // uid's). The state walk would give what is in it to the service account.
+    // With --skip-user there is no walk.
+    if !is_service && !named && !cfg.skip_user {
+        let names = secure_fs::read_names(dir).map_err(|e| {
+            ChatmailError::config(format!(
+                "refusing to use state directory {}: cannot list {}: {e}",
+                shown(&cfg.state_dir),
+                shown(physical)
+            ))
+        })?;
+        if !may_take_unnamed_dir(dir, &names) {
+            let whose = if owner == 0 {
+                "root".to_string()
+            } else {
+                format!("uid {owner}, which has no account name")
+            };
+            return Err(state_dir_refusal(
+                cfg,
+                &format!(
+                    "it belongs to {whose}, is not empty and is not named for madmail, and \
+                     has no {STATE_MARKER} file from the install that created it, so it may \
+                     hold another program's files ({} has {} entries). Use an empty \
+                     directory or one named for madmail. If a previous install was \
+                     interrupted in a directory madmail did not create, check what is in \
+                     it, then empty it or move the data to a directory named for madmail, \
+                     and re-run",
+                    shown(physical),
+                    names.len()
+                ),
+            ));
         }
     }
     Ok(())
 }
 
+/// The file install creates (empty, mode 0644, owned by root) in a state
+/// directory it creates, or in a root-owned one it accepted, before anything
+/// else is put in it: it tells a directory madmail made from another
+/// program's when a later run finds it not empty and not the service
+/// account's (see [`check_state_root`]). The state walk leaves it root's
+/// ([`chown_walk::chown_tree_fd`]), so only root can have made one that
+/// counts.
+pub const STATE_MARKER: &str = ".madmail-state";
+
+/// Create [`STATE_MARKER`] in the opened state directory `dir`
+/// (`O_CREAT | O_EXCL | O_NOFOLLOW` through the descriptor). An entry of that
+/// name that already exists is left as it is: [`check_state_root`] judges it.
+fn mark_state_root(state_dir: &Path, dir: &OwnedFd) -> Result<()> {
+    secure_fs::create_new_file(dir.as_raw_fd(), OsStr::new(STATE_MARKER), b"", 0o644, None)
+        .map(drop)
+        .map_err(|e| io_error("create", &state_dir.join(STATE_MARKER), e))
+}
+
+/// Whether a state directory (owned by root or by a uid without an account
+/// name) that is not named for madmail, listed as `names`, may be
+/// handed to the service account: it is empty; it holds only a `lost+found`
+/// directory (a fresh file system); or it has [`STATE_MARKER`] as a regular
+/// file with one link. Both must belong to root and are looked at without
+/// following a link. Only root can create a root-owned file, and the link
+/// count rules out a hard link to another one; a marker of any other account
+/// (the service account's, or `owner`'s) never counts.
+fn may_take_unnamed_dir(dir: &OwnedFd, names: &[std::ffi::CString]) -> bool {
+    let entry = |name: &std::ffi::CStr, kind: libc::mode_t| {
+        secure_fs::fstatat_nofollow(dir.as_raw_fd(), name).is_ok_and(|st| {
+            secure_fs::kind(&st) == kind
+                && st.st_uid == 0
+                && (kind == libc::S_IFDIR || st.st_nlink == 1)
+        })
+    };
+    if names.is_empty() {
+        return true;
+    }
+    if names.len() == 1 && names[0].as_bytes() == b"lost+found" {
+        return entry(c"lost+found", libc::S_IFDIR);
+    }
+    let marker = std::ffi::CString::new(STATE_MARKER).expect("no NUL in the marker name");
+    entry(&marker, libc::S_IFREG)
+}
+
 /// Resolve and open the state directory. Its own owner is not checked here (it
 /// is the service account's; see [`check_state_root`]), but every component on
-/// the way to it is. Returns the descriptor, its `stat` and the physical path
-/// walked to reach it.
+/// the way to it is. Returns the descriptor, its `stat`, the physical path
+/// walked to reach it and whether this call created it (`create` only).
 fn open_state_root(
     path: &Path,
     trust: &Trust,
     create: bool,
-) -> Result<(OwnedFd, libc::stat, std::path::PathBuf)> {
+) -> Result<(OwnedFd, libc::stat, std::path::PathBuf, bool)> {
     let resolver = Resolver {
         trust,
         state_root: None,
         check_final: false,
     };
-    let resolved = if create {
-        resolver.ensure_dir(path)
+    let (resolved, created) = if create {
+        resolver.ensure_dir_created(path)
     } else {
-        resolver.resolve(path, Want::Dir)
+        resolver.resolve(path, Want::Dir).map(|r| (r, false))
     }
     .map_err(|e| io_error("open state directory", path, e))?;
     match resolved {
-        Resolved::Found(dir) => Ok((dir.fd, dir.st, dir.path)),
+        Resolved::Found(dir) => Ok((dir.fd, dir.st, dir.path, created)),
         Resolved::Controlled { component, reason } => {
             Err(state_dir_controlled(path, &component, reason))
         }
@@ -1780,7 +1850,7 @@ mod tests {
         // The test's base directory is the caller's: open the state root
         // without counting the caller as the old uid, as for a root-owned path.
         let opening = Trust::service(UNUSED_UID, UNUSED_UID, None).with_marked(marked.clone());
-        let (state_root, st, _) = open_state_root(state, &opening, false).unwrap();
+        let (state_root, st, _, _) = open_state_root(state, &opening, false).unwrap();
         let trust = Trust::service(UNUSED_UID, UNUSED_UID, old_uid).with_marked(marked);
         SecureInstall {
             uid: UNUSED_UID,
@@ -2559,6 +2629,110 @@ mod tests {
         cfg.state_dir = other.clone();
         cfg.skip_user = true;
         check(&cfg, &other).unwrap();
+        cfg.skip_user = false;
+        // A madmail name counts physically only: an operator link named for
+        // madmail to another program's directory is refused.
+        let link = b.join("link/madmail");
+        fs::create_dir(b.join("link")).unwrap();
+        symlink(&other, &link).unwrap();
+        cfg.state_dir = link;
+        let err = check(&cfg, &other).unwrap_err().to_string();
+        assert!(err.contains("is not named for madmail"), "{err}");
+        assert!(
+            err.contains(
+                "If a previous install was interrupted in a directory madmail did not create"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_state_dir_not_named_for_madmail_is_taken_only_empty_fresh_or_marked() {
+        let mut cfg = super::super::systemd::tests::sample_cfg();
+        assert!(host_paths::is_named_for_madmail(
+            &cfg.state_dir,
+            &cfg.binary_name
+        ));
+        cfg.system_install = true;
+        // SAFETY: getuid has no preconditions.
+        let me = unsafe { libc::getuid() };
+        let (_b, b) = base();
+        let make = |name: &str, entries: &dyn Fn(&Path)| {
+            let dir = b.join(name);
+            fs::create_dir(&dir).unwrap();
+            entries(&dir);
+            dir
+        };
+        let fresh = make("fresh", &|d| fs::create_dir(d.join("lost+found")).unwrap());
+        let marked = make("marked", &|d| {
+            fs::write(d.join(STATE_MARKER), b"").unwrap();
+            fs::create_dir(d.join("messages")).unwrap();
+        });
+        let hard = make("hard", &|d| {
+            fs::write(d.join("x"), b"").unwrap();
+            fs::hard_link(d.join("x"), d.join(STATE_MARKER)).unwrap();
+        });
+        let sym = make("sym", &|d| {
+            fs::write(d.join("x"), b"").unwrap();
+            symlink("x", d.join(STATE_MARKER)).unwrap();
+        });
+        let dir_marker = make("dirmarker", &|d| {
+            fs::create_dir(d.join(STATE_MARKER)).unwrap()
+        });
+        let foreign = make("foreign", &|d| fs::write(d.join("data"), b"x").unwrap());
+        let file_lf = make("filelf", &|d| fs::write(d.join("lost+found"), b"").unwrap());
+        let unnamed = |_: u32| -> io::Result<Option<String>> { Ok(None) };
+        // `--state-dir` as given stays the sample's: only the physical path
+        // decides whether the directory is named for madmail.
+        let check = |dir: &Path, owner: u32, service: Option<u32>| {
+            let fd = dir_fd(dir);
+            // SAFETY: zeroed `stat` is valid plain data.
+            let mut st: libc::stat = unsafe { std::mem::zeroed() };
+            let m = fs::metadata(dir).unwrap();
+            st.st_dev = m.dev() as _;
+            st.st_ino = m.ino() as _;
+            st.st_uid = owner;
+            check_state_root_with(&cfg, dir, &fd, &st, service, &unnamed).map_err(|e| e.to_string())
+        };
+        // A directory of a uid without an account name (here the caller's,
+        // with the lookup saying it has none, as for the previous service
+        // uid) or of root. Only root's marker or lost+found counts: as root
+        // the test's files are root's and are accepted, otherwise they belong
+        // to the caller and are refused like a marker of the service account.
+        let service = Some(UNUSED_UID);
+        let as_root = me == 0;
+        for owner in [me, 0] {
+            for dir in [&fresh, &marked] {
+                assert_eq!(
+                    check(dir, owner, service).is_ok(),
+                    as_root,
+                    "{} of uid {owner}",
+                    dir.display()
+                );
+            }
+            for dir in [&hard, &sym, &dir_marker, &foreign, &file_lf] {
+                let err = check(dir, owner, service).unwrap_err();
+                assert!(
+                    err.contains("is not empty and is not named for madmail")
+                        && err.contains("has no .madmail-state file"),
+                    "{} of uid {owner}: {err}",
+                    dir.display()
+                );
+            }
+        }
+        if !as_root {
+            let err = check(&foreign, me, service).unwrap_err();
+            assert!(
+                err.contains(&format!(
+                    "it belongs to uid {me}, which has no account name"
+                )),
+                "{err}"
+            );
+        }
+        // The service account's own directory: no rule.
+        check(&foreign, me, Some(me)).unwrap();
+        let err = check(&foreign, 0, service).unwrap_err();
+        assert!(err.contains("it belongs to root, is not empty"), "{err}");
     }
 
     #[test]

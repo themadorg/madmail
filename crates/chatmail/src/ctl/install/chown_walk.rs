@@ -69,6 +69,8 @@ use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
+use super::system::STATE_MARKER;
+
 #[cfg(test)]
 use crate::ctl::secure_fs::cstring;
 #[cfg(not(target_os = "linux"))]
@@ -197,7 +199,11 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
 /// [`chown_tree`] for a root directory that is already open (with
 /// [`DIR_FLAGS`]); `root_path` is only used in messages. `old_uid` is the
 /// previous service uid, if any (see [`decide`]). The root is always changed,
-/// after everything below it, and not at all when the walk fails.
+/// after everything below it, and not at all when the walk fails. madmail's
+/// [`STATE_MARKER`] directly in the root, when it is a regular file with one
+/// link that belongs to root, is left as it is without a note: it stays
+/// root's, so that it only ever counts as made by root (see
+/// `check_state_root`).
 pub fn chown_tree_fd(
     fd: OwnedFd,
     root_path: &Path,
@@ -217,6 +223,7 @@ pub fn chown_tree_fd_with(
     old_uid: Option<u32>,
     owner: &mut dyn Chown,
 ) -> Result<Vec<Skipped>, WalkError> {
+    let marker = CString::new(STATE_MARKER).expect("no NUL in the marker name");
     let fail = |op, path: &Path, source| WalkError {
         op,
         path: path.to_path_buf(),
@@ -322,6 +329,8 @@ pub fn chown_tree_fd_with(
                     depth,
                 });
             }
+            libc::S_IFREG
+                if frame.depth == 0 && name == marker && st.st_uid == 0 && st.st_nlink == 1 => {}
             entry_kind => match chown_entry(
                 frame.fd.as_raw_fd(),
                 &name,

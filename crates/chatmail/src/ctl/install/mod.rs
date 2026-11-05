@@ -745,8 +745,27 @@ fn create_directories(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Resul
             continue;
         }
         let _ = sec;
+        // A system install without a service account (`--skip-user` before
+        // the account exists) marks a state directory it creates as madmail's,
+        // as [`SecureInstall::open`] does, so a later run with the account
+        // accepts it while it is still root's.
+        let mark = cfg.system_install && dir == cfg.state_dir.as_path() && !dir.exists();
         std::fs::create_dir_all(dir)
             .map_err(|e| ChatmailError::config(format!("mkdir {}: {e}", dir.display())))?;
+        #[cfg(unix)]
+        if mark {
+            use std::os::unix::fs::OpenOptionsExt;
+            let marker = dir.join(system::STATE_MARKER);
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o644)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&marker)
+                .map_err(|e| ChatmailError::config(format!("create {}: {e}", marker.display())))?;
+        }
+        #[cfg(not(unix))]
+        let _ = mark;
     }
     Ok(())
 }

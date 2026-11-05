@@ -767,16 +767,25 @@ impl Resolver<'_> {
     /// Resolve `path` as a directory, creating missing components (mode 0755)
     /// in trusted directories, as `mkdir -p` would.
     pub fn ensure_dir(&self, path: &Path) -> io::Result<Resolved> {
+        self.ensure_dir_created(path).map(|(resolved, _)| resolved)
+    }
+
+    /// [`Self::ensure_dir`], also telling whether this call created the
+    /// directory `path` resolves to (its last component, after links): `true`
+    /// only when its own `mkdirat` made it, not when it already existed or
+    /// another process made it first.
+    pub fn ensure_dir_created(&self, path: &Path) -> io::Result<(Resolved, bool)> {
+        let mut created = false;
         for _ in 0..4096 {
             match self.resolve(path, Want::Dir)? {
-                Resolved::Missing { parent, name, .. } => {
+                Resolved::Missing { parent, name, rest } => {
                     match mkdirat(parent.fd.as_raw_fd(), &cstring(&name)?, 0o755) {
-                        Ok(()) => {}
+                        Ok(()) => created = rest.as_os_str().is_empty(),
                         Err(e) if e.raw_os_error() == Some(libc::EEXIST) => {}
                         Err(e) => return Err(e),
                     }
                 }
-                other => return Ok(other),
+                other => return Ok((other, created)),
             }
         }
         Err(errno(libc::ELOOP))
@@ -1835,5 +1844,16 @@ mod tests {
         let r = resolver(&marked).ensure_dir(&svc.join("x/y")).unwrap();
         assert_eq!(controlled(r), svc);
         assert!(!svc.join("x").exists());
+        // Whether the call made the directory itself, also behind a link.
+        let fresh = b.join("p/q");
+        let (r, created) = resolver(&trust).ensure_dir_created(&fresh).unwrap();
+        assert!(matches!(r, Resolved::Found(_)) && created, "{r:?}");
+        let (_, created) = resolver(&trust).ensure_dir_created(&fresh).unwrap();
+        assert!(!created, "it already existed");
+        std::os::unix::fs::symlink(b.join("p/linked"), b.join("link")).unwrap();
+        let (_, created) = resolver(&trust)
+            .ensure_dir_created(&b.join("link"))
+            .unwrap();
+        assert!(created && b.join("p/linked").is_dir());
     }
 }
