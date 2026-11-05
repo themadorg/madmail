@@ -19,8 +19,8 @@
 
 use std::fs;
 use std::io;
-use std::os::unix::fs::{chown, lchown, PermissionsExt};
-use std::path::Path;
+use std::os::unix::fs::{chown, PermissionsExt};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use chatmail_types::{ChatmailError, Result};
@@ -192,7 +192,7 @@ fn ensure_service_account(
         .ok_or_else(|| ChatmailError::config(format!("cannot read home for {}", cfg.maddy_user)))?;
 
     let args = usermod_args(
-        Path::new(previous_home),
+        home_for_comparison(Path::new(previous_home), &cfg.state_dir),
         &cfg.state_dir,
         cfg.state_dir.is_dir(),
         Path::new(previous_home).exists(),
@@ -280,6 +280,14 @@ fn usermod_args(
 }
 
 /// TLS material and config must be readable by the service user.
+///
+/// Files inside the service-writable state tree are left to [`setup_permissions`]:
+/// the service account controls every name there, so a chown by path could be
+/// redirected through a link it planted or swapped in; the descriptor-based
+/// state walk gives those files `uid:gid` without following links. Files outside
+/// the tree (root-owned directories such as `/etc/madmail/certs` or an ACME
+/// client's live directory) are changed by path, following links: only root can
+/// change those directories, so a link there is the operator's choice.
 pub fn setup_config_permissions(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
     if !cfg.system_install || cfg.skip_user {
         return Ok(());
@@ -291,57 +299,116 @@ pub fn setup_config_permissions(cfg: &InstallConfig, dry_run: bool) -> Result<()
         return Ok(());
     }
 
+    let tree = ServiceTree::new(&cfg.state_dir);
     if let Some(conf) = cfg.config_path.parent() {
         let _ = fs::create_dir_all(conf);
-        chown(conf, Some(0), Some(gid)).ok();
+        if !tree.contains(conf) {
+            chown(conf, Some(0), Some(gid)).ok();
+        }
     }
-    if cfg.config_path.is_file() {
+    if tree.contains(&cfg.config_path) {
+        skip_note(&cfg.config_path);
+    } else if cfg.config_path.is_file() {
         chown(&cfg.config_path, Some(0), Some(gid))
             .map_err(|e| io_error("chown", &cfg.config_path, e))?;
         fs::set_permissions(&cfg.config_path, fs::Permissions::from_mode(0o640))
             .map_err(|e| io_error("chmod", &cfg.config_path, e))?;
     }
-    for path in [&cfg.cert_path, &cfg.key_path] {
-        if state_dir_symlink(&cfg.state_dir, path) {
-            println!(
-                "   ! Skipping ownership of {}: symlink inside the state directory",
-                path.display()
-            );
-        } else if path.is_file() {
-            chown_path(&cfg.state_dir, path, uid, gid).map_err(|e| io_error("chown", path, e))?;
-        }
-    }
-    if let Some(certs) = cfg.cert_path.parent() {
-        if !state_dir_symlink(&cfg.state_dir, certs) {
-            chown_path(&cfg.state_dir, certs, 0, gid).ok();
-        }
-    }
+    chown_tls_files(&tree, &cfg.cert_path, &cfg.key_path, uid, gid)?;
     Ok(())
 }
 
-/// The service account can plant links in its own state tree, so root must not
-/// chown through them: a path below the state directory counts as planted if any
-/// of its components there is a link. Operator-chosen links elsewhere (e.g. to an
-/// ACME client's live directory) keep being followed.
-fn state_dir_symlink(state_dir: &Path, path: &Path) -> bool {
-    let Ok(relative) = path.strip_prefix(state_dir) else {
-        return false;
-    };
-    let mut current = state_dir.to_path_buf();
-    relative.components().any(|component| {
-        current.push(component);
-        fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink())
+/// Chown the cert and key outside the service tree; returns the paths skipped
+/// because they are inside it.
+fn chown_tls_files(
+    tree: &ServiceTree,
+    cert: &Path,
+    key: &Path,
+    uid: u32,
+    gid: u32,
+) -> Result<Vec<PathBuf>> {
+    let mut skipped = Vec::new();
+    for path in [cert, key] {
+        if tree.contains(path) {
+            if fs::symlink_metadata(path).is_ok() {
+                skip_note(path);
+            }
+            skipped.push(path.to_path_buf());
+        } else if path.is_file() {
+            chown(path, Some(uid), Some(gid)).map_err(|e| io_error("chown", path, e))?;
+        }
+    }
+    if let Some(certs) = cert.parent() {
+        if !tree.contains(certs) {
+            chown(certs, Some(0), Some(gid)).ok();
+        }
+    }
+    Ok(skipped)
+}
+
+fn skip_note(path: &Path) {
+    println!(
+        "   ! Skipping ownership of {}: inside the service-writable state directory; \
+         the state walk sets its owner without following links",
+        path.display()
+    );
+}
+
+/// The service-writable state tree, by its configured and its resolved path.
+struct ServiceTree<'a> {
+    state_dir: &'a Path,
+    canonical: Option<PathBuf>,
+}
+
+impl<'a> ServiceTree<'a> {
+    fn new(state_dir: &'a Path) -> Self {
+        Self {
+            state_dir,
+            canonical: fs::canonicalize(state_dir).ok(),
+        }
+    }
+
+    /// A path is in the tree when it is lexically below the state directory, or
+    /// when it resolves (or, if it does not exist, its parent resolves) below the
+    /// resolved state directory, e.g. through an operator link into the tree.
+    /// Resolving follows links, but only to decide that root must not touch the
+    /// path here, which is the safe direction.
+    fn contains(&self, path: &Path) -> bool {
+        if path.starts_with(self.state_dir) {
+            return true;
+        }
+        let Some(canonical) = &self.canonical else {
+            return false;
+        };
+        resolve(path).is_some_and(|p| p.starts_with(canonical))
+    }
+}
+
+fn resolve(path: &Path) -> Option<PathBuf> {
+    fs::canonicalize(path).ok().or_else(|| {
+        let name = path.file_name()?;
+        Some(fs::canonicalize(path.parent()?).ok()?.join(name))
     })
 }
 
-/// Inside the state directory a link swapped in after the check changes only the
-/// link itself; outside it, operator links are followed.
-fn chown_path(state_dir: &Path, path: &Path, uid: u32, gid: u32) -> io::Result<()> {
-    if path.starts_with(state_dir) {
-        lchown(path, Some(uid), Some(gid))
+/// A passwd home that resolves to the state directory is already correct, so it
+/// is compared as the state directory itself.
+fn home_for_comparison<'a>(previous_home: &'a Path, state_dir: &'a Path) -> &'a Path {
+    if same_dir(previous_home, state_dir) {
+        state_dir
     } else {
-        chown(path, Some(uid), Some(gid))
+        previous_home
     }
+}
+
+/// Whether two paths name the same directory: equal as written, or resolving to
+/// the same place (e.g. a symlinked `--state-dir` and the canonical passwd home).
+fn same_dir(a: &Path, b: &Path) -> bool {
+    a == b
+        || matches!(
+            (fs::canonicalize(a), fs::canonicalize(b)),
+            (Ok(a), Ok(b)) if a == b
+        )
 }
 
 pub fn install_binary(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
@@ -586,32 +653,82 @@ mod tests {
         assert_eq!(owner(&target_dir.join("inner")), before);
     }
 
+    /// A real directory and its canonical path (macOS tempdirs live behind /var).
+    fn real_tempdir() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = fs::canonicalize(dir.path()).unwrap();
+        (dir, path)
+    }
+
     #[test]
-    fn only_links_inside_the_state_dir_are_treated_as_planted() {
-        let state = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let target = outside.path().join("fullchain.pem");
-        fs::write(&target, "x").unwrap();
-        let inside = state.path().join("fullchain.pem");
-        symlink(&target, &inside).unwrap();
-        let operator_link = outside.path().join("link.pem");
-        symlink(&target, &operator_link).unwrap();
+    fn tls_path_through_a_planted_link_in_the_state_dir_is_not_chowned() {
+        let (_state, state) = real_tempdir();
+        let (_outside, outside) = real_tempdir();
+        fs::write(outside.join("fullchain.pem"), "x").unwrap();
+        fs::write(outside.join("privkey.pem"), "x").unwrap();
+        // The service account links an intermediate component out of its tree.
+        symlink(&outside, state.join("tls")).unwrap();
+        let cert = state.join("tls/fullchain.pem");
+        let key = state.join("tls/privkey.pem");
 
-        assert!(state_dir_symlink(state.path(), &inside));
-        assert!(!state_dir_symlink(state.path(), &operator_link));
-        assert!(!state_dir_symlink(outside.path(), &target));
+        let tree = ServiceTree::new(&state);
+        assert!(tree.contains(&cert) && tree.contains(&key));
+        assert!(tree.contains(&state.join("tls")));
+        let (uid, gid) = (fs::metadata(&outside).unwrap().uid(), 0);
+        // Chowning would fail for a non-root caller (gid 0) if it were attempted.
+        let skipped = chown_tls_files(&tree, &cert, &key, uid, gid).unwrap();
+        assert_eq!(skipped, vec![cert, key]);
 
-        // A linked directory between the state dir and the file is planted too.
-        symlink(outside.path(), state.path().join("tls")).unwrap();
-        assert!(state_dir_symlink(
-            state.path(),
-            &state.path().join("tls/fullchain.pem")
-        ));
-        fs::create_dir(state.path().join("certs")).unwrap();
-        fs::write(state.path().join("certs/fullchain.pem"), "x").unwrap();
-        assert!(!state_dir_symlink(
-            state.path(),
-            &state.path().join("certs/fullchain.pem")
-        ));
+        // Paths outside the tree are not in it, even with the same file names.
+        assert!(!tree.contains(&outside.join("fullchain.pem")));
+    }
+
+    #[test]
+    fn canonical_tls_path_under_a_symlinked_state_root_is_in_the_tree() {
+        let (_data, data) = real_tempdir();
+        let (_links, links) = real_tempdir();
+        // The operator's --state-dir is a link to a data volume.
+        let state = links.join("state");
+        symlink(&data, &state).unwrap();
+        fs::create_dir(data.join("certs")).unwrap();
+        fs::write(data.join("certs/fullchain.pem"), "x").unwrap();
+
+        let tree = ServiceTree::new(&state);
+        // Written in canonical form, so lexically outside the configured path.
+        assert!(tree.contains(&data.join("certs/fullchain.pem")));
+        // A file that does not exist yet is judged by its resolved parent.
+        assert!(tree.contains(&data.join("certs/privkey.pem")));
+        // A path elsewhere that resolves into the tree through a link.
+        symlink(data.join("certs"), links.join("etc-certs")).unwrap();
+        assert!(tree.contains(&links.join("etc-certs/fullchain.pem")));
+        assert!(!tree.contains(&links.join("other.pem")));
+        // A missing state directory has no resolved form; only lexical checks apply.
+        let missing = ServiceTree::new(Path::new("/nonexistent-madmail-state"));
+        assert!(missing.contains(Path::new("/nonexistent-madmail-state/certs/a.pem")));
+        assert!(!missing.contains(&data.join("certs/fullchain.pem")));
+    }
+
+    #[test]
+    fn previous_home_that_resolves_to_the_state_dir_is_not_a_different_home() {
+        let (_data, data) = real_tempdir();
+        let (_links, links) = real_tempdir();
+        let state = links.join("state");
+        symlink(&data, &state).unwrap();
+
+        assert!(same_dir(&state, &data) && same_dir(&data, &state));
+        assert!(same_dir(&state, &state));
+        assert!(!same_dir(&state, &links));
+        assert!(same_dir(Path::new("/missing/a"), Path::new("/missing/a")));
+        assert!(!same_dir(Path::new("/missing/a"), Path::new("/missing/b")));
+
+        // passwd holds the canonical home while --state-dir is the link: the full
+        // install neither refuses nor repoints the account.
+        assert_eq!(home_for_comparison(&links, &state), links.as_path());
+        let previous = home_for_comparison(&data, &state);
+        let args = usermod_args(previous, &state, true, true, false, "madmail", "madmail");
+        assert_eq!(
+            args.unwrap(),
+            ["-g", "madmail", "-s", "/sbin/nologin", "madmail"]
+        );
     }
 }
