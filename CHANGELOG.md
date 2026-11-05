@@ -1,3 +1,18 @@
+# [2.42.0](https://github.com/themadorg/madmail/compare/v2.41.0-unstable...v2.42.0-unstable) (2026-11-05)
+
+### Features
+
+* **deploy:** add Docker Compose project and Helm chart ([4dc7623](https://github.com/themadorg/madmail/commit/4dc7623eb967385c1385cc570f23bd8a77a30156))
+
+### Bug Fixes
+
+* **deploy:** address review findings in chart and compose ([590517d](https://github.com/themadorg/madmail/commit/590517d0ee37c8d296d540fda461b5284ddbc6ca))
+* **deploy:** bump the chart to the 2.41.0 release ([6c18a41](https://github.com/themadorg/madmail/commit/6c18a4149fc05b4357aafba6a1b56510a64a70b5))
+* **deploy:** keep the defaults working with the published latest image ([2edd0dd](https://github.com/themadorg/madmail/commit/2edd0dd3781fae5898a054f585abff14b67127d4))
+* **deploy:** run the Compose service as non-root and lock down its files ([e63842b](https://github.com/themadorg/madmail/commit/e63842b1dc1f086a54f8003b101ac83db95f6140))
+* **deploy:** run the Helm chart as non-root and pin the image ([5c8ca0d](https://github.com/themadorg/madmail/commit/5c8ca0db18c017d1c0c34aa809d87b978d2bea54))
+* **landing:** link deploy/ files to GitHub from the docs ([14c35b9](https://github.com/themadorg/madmail/commit/14c35b9d2d27bf8fb203f69f5e00ea1809ece5ee))
+
 # [2.41.0](https://github.com/themadorg/madmail/compare/v2.40.0-unstable...v2.41.0-unstable) (2026-11-05)
 
 ### Features
