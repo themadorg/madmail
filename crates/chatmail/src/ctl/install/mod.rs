@@ -669,17 +669,13 @@ fn generate_dkim_keys(cfg: &InstallConfig, sec: Option<&SecureInstall>) {
     let _ = sec;
     match chatmail_delivery::dkim::DkimSigner::load_or_create(
         &cfg.state_dir,
-        chatmail_delivery::dkim::DKIM_SELECTOR,
+        DKIM_SELECTOR,
         &cfg.primary_domain,
     ) {
         Ok(_) => {
-            let txt = chatmail_delivery::dkim::public_txt_path(
-                &cfg.state_dir,
-                chatmail_delivery::dkim::DKIM_SELECTOR,
-            );
+            let txt = public_txt_path(&cfg.state_dir, DKIM_SELECTOR);
             println!(
-                "  DKIM:           selector '{}' — publish TXT default._domainkey ({})\n                   madmail dkim show",
-                chatmail_delivery::dkim::DKIM_SELECTOR,
+                "  DKIM:           selector '{DKIM_SELECTOR}' — publish TXT default._domainkey ({})\n                   madmail dkim show",
                 txt.display()
             );
         }
