@@ -21,6 +21,8 @@ The `chatmail-delivery` queue tries, unless that transport is blocked:
 
 Each of those can be set to `block` with `madmail federation transport` or `POST /admin/settings/federation`. The default is allow for all three. `madmail federation transport set smtp block --domain evil.test` (or the same POST with `"domain": "evil.test"`) blocks SMTP only toward that destination. Other domains keep the global mode.
 
+A delivery that the transport policy blocks fails the queue entry **permanently** (like an MTA 5.7.x policy reject): the entry is removed and not retried. This happens when all three are blocked, or when `smtp` is blocked (no SMTP fallback left) and the HTTP step fails permanently: an `http://` endpoint rewrite meets a blocked `http`, a redirect to `http://` is refused, or `/mxdeliv` answers with a 4xx. The failure reason says it was blocked by the outbound transport policy and names the transport and the recipient domain. With `http` blocked, an HTTPS redirect to plain `http://` is refused. A local sender gets a delivery report with that reason (see below).
+
 When outbound delivery is refused, expires, or runs out of attempts, the sender's inbox receives a `mailer-daemon` delivery report. The text is the reason. Delta Chat uses the original `Message-ID` in that report to show the failure on the message.
 
 All paths are tracked for latency and failure rate.

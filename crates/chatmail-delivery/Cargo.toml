@@ -35,3 +35,4 @@ chatmail-state = { workspace = true }
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
 tempfile = "3"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+wiremock = "0.6"

@@ -2,6 +2,7 @@ import os
 import hashlib
 import time
 import shutil
+from utils.accounts import account_addr
 
 def run(sender, receiver, test_dir):
     print("Testing file transfer (1MB)...")
@@ -17,7 +18,7 @@ def run(sender, receiver, test_dir):
     print(f"File created, hash: {original_hash}")
     
     # Get or create the chat with receiver (should already exist after secure join)
-    receiver_email = receiver.get_config("addr")
+    receiver_email = account_addr(receiver)
     receiver_contact = sender.get_contact_by_addr(receiver_email)
     
     if receiver_contact is None:
@@ -33,7 +34,7 @@ def run(sender, receiver, test_dir):
     max_wait = 180 # Large files take longer and federation can be slow
     start_time = time.time()
     
-    sender_email = sender.get_config("addr")
+    sender_email = account_addr(sender)
     print(f"Waiting for receiver to get the file from {sender_email}...")
     
     while time.time() - start_time < max_wait:

@@ -17,7 +17,7 @@ Steps:
 
 import time
 
-from utils.accounts import restart_accounts_io, wait_accounts_idle
+from utils.accounts import restart_accounts_io, wait_accounts_idle, account_addr
 from utils.remote_service import MAD_SERVICE
 from utils.server_ctl import disable_logging, enable_logging
 from utils.ssh import journal_cursor_command, run_ssh_command
@@ -115,7 +115,7 @@ def run(acc1, acc2, acc3, group_chat, remotes):
         
         # Step 3: Send 10 P2P messages (acc1 to acc2 - cross-server)
         print("\nStep 3: Sending 10 P2P encrypted messages (Server1 -> Server2)...")
-        acc2_email = acc2.get_config("addr")
+        acc2_email = account_addr(acc2)
         acc2_contact = acc1.get_contact_by_addr(acc2_email)
         if acc2_contact:
             p2p_chat = acc2_contact.create_chat()
@@ -146,7 +146,7 @@ def run(acc1, acc2, acc3, group_chat, remotes):
         # Step 5: Send 10 federation messages (acc1 to acc3)
         if acc3:
             print("\nStep 5: Sending 10 federation messages (Server1 -> Server2 acc3)...")
-            acc3_email = acc3.get_config("addr")
+            acc3_email = account_addr(acc3)
             acc3_contact = acc1.get_contact_by_addr(acc3_email)
             if acc3_contact:
                 fed_chat = acc3_contact.create_chat()

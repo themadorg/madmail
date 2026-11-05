@@ -5,6 +5,7 @@ import time
 import ipaddress
 import urllib.parse
 from deltachat_rpc_client import EventType
+from utils.accounts import account_addr
 
 def random_string(length=9):
     chars = string.ascii_lowercase + string.digits
@@ -63,7 +64,7 @@ def run(dc, domain):
     while time.time() - start_time < max_wait:
         event = account.wait_for_event()
         if event and event.kind == EventType.IMAP_INBOX_IDLE:
-            addr = account.get_config("addr")
+            addr = account_addr(account)
             print(f"✓ Account {addr} is now idle and ready.")
             return account
         elif event and event.kind == EventType.ERROR:

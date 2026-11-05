@@ -20,6 +20,7 @@ import urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from deltachat_rpc_client import DeltaChat, Rpc, EventType
+from utils.accounts import account_addr
 
 S1 = ""
 S2 = ""
@@ -71,7 +72,7 @@ def create_dc_account(dc, server_ip, username, password):
     # Give the account time to connect and reach IDLE
     print(f"  Waiting 10s for IMAP connection...")
     time.sleep(10)
-    addr = account.get_config("addr")
+    addr = account_addr(account)
     print(f"  ✓ {addr} ready.")
     return account
 
@@ -135,8 +136,8 @@ def main():
         print("── Step 2: Creating DC accounts ──")
         acc1 = create_dc_account(dc, S1, user1, passwd1)
         acc2 = create_dc_account(dc, S2, user2, passwd2)
-        acc1_email = acc1.get_config("addr")
-        acc2_email = acc2.get_config("addr")
+        acc1_email = account_addr(acc1)
+        acc2_email = account_addr(acc2)
         print(f"  acc1: {acc1_email}")
         print(f"  acc2: {acc2_email}")
         print()

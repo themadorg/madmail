@@ -1,0 +1,79 @@
+name: Prepare one unsigned source commit
+description: Verify build-only or publication metadata for the already checked-out commit.
+
+inputs:
+  mode:
+    description: build-only or publish
+    required: true
+  sha:
+    description: Full commit SHA every job builds
+    required: true
+  version:
+    description: Numeric version for publication. Empty for build-only.
+    required: false
+    default: ""
+  tag:
+    description: Unstable tag for publication. Empty for build-only.
+    required: false
+    default: ""
+  expect-version:
+    description: Version already selected by the source job
+    required: false
+    default: ""
+  expect-generation:
+    description: Admin-web gitlink already selected by the source job
+    required: false
+    default: ""
+
+outputs:
+  version:
+    description: Numeric version for this commit
+    value: ${{ steps.prepare.outputs.version }}
+  generation:
+    description: Recorded admin-web gitlink
+    value: ${{ steps.prepare.outputs.generation }}
+
+runs:
+  using: composite
+  steps:
+    - name: Require the selected commit
+      shell: bash
+      env:
+        MATRIX_SHA: ${{ inputs.sha }}
+      run: |
+        set -euo pipefail
+        if command -v python3 >/dev/null 2>&1; then
+          py=python3
+        else
+          py=python
+        fi
+        "$py" -c 'import os,re,sys; sha=os.environ.get("MATRIX_SHA",""); sys.exit(0 if re.fullmatch(r"[0-9a-f]{40}", sha) else 1)' || {
+          echo "selected commit is not a full SHA"
+          exit 1
+        }
+
+    - name: Verify manifests, gitlink, and lockfile
+      id: prepare
+      shell: bash
+      env:
+        MATRIX_MODE: ${{ inputs.mode }}
+        MATRIX_SHA: ${{ inputs.sha }}
+        MATRIX_VERSION: ${{ inputs.version }}
+        MATRIX_TAG: ${{ inputs.tag }}
+        MATRIX_EXPECT_VERSION: ${{ inputs.expect-version }}
+        MATRIX_EXPECT_GENERATION: ${{ inputs.expect-generation }}
+      run: |
+        set -euo pipefail
+        if command -v python3 >/dev/null 2>&1; then
+          py=python3
+        else
+          py=python
+        fi
+        "$py" scripts/unstable_matrix.py prepare \
+          --mode "$MATRIX_MODE" \
+          --sha "$MATRIX_SHA" \
+          --version "$MATRIX_VERSION" \
+          --tag "$MATRIX_TAG" \
+          --expect-version "$MATRIX_EXPECT_VERSION" \
+          --expect-generation "$MATRIX_EXPECT_GENERATION" \
+          --github-output "$GITHUB_OUTPUT"

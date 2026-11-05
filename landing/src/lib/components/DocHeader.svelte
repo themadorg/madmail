@@ -1,4 +1,5 @@
 <script>
+	import HeaderDropdown from '$lib/components/HeaderDropdown.svelte';
 	import SharePageModal from '$lib/components/SharePageModal.svelte';
 	import MadmailLogo from '$lib/components/MadmailLogo.svelte';
 	import { openCommandPalette } from '$lib/commandPalette.svelte.js';
@@ -7,10 +8,17 @@
 	import github from '$lib/icons/github.svg?raw';
 	import magnifyingGlass from '$lib/icons/magnifying-glass.svg?raw';
 	import queueList from '$lib/icons/queue-list.svg?raw';
+	import chevronDown from '$lib/icons/chevron-down.svg?raw';
+	import languageIcon from '$lib/icons/language.svg?raw';
+	import bookOpen from '$lib/icons/book-open.svg?raw';
+	import tagIcon from '$lib/icons/tag.svg?raw';
+	import newspaper from '$lib/icons/newspaper.svg?raw';
 	import { repo } from '$lib/nav.js';
 
-	/** @type {{ currentHref?: string, section?: string }} */
-	let { currentHref = '', section = 'Docs' } = $props();
+	/** @type {{ article?: ReturnType<typeof import("$lib/blogSource.js").parseBlogSource> | null, currentHref?: string, section?: string, blogLanguage?: string, languages?: { label: string, href: string, current: boolean }[] }} */
+	let { currentHref = '', section = 'Docs', languages = [], article = null, blogLanguage = 'en' } = $props();
+
+	const blogHref = $derived(blogLanguage === 'en' ? '/blog' : `/blog?lang=${encodeURIComponent(blogLanguage)}`);
 
 	let shareOpen = $state(false);
 	let shareUrl = $state('');
@@ -27,7 +35,16 @@
 	<div class="brand">
 		<div class="brand-start">
 			<MadmailLogo href="/" size="1.5rem" class="doc-logo" transitionName="madmail-logo" />
-			<a class="docs-label" href={section === 'Docs' ? '/docs' : '/releases'}>Madmail / {section}</a>
+			<div class="docs-label">
+				<a href="/">Madmail</a>
+				<span aria-hidden="true"> / </span>
+				<a href={section === 'Blog' ? blogHref : section === 'Releases' ? '/releases' : '/docs'}>{section}</a>
+			</div>
+			<HeaderDropdown id="section-navigation" label="Switch section" menuLabel="Site sections" icon={chevronDown} items={[
+				{ label: 'Docs', href: '/docs', current: section === 'Docs', icon: bookOpen },
+				{ label: 'Releases', href: '/releases', current: section === 'Releases', icon: tagIcon },
+				{ label: 'Blog', href: blogHref, current: section === 'Blog', icon: newspaper }
+			]} />
 			{#if section === 'Docs' && !(docTreeModal.open && docTreeModal.docked)}
 			<button
 				type="button"
@@ -45,6 +62,9 @@
 			<kbd>Ctrl K</kbd>
 		</button>
 		<div class="brand-end">
+			{#if languages.length}
+				<HeaderDropdown id="post-languages" label="Change post language" menuLabel="Post languages" icon={languageIcon} align="right" items={languages.map((language) => ({ ...language, lang: language.label === 'فارسی' ? 'fa' : language.label === 'Русский' ? 'ru' : language.label === 'English' ? 'en' : undefined }))} />
+			{/if}
 			<button
 				type="button"
 				class="search"
@@ -68,7 +88,7 @@
 		</div>
 	</div>
 </header>
-<SharePageModal bind:open={shareOpen} url={shareUrl} title={shareTitle} />
+<SharePageModal bind:open={shareOpen} url={shareUrl} title={shareTitle} {article} />
 
 <style>
 	.doc-header {
@@ -103,7 +123,9 @@
 		align-items: center;
 	}
 
-	.docs-label { color: var(--color-text-muted); text-decoration: none; font-size: 0.85rem; margin-right: 0.5rem; }
+	.docs-label { color: var(--color-text-muted); text-decoration: none; font-size: 0.85rem; }
+	.docs-label a { color: inherit; text-decoration: none; }
+	.docs-label a:hover { text-decoration: underline; }
 
 	.search-bar { display: none; }
 	@media (min-width: 900px) {

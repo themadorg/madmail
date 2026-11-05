@@ -53,7 +53,7 @@ Integration tests live in workspace member `tests/` (`chatmail-integration` pack
 | **`chatmail-fed`** | HTTP listener: `/mxdeliv` + merged routers | `mxdeliv`, `security`, `server::run_http_listener` |
 | **`chatmail-delivery`** | Outbound queue (HTTP then SMTP) | `queue`, `router`, `transport`; private `federation_http` (shared `reqwest` client) |
 | **`chatmail-push`** | XDELTAPUSH device tokens + `notifications.delta.chat` notifier | `enabled`, `notifier`, `store`, `mode`, `stats` — [23-push-notifications.md](23-push-notifications.md) |
-| **`chatmail-www`** | Public site, `/new`, WebIMAP/WebSMTP | `router`, `webimap`, `webimap_ws`, `handlers`, `gate`, `export`, `assets`, `context_cache`, `template`, `response` |
+| **`chatmail-www`** | Public site, `/new`, WebIMAP/WebSMTP, raw WSS bridge | `router`, `webimap`, `webimap_ws`, `bridge`, `handlers`, `gate`, `export`, `assets`, `context_cache`, `template`, `response` |
 | **`chatmail-admin`** | Admin JSON-RPC (`POST /api/admin`) | `auth`, `cors`, `handler`, `router`, `resources/*` |
 | **`chatmail-admin-web`** | Embedded operator SPA | `serve::admin_web_router` |
 | **`chatmail-tls`** | Load PEM → `rustls::ServerConfig` | `load_server_config` |
@@ -111,6 +111,7 @@ Normative protocol specs used across these crates are archived under [`RFC/`](RF
 │  HTTP Server (Axum)                                            │
 │   ├── /new                  (Registration)                     │
 │   ├── /mxdeliv              (Federation receive)               │
+│   ├── /transport/{imap,smtp} (raw mail byte streams over WSS)  │
 │   ├── /webimap/*            (WebIMAP REST + WebSocket)         │
 │   └── /api/admin            (Admin RPC endpoint)               │
 ├─────────────────────────────────────────────────────────────────┤

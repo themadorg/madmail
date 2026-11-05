@@ -33,6 +33,7 @@ sys.path.append(TEST_DIR)
 from deltachat_rpc_client import DeltaChat, Rpc
 from scenarios import test_01_account_creation, test_03_secure_join
 from utils.lxc import LXCManager
+from utils.accounts import account_addr
 
 RPC_SERVER_PATH = "/usr/bin/deltachat-rpc-server"
 
@@ -96,7 +97,7 @@ def _worker_run(queue, worker_id, remote, user_count, duration, test_dir):
 
             chats = []
             for acc_a, acc_b in pairs:
-                acc_b_email = acc_b.get_config("addr")
+                acc_b_email = account_addr(acc_b)
                 contact = acc_a.get_contact_by_addr(acc_b_email)
                 if contact is None:
                     contact = acc_a.create_contact(acc_b_email)

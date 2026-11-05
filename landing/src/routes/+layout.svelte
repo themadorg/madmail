@@ -1,5 +1,5 @@
 <script>
-	import { onMount, untrack } from 'svelte';
+	import { onMount, untrack, tick } from 'svelte';
 	import { onNavigate } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
@@ -17,11 +17,13 @@
 
 	$effect(() => {
 		if (!browser) return;
-		document.documentElement.classList.toggle('docs-theme', page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/') || page.url.pathname === '/releases' || page.url.pathname.startsWith('/releases/'));
+		document.documentElement.classList.toggle('docs-theme', page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/') || page.url.pathname === '/releases' || page.url.pathname.startsWith('/releases/') || page.url.pathname === '/blog' || page.url.pathname.startsWith('/blog/'));
 	});
 
+	let activeTransition;
 	if (browser) {
 		onNavigate((navigation) => {
+			activeTransition?.skipTransition();
 			if (!document.startViewTransition) return;
 			if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
@@ -30,10 +32,12 @@
 			if (fromDocs && toDocs) return;
 
 			return new Promise((resolve) => {
-				document.startViewTransition(async () => {
+				activeTransition = document.startViewTransition(async () => {
 					resolve();
 					await navigation.complete;
+					await tick();
 				});
+				activeTransition.ready.catch(() => resolve());
 			});
 		});
 	}
@@ -100,7 +104,9 @@
 	<link rel="stylesheet" href="/fonts/fonts.css" />
 </svelte:head>
 
-{@render children()}
+{#key page.url.pathname}
+	{@render children()}
+{/key}
 <CommandPalette />
 {#if !browser || page.url.searchParams.get('focus') !== 'true'}
 	<DocTreeModal currentHref={page.url.pathname} />

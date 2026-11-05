@@ -166,3 +166,7 @@ PGP policy, MIME, TLS, and certificate automation. Index: [`RFC/README.md`](RFC/
 | [7301](https://datatracker.ietf.org/doc/html/rfc7301) | TLS ALPN extension | — |
 | [9325](https://datatracker.ietf.org/doc/html/rfc9325) | TLS BCP 195 — strict ALPN/SNI vs ALPACA | — |
 | [8555](https://datatracker.ietf.org/doc/html/rfc8555) | ACME (Let's Encrypt / DNS-01) | [rfc8555.txt](RFC/rfc8555.txt) |
+
+## Raw IMAP/SMTP WebSocket transport
+
+See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.

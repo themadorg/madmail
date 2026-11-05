@@ -85,8 +85,8 @@ From `src/lib/pageRefresh.ts` — used for prefetch and header **Refresh**:
 
 | Resource | Methods | Body | Pages |
 |----------|---------|------|-------|
-| `/admin/settings/federation` | GET | — | Federation layout |
-| `/admin/settings/federation` | POST | `{ "enabled"? }` or `{ "policy" }` | Federation layout |
+| `/admin/settings/federation` | GET | — (returns `enabled`, `policy`, size fields, `transports: { https, http, smtp }`) | Federation layout |
+| `/admin/settings/federation` | POST | `{ "enabled"?, "policy"?, "transports"?: { "https"?, "http"?, "smtp"? } }` (`allow` \| `block`; all fields are checked before any is saved) | Federation layout |
 | `/admin/federation/rules` | GET | — | Rules, traffic |
 | `/admin/federation/rules` | POST | `{ "domain" }` | Rules, traffic |
 | `/admin/federation/rules` | DELETE | `{ "domain" }` | Rules, traffic |

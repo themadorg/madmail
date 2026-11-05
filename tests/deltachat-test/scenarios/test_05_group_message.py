@@ -1,10 +1,11 @@
 import time
+from utils.accounts import account_addr
 
 def run(admin, member, group_name):
     print(f"Creating group: {group_name}")
     
     # Get the member's email address
-    member_email = member.get_config("addr")
+    member_email = account_addr(member)
     
     # Look up the existing contact (which has a key after secure join)
     existing_contact = admin.get_contact_by_addr(member_email)
@@ -28,7 +29,7 @@ def run(admin, member, group_name):
     print("Waiting for group to propagate...")
     time.sleep(10)
     
-    msg_text = f"Hello group from {admin.get_config('addr')}"
+    msg_text = f"Hello group from {account_addr(admin)}"
     group.send_text(msg_text)
     
     # Wait for receipt on member

@@ -20,6 +20,11 @@ use chatmail::ctl::{self, print_error_json};
 use chatmail_config::{Cli, Command};
 
 fn main() {
+    // Retain identity strings before the Windows service dispatcher returns.
+    ctl::retain_build_version_marker();
+    chatmail_admin_web::retain_admin_web_generation();
+    chatmail_iroh::retain_iroh_identity();
+
     #[cfg(windows)]
     {
         if chatmail::ctl::argv_has_service_flag() {

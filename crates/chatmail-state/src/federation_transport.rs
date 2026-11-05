@@ -30,8 +30,10 @@ use chatmail_db::{
 use chatmail_types::{ChatmailError, Result};
 use serde_json::{Map, Value};
 
-/// Permanent failure when https, http, and smtp are all blocked.
-pub const ALL_BLOCKED_REASON: &str = "federation transport blocked by policy";
+/// Permanent failure when https, http, and smtp are all blocked (delivery appends the
+/// recipient domain).
+pub const ALL_BLOCKED_REASON: &str =
+    "delivery blocked by outbound transport policy: https, http and smtp are all blocked";
 
 pub const ALLOW: &str = "allow";
 pub const BLOCK: &str = "block";
@@ -113,16 +115,15 @@ impl TransportPolicy {
         Self::label(allowed)
     }
 
-    fn with_override(self, name: TransportName, mode: Option<bool>) -> Self {
-        let mut next = self;
-        if let Some(allowed) = mode {
-            match name {
-                TransportName::Https => next.https = allowed,
-                TransportName::Http => next.http = allowed,
-                TransportName::Smtp => next.smtp = allowed,
-            }
+    /// This policy with one destination domain's overrides applied. A missing
+    /// override keeps this policy's mode, so `allow` can re-enable a globally
+    /// blocked transport and `block` can disable a globally allowed one.
+    pub fn apply(self, ov: &DomainTransportOverride) -> Self {
+        Self {
+            https: ov.https.unwrap_or(self.https),
+            http: ov.http.unwrap_or(self.http),
+            smtp: ov.smtp.unwrap_or(self.smtp),
         }
-        next
     }
 }
 
@@ -222,13 +223,27 @@ pub async fn load_domain_overrides(
 
 /// Apply override updates for one destination domain and persist the map.
 /// `None` removes that transport's override. An empty map deletes the setting.
+///
+/// A stored value that is not a JSON object is refused rather than replaced,
+/// so a corrupt row is never silently overwritten. This is a plain
+/// read-modify-write of one settings row: in the server, go through
+/// [`FederationTransportPolicy::update_domain`], which serializes writers.
 pub async fn update_domain_transports(
     pool: &DbPool,
     domain: &str,
     updates: &[(TransportName, Option<bool>)],
 ) -> Result<String> {
     let domain = normalize_transport_domain(domain)?;
-    let mut map = load_domain_overrides(pool).await?;
+    let raw = get_setting(pool, settings_keys::FEDERATION_TRANSPORT_DOMAINS).await?;
+    let raw = raw.as_deref().unwrap_or("");
+    if !raw.trim().is_empty() && !matches!(serde_json::from_str::<Value>(raw), Ok(Value::Object(_)))
+    {
+        return Err(ChatmailError::config(format!(
+            "stored federation transport overrides are corrupt; clear {} first",
+            settings_keys::FEDERATION_TRANSPORT_DOMAINS
+        )));
+    }
+    let mut map = parse_domain_overrides(raw);
     let mut entry = map.remove(&domain).unwrap_or_default();
     for (name, mode) in updates {
         entry.set(*name, *mode);
@@ -365,6 +380,8 @@ struct CachedTransport {
 #[derive(Debug)]
 pub struct FederationTransportPolicy {
     inner: RwLock<CachedTransport>,
+    /// Serializes the read-modify-write of the shared overrides row.
+    update_lock: tokio::sync::Mutex<()>,
 }
 
 impl FederationTransportPolicy {
@@ -374,6 +391,7 @@ impl FederationTransportPolicy {
                 global: TransportPolicy::default(),
                 overrides: BTreeMap::new(),
             }),
+            update_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -398,21 +416,33 @@ impl FederationTransportPolicy {
     pub fn effective(&self, domain: &str) -> TransportPolicy {
         let cached = self.inner.read().expect("transport policy lock");
         let key = normalize_federation_domain(domain);
-        let Some(ov) = cached.overrides.get(&key) else {
-            return cached.global;
-        };
-        let mut policy = cached.global;
-        for name in [
-            TransportName::Https,
-            TransportName::Http,
-            TransportName::Smtp,
-        ] {
-            policy = policy.with_override(name, ov.get(name));
+        match cached.overrides.get(&key) {
+            Some(ov) => cached.global.apply(ov),
+            None => cached.global,
         }
-        policy
+    }
+
+    /// Update one destination domain's overrides and reload the cache. The
+    /// load, change, save and reload run under one lock, so two concurrent
+    /// writers in this process cannot drop each other's domain.
+    pub async fn update_domain(
+        &self,
+        pool: &DbPool,
+        domain: &str,
+        updates: &[(TransportName, Option<bool>)],
+    ) -> Result<String> {
+        let _guard = self.update_lock.lock().await;
+        let domain = update_domain_transports(pool, domain, updates).await?;
+        self.reload(pool).await?;
+        Ok(domain)
     }
 
     pub async fn hydrate(&self, pool: &DbPool) -> Result<()> {
+        let _guard = self.update_lock.lock().await;
+        self.reload(pool).await
+    }
+
+    async fn reload(&self, pool: &DbPool) -> Result<()> {
         let global = load_transport_policy(pool).await?;
         let overrides = load_domain_overrides(pool).await?;
         let mut guard = self.inner.write().expect("transport policy lock");
@@ -559,6 +589,67 @@ mod tests {
         let ov = live.overrides().remove("evil.test").unwrap();
         assert!(ov.http.is_none());
         assert_eq!(ov.smtp, Some(false));
+    }
+
+    #[tokio::test]
+    async fn write_refuses_to_replace_corrupt_domain_json() {
+        let pool = init_memory_db().await.unwrap();
+        for raw in ["not-json", r#"["evil.test"]"#] {
+            set_setting(&pool, settings_keys::FEDERATION_TRANSPORT_DOMAINS, raw)
+                .await
+                .unwrap();
+            let err =
+                update_domain_transports(&pool, "x.test", &[(TransportName::Smtp, Some(false))])
+                    .await
+                    .unwrap_err();
+            assert!(err.to_string().contains("corrupt"), "{raw}: {err}");
+            assert_eq!(
+                get_setting(&pool, settings_keys::FEDERATION_TRANSPORT_DOMAINS)
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some(raw)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn allow_override_reenables_globally_blocked_transport() {
+        let pool = init_memory_db().await.unwrap();
+        set_transport_mode(&pool, TransportName::Smtp, false)
+            .await
+            .unwrap();
+        let live = FederationTransportPolicy::new();
+        live.update_domain(&pool, "peer.test", &[(TransportName::Smtp, Some(true))])
+            .await
+            .unwrap();
+        assert!(live.effective("peer.test").smtp);
+        assert!(!live.get().smtp);
+        assert!(!live.effective("other.test").smtp);
+        let ov = live.overrides().remove("peer.test").unwrap();
+        assert_eq!(live.get().apply(&ov), live.effective("peer.test"));
+    }
+
+    #[tokio::test]
+    async fn concurrent_domain_updates_keep_every_domain() {
+        let pool = init_memory_db().await.unwrap();
+        let live = FederationTransportPolicy::new();
+        let block = [(TransportName::Smtp, Some(false))];
+        let domains = ["a.test", "b.test", "c.test", "d.test"];
+        let (a, b, c, d) = tokio::join!(
+            live.update_domain(&pool, domains[0], &block),
+            live.update_domain(&pool, domains[1], &block),
+            live.update_domain(&pool, domains[2], &block),
+            live.update_domain(&pool, domains[3], &block),
+        );
+        for result in [a, b, c, d] {
+            result.unwrap();
+        }
+        let stored = load_domain_overrides(&pool).await.unwrap();
+        assert_eq!(stored.len(), domains.len());
+        for domain in domains {
+            assert!(!live.effective(domain).smtp, "{domain}");
+        }
     }
 
     #[test]

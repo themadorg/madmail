@@ -137,6 +137,28 @@ Not applicable — server mode does not use ctl JSON output.
 
 ### `monitor`
 
+`monitor status`, `monitor enable`, and `monitor disable` return `enabled`,
+`listen` (null when disabled), `authentication_required`, `username`, `changed`, and `restart_required` in `data`.
+`enabled` reflects saved configuration. `restart_required` is true when the
+command changed the configuration; apply changes by restarting the server.
+A false value does not establish that the running server matches the saved configuration.
+
+```json
+{
+  "ok": true,
+  "command": "monitor",
+  "data": {
+    "enabled": false,
+    "listen": null,
+    "authentication_required": false,
+    "username": "metrics",
+    "changed": false,
+    "restart_required": false
+  }
+}
+```
+
+
 One envelope per sample (newline-delimited when `--count` is not 1):
 
 ```json
@@ -315,6 +337,7 @@ Dry-run / completed uninstall returns paths and flags in `data`. When nothing to
     "registration_open": false,
     "token_required": true,
     "jit_enabled": true,
+    "password_signup": false,
     "blocklisted": 2,
     "mail_directories": 12,
     "state_dir": "/var/lib/madmail",
@@ -697,7 +720,7 @@ Does not create a key (`generated` is always `false`). Missing key or IP-literal
 }
 ```
 
-`allow` and `block` are the only stored global modes. A missing key is reported as `allow`. `overrides` lists destination domains that differ from those modes. A transport omitted inside an override inherits the global mode. `overrides` is an empty array when every domain inherits.
+`allow` and `block` are the only stored global modes. A missing key is reported as `allow`. `overrides` lists every destination domain with an explicit per-transport mode, even one equal to the current global mode. A transport omitted inside an override inherits the global mode. `overrides` is an empty array when every domain inherits.
 
 `madmail federation transport status evil.test --json` reports the effective mode for that destination:
 
@@ -708,14 +731,14 @@ Does not create a key (`generated` is always `false`). Missing key or IP-literal
   "data": {
     "domain": "evil.test",
     "https": "allow",
-    "http": "allow",
+    "http": "block",
     "smtp": "block",
     "override": { "smtp": "block" }
   }
 }
 ```
 
-`https`, `http`, and `smtp` are the modes delivery will use. `override` contains only the explicit per-domain values.
+`https`, `http`, and `smtp` are the modes delivery will use: the explicit override where there is one, the global mode otherwise. Here `http` is `block` because the global mode in the example above blocks it. `override` contains only the explicit per-domain values.
 
 ### `federation transport set`
 

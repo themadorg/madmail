@@ -2,7 +2,7 @@
 
 Parent: [`registration`](registration.md)
 
-Allow `/new` registration when tokens/policy permit
+Allow `/new` when tokens and policy permit. Password-only IMAP and SMTP sign-up stays off while JIT registration is disabled; the registration page then uses `POST /new`. A running server applies this on the next `madmail reload`.
 
 ## Synopsis
 

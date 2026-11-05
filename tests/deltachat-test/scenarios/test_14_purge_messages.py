@@ -4,6 +4,7 @@ import requests
 
 from scenarios import test_03_secure_join
 from utils.ssh import run_ssh_command
+from utils.accounts import account_addr
 
 
 def _get_admin_token(remote):
@@ -140,8 +141,8 @@ def run(rpc, dc, acc_sender, acc_receiver, remote1, remote2):
     print("TEST #14: Purge Messages Test")
     print("=" * 50)
 
-    sender_addr = acc_sender.get_config("addr")
-    receiver_addr = acc_receiver.get_config("addr")
+    sender_addr = account_addr(acc_sender)
+    receiver_addr = account_addr(acc_receiver)
 
     contact = acc_sender.get_contact_by_addr(receiver_addr)
     if not contact or not contact.get_snapshot().e2ee_avail:

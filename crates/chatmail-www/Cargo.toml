@@ -17,6 +17,9 @@ chatmail-db = { workspace = true }
 chatmail-delivery = { workspace = true }
 chatmail-pgp = { workspace = true }
 chatmail-smtp = { workspace = true }
+chatmail-imap = { workspace = true }
+tokio-util = { workspace = true }
+chatmail-metrics = { workspace = true }
 chatmail-state = { workspace = true }
 chatmail-types = { workspace = true }
 minijinja = { version = "2", features = ["loader"] }

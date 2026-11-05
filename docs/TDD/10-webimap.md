@@ -133,3 +133,7 @@ WebIMAP/WebSMTP mirror IMAP/SMTP semantics over HTTP and WebSocket. Index: [`RFC
 | [3156](https://datatracker.ietf.org/doc/html/rfc3156) | PGP/MIME on `send` / APPEND-equivalent paths | [rfc3156.txt](RFC/rfc3156.txt) |
 | [5321](https://datatracker.ietf.org/doc/html/rfc5321) | WebSMTP submission semantics | [rfc5321.txt](RFC/rfc5321.txt) |
 | [8446](https://datatracker.ietf.org/doc/html/rfc8446) | TLS for HTTPS/WSS listeners | [rfc8446.txt](RFC/rfc8446.txt) |
+
+## Raw IMAP/SMTP WebSocket transport
+
+See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.

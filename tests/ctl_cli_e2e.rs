@@ -695,3 +695,61 @@ fn e2e_ctl_dkim_status_json_missing_key() {
     assert_eq!(data["generated"], false);
     assert!(!state.join("dkim/default.private").is_file());
 }
+
+#[test]
+fn e2e_monitor_parent_credentials_and_clear_with_environment() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("madmail.conf");
+    std::fs::write(&path, "hostname mail.example.org\n").unwrap();
+    chatmail()
+        .env("MADMAIL_MONITOR_PASSWORD", "from-env")
+        .arg("--config")
+        .arg(&path)
+        .args([
+            "monitor",
+            "--username",
+            "exporter",
+            "--password",
+            "from-flag",
+            "enable",
+            "--ip",
+            "0.0.0.0",
+        ])
+        .assert()
+        .success();
+    let config = chatmail_config::load_config(&path).unwrap();
+    assert_eq!(config.openmetrics_username.as_deref(), Some("exporter"));
+    assert_eq!(config.openmetrics_password.as_deref(), Some("from-flag"));
+    chatmail()
+        .env("MADMAIL_MONITOR_PASSWORD", "from-env")
+        .arg("--config")
+        .arg(&path)
+        .args(["monitor", "enable", "--clear-password"])
+        .assert()
+        .success();
+    assert!(chatmail_config::load_config(&path)
+        .unwrap()
+        .openmetrics_password
+        .is_none());
+    chatmail()
+        .env("MADMAIL_MONITOR_PASSWORD", "from-env")
+        .arg("--config")
+        .arg(&path)
+        .args([
+            "monitor",
+            "--password",
+            "parent",
+            "enable",
+            "--password",
+            "child",
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        chatmail_config::load_config(&path)
+            .unwrap()
+            .openmetrics_password
+            .as_deref(),
+        Some("child")
+    );
+}

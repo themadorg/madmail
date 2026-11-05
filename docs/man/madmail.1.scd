@@ -127,7 +127,7 @@ Extended documentation:
 
 *federation*
 	Federation policy, domain rules, silent\-dismiss lists, and outbound
-	transport allow/block (*transport status*, *transport set*). Unset
+	transport allow/block (*transport status [DOMAIN]*, *transport set*). Unset
 	transports stay allowed. *transport set \-\-domain* overrides one
 	destination; a missing override inherits the global mode. Run *reload*
 	after a CLI change on a running server.

@@ -1,4 +1,4 @@
-import { Marked } from 'marked';
+import { Marked, Renderer } from 'marked';
 
 function escape(value) {
 	return value.replace(/[&<>"']/g, (character) => ({
@@ -6,36 +6,47 @@ function escape(value) {
 	})[character]);
 }
 
-function safeUrl(href) {
+function safeUrl(href, baseUrl, internalLinks) {
 	try {
-		const url = new URL(href, 'https://github.com/themadorg/madmail/');
-		return ['https:', 'http:', 'mailto:'].includes(url.protocol) ? url.href : null;
+		const url = new URL(href, baseUrl);
+		if (!['https:', 'http:', 'mailto:'].includes(url.protocol)) return null;
+		if (internalLinks && url.origin === new URL(baseUrl).origin) {
+			return `${url.pathname}${url.search}${url.hash}`;
+		}
+		return url.href;
 	} catch {
 		return null;
 	}
 }
 
-const markdown = new Marked({
+function createMarkdown(baseUrl, internalLinks, wrapTables) {
+return new Marked({
 	renderer: {
+		table(token) {
+			const table = Renderer.prototype.table.call(this, token);
+			return wrapTables ? `<div class="table-scroll" tabindex="0" role="region" aria-label="Table">${table}</div>` : table;
+		},
 		html({ text }) { return escape(text); },
 		link({ href, tokens }) {
 			const text = this.parser.parseInline(tokens);
-			const url = safeUrl(href);
+			const url = safeUrl(href, baseUrl, internalLinks);
 			if (!url) return text;
 			const external = /^https?:/.test(url);
 			const icon = external ? '<svg class="external-link-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>' : '';
 			return `<a href="${escape(url)}"${external ? ' target="_blank" title="Opens in a new tab"' : ''} rel="noopener noreferrer">${text}${icon}</a>`;
 		},
 		image({ href, text }) {
-			const url = safeUrl(href);
+			const url = safeUrl(href, baseUrl, internalLinks);
 			return url && !url.startsWith('mailto:')
 				? `<img src="${escape(url)}" alt="${escape(text)}" loading="lazy">`
 				: escape(text);
 		}
 	}
 });
+}
 
-export function renderReleaseMarkdown(body) {
+export function renderReleaseMarkdown(body, { baseUrl = 'https://github.com/themadorg/madmail/', internalLinks = false, wrapTables = false } = {}) {
+	const markdown = createMarkdown(baseUrl, internalLinks, wrapTables);
 	const tokens = markdown.lexer(body);
 	function linkReferences(value) {
 		if (Array.isArray(value)) {

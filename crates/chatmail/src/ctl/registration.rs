@@ -48,7 +48,12 @@ pub async fn registration(args: &Args, cmd: &RegistrationCommand) -> Result<()> 
             )
         }
         RegistrationCommand::Status => {
-            let open = get_bool_setting(&pool, settings_keys::REGISTRATION_OPEN, false).await?;
+            let open = get_bool_setting(
+                &pool,
+                settings_keys::REGISTRATION_OPEN,
+                chatmail_db::REGISTRATION_OPEN_DEFAULT,
+            )
+            .await?;
             if out.is_json() {
                 out.emit(serde_json::json!({ "open": open }))
             } else if open {

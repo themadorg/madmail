@@ -38,6 +38,7 @@ from statistics import stdev
 
 from deltachat_rpc_client import DeltaChat, EventType, Rpc
 from xdg_base_dirs import xdg_cache_home
+from utils.accounts import account_addr
 
 # Spinner characters for progress display
 SPINNER_CHARS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -166,19 +167,19 @@ class AccountMaker:
                 event = ac.wait_for_event()
                 if event.kind == EventType.IMAP_INBOX_IDLE:
                     if self.verbose >= 3:
-                        addr = ac.get_config("addr")
+                        addr = account_addr(ac)
                         print(f"✓ IMAP_INBOX_IDLE: {addr} is now idle and ready")
                     break
                 elif event.kind == EventType.ERROR and self.verbose >= 1:
                     print(f"✗ ERROR during profile setup: {event.msg}")
                 elif self.verbose >= 3:
                     # Show all events during online phase when verbose level 3
-                    addr = ac.get_config("addr")
+                    addr = account_addr(ac)
                     self._log_event(event, addr)
 
     def _add_online(self, account):
         if self.verbose >= 3:
-            addr = account.get_config("addr")
+            addr = account_addr(account)
             print(f"  Starting I/O for account: {addr}")
         account.start_io()
         self.online.append(account)
@@ -205,7 +206,7 @@ class AccountMaker:
                     print(f"  Configuring account from QR: {domain}")
                 account.set_config_from_qr(qr_url)
                 if self.verbose >= 3:
-                    addr = account.get_config("addr")
+                    addr = account_addr(account)
                     print(f"  Account configured: {addr}")
             except Exception as e:
                 print(f"✗ Failed to configure profile on {domain}: {e}")
@@ -280,7 +281,7 @@ def create_and_promote_group(sender, receivers, verbose=0):
         # Create a contact for the receiver account and add to group
         contact = sender.create_contact(receiver)
         if verbose >= 3:
-            receiver_addr = receiver.get_config("addr")
+            receiver_addr = account_addr(receiver)
             print(f"  Adding {receiver_addr} to group")
         group.add_contact(contact)
 
@@ -308,7 +309,7 @@ def wait_for_receivers_to_join(args, sender, receivers, timeout_seconds=60):
         int: Number of receivers that successfully joined
     """
     print("# Waiting for receivers to come online", end="", flush=True)
-    sender_addr = sender.get_config("addr")
+    sender_addr = account_addr(sender)
     start_time = time.time()
 
     # Track which receivers have joined
@@ -329,7 +330,7 @@ def wait_for_receivers_to_join(args, sender, receivers, timeout_seconds=60):
                 event = receiver.wait_for_event()
                 if args.verbose >= 3:
                     # Log all events during group joining phase
-                    receiver_addr = receiver.get_config("addr")
+                    receiver_addr = account_addr(receiver)
                     log_event_verbose(event, receiver_addr)
 
                 if event.kind == EventType.INCOMING_MSG:
@@ -345,7 +346,7 @@ def wait_for_receivers_to_join(args, sender, receivers, timeout_seconds=60):
                         receiver_group = receiver.get_chat_by_id(chat_id)
                         receiver_group.accept()
                         receiver_threads_queue.put(
-                            ("joined", idx, receiver.get_config("addr"))
+                            ("joined", idx, account_addr(receiver))
                         )
                         return
                 elif event.kind == EventType.ERROR and args.verbose >= 1:
@@ -434,8 +435,8 @@ class Pinger:
         self.sender = sender
         self.group = group
         self.receivers = receivers
-        self.addr1 = sender.get_config("addr")
-        self.receivers_addrs = [receiver.get_config("addr") for receiver in receivers]
+        self.addr1 = account_addr(sender)
+        self.receivers_addrs = [account_addr(receiver) for receiver in receivers]
         self.receivers_addrs_str = ", ".join(self.receivers_addrs)
         self.relay1 = self.addr1.split("@")[1]
         self.relay2 = self.receivers_addrs[0].split("@")[1]

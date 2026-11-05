@@ -1,4 +1,5 @@
 import time
+from utils.accounts import account_addr
 
 
 def run(rpc, inviter, joiner):
@@ -10,8 +11,8 @@ def run(rpc, inviter, joiner):
     qr_data = inviter.get_qr_code()
     print(f"Secure Join QR data: {qr_data[:50]}...")
 
-    joiner_email = joiner.get_config("addr")
-    inviter_email = inviter.get_config("addr")
+    joiner_email = account_addr(joiner)
+    inviter_email = account_addr(inviter)
 
     print(f"Joiner ({joiner_email}) joining Inviter ({inviter_email})...")
     joiner.secure_join(qr_data)

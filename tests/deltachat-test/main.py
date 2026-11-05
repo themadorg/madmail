@@ -70,6 +70,7 @@ from scenarios import (
 )
 from utils.lxc import LXCManager
 from stress import run_stress
+from utils.accounts import account_addr, account_password
 
 REMOTE1 = os.getenv("REMOTE1", "127.0.0.1")
 REMOTE2 = os.getenv("REMOTE2", "127.0.0.1")
@@ -97,11 +98,11 @@ def collect_server_logs(test_dir, remote1, remote2):
 
 def _ensure_secure_join(rpc, inviter, joiner) -> None:
     """Secure-join joiner to inviter when cross-server E2E is required."""
-    joiner_email = joiner.get_config("addr")
+    joiner_email = account_addr(joiner)
     contact = inviter.get_contact_by_addr(joiner_email)
     if contact and contact.get_snapshot().e2ee_avail:
         return
-    print(f"  Secure-joining {inviter.get_config('addr')} <-> {joiner_email}...")
+    print(f"  Secure-joining {account_addr(inviter)} <-> {joiner_email}...")
     test_03_secure_join.run(rpc, inviter, joiner)
 
 
@@ -583,9 +584,9 @@ def main():
                         print(_green("✓ TEST #1 PASSED: Accounts created successfully"))
                 
                 # Store credentials for SMTP test
-                acc1_email = acc1.get_config("addr")
-                acc1_password = acc1.get_config("mail_pw")
-                acc2_email = acc2.get_config("addr")
+                acc1_email = account_addr(acc1)
+                acc1_password = account_password(acc1)
+                acc2_email = account_addr(acc2)
                 
                 # ── Helper: run a test with cool-mode wrapping ──
                 def _run_cool(num, fn):
