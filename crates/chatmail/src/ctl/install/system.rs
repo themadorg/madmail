@@ -29,7 +29,7 @@ use chatmail_types::{ChatmailError, Result};
 
 use super::chown_walk;
 use super::config::InstallConfig;
-use crate::ctl::host_paths;
+use crate::ctl::host_paths::{self, shell_quote, shown};
 use crate::ctl::secure_fs::{self, file_id, FileId, Resolved, Resolver, Trust, Want};
 
 pub fn require_root_for_system_install(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
@@ -399,23 +399,16 @@ impl SecureInstall {
         };
         let groups = secure_fs::account_groups(&cfg.maddy_user);
         let first = Trust::service(uid, gid, None).with_groups(groups.iter().copied());
-        let (_, st) = open_state_root(&cfg.state_dir, &first, create)?;
+        let (_, st, physical) = open_state_root(&cfg.state_dir, &first, create)?;
+        check_state_root(cfg, &physical, &st, Some(uid))?;
+        // A previous owner other than root and the service account has no
+        // account name (checked above): the service's uid before the account
+        // was recreated.
         let old_uid = (st.st_uid != 0 && st.st_uid != uid).then_some(st.st_uid);
-        let walk_old_uid = old_uid.filter(|&old| match secure_fs::account_name(old) {
-            Some(name) if name != cfg.maddy_user => {
-                println!(
-                    "   ! {} belonged to uid {old}, which is now account {name}: files and \
-                     directories of that uid in it are not given to {}",
-                    cfg.state_dir.display(),
-                    cfg.maddy_user
-                );
-                false
-            }
-            _ => true,
-        });
+        let walk_old_uid = old_uid;
         // Check the way to the state directory again with the old uid counted.
         let trust = Trust::service(uid, gid, old_uid).with_groups(groups.iter().copied());
-        let (state_root, st) = open_state_root(&cfg.state_dir, &trust, false)?;
+        let (state_root, st, _) = open_state_root(&cfg.state_dir, &trust, false)?;
         Ok(Some(Self {
             uid,
             gid,
@@ -957,9 +950,127 @@ impl Drop for StagingDir {
     }
 }
 
-/// Resolve and open the state directory. Its own owner is not checked (it is
-/// the service account's), but every component on the way to it is.
-fn open_state_root(path: &Path, trust: &Trust, create: bool) -> Result<(OwnedFd, libc::stat)> {
+fn state_dir_controlled(path: &Path, component: &Path, reason: &str) -> ChatmailError {
+    ChatmailError::config(format!(
+        "refusing to use state directory {}: {} is {reason}, so the service account \
+         could swap the directory root works in. Use a state directory whose parent \
+         directories are owned by root",
+        shown(path),
+        shown(component)
+    ))
+}
+
+fn state_dir_refusal(cfg: &InstallConfig, why: &str) -> ChatmailError {
+    ChatmailError::config(format!(
+        "refusing to use state directory {}: {why}. Install gives the state directory and \
+         what is in it to the service account {}; use a directory of its own, such as \
+         /var/lib/{}",
+        shown(&cfg.state_dir),
+        cfg.maddy_user,
+        cfg.binary_name
+    ))
+}
+
+/// Refuse a state directory that is not madmail's own, before anything is
+/// changed: one that is, by path as given or physically after the operator's
+/// links, a system directory ([`host_paths::system_dir_reason`]: a well-known
+/// directory, a top-level one or a user's home directory); one with the
+/// device and inode of a well-known directory ([`host_paths::is_denied_dir_id`]);
+/// and one that belongs to another named account (see [`check_state_root`]).
+/// Install and both repair modes run it before the account is created or
+/// changed (`useradd` / `usermod -d` name the state directory) and
+/// [`SecureInstall::open`] runs the same checks on the directory it opens.
+pub fn check_state_dir(cfg: &InstallConfig) -> Result<()> {
+    if !cfg.system_install {
+        return Ok(());
+    }
+    if let Some(reason) = host_paths::system_dir_reason(&cfg.state_dir) {
+        return Err(state_dir_refusal(cfg, &format!("it is a {reason}")));
+    }
+    let service = lookup_uid_gid(&cfg.maddy_user).ok();
+    let trust = match service {
+        Some((uid, gid)) => {
+            Trust::service(uid, gid, None).with_groups(secure_fs::account_groups(&cfg.maddy_user))
+        }
+        // Uid and gid 0 are never counted as the service account.
+        None => Trust::service(0, 0, None),
+    };
+    let resolver = Resolver {
+        trust: &trust,
+        state_root: None,
+        check_final: false,
+    };
+    match resolver.resolve(&cfg.state_dir, Want::Dir) {
+        Ok(Resolved::Found(dir)) => {
+            check_state_root(cfg, &dir.path, &dir.st, service.map(|(uid, _)| uid))
+        }
+        Ok(Resolved::Controlled { component, reason }) => {
+            Err(state_dir_controlled(&cfg.state_dir, &component, reason))
+        }
+        Ok(Resolved::Missing { .. } | Resolved::InTree(_)) => Ok(()),
+        Err(e) if e.raw_os_error() == Some(libc::ENOENT) => Ok(()),
+        Err(e) => Err(io_error("open state directory", &cfg.state_dir, e)),
+    }
+}
+
+/// The checks of [`check_state_dir`] on an opened state directory: `physical`
+/// is the path walked to reach it and `st` its `stat`. Its owner must be root,
+/// the service account (`service_uid`, when the account exists) or a uid
+/// without an account name (the service's previous uid after the account was
+/// recreated); a directory of another named account (for example `postgres`,
+/// or a user whose home it is) is refused, so its files are never given to
+/// the service account.
+fn check_state_root(
+    cfg: &InstallConfig,
+    physical: &Path,
+    st: &libc::stat,
+    service_uid: Option<u32>,
+) -> Result<()> {
+    if let Some(reason) = host_paths::system_dir_reason(&cfg.state_dir) {
+        return Err(state_dir_refusal(cfg, &format!("it is a {reason}")));
+    }
+    if let Some(reason) = host_paths::system_dir_reason(physical) {
+        return Err(state_dir_refusal(
+            cfg,
+            &format!("it resolves to {}, a {reason}", shown(physical)),
+        ));
+    }
+    if host_paths::is_denied_dir_id(file_id(st)) {
+        return Err(state_dir_refusal(
+            cfg,
+            "it is the same directory as a well-known system directory",
+        ));
+    }
+    let owner = st.st_uid;
+    if owner != 0 && Some(owner) != service_uid {
+        if let Some(name) = secure_fs::account_name(owner) {
+            return Err(ChatmailError::config(format!(
+                "refusing to use state directory {}: it belongs to account {name} (uid \
+                 {owner}), not to root or to the service account {}. Install would give \
+                 that account's files to {}. Use a directory of its own. If it holds \
+                 madmail's data from before uid {owner} was given to {name}, stop the \
+                 service, check the directory, give the directory itself to root \
+                 (chown -h root:root {}) and re-run: files of uid {owner} in it are then \
+                 listed and left unchanged for you to check",
+                shown(&cfg.state_dir),
+                cfg.maddy_user,
+                cfg.maddy_user,
+                shell_quote(physical)
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Resolve and open the state directory. Its own owner is not checked here (it
+/// is the service account's; see [`check_state_root`]), but every component on
+/// the way to it is. Returns the descriptor, its `stat` and the physical path
+/// walked to reach it.
+fn open_state_root(
+    path: &Path,
+    trust: &Trust,
+    create: bool,
+) -> Result<(OwnedFd, libc::stat, std::path::PathBuf)> {
     let resolver = Resolver {
         trust,
         state_root: None,
@@ -972,14 +1083,10 @@ fn open_state_root(path: &Path, trust: &Trust, create: bool) -> Result<(OwnedFd,
     }
     .map_err(|e| io_error("open state directory", path, e))?;
     match resolved {
-        Resolved::Found(dir) => Ok((dir.fd, dir.st)),
-        Resolved::Controlled { component, reason } => Err(ChatmailError::config(format!(
-            "refusing to use state directory {}: {} is {reason}, so the service account \
-             could swap the directory root works in. Use a state directory whose parent \
-             directories are owned by root",
-            path.display(),
-            component.display()
-        ))),
+        Resolved::Found(dir) => Ok((dir.fd, dir.st, dir.path)),
+        Resolved::Controlled { component, reason } => {
+            Err(state_dir_controlled(path, &component, reason))
+        }
         Resolved::Missing { .. } | Resolved::InTree(_) => Err(io_error(
             "open state directory",
             path,
@@ -1024,19 +1131,6 @@ pub fn setup_config_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>
         sec.fix_dir(certs)?;
     }
     Ok(())
-}
-
-/// `path` quoted for a POSIX shell command shown to the operator.
-fn shell_quote(path: &Path) -> String {
-    let text = path.to_string_lossy();
-    if !text.is_empty()
-        && text
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"/._-+:@".contains(&b))
-    {
-        return text.into_owned();
-    }
-    format!("'{}'", text.replace('\'', r"'\''"))
 }
 
 fn skip_note(path: &Path, why: &str) {
@@ -1389,7 +1483,7 @@ mod tests {
         // The test's base directory is the caller's: open the state root
         // without counting the caller as the old uid, as for a root-owned path.
         let opening = Trust::service(UNUSED_UID, UNUSED_UID, None).with_marked(marked.clone());
-        let (state_root, st) = open_state_root(state, &opening, false).unwrap();
+        let (state_root, st, _) = open_state_root(state, &opening, false).unwrap();
         let trust = Trust::service(UNUSED_UID, UNUSED_UID, old_uid).with_marked(marked);
         SecureInstall {
             uid: UNUSED_UID,
@@ -1861,6 +1955,88 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = fs::canonicalize(dir.path()).unwrap();
         (dir, path)
+    }
+
+    #[test]
+    fn system_dirs_and_other_accounts_dirs_are_refused_as_state_dir() {
+        let mut cfg = super::super::systemd::tests::sample_cfg();
+        cfg.system_install = true;
+        // SAFETY: zeroed `stat` is valid plain data.
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        let ok = Path::new("/var/lib/madmail");
+        // By path as given, before anything else is looked at.
+        for dir in [
+            "/var/lib",
+            "/",
+            "/etc/",
+            "/usr",
+            "/home",
+            "/var",
+            "/data",
+            "/home/alice",
+        ] {
+            cfg.state_dir = PathBuf::from(dir);
+            let err = check_state_dir(&cfg).unwrap_err().to_string();
+            assert!(
+                err.contains("refusing to use state directory"),
+                "{dir}: {err}"
+            );
+            let err = check_state_root(&cfg, ok, &st, None)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("it is a "), "{dir}: {err}");
+        }
+        cfg.state_dir = ok.to_path_buf();
+        // Physically, after the operator's links.
+        let err = check_state_root(&cfg, Path::new("/var/lib"), &st, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("resolves to /var/lib, a well-known"), "{err}");
+        // By device and inode: a link to `/` with a madmail name.
+        let root = fs::metadata("/").unwrap();
+        st.st_dev = root.dev() as _;
+        st.st_ino = root.ino() as _;
+        let err = check_state_root(&cfg, ok, &st, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("same directory as a well-known"), "{err}");
+        let (_b, b) = base();
+        let m = fs::metadata(&b).unwrap();
+        st.st_dev = m.dev() as _;
+        st.st_ino = m.ino() as _;
+        // Owned by root, by the service account or by a uid without a name
+        // (the previous service uid): accepted.
+        // SAFETY: getuid has no preconditions.
+        let me = unsafe { libc::getuid() };
+        for (owner, service) in [
+            (0, None),
+            (me, Some(me)),
+            (UNUSED_UID, None),
+            (UNUSED_UID, Some(me)),
+        ] {
+            st.st_uid = owner;
+            check_state_root(&cfg, &b, &st, service).unwrap();
+        }
+        // Owned by another named account: refused, naming it.
+        let named = (1..1000).find(|&u| u != me && secure_fs::account_name(u).is_some());
+        if let Some(other) = named {
+            st.st_uid = other;
+            let name = secure_fs::account_name(other).unwrap();
+            let err = check_state_root(&cfg, &b, &st, Some(me))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(&format!("belongs to account {name} (uid {other})")),
+                "{err}"
+            );
+            assert!(err.contains("chown -h root:root"), "{err}");
+        }
+        // The caller's own directory is another account's when the service
+        // account is someone else.
+        if me != 0 {
+            st.st_uid = me;
+            assert!(check_state_root(&cfg, &b, &st, None).is_err());
+        }
     }
 
     #[test]

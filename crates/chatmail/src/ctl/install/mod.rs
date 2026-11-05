@@ -136,6 +136,9 @@ fn repair_installation(global: &Args, args: &InstallArgs) -> Result<()> {
             println!("  Plan: replace systemd unit and daemon-reload (no enable/start)");
             println!("  Binary: {}", cfg.binary_path.display());
         }
+        // A state directory that is not madmail's own is refused before
+        // anything changes (read-only, so a dry run reports it too).
+        system::check_state_dir(&cfg)?;
         if !args.dry_run {
             // Check prerequisites before account or unit mutations.
             if !cfg.config_path.is_file() || !cfg.state_dir.is_dir() {
@@ -213,6 +216,11 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
     }
 
     print_install_plan(&cfg, args);
+    // A state directory that is not madmail's own is refused before anything
+    // changes, the service account included (read-only, so a dry run reports
+    // it too).
+    #[cfg(unix)]
+    system::check_state_dir(&cfg)?;
     if args.dry_run {
         if global.json {
             CtlOut::from_args(global, "install").emit(serde_json::json!({

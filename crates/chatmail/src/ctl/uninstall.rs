@@ -33,7 +33,7 @@ use chatmail_config::UninstallArgs;
 use chatmail_types::{ChatmailError, Result};
 
 use super::context::CtlContext;
-use super::host_paths::{is_family_stem, is_named_for_madmail, normalize, DENIED_DIRS};
+use super::host_paths::{is_family_stem, is_named_for_madmail, normalize, system_dir_reason};
 use super::output::CtlOut;
 use super::util;
 
@@ -762,8 +762,10 @@ fn enrich_from_unit_file(plan: &mut UninstallPlan, path: &Path) {
     }
 }
 
-/// Directories uninstall must never remove as a whole: [`DENIED_DIRS`], any
-/// direct child of `/home` or `/Users`, and the homes of real users.
+/// Directories uninstall must never remove as a whole: those of
+/// [`system_dir_reason`] (the rule install applies to `--state-dir`: the
+/// well-known system directories, top-level directories and any direct child
+/// of `/home` or `/Users`), and the homes of real users.
 #[derive(Debug, Default)]
 struct DenyList {
     homes: Vec<PathBuf>,
@@ -806,12 +808,8 @@ impl DenyList {
             forms.push(resolved);
         }
         forms.iter().find_map(|form| {
-            if DENIED_DIRS.iter().any(|d| form == Path::new(d)) {
-                return Some("well-known system directory");
-            }
-            let parent = form.parent();
-            if parent == Some(Path::new("/home")) || parent == Some(Path::new("/Users")) {
-                return Some("user home directory");
+            if let Some(reason) = system_dir_reason(form) {
+                return Some(reason);
             }
             if self.homes.iter().any(|h| h == form) {
                 return Some("user home directory");
@@ -1703,6 +1701,8 @@ mod tests {
             "/root",
             "/tmp",
             "/srv/people/alice",
+            "/madmail",
+            "/data",
         ] {
             assert!(
                 matches!(

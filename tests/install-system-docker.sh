@@ -151,6 +151,45 @@ reject 'would leave the data in /var/xyzzy/lib/madmail behind' /tmp/madmail inst
 grep -q '^ProtectHome=true$' /etc/systemd/system/madmail.service
 rmdir /srv/premade/madmail
 echo 'PASS: missing parents, home paths, migration data preservation, failed-move rollback and pre-created state refusal'
+# A state directory that is not madmail's own is refused before the account or
+# any owner changes: a well-known directory (by path, or through an operator
+# link), a top-level or home directory, or a directory of another account.
+sha256sum /etc/passwd /etc/group > /tmp/denied-accounts.before
+varlib_meta="$(stat -c '%U:%G:%a' /var/lib /var/lib/dpkg)"
+reject 'refusing to use state directory /var/lib: it is a well-known system directory' \
+    /tmp/madmail install --simple --system --ip 127.0.0.1 --tls-mode self_signed \
+    --non-interactive --config-dir /var/xyzzy/etc/madmail --state-dir /var/lib \
+    --binary-path /var/xyzzy/bin/madmail
+reject 'refusing to use state directory /var/lib: it is a well-known system directory' \
+    /tmp/madmail install --user-only --config-dir /var/xyzzy/etc/madmail --state-dir /var/lib
+ln -s /var/lib /srv/madmail-link
+reject 'it resolves to /var/lib, a well-known system directory' /tmp/madmail install --simple \
+    --system --ip 127.0.0.1 --tls-mode self_signed --non-interactive \
+    --config-dir /var/xyzzy/etc/madmail --state-dir /srv/madmail-link \
+    --binary-path /var/xyzzy/bin/madmail
+rm /srv/madmail-link
+for dir in / /etc /data /home/alice; do
+    reject "refusing to use state directory $dir" /tmp/madmail install --simple --system \
+        --ip 127.0.0.1 --tls-mode self_signed --non-interactive \
+        --config-dir /var/xyzzy/etc/madmail --state-dir "$dir" --binary-path /var/xyzzy/bin/madmail
+done
+useradd -r -M -d /nonexistent pgish
+sha256sum /etc/passwd /etc/group > /tmp/denied-accounts.before
+install -d -o pgish -g pgish -m 700 /srv/pgdata/madmail
+echo data > /srv/pgdata/madmail/base
+chown pgish:pgish /srv/pgdata/madmail/base
+reject 'it belongs to account pgish' /tmp/madmail install --simple --system --ip 127.0.0.1 \
+    --tls-mode self_signed --non-interactive --config-dir /var/xyzzy/etc/madmail \
+    --state-dir /srv/pgdata/madmail --binary-path /var/xyzzy/bin/madmail
+sha256sum -c /tmp/denied-accounts.before >/dev/null
+[[ "$(getent passwd madmail | cut -d: -f6)" = /var/xyzzy/lib/madmail ]]
+[[ "$(stat -c '%U:%G' /srv/pgdata/madmail /srv/pgdata/madmail/base)" = "pgish:pgish
+pgish:pgish" ]]
+[[ "$(stat -c '%U:%G:%a' /var/lib /var/lib/dpkg)" = "$varlib_meta" ]]
+[[ "$(stat -c '%U:%G' /var/lib)" = root:root && ! -e /var/lib/messages && ! -e /etc/messages ]]
+rm -r /srv/pgdata
+userdel pgish
+echo 'PASS: system, top-level, home and linked system directories and another account'"'"'s directory are refused as state directory before the account or any owner changes'
 
 # Independent skip flags still skip system steps while copying the requested binary.
 cp /tmp/madmail /tmp/skippedmail
@@ -406,14 +445,23 @@ useradd -r -M -g madmail -u "$new_uid" -d /var/xyzzy/lib/madmail -s /sbin/nologi
 [[ "$(stat -c '%u' /var/xyzzy/lib/madmail)" = "$new_uid" ]]
 [[ "$(stat -c '%U:%G' /var/xyzzy/lib/madmail/credentials.db)" = madmail:madmail ]]
 # When the old uid now belongs to another account, files of that uid are that
-# account's as far as install can tell: they are listed and left alone.
+# account's as far as install can tell.
+# Repair refuses the state directory, which that account now owns, before it
+# creates the service account; the operator checks it and gives the directory
+# itself to root, and the files of that uid in it are then listed and left alone.
 squat_uid="$(id -u madmail)"
 userdel madmail
 getent group madmail >/dev/null || groupadd -r madmail
 useradd -r -M -N -u "$squat_uid" -d /nonexistent uidsquatter
+sha256sum /etc/passwd > /tmp/squat-passwd.before
+reject "it belongs to account uidsquatter (uid $squat_uid)" \
+    /tmp/madmail install --user-only "${repair_paths[@]}"
+sha256sum -c /tmp/squat-passwd.before >/dev/null
+absent_user madmail
+[[ "$(stat -c '%u' /var/xyzzy/lib/madmail)" = "$squat_uid" ]]
+chown -h root:root /var/xyzzy/lib/madmail
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-squatted.log
 [[ "$(id -u madmail)" != "$squat_uid" ]]
-grep -q "belonged to uid $squat_uid, which is now account uidsquatter" /tmp/user-squatted.log
 grep -q "^   ! Ownership of /var/xyzzy/lib/madmail/.* left unchanged: belongs to uid $squat_uid, not to the service account" /tmp/user-squatted.log
 [[ "$(stat -c '%u' /var/xyzzy/lib/madmail/own-a)" = "$squat_uid" ]]
 [[ "$(stat -c '%U' /var/xyzzy/lib/madmail)" = madmail ]]
