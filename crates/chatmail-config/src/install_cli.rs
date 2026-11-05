@@ -216,7 +216,7 @@ mod repair_tests {
     use super::*;
 
     #[test]
-    fn repair_modes_need_no_domain_or_interactive_flag() {
+    fn repair_flags_parse_without_domain() {
         for mode in ["--user-only", "--systemd-only"] {
             let args = InstallArgs::try_parse_from(["install", mode, "--dry-run"]).unwrap();
             assert!(args.user_only || args.systemd_only);

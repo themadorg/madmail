@@ -233,6 +233,23 @@ sha256sum -c /tmp/repair-unit.before >/dev/null
 repair_uid="$(id -u madmail)"
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-repair-repeat.log
 [[ "$(id -u madmail)" = "$repair_uid" ]]
+# An existing account with another home is repointed at the existing state
+# directory without moving it, and ownership is reapplied after the account fix.
+usermod -d /var/wrong/madmail madmail
+chown root:root /var/xyzzy/etc/madmail/madmail.conf /var/xyzzy/lib/madmail/credentials.db
+chmod 600 /var/xyzzy/etc/madmail/madmail.conf
+# Links planted in the service-writable state tree must never be chowned through.
+ln -s /etc/shadow /var/xyzzy/lib/madmail/planted-file
+ln -s /etc /var/xyzzy/lib/madmail/planted-dir
+shadow_owner="$(stat -c '%U:%G' /etc/shadow)"
+/tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-repoint.log
+[[ "$(getent passwd madmail | cut -d: -f6)" = /var/xyzzy/lib/madmail ]]
+[[ "$(id -u madmail)" = "$repair_uid" ]]
+[[ "$(stat -c '%U:%G:%a' /var/xyzzy/etc/madmail/madmail.conf)" = root:madmail:640 ]]
+[[ "$(stat -c '%U:%G' /var/xyzzy/lib/madmail/credentials.db)" = madmail:madmail ]]
+[[ "$(stat -c '%U:%G' /etc/shadow)" = "$shadow_owner" ]]
+[[ "$(stat -c '%U:%G' /etc)" = root:root && "$(stat -c '%U' /etc/passwd)" = root ]]
+rm /var/xyzzy/lib/madmail/planted-file /var/xyzzy/lib/madmail/planted-dir
 
 # Unit-only preflights fail before replacing the unit or reloading systemd.
 chmod 644 /var/xyzzy/bin/madmail
@@ -258,7 +275,25 @@ diff -u /tmp/repair-modes.before /tmp/repair-modes.after
 if grep -v '^daemon-reload$' /tmp/systemctl-calls; then fail 'unexpected systemctl operation'; fi
 find /var/xyzzy/etc/madmail /var/xyzzy/lib/madmail /var/xyzzy/bin -type f -exec sha256sum {} + | sort > /tmp/repair-files.after
 diff -u /tmp/repair-files.before /tmp/repair-files.after
+# A masked unit or a unit symlinked elsewhere is refused, never written through.
+reloads_before="$(wc -l < /tmp/systemctl-calls)"
+mv /etc/systemd/system/madmail.service /tmp/madmail.service.saved
+ln -s /dev/null /etc/systemd/system/madmail.service
+reject 'is a symlink' /tmp/madmail install --systemd-only "${repair_paths[@]}"
+[[ "$(readlink /etc/systemd/system/madmail.service)" = /dev/null ]]
+printf '[Unit]\nDescription=other\n' > /tmp/other.service
+sha256sum /tmp/other.service > /tmp/other-unit.before
+ln -sfn /tmp/other.service /etc/systemd/system/madmail.service
+reject 'systemctl unmask madmail' /tmp/madmail install --systemd-only "${repair_paths[@]}"
+sha256sum -c /tmp/other-unit.before >/dev/null
+[[ -L /etc/systemd/system/madmail.service ]]
+[[ "$(wc -l < /tmp/systemctl-calls)" = "$reloads_before" ]]
+rm /etc/systemd/system/madmail.service
+/tmp/madmail install --systemd-only "${repair_paths[@]}" > /tmp/unit-unmasked.log
+[[ -f /etc/systemd/system/madmail.service && ! -L /etc/systemd/system/madmail.service ]]
+[[ ! -e /etc/systemd/system/madmail.service.tmp ]]
+sha256sum -c /tmp/repair-unit.before >/dev/null
 reject 'systemctl daemon-reload failed' env MADMAIL_TEST_SYSTEMCTL_EXIT=1 /tmp/madmail install --systemd-only "${repair_paths[@]}"
-echo 'PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, content preservation, repeatability and failure propagation'
+echo 'PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, home repointing, symlink refusal, content preservation, repeatability and failure propagation'
 echo 'PASS: complete Unix installer E2E matrix'
 INNER

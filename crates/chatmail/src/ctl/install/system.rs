@@ -19,7 +19,7 @@
 
 use std::fs;
 use std::io;
-use std::os::unix::fs::{chown, PermissionsExt};
+use std::os::unix::fs::{chown, lchown, PermissionsExt};
 use std::path::Path;
 use std::process::Command;
 
@@ -147,7 +147,6 @@ fn ensure_service_account(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    let home = cfg.state_dir.to_string_lossy();
     if !Command::new("getent")
         .args(["group", &cfg.maddy_group])
         .status()
@@ -180,20 +179,27 @@ fn ensure_service_account(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
         .filter(|home| !home.is_empty())
         .ok_or_else(|| ChatmailError::config(format!("cannot read home for {}", cfg.maddy_user)))?;
 
+    let args = usermod_args(
+        Path::new(previous_home),
+        &cfg.state_dir,
+        cfg.state_dir.is_dir(),
+        &cfg.maddy_group,
+        &cfg.maddy_user,
+    );
+    let moves_home = args.iter().any(|arg| arg == "-m");
     let status = Command::new("usermod")
-        .args([
-            "-d",
-            home.as_ref(),
-            "-m",
-            "-g",
-            &cfg.maddy_group,
-            "-s",
-            "/sbin/nologin",
-            &cfg.maddy_user,
-        ])
+        .args(&args)
         .status()
         .map_err(|e| ChatmailError::config(format!("usermod: {e}")))?;
     if !status.success() {
+        if !moves_home {
+            return Err(ChatmailError::config(format!(
+                "usermod failed for {} (exit status {:?}) while setting home {}",
+                cfg.maddy_user,
+                status.code(),
+                cfg.state_dir.display()
+            )));
+        }
         // A failed move can still update passwd. Restore only the account entry:
         // using -m again could move or overwrite data left by the failed command.
         let rollback = Command::new("usermod")
@@ -206,12 +212,37 @@ fn ensure_service_account(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
             ),
         };
         return Err(ChatmailError::config(format!(
-            "usermod failed for {} while moving home to {}; {recovery}",
+            "usermod failed for {} (exit status {:?}) while moving home to {}; {recovery}",
             cfg.maddy_user,
+            status.code(),
             cfg.state_dir.display()
         )));
     }
     Ok(())
+}
+
+/// `usermod` arguments aligning an existing account with the install paths.
+/// The home is only moved (`-m`) when the state directory does not exist yet:
+/// `usermod -m` refuses an existing target, and repair always has one.
+fn usermod_args(
+    previous_home: &Path,
+    state_dir: &Path,
+    state_dir_exists: bool,
+    group: &str,
+    user: &str,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    if previous_home != state_dir {
+        args.push("-d".to_string());
+        args.push(state_dir.to_string_lossy().into_owned());
+        if !state_dir_exists {
+            args.push("-m".to_string());
+        }
+    }
+    for arg in ["-g", group, "-s", "/sbin/nologin", user] {
+        args.push(arg.to_string());
+    }
+    args
 }
 
 /// TLS material and config must be readable by the service user.
@@ -237,14 +268,29 @@ pub fn setup_config_permissions(cfg: &InstallConfig, dry_run: bool) -> Result<()
             .map_err(|e| io_error("chmod", &cfg.config_path, e))?;
     }
     for path in [&cfg.cert_path, &cfg.key_path] {
-        if path.is_file() {
+        if state_dir_symlink(&cfg.state_dir, path) {
+            println!(
+                "   ! Skipping ownership of symlink {} inside the state directory",
+                path.display()
+            );
+        } else if path.is_file() {
             chown(path, Some(uid), Some(gid)).map_err(|e| io_error("chown", path, e))?;
         }
     }
     if let Some(certs) = cfg.cert_path.parent() {
-        chown(certs, Some(0), Some(gid)).ok();
+        if !state_dir_symlink(&cfg.state_dir, certs) {
+            chown(certs, Some(0), Some(gid)).ok();
+        }
     }
     Ok(())
+}
+
+/// The service account can plant links in its own state tree, so root must not
+/// chown through them. Operator-chosen links elsewhere (e.g. to an ACME client's
+/// live directory) keep being followed.
+fn state_dir_symlink(state_dir: &Path, path: &Path) -> bool {
+    path.starts_with(state_dir)
+        && fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
 }
 
 pub fn install_binary(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
@@ -348,15 +394,33 @@ fn lookup_uid_gid(name: &str) -> Result<(u32, u32)> {
     Ok((uid, gid))
 }
 
+/// Recursively chown the service-writable state tree without following symlinks:
+/// the service account can plant links there, so root must never chown through
+/// them or descend into linked directories.
 fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<()> {
-    chown(root, Some(uid), Some(gid)).map_err(|e| io_error("chown", root, e))?;
-    for entry in fs::read_dir(root).map_err(|e| io_error("read_dir", root, e))? {
-        let entry = entry.map_err(|e| io_error("read_dir", root, e))?;
+    let metadata = fs::symlink_metadata(root).map_err(|e| io_error("stat", root, e))?;
+    if metadata.file_type().is_symlink() {
+        return Err(ChatmailError::config(format!(
+            "refusing to change ownership through symlink {}; use the resolved state directory",
+            root.display()
+        )));
+    }
+    chown_entries(root, uid, gid)
+}
+
+fn chown_entries(dir: &Path, uid: u32, gid: u32) -> Result<()> {
+    lchown(dir, Some(uid), Some(gid)).map_err(|e| io_error("chown", dir, e))?;
+    for entry in fs::read_dir(dir).map_err(|e| io_error("read_dir", dir, e))? {
+        let entry = entry.map_err(|e| io_error("read_dir", dir, e))?;
         let path = entry.path();
-        if path.is_dir() {
-            chown_tree(&path, uid, gid)?;
+        let file_type = entry.file_type().map_err(|e| io_error("stat", &path, e))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            chown_entries(&path, uid, gid)?;
         } else {
-            chown(&path, Some(uid), Some(gid)).map_err(|e| io_error("chown", &path, e))?;
+            lchown(&path, Some(uid), Some(gid)).map_err(|e| io_error("chown", &path, e))?;
         }
     }
     Ok(())
@@ -379,4 +443,99 @@ fn effective_uid_is_root() -> bool {
             }
         })
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::{symlink, MetadataExt};
+
+    #[test]
+    fn usermod_keeps_matching_home_and_never_moves_into_existing_state() {
+        let state = Path::new("/var/xyzzy/lib/madmail");
+        let tail = ["-g", "madmail", "-s", "/sbin/nologin", "madmail"];
+        assert_eq!(usermod_args(state, state, true, "madmail", "madmail"), tail);
+        let mut repoint = vec!["-d", "/var/xyzzy/lib/madmail"];
+        repoint.extend(tail);
+        assert_eq!(
+            usermod_args(
+                Path::new("/var/wrong/madmail"),
+                state,
+                true,
+                "madmail",
+                "madmail"
+            ),
+            repoint
+        );
+        let mut moved = vec!["-d", "/var/xyzzy/lib/madmail", "-m"];
+        moved.extend(tail);
+        assert_eq!(
+            usermod_args(
+                Path::new("/var/wrong/madmail"),
+                state,
+                false,
+                "madmail",
+                "madmail"
+            ),
+            moved
+        );
+    }
+
+    #[test]
+    fn chown_tree_never_follows_symlinks() {
+        let outside = tempfile::tempdir().unwrap();
+        let target_dir = outside.path().join("dir");
+        fs::create_dir(&target_dir).unwrap();
+        fs::write(target_dir.join("inner"), "x").unwrap();
+        let target_file = outside.path().join("file");
+        fs::write(&target_file, "x").unwrap();
+
+        let state = tempfile::tempdir().unwrap();
+        let root = state.path();
+        fs::create_dir(root.join("sub")).unwrap();
+        fs::write(root.join("sub/data"), "x").unwrap();
+        symlink(&target_dir, root.join("dir-link")).unwrap();
+        symlink(&target_file, root.join("file-link")).unwrap();
+        symlink(root.join("missing"), root.join("dangling")).unwrap();
+
+        let owner = |path: &Path| {
+            let m = fs::symlink_metadata(path).unwrap();
+            (m.uid(), m.gid())
+        };
+        let before = owner(&target_file);
+        // As root, use an otherwise unused owner so a followed link would be visible.
+        // Otherwise chown to self: following the dangling link would fail.
+        let (uid, gid) = if effective_uid_is_root() {
+            (4242, 4242)
+        } else {
+            owner(root)
+        };
+        chown_tree(root, uid, gid).unwrap();
+
+        assert_eq!(owner(&root.join("sub/data")), (uid, gid));
+        assert_eq!(owner(&target_file), before);
+        assert_eq!(owner(&target_dir), before);
+        assert_eq!(owner(&target_dir.join("inner")), before);
+
+        let linked_root = outside.path().join("state-link");
+        symlink(root, &linked_root).unwrap();
+        let err = chown_tree(&linked_root, uid, gid).unwrap_err().to_string();
+        assert!(err.contains("symlink"), "{err}");
+    }
+
+    #[test]
+    fn only_links_inside_the_state_dir_are_treated_as_planted() {
+        let state = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("fullchain.pem");
+        fs::write(&target, "x").unwrap();
+        let inside = state.path().join("fullchain.pem");
+        symlink(&target, &inside).unwrap();
+        let operator_link = outside.path().join("link.pem");
+        symlink(&target, &operator_link).unwrap();
+
+        assert!(state_dir_symlink(state.path(), &inside));
+        assert!(!state_dir_symlink(state.path(), &operator_link));
+        assert!(!state_dir_symlink(outside.path(), &target));
+    }
 }

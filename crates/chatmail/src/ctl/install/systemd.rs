@@ -17,7 +17,10 @@
 
 //! systemd unit (Madmail `install.go` `systemdServiceTemplate`).
 
-use std::path::Path;
+use std::fs;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use chatmail_types::{ChatmailError, Result};
@@ -26,11 +29,46 @@ use super::config::InstallConfig;
 
 pub fn install_unit(cfg: &InstallConfig) -> Result<()> {
     let unit_path = Path::new("/etc/systemd/system").join(format!("{}.service", cfg.binary_name));
-    let body = render_systemd_unit(cfg);
-
-    std::fs::write(&unit_path, body)
-        .map_err(|e| ChatmailError::config(format!("write {}: {e}", unit_path.display())))?;
+    write_unit_file(&unit_path, &render_systemd_unit(cfg), &cfg.binary_name)?;
     println!("✓ Wrote {}", unit_path.display());
+    Ok(())
+}
+
+/// Replace the unit atomically. A symlink (a `systemctl mask` link to /dev/null or
+/// a link to another file) is refused instead of being written through.
+fn write_unit_file(unit_path: &Path, body: &str, name: &str) -> Result<()> {
+    let write_err =
+        |e: std::io::Error| ChatmailError::config(format!("write {}: {e}", unit_path.display()));
+    match fs::symlink_metadata(unit_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(ChatmailError::config(format!(
+                "{} is a symlink (masked?); run `systemctl unmask {name}` and retry",
+                unit_path.display()
+            )));
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(write_err(e)),
+    }
+    let mut staging = unit_path.as_os_str().to_owned();
+    staging.push(".tmp");
+    let staging = PathBuf::from(staging);
+    // remove_file does not follow a link left at the staging path.
+    match fs::remove_file(&staging) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(write_err(e)),
+        _ => {}
+    }
+    let written = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o644)
+        .open(&staging)
+        .and_then(|mut file| file.write_all(body.as_bytes()))
+        .and_then(|()| fs::rename(&staging, unit_path));
+    if let Err(e) = written {
+        let _ = fs::remove_file(&staging);
+        return Err(write_err(e));
+    }
     Ok(())
 }
 
@@ -160,7 +198,6 @@ pub fn daemon_reload() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     use super::super::config::InstallConfig;
 
@@ -297,5 +334,33 @@ mod tests {
         assert!(unit.contains(
             "ExecStart=/usr/local/bin/madmail --config /tmp/mm/madmail.conf run --libexec /tmp/sd"
         ));
+    }
+
+    #[test]
+    fn unit_write_refuses_symlinks_and_replaces_regular_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let unit = dir.path().join("madmail.service");
+
+        write_unit_file(&unit, "first", "madmail").unwrap();
+        write_unit_file(&unit, "second", "madmail").unwrap();
+        assert_eq!(std::fs::read_to_string(&unit).unwrap(), "second");
+        assert!(!dir.path().join("madmail.service.tmp").exists());
+
+        let other = dir.path().join("other.service");
+        std::fs::write(&other, "keep").unwrap();
+        std::fs::remove_file(&unit).unwrap();
+        std::os::unix::fs::symlink(&other, &unit).unwrap();
+        let err = write_unit_file(&unit, "body", "madmail")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("symlink") && err.contains("systemctl unmask madmail"),
+            "{err}"
+        );
+        assert_eq!(std::fs::read_to_string(&other).unwrap(), "keep");
+        assert!(std::fs::symlink_metadata(&unit)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 }

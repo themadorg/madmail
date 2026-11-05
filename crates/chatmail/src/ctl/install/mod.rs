@@ -113,6 +113,16 @@ fn repair_installation(global: &Args, args: &InstallArgs) -> Result<()> {
         println!("  State: {}", cfg.state_dir.display());
         if args.user_only {
             println!("  Plan: create/update service account and apply existing config/TLS/state permissions");
+            println!(
+                "  TLS: {} / {}",
+                cfg.cert_path.display(),
+                cfg.key_path.display()
+            );
+            if !cfg.cert_path.exists() && !cfg.key_path.exists() {
+                println!(
+                    "  TLS files not found; pass --cert-path/--key-path for custom TLS locations"
+                );
+            }
         } else {
             println!("  Plan: replace systemd unit and daemon-reload (no enable/start)");
             println!("  Binary: {}", cfg.binary_path.display());
@@ -1069,6 +1079,45 @@ mod tests {
                 .unwrap()
                 .system_install
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repair_modes_build_system_config_without_domain() {
+        use clap::Parser;
+        let global = Args {
+            config: "/etc/madmail/madmail.conf".into(),
+            state_dir: "./data".into(),
+            boot_once: false,
+            json: false,
+        };
+        for mode in ["--user-only", "--systemd-only"] {
+            let mut args = InstallArgs::try_parse_from([
+                "install",
+                mode,
+                "--config-dir",
+                "/var/xyzzy/etc/madmail",
+                "--state-dir",
+                "/var/xyzzy/lib/madmail",
+                "--binary-path",
+                "/var/xyzzy/bin/madmail",
+            ])
+            .unwrap();
+            let cfg = InstallConfig::from_args(&global, &args).unwrap();
+            assert!(cfg.system_install, "{mode}");
+            assert!(cfg.primary_domain.is_empty(), "{mode}");
+            assert_eq!(cfg.state_dir, PathBuf::from("/var/xyzzy/lib/madmail"));
+            // The config filename follows the executable name (the test binary here).
+            assert!(cfg.config_path.starts_with("/var/xyzzy/etc/madmail"));
+            assert_eq!(cfg.binary_path, PathBuf::from("/var/xyzzy/bin/madmail"));
+            assert!(!cfg.use_default_systemd_paths, "{mode}");
+            args.state_dir = Some("relative/state".into());
+            let Err(err) = InstallConfig::from_args(&global, &args) else {
+                panic!("{mode}: relative state dir accepted");
+            };
+            let err = err.to_string();
+            assert!(err.contains("must be absolute"), "{mode}: {err}");
+        }
     }
 
     #[cfg(windows)]
