@@ -278,10 +278,19 @@ Windows service and firewall options conflict with these repair modes.
 
 User-only creates or aligns the service account and applies existing config/TLS/state
 ownership using installer rules. Existing config and state directories are required;
-content is preserved, but ownership and config mode may change. Systemd-only requires
-an existing config file, state directory, executable binary and service account;
-it writes the unit and runs daemon-reload, without enabling or starting it. Existing
-unit customizations are replaced, so operators should use systemd drop-ins.
+content is preserved, but ownership and config mode may change. An existing account
+with another home is repointed with `usermod -d` and no `-m` when the state directory
+exists (`usermod -m` refuses an existing target); `-m` is used only when it does not.
+The state tree is chowned without following symlinks (`lchown`, no descent into
+linked directories), and a symlinked state directory is refused, because the service
+account can plant links there. TLS ownership is applied only to the given
+`--cert-path`/`--key-path` files, so custom locations must be repeated; links to them
+inside the state directory are skipped. Systemd-only requires an existing config
+file, state directory, executable binary and service account; it writes the unit
+through a temporary file and `rename`, refuses a symlinked or masked unit path, and
+runs daemon-reload, without enabling or starting it. The cert/key paths also feed the
+unit's `ProtectHome=` decision. Existing unit customizations are replaced, so
+operators should use systemd drop-ins.
 
 Paths remain explicit installer inputs, not values inferred from config contents;
 use the same binary name and paths as the original install. Dry runs need no root

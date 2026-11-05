@@ -109,11 +109,18 @@ No `--simple`, `--non-interactive`, domain, IP or ACME options are needed.
 
 - `--user-only` creates or repairs the account/home/group and applies config, TLS
   and state ownership. Config permissions become `0640`. Run while the service is
-  stopped if its account needs repair. Custom TLS locations can be supplied using
-  `--cert-path` and `--key-path`.
+  stopped if its account needs repair. An existing account whose home differs is
+  repointed at the existing state directory; nothing is moved. Ownership is only
+  applied to TLS files at the given paths, so repeat custom `--cert-path` and
+  `--key-path` values (the plan output lists the paths it will use). Symlinks
+  inside the state directory are never followed or chowned through, and a
+  symlinked state directory is refused: pass the resolved path.
 - `--systemd-only` replaces the unit and runs `systemctl daemon-reload`. It requires
   an existing executable binary and service user/group. Keep local unit changes in
-  systemd drop-ins. It does not enable, start or restart the service.
+  systemd drop-ins. It does not enable, start or restart the service. Repeat custom
+  `--cert-path` and `--key-path` values here too: they decide the unit's
+  `ProtectHome=` setting. The unit is written to a temporary file and renamed into
+  place; a symlinked or masked unit file is refused rather than written through.
 
 Both require an existing config file and state directory, and preserve the contents
 of configuration, database, certificates, DKIM keys and binary. They do not install
@@ -197,7 +204,7 @@ installed executable location, not the identity used for these names.
 | Global `--config` / `CHATMAIL_CONFIG` | Does not select the installer output or repair config; use `--config-dir`. |
 | Global `--state-dir` / `--libexec` / `CHATMAIL_STATE_DIR` | Can supply fallback state in non-simple/custom-config cases; explicit install `--state-dir` avoids fallback ambiguity. |
 | `--binary-path` | Copy target for full system setup; existing executable referenced by unit repair. Default `/usr/local/bin/<binary>`. |
-| `--cert-path`, `--key-path` | Override default files under `<config-dir>/certs/`; account repair applies ownership to existing files at these paths. |
+| `--cert-path`, `--key-path` | Override default files under `<config-dir>/certs/`. Both repair modes take the original values: account repair applies ownership to existing files at these paths, and unit repair derives `ProtectHome=` from them. |
 
 System config/state/binary paths must be absolute and contain no control characters.
 Repair does not infer custom paths from config contents. Windows defaults are
@@ -229,6 +236,7 @@ written successfully before daemon-reload fails.
 | `repair requires an existing config file and state directory` | Check the executable basename and original `--config-dir` / `--state-dir`. Repair does not bootstrap missing application files. |
 | Missing user/group or systemd `217/USER` | Stop the service if present, run `--user-only` with the original paths, then retry. |
 | Missing unit or wrong `ExecStart` paths | Ensure the account, config, state and installed binary exist; run `--systemd-only` with all original paths. |
+| `... is a symlink (masked?)` | The unit path is a symlink, for example from `systemctl mask`. Run `systemctl unmask <name>` (or remove the link) and retry. |
 | `systemd-only requires an existing executable binary` | Supply the correct installed executable and ensure executable permissions; unit repair does not copy it. |
 | `systemctl daemon-reload failed` | Inspect the written unit and systemd availability, fix the cause, then retry. Use local bootstrap in environments without host systemd. |
 | Repair succeeds but service is stopped | Start it explicitly. Neither repair mode enables, starts or restarts services. |

@@ -296,6 +296,15 @@ isolation, missing installation/binary/account prerequisites, deleted-account an
 unit restoration, repeated execution, JSON actions, preserved config/TLS/DKIM/DB/
 binary hashes, unchanged accounts and file modes during unit-only repair, no unit
 or daemon changes during user-only repair, and propagated daemon-reload failures.
+It also repoints an account whose home differs at the existing state directory
+(home, config `0640` and state ownership asserted), checks that links planted in the
+state directory to `/etc/shadow` and `/etc` leave their targets' ownership unchanged,
+and refuses a masked (`/dev/null`) or otherwise symlinked unit without writing
+through it or reloading systemd. These Docker cases were added with the #222 review
+fixes and have not yet been run in the Docker suite. Unit tests cover the `usermod`
+arguments (no `-m` into an existing state directory), symlink-safe `chown_tree`,
+symlink refusal and atomic replacement of the unit file, and repair `from_args`
+without a domain; there are 24 `ctl::install` unit tests after these fixes.
 Systemd uses the same recording stub and real unit syntax verification as the full
 installer suite; running a service under systemd PID 1 is not covered here.
 

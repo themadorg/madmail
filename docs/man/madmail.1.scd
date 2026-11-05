@@ -75,6 +75,11 @@ Extended documentation:
 	not inferred from config contents. Existing config and state are required;
 	unit repair also requires an executable binary and service user/group.
 	No domain/IP or non-interactive flag is needed. Preview with *--dry-run*.
+	Repeat custom *--cert-path*/*--key-path* values: account repair only
+	chowns TLS files at the given paths, and they also decide the unit's
+	ProtectHome= setting. Account repair repoints an existing account at the
+	existing state directory without moving it and never follows symlinks
+	inside it. Unit repair refuses a symlinked or masked unit file.
 	These modes conflict with each other, local/cert-only/skip and Windows
 	service/firewall flags. Stop the service before account repair. Unit
 	customizations belong in drop-ins; a failed reload leaves the written unit.

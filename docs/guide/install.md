@@ -100,7 +100,8 @@ interactive install is not implemented yet; use --non-interactive or --simple
 
 Use `madmail install --user-only` to repair its service account and permissions, or
 `madmail install --systemd-only` to replace its unit and reload systemd. Supply the
-original config/state/binary paths; neither mode rewrites configuration, seeds the
+original config/state/binary paths, plus any custom `--cert-path`/`--key-path`;
+neither mode rewrites configuration, seeds the
 database, obtains certificates or copies the binary. See the
 [repair commands and prerequisites](cli/install.md#repair-only-the-service-account-or-systemd-unit).
 
