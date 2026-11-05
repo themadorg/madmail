@@ -173,6 +173,21 @@ for dir in / /etc /data /home/alice; do
         --ip 127.0.0.1 --tls-mode self_signed --non-interactive \
         --config-dir /var/xyzzy/etc/madmail --state-dir "$dir" --binary-path /var/xyzzy/bin/madmail
 done
+# A root-owned directory below /etc, /usr or another system directory, not named
+# for madmail: the walk would give its directories to the service account.
+systemd_meta="$(stat -c '%U:%G:%a' /etc/systemd /etc/systemd/system /usr/lib/systemd)"
+for dir in /etc/systemd /usr/lib/systemd/system; do
+    reject "refusing to use state directory $dir: it is a directory below /etc, /usr or another system directory" \
+        /tmp/madmail install --simple --system --ip 127.0.0.1 --tls-mode self_signed \
+        --non-interactive --config-dir /var/xyzzy/etc/madmail --state-dir "$dir" \
+        --binary-path /var/xyzzy/bin/madmail
+    reject "refusing to use state directory $dir: it is a directory below" \
+        /tmp/madmail install --user-only --config-dir /var/xyzzy/etc/madmail --state-dir "$dir"
+done
+[[ "$(stat -c '%U:%G:%a' /etc/systemd /etc/systemd/system /usr/lib/systemd)" = "$systemd_meta" ]]
+[[ -z "$(find /etc/systemd /usr/lib/systemd -user madmail -print -quit)" ]]
+sha256sum -c /tmp/denied-accounts.before >/dev/null
+[[ "$(getent passwd madmail | cut -d: -f6)" = /var/xyzzy/lib/madmail ]]
 useradd -r -M -d /nonexistent pgish
 sha256sum /etc/passwd /etc/group > /tmp/denied-accounts.before
 install -d -o pgish -g pgish -m 700 /srv/pgdata/madmail
@@ -189,7 +204,7 @@ pgish:pgish" ]]
 [[ "$(stat -c '%U:%G' /var/lib)" = root:root && ! -e /var/lib/messages && ! -e /etc/messages ]]
 rm -r /srv/pgdata
 userdel pgish
-echo 'PASS: system, top-level, home and linked system directories and another account'"'"'s directory are refused as state directory before the account or any owner changes'
+echo 'PASS: system, top-level, home, system-tree (such as /etc/systemd) and linked system directories and another account'"'"'s directory are refused as state directory before the account or any owner changes'
 
 # Independent skip flags still skip system steps while copying the requested binary.
 cp /tmp/madmail /tmp/skippedmail
@@ -432,7 +447,9 @@ mkdir -p /var/xyzzy/lib/madmail/nobody-dir/inner
 chown -R nobody:nogroup /var/xyzzy/lib/madmail/nobody-dir
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-escaped.log
 grep -qF '   ! Ownership of /var/xyzzy/lib/madmail/evil\nname left unchanged: belongs to uid 0' /tmp/user-escaped.log
-grep -qF "then run: chown -h madmail:madmail \$'/var/xyzzy/lib/madmail/evil\\x0aname'" /tmp/user-escaped.log
+evil_q="\$'/var/xyzzy/lib/madmail/evil\\x0aname'"
+# The printed steps end with the command, so it can be copied as it is.
+grep -qxF "     If it is madmail's own file, stop the service (systemctl stop madmail) and every process of madmail (pkill -u madmail; ps -u madmail must then list none). Do not change the file if it has more than one hard link (stat -c %h ${evil_q} prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail ${evil_q}" /tmp/user-escaped.log
 if grep -q '^name' /tmp/user-escaped.log; then fail "raw newline from a file name in the output"; fi
 grep -qF '   ! Ownership of /var/xyzzy/lib/madmail/nobody-dir left unchanged: belongs to uid 65534' /tmp/user-escaped.log
 grep -qF '     This directory was not entered: its contents were left unchanged and need manual inspection.' /tmp/user-escaped.log
@@ -490,15 +507,28 @@ reject "it belongs to account uidsquatter (uid $squat_uid)" \
 sha256sum -c /tmp/squat-passwd.before >/dev/null
 absent_user madmail
 [[ "$(stat -c '%u' /var/xyzzy/lib/madmail)" = "$squat_uid" ]]
+# The documented recovery: lock and stop the account that has the old uid (and
+# the service), give the directory itself to root, and run repair.
+# (The image has no procps: look for its processes in /proc instead of ps -u.)
+usermod -L uidsquatter
+[[ -z "$(find /proc -mindepth 1 -maxdepth 1 -regex '/proc/[0-9]+' -user uidsquatter -print -quit)" ]]
 chown -h root:root /var/xyzzy/lib/madmail
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-squatted.log
 [[ "$(id -u madmail)" != "$squat_uid" ]]
 grep -q "^   ! Ownership of /var/xyzzy/lib/madmail/.* left unchanged: belongs to uid $squat_uid, not to the service account" /tmp/user-squatted.log
 [[ "$(stat -c '%u' /var/xyzzy/lib/madmail/own-a)" = "$squat_uid" ]]
 [[ "$(stat -c '%U' /var/xyzzy/lib/madmail)" = madmail ]]
+# The printed steps also stop the account that now has that uid.
+grep -qF "and lock and stop every process of uidsquatter, the account that has uid $squat_uid (usermod -L uidsquatter; pkill -u uidsquatter; ps -u uidsquatter must then list none)" /tmp/user-squatted.log
+# The operator lists and checks the rest, then hands over directories and
+# single-link files; files with several links are checked one by one.
+find /var/xyzzy/lib/madmail -xdev -uid "$squat_uid" -ls > /tmp/squat-list.log
+grep -q 'own-a' /tmp/squat-list.log
+find /var/xyzzy/lib/madmail -xdev -uid "$squat_uid" \( -type d -o -type f -links 1 \) \
+    -exec chown -h madmail:madmail {} +
+[[ "$(stat -c '%u:%h' /var/xyzzy/lib/madmail/own-a)" = "$squat_uid:2" ]]
 rm /var/xyzzy/lib/madmail/own-a /var/xyzzy/lib/madmail/own-b
-# The operator hands the rest over after checking it.
-find /var/xyzzy/lib/madmail -uid "$squat_uid" -exec chown -h madmail:madmail {} +
+[[ -z "$(find /var/xyzzy/lib/madmail -xdev -uid "$squat_uid" \( -type d -o -type f -links 1 \) -print -quit)" ]]
 userdel uidsquatter
 # An operator link from the config directory to a TLS file in the state tree,
 # whose target the service account then replaced with a link to /etc/shadow, is
@@ -585,7 +615,7 @@ install -m 600 /var/xyzzy/etc/madmail/certs/privkey.pem "$S/opcerts/privkey.pem"
 /tmp/madmail "${dns_file_args[@]}" \
     --cert-path "$S/opcerts/fullchain.pem" --key-path "$S/opcerts/privkey.pem" > /tmp/in-tree-tls.log
 grep -q "Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account" /tmp/in-tree-tls.log
-grep -q "If it is your certificate or key, stop the service (systemctl stop madmail) and every process of madmail (pkill -u madmail; ps -u madmail must then list none), check that the file is not a hard link to another file (stat -c %h $S/opcerts/privkey.pem must print 1), then run: chown -h madmail:madmail $S/opcerts/privkey.pem" /tmp/in-tree-tls.log
+grep -qxF "   ! Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account, so the state walk leaves it unchanged. If it is your certificate or key, stop the service (systemctl stop madmail) and every process of madmail (pkill -u madmail; ps -u madmail must then list none). Do not change the file if it has more than one hard link (stat -c %h $S/opcerts/privkey.pem prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail $S/opcerts/privkey.pem" /tmp/in-tree-tls.log
 [[ "$(stat -c '%U:%G:%a' "$S/opcerts/privkey.pem")" = root:root:600 ]]
 [[ "$(stat -c '%U' "$S/opcerts")" = madmail ]]
 rm -r "$S/opcerts"
