@@ -398,26 +398,51 @@ fn passwd_lookup<T>(
     }
 }
 
-/// What `getent passwd <key>` says, from its exit status (`None` when it was
-/// killed by a signal) and its output: `Ok(Some(field))` with the `field`-th
-/// (0-based) `:`-separated field of the entry for exit status 0, `Ok(None)`
-/// for exit status 2 ("no such entry"), an error for anything else.
+/// What `getent passwd -- <key>` says, from its exit status (`None` when it
+/// was killed by a signal) and its output: `Ok(Some(field))` with the
+/// `field`-th (0-based) `:`-separated field of the entry for exit status 0,
+/// `Ok(None)` for exit status 2 ("no such entry"), an error for anything else.
+/// The entry must be the one asked for: its name (field 0) must be `key`, or,
+/// for an all-digit `key` (looked up as a uid), its uid (field 2); any other
+/// entry is an error, so a `getent` that answered a different question fails
+/// closed.
 fn parse_getent(
     code: Option<i32>,
     stdout: &[u8],
     field: usize,
     key: &str,
 ) -> io::Result<Option<String>> {
+    let unreadable = || {
+        io::Error::other(format!(
+            "getent passwd {key} printed an entry that cannot be read"
+        ))
+    };
     match code {
         Some(0) => {
             let text = String::from_utf8_lossy(stdout);
             let line = text.lines().next().unwrap_or_default();
-            match line.split(':').nth(field) {
-                Some(value) if line.split(':').count() >= 7 => Ok(Some(value.to_string())),
-                _ => Err(io::Error::other(format!(
-                    "getent passwd {key} printed an entry that cannot be read"
-                ))),
+            let fields: Vec<&str> = line.split(':').collect();
+            if fields.len() < 7 {
+                return Err(unreadable());
             }
+            let by_uid = !key.is_empty() && key.bytes().all(|b| b.is_ascii_digit());
+            let matches = if by_uid {
+                matches!(
+                    (fields[2].parse::<u32>(), key.parse::<u32>()),
+                    (Ok(a), Ok(b)) if a == b
+                )
+            } else {
+                fields[0] == key
+            };
+            if !matches {
+                return Err(io::Error::other(format!(
+                    "getent passwd {key} printed the entry of another account"
+                )));
+            }
+            fields
+                .get(field)
+                .map(|value| Some(value.to_string()))
+                .ok_or_else(unreadable)
         }
         Some(2) => Ok(None),
         Some(code) => Err(io::Error::other(format!(
@@ -429,29 +454,91 @@ fn parse_getent(
     }
 }
 
-/// Ask the host's account database (`getent passwd <key>`, which uses the
+/// Where `getent` is looked for: the usual locations first, then `PATH`.
+const GETENT_CANDIDATES: &[&str] = &["/usr/bin/getent", "/bin/getent", "getent"];
+
+/// Whether `/etc/nsswitch.conf` (its text, `None` when the file does not
+/// exist) leaves the passwd and group databases to the files alone: every
+/// `passwd:` and `group:` line lists `files` and nothing else (action items
+/// such as `[NOTFOUND=return]` aside). Without the file, or without such a
+/// line, the C library reads `/etc/passwd` and `/etc/group` only.
+fn nsswitch_is_files_only(text: Option<&str>) -> bool {
+    let Some(text) = text else {
+        return true;
+    };
+    text.lines().all(|line| {
+        let line = line.split('#').next().unwrap_or_default();
+        let Some((db, sources)) = line.split_once(':') else {
+            return true;
+        };
+        if !matches!(db.trim(), "passwd" | "group") {
+            return true;
+        }
+        // Drop the bracketed action items, which may contain spaces.
+        let mut plain = String::new();
+        let mut depth = 0usize;
+        for c in sources.chars() {
+            match c {
+                '[' => depth += 1,
+                ']' => depth = depth.saturating_sub(1),
+                c if depth == 0 => plain.push(c),
+                _ => {}
+            }
+        }
+        let mut tokens = plain.split_whitespace().peekable();
+        tokens.peek().is_some() && tokens.all(|t| t == "files")
+    })
+}
+
+/// Ask the host's account database (`getent passwd -- <key>`, which uses the
 /// host's NSS configuration) for field `field` of the entry for `key`, after
 /// the C library found none. A statically linked musl build reads only
 /// `/etc/passwd` and never asks NSS modules (LDAP, sssd, winbind,
 /// systemd-userdb), so an account that exists only there would otherwise look
-/// like a uid without a name. `Ok(None)` when `getent` finds no entry or is
-/// not installed (a host without it, such as BusyBox, has no NSS modules
-/// either); an error when it fails in any other way, so callers fail closed.
-/// An all-digit `key` is looked up as a uid. `getent` cannot tell an NSS
-/// service that is down from an entry that does not exist: both exit with 2.
+/// like a uid without a name. `getent` is run from `/usr/bin`, then `/bin`,
+/// then `PATH`. `Ok(None)` when it finds no entry, or when no `getent` is
+/// installed and `/etc/nsswitch.conf` is missing or names only `files` for
+/// passwd and group (a host without NSS modules, such as BusyBox); an error
+/// when it fails in any other way, when it prints the entry of another
+/// account, or when it is missing on a host whose NSS configuration names
+/// other sources, so callers fail closed. An all-digit `key` is looked up as a
+/// uid. `getent` cannot tell an NSS service that is down from an entry that
+/// does not exist: both exit with 2.
 fn getent_passwd(key: &str, field: usize) -> io::Result<Option<String>> {
-    match std::process::Command::new("getent")
-        .arg("passwd")
-        .arg(key)
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-    {
-        Ok(out) => parse_getent(out.status.code(), &out.stdout, field, key),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(io::Error::other(format!(
-            "cannot run getent passwd {key}: {e}"
-        ))),
+    for getent in GETENT_CANDIDATES {
+        match std::process::Command::new(getent)
+            .arg("passwd")
+            .arg("--")
+            .arg(key)
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+        {
+            Ok(out) => return parse_getent(out.status.code(), &out.stdout, field, key),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                return Err(io::Error::other(format!(
+                    "cannot run {getent} passwd {key}: {e}"
+                )))
+            }
+        }
+    }
+    let conf = match std::fs::read_to_string("/etc/nsswitch.conf") {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return Err(io::Error::other(format!(
+                "getent is not installed and /etc/nsswitch.conf cannot be read: {e}"
+            )))
+        }
+    };
+    if nsswitch_is_files_only(conf.as_deref()) {
+        Ok(None)
+    } else {
+        Err(io::Error::other(
+            "getent is not installed, but /etc/nsswitch.conf names sources other than \
+             files for passwd or group, so an account from them cannot be looked up",
+        ))
     }
 }
 
@@ -1531,6 +1618,41 @@ mod tests {
         }
         assert!(parse_getent(Some(0), b"garbage\n", 0, "4242").is_err());
         assert!(parse_getent(Some(0), b"", 0, "4242").is_err());
+        // The entry must be the one asked for: the uid for a uid lookup, the
+        // name for a name lookup.
+        assert!(parse_getent(Some(0), entry, 0, "4343").is_err());
+        assert!(parse_getent(Some(0), entry, 3, "otheruser").is_err());
+        assert!(parse_getent(Some(0), entry, 3, "ldap").is_err());
+        let e = parse_getent(Some(0), entry, 0, "1")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("the entry of another account"), "{e}");
+        // A field past the end of a well-formed entry cannot be read.
+        assert!(parse_getent(Some(0), entry, 9, "ldapuser").is_err());
+    }
+
+    #[test]
+    fn a_missing_getent_is_no_account_only_without_nss_modules() {
+        assert!(nsswitch_is_files_only(None));
+        assert!(nsswitch_is_files_only(Some("")));
+        assert!(nsswitch_is_files_only(Some(
+            "# comment\npasswd: files\ngroup:  files # local\nhosts: files dns\n"
+        )));
+        assert!(nsswitch_is_files_only(Some(
+            "passwd: files [NOTFOUND=return]\ngroup: files [ SUCCESS=return ]\n"
+        )));
+        // No passwd or group line: the C library's default, the files.
+        assert!(nsswitch_is_files_only(Some("hosts: files dns\n")));
+        for conf in [
+            "passwd: files systemd\ngroup: files\n",
+            "passwd: files\ngroup: files sss\n",
+            "passwd: compat\n",
+            "passwd: ldap [NOTFOUND=return] files\n",
+            "passwd:\n",
+            "passwd: files\npasswd: files extrausers\n",
+        ] {
+            assert!(!nsswitch_is_files_only(Some(conf)), "{conf:?}");
+        }
     }
 
     #[test]
