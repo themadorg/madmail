@@ -149,12 +149,33 @@ mod policy_tests {
             resolve_admin_web_path(&cfg, &pool).await.as_deref(),
             Some("/from-file")
         );
-        chatmail_db::set_setting(&pool, ADMIN_WEB_PATH, "/stale-db")
+        // A module directive is a file default: a later DB row overrides it.
+        chatmail_db::set_setting(&pool, ADMIN_WEB_PATH, "/from-db")
             .await
             .unwrap();
         assert_eq!(
             resolve_admin_web_path(&cfg, &pool).await.as_deref(),
-            Some("/from-file")
+            Some("/from-db")
+        );
+    }
+
+    /// Only an explicit source (here a `settings { }` entry) outranks the DB row.
+    #[tokio::test]
+    async fn protected_path_wins_over_database_row() {
+        let raw = chatmail_db::init_memory_db().await.unwrap();
+        chatmail_db::set_setting(&raw, ADMIN_WEB_PATH, "/from-db")
+            .await
+            .unwrap();
+        let mut policy = chatmail_config::SettingsPolicy::default();
+        policy
+            .insert("admin_web_path", "/protected", "settings.admin_web_path")
+            .unwrap();
+        let pool = raw.with_policy(policy);
+        assert_eq!(
+            resolve_admin_web_path(&AppConfig::default(), &pool)
+                .await
+                .as_deref(),
+            Some("/protected")
         );
     }
 }
