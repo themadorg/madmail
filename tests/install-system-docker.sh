@@ -601,12 +601,17 @@ in_tree_conf=(install --simple --system --domain mail.example.org --ip 127.0.0.1
 [[ "$(stat -c '%U:%G:%a' "$S/etc/madmail.conf")" = madmail:madmail:640 ]]
 rm -r "$S/etc"
 /tmp/madmail "${args[@]}" > /tmp/reinstall-ip.log
-# Without the account, --skip-user refuses a state directory another account owns.
+# A state directory of another named account is refused first. Without the
+# account, --skip-user also refuses one of a uid without a name, not owned by root.
 install -d -o nobody /tmp/foreign-state
 cp /tmp/madmail /tmp/ghostmail
-reject 'does not exist, but state directory' /tmp/ghostmail install --simple --system --skip-user \
+reject 'it belongs to account nobody' /tmp/ghostmail install --simple --system --skip-user \
     --skip-systemd --ip 127.0.0.1 --tls-mode self_signed --config-dir /tmp/ghost-config \
     --state-dir /tmp/foreign-state --binary-path /tmp/ghost-bin
+install -d -o 4321 /tmp/unnamed-state
+reject 'does not exist, but state directory' /tmp/ghostmail install --simple --system --skip-user \
+    --skip-systemd --ip 127.0.0.1 --tls-mode self_signed --config-dir /tmp/ghost-config \
+    --state-dir /tmp/unnamed-state --binary-path /tmp/ghost-bin
 [[ ! -e /tmp/ghost-config && ! -e /tmp/ghost-bin ]]
 echo 'PASS: state walk skips foreign files (hard-linked or renamed), planted links and files of a reused uid, follows a new service uid, prints escaped names with quoted commands, does not enter another account'"'"'s directory, never writes through an operator link into the tree, chowns operator TLS files only in madmail or Let'"'"'s Encrypt directories, and --skip-user writes through descriptors'
 echo 'PASS: config hard-linked into the tree (before and during the walk) stays root:madmail 640, DKIM keys survive a failed run, root-owned in-tree TLS files are reported, and an in-tree config keeps the service owner with --skip-user'
