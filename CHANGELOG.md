@@ -1,3 +1,21 @@
+# [2.43.0](https://github.com/themadorg/madmail/compare/v2.42.0-unstable...v2.43.0-unstable) (2026-11-05)
+
+### Features
+
+* **website:** add Persian localization and mobile image viewer ([32cddc4](https://github.com/themadorg/madmail/commit/32cddc4d9592fd7b13fdb3e71d044cce94cf747e))
+
+### Bug Fixes
+
+* **admin:** report stored values and validate paths before writes ([8a0a6c4](https://github.com/themadorg/madmail/commit/8a0a6c427533017be5fd54609090a4124de2c2d3))
+* **admin:** validate admin paths before changing settings ([470ad77](https://github.com/themadorg/madmail/commit/470ad77999d52c863e408faeff2785a25ba89bed))
+* **config:** enforce deployment configuration precedence ([a6a5a28](https://github.com/themadorg/madmail/commit/a6a5a2873eed48b7e4fda544e7dd63bc5ee006f7))
+* **config:** lock settings only from explicit sources ([5f6a2ca](https://github.com/themadorg/madmail/commit/5f6a2ca491a7236b7f1f69e81e8cc36738c70ce4))
+* **release:** keep automatic releases within the current major ([5f73fff](https://github.com/themadorg/madmail/commit/5f73fff3af789360da97f387471459fa12142e85))
+
+### BREAKING CHANGES
+
+* explicit environment and configuration-file settings now override stored database values and reject database-backed writes and resets. Remove the controlling setting and restart to restore database management.
+
 # [2.42.0](https://github.com/themadorg/madmail/compare/v2.41.0-unstable...v2.42.0-unstable) (2026-11-05)
 
 ### Features
