@@ -433,7 +433,7 @@ runuser -u madmail -- ln -sfn /etc/shadow /var/xyzzy/lib/madmail/certs/fullchain
 [[ "$(sha256sum /etc/shadow)" = "$shadow_sum" && "$(stat -c '%U:%G:%a' /etc/shadow)" = "$shadow_meta" ]]
 runuser -u madmail -- ln -sfn /etc/shadow /var/xyzzy/lib/madmail/certs/fullchain.pem
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/repair-op-link.log
-grep -q 'Skipping ownership of /var/xyzzy/etc/madmail/certs/fullchain.pem: inside the service-writable state directory' /tmp/repair-op-link.log
+grep -q 'Skipping ownership of /var/xyzzy/etc/madmail/certs/fullchain.pem: a link inside the state directory; links there are not followed' /tmp/repair-op-link.log
 [[ "$(sha256sum /etc/shadow)" = "$shadow_sum" && "$(stat -c '%U:%G:%a' /etc/shadow)" = "$shadow_meta" ]]
 rm /var/xyzzy/etc/madmail/certs/fullchain.pem
 rm -r /var/xyzzy/lib/madmail/certs
@@ -455,6 +455,73 @@ grep -q '^v=DKIM1' /var/xyzzy/lib/madmail/dkim/default.txt
 /tmp/madmail "${dns_args[@]}" > /tmp/reinstall-after-skip.log
 [[ "$(stat -c '%U' /var/xyzzy/lib/madmail/dkim/default.txt)" = madmail ]]
 /tmp/madmail "${args[@]}" > /tmp/reinstall-ip.log
+S=/var/xyzzy/lib/madmail
+CONF=/var/xyzzy/etc/madmail/madmail.conf
+# The config file root writes outside the tree is never handed over through a
+# hard link into the tree: one planted before the reinstall (it then holds the
+# old inode), and ones made while the walk runs (a loop waits for the walk to
+# change the ctime of a sentinel, then links the new config file into every
+# directory). Root makes the links here only because the container kernel has
+# fs.protected_hardlinks=1; the walk cannot tell who made a link.
+ln "$CONF" "$S/zz-conf-before"
+runuser -u madmail -- bash -c "touch $S/sentinel; for d in \$(seq 1 400); do mkdir $S/m\$d; for f in 1 2 3 4 5; do : > $S/m\$d/f\$f; done; done"
+(
+    c0="$(stat -c %Z.%z "$S/sentinel")"
+    end=$((SECONDS + 300))
+    while [[ "$(stat -c %Z.%z "$S/sentinel")" == "$c0" ]] && (( SECONDS < end )); do :; done
+    for d in "$S"/m[0-9]*; do ln "$CONF" "$d/zz-conf" 2>/dev/null || true; done
+) &
+race=$!
+race_status=0
+/tmp/madmail "${args[@]}" > /tmp/reinstall-race.log 2>&1 || race_status=$?
+wait "$race"
+[[ "$(stat -c '%U:%G:%a' "$CONF")" = root:madmail:640 ]]
+[[ -z "$(find "$S" -name 'zz-conf*' -user madmail)" ]]
+[[ "$(stat -c '%U' "$S/zz-conf-before")" = root ]]
+# A link made after the walk is caught by the final config check.
+(( race_status == 0 )) || grep -q "refusing to change config file $CONF: it has .* hard links" /tmp/reinstall-race.log
+rm -rf "$S"/m[0-9]* "$S/sentinel" "$S/zz-conf-before"
+/tmp/madmail "${args[@]}" > /tmp/reinstall-ip.log
+[[ "$(stat -c '%U:%G:%a:%h' "$CONF")" = root:madmail:640:1 ]]
+# A run that stops at the certificate step leaves DKIM keys the service can
+# read: install creates them with the service account as owner, and the next
+# run neither needs nor changes another account's file.
+dns_file_args=(install --simple --system --domain mail.example.org --ip 127.0.0.1
+               --tls-mode file --no-obtain-certificate --non-interactive
+               --config-dir /var/xyzzy/etc/madmail --state-dir "$S"
+               --binary-path /var/xyzzy/bin/madmail)
+rm -f "$S/dkim/default.private" "$S/dkim/default.txt"
+reject 'tls-mode file requires existing cert and key' /tmp/madmail "${dns_file_args[@]}" \
+    --cert-path /var/xyzzy/none/fullchain.pem --key-path /var/xyzzy/none/privkey.pem
+[[ "$(stat -c '%U:%G:%a' "$S/dkim/default.private")" = madmail:madmail:600 ]]
+/tmp/madmail "${dns_args[@]}" > /tmp/reinstall-after-failed.log
+[[ "$(stat -c '%U:%G:%a' "$S/dkim/default.private")" = madmail:madmail:600 ]]
+runuser -u madmail -- cat "$S/dkim/default.private" > /dev/null
+# Root-owned TLS files the operator put inside the state tree are not handed
+# over (they could be hard links to another account's files); install says so
+# and prints the command to run after checking them.
+install -d -m 755 "$S/opcerts"
+install -m 644 /var/xyzzy/etc/madmail/certs/fullchain.pem "$S/opcerts/fullchain.pem"
+install -m 600 /var/xyzzy/etc/madmail/certs/privkey.pem "$S/opcerts/privkey.pem"
+/tmp/madmail "${dns_file_args[@]}" \
+    --cert-path "$S/opcerts/fullchain.pem" --key-path "$S/opcerts/privkey.pem" > /tmp/in-tree-tls.log
+grep -q "Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account" /tmp/in-tree-tls.log
+grep -q "run: chown madmail:madmail $S/opcerts/privkey.pem" /tmp/in-tree-tls.log
+[[ "$(stat -c '%U:%G:%a' "$S/opcerts/privkey.pem")" = root:root:600 ]]
+[[ "$(stat -c '%U' "$S/opcerts")" = madmail ]]
+rm -r "$S/opcerts"
+/tmp/madmail "${dns_args[@]}" > /tmp/reinstall-dns.log
+# A config file inside --state-dir belongs to the service account, and a
+# --skip-user rewrite keeps that owner instead of making it root's.
+in_tree_conf=(install --simple --system --domain mail.example.org --ip 127.0.0.1
+              --tls-mode self_signed --non-interactive --config-dir "$S/etc"
+              --state-dir "$S" --binary-path /var/xyzzy/bin/madmail --skip-systemd)
+/tmp/madmail "${in_tree_conf[@]}" > /tmp/in-tree-conf.log
+[[ "$(stat -c '%U:%G:%a' "$S/etc/madmail.conf")" = madmail:madmail:640 ]]
+/tmp/madmail "${in_tree_conf[@]}" --skip-user > /tmp/in-tree-conf-skip.log
+[[ "$(stat -c '%U:%G:%a' "$S/etc/madmail.conf")" = madmail:madmail:640 ]]
+rm -r "$S/etc"
+/tmp/madmail "${args[@]}" > /tmp/reinstall-ip.log
 # Without the account, --skip-user refuses a state directory another account owns.
 install -d -o nobody /tmp/foreign-state
 cp /tmp/madmail /tmp/ghostmail
@@ -463,6 +530,7 @@ reject 'does not exist, but state directory' /tmp/ghostmail install --simple --s
     --state-dir /tmp/foreign-state --binary-path /tmp/ghost-bin
 [[ ! -e /tmp/ghost-config && ! -e /tmp/ghost-bin ]]
 echo 'PASS: state walk skips foreign files (hard-linked or renamed), planted links and files of a reused uid, follows a new service uid, never writes through an operator link into the tree, and --skip-user writes through descriptors'
+echo 'PASS: config hard-linked into the tree (before and during the walk) stays root:madmail 640, DKIM keys survive a failed run, root-owned in-tree TLS files are reported, and an in-tree config keeps the service owner with --skip-user'
 
 # Uninstall after an install with a shared --config-dir removes only the files
 # install put there and leaves the directory and everything else in it.
