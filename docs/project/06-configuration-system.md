@@ -11,7 +11,7 @@ Highest priority first:
 3. **Database settings**
 4. **Built-in defaults**
 
-Environment/file values protect settings from database-backed CLI/API changes.
+Environment values and explicit file settings (`settings { }` in `.conf`, top-level registry keys in TOML) protect settings from database-backed CLI/API changes. Listener lines and module directives are file defaults below the database.
 Startup flags retain their documented startup-only behavior. See the
 [operator reference](../guide/configuration.md) and
 [TDD contract](../TDD/26-configuration-precedence.md).
@@ -148,7 +148,7 @@ The file is never stored in the DB (security).
 
 Trace the path:
 1. `chatmail-imap` calls `effective_imap_plain_listen(config, db_ports_override)`
-2. Effective database access resolves environment, explicit file values, persisted settings, then defaults. Listener bind addresses use this resolved snapshot.
+2. The port resolves as a protected value (`CHATMAIL_IMAP_PORT`, `CHATMAIL_IMAP_ADDR`, `settings { imap_port … }`), then the database `__IMAP_PORT__`, then the `imap` listener line, then the default.
 3. In local dev people often set `state_dir = "./data"` and a custom toml that maps to 1143 for testing without root.
 
 ## Debugging Config

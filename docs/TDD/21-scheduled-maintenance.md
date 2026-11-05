@@ -23,7 +23,7 @@ In `storage.imapsql local_mailboxes { … }` (see [`13-configuration.md`](13-con
 
 | Directive | Field | Job |
 |-----------|-------|-----|
-| `retention 24h` | `AppConfig.retention` | File alias for `message_retention`; purging also requires `message_retention_enabled true` |
+| `retention 24h` | `AppConfig.retention` | Info-page label only; **runtime** `prune-old-messages` uses the resolved `message_retention_enabled` + `message_retention` settings below (protect them with `settings { }`) |
 | `unused_account_retention 720h` | `AppConfig.unused_account_retention` | `prune-unused-accounts` — delete accounts with `first_login_at = 1` and `created_at` before cutoff |
 | `0` or omitted | — | Job disabled |
 

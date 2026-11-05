@@ -7,6 +7,11 @@ This is what keeps mail working on networks that block 993 and 465. Settings map
 - DB: `__SHARED_PORT_IMAP__` / `__SHARED_PORT_SMTP__`
 - Config file: `alpn_imap` / `alpn_smtp` in the `chatmail tls://…` block (used when the DB key is unset)
 
+The `alpn_*` directives are defaults; they never block these commands. To protect the
+value, set `shared_port_imap` / `shared_port_smtp` in a `settings { }` block or through
+`CHATMAIL_SHARED_PORT_IMAP` / `CHATMAIL_SHARED_PORT_SMTP`; `enable` / `disable` then
+exit with `configuration_locked` and `status` shows the protecting source.
+
 Each protocol is independent: submission can stay on 443 while IMAP does not.
 
 **A `chatmail tls://…` block must exist in the config file.** Without it the HTTPS port is a plain listener with nothing to demultiplex, and these settings do nothing until one is added and the server restarts. `status` says so when that is the case.
@@ -35,7 +40,7 @@ and first-bytes routes — which is why `shared-port` is the primary name.
 
 | Subcommand | Description |
 |------------|-------------|
-| `status` | Show which protocols the HTTPS port serves, the file defaults, and the DB overrides |
+| `status` | Show which protocols the HTTPS port serves, the file defaults, any protecting source, and the stored DB overrides |
 | `enable [imap\|smtp\|both]` | Serve that protocol on the HTTPS port (default `both`) |
 | `disable [imap\|smtp\|both]` | Stop serving it (default `both`) |
 

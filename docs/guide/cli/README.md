@@ -17,9 +17,11 @@ registration, and CLI provisioning ([English](../recipes/server-domains_en.md) /
 
 ## Configuration sources
 
-Operational settings resolve as **environment > explicit config file > database >
-defaults**. CLI writes and resets fail with `configuration_locked` when a deployment
-source protects the setting. Change that source and restart the service to unlock
+Operational settings resolve as **environment > explicit config file setting >
+database > defaults**. Only a `CHATMAIL_*` variable, a `.conf` `settings { }` entry,
+or a top-level TOML setting protects a value; listener lines and other module
+directives are defaults that CLI changes override. CLI writes and resets fail with
+`configuration_locked` (exit status 1) when such a source protects the setting. Change that source and restart the service to unlock
 it. See [configuration sources and examples](../configuration.md).
 
 Raw mail over WSS: [`websocket-bridge`](websocket-bridge.md) (disabled by default).

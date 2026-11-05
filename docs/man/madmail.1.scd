@@ -328,6 +328,16 @@ Subcommands accept additional options documented in *madmail command
 	Default state directory.
 	See *\-\-state\-dir* and *\-\-libexec*.
 
+*CHATMAIL_<SETTING>*
+	Sets an operational setting and protects it from database\-backed
+	commands, for example *CHATMAIL_ADMIN_WEB_PATH* or
+	*CHATMAIL_SMTP_PORT*.
+	Read at start; restart the service after a change.
+
+*CHATMAIL_SMTP_ADDR*, *CHATMAIL_IMAP_ADDR*, *CHATMAIL_HTTP_ADDR*
+	Listener address for that service.
+	Protects both its port and its bind mode (local only or public).
+
 # FILES
 
 _/etc/madmail/madmail.conf_
@@ -340,6 +350,11 @@ _/etc/madmail/certs/_
 _/var/lib/madmail/_
 	Default state directory after system install (actual path uses the
 	executable basename).
+
+_/var/lib/madmail/configuration\-locks.json_
+	Names and sources of the settings the running service protects, without
+	values.
+	Written at service start; CLI commands honour it.
 
 _/usr/local/bin/madmail_
 	Default destination for the binary on system install.
@@ -473,6 +488,16 @@ in scripts.
 When *install* fills *$(public_ip)* from a domain (no *\-\-ip*), dual\-stack
 DNS prefers a public IPv4 address for TURN and discovery. Use *\-\-ip* for
 IPv6\-only hosts or to pin a specific address.
+
+Operational settings resolve in this order: environment
+(*CHATMAIL_<SETTING>*), an explicit configuration file setting (a
+*settings* block entry in a .conf file, or a top\-level registry key in a
+TOML file), the database, then built\-in defaults.
+Listener lines and other module directives in the configuration file are
+defaults that database values override.
+A command that would change a setting protected by the environment or an
+explicit file setting exits with status 1 and a *configuration_locked*
+error; change that source and restart the service.
 
 When *\-\-json* is set, successful operator commands print a single JSON
 object on standard output.

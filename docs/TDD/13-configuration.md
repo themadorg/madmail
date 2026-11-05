@@ -12,8 +12,13 @@ Reference: [`context/madmail/maddy.conf`](../../context/madmail/maddy.conf), [`s
 
 ## Resolution and protection
 
-**Environment → explicit file → database → defaults.** Environment/file values
-are protected from database-backed CLI/API writes and resets. File/environment
+**Environment → explicit file setting → database → module directives → defaults.**
+Only explicit sources lock a setting against database-backed CLI/API writes and
+resets: `CHATMAIL_<NAME>` (and `CHATMAIL_{SMTP,IMAP,HTTP}_ADDR`, which lock that
+service's port and bind mode), a `.conf` `settings { }` entry, or a top-level TOML
+key named in the registry. Listener lines, `alpn_*`, and the other module
+directives below (including the ones `madmail install` writes) are file defaults
+that database values override, as before. File/environment
 changes require restart. The shared registry and source metadata contract are in
 [26-configuration-precedence.md](26-configuration-precedence.md); complete examples
 and supported names are in the [operator reference](../guide/configuration.md).
@@ -116,7 +121,7 @@ Boot prefers `CHATMAIL_*_ADDR` env vars, then config listen addresses, then dev 
 | `www_dir` | External www root (`html-serve` override) | embedded assets |
 | `ss_addr` / `ss_password` / `ss_cipher` / `ss_cert` / `ss_key` / `ss_allowed_ports` | Shadowsocks proxy (see [`11-proxy-services.md`](11-proxy-services.md)) | — |
 
-Runtime SS config resolves environment/file safeguards before database values (`__SS_ENABLED__`, `__SS_PORT__`, …) via `chatmail-shadowsocks::resolve_runtime`. Admin toggle `/admin/services/shadowsocks` requires `ss_addr` + `ss_password` in config.
+Runtime SS config resolves protected (environment / `settings { }`) values, then database values (`__SS_ENABLED__`, `__SS_PORT__`, …), then these file directives via `chatmail-shadowsocks::resolve_runtime`. Admin toggle `/admin/services/shadowsocks` requires `ss_addr` + `ss_password` in config.
 
 Madmail reference: [`context/madmail/dist/config/maddy.example.conf`](../../context/madmail/dist/config/maddy.example.conf) (`username_length`, `password_length`, `min_username_length`, `max_username_length`). madmail-v2 also supports `password_min_length` (cmrelay `chatmail.ini` parity).
 
@@ -369,9 +374,11 @@ Either directive makes the HTTPS listener also serve mail, demultiplexed by the
 ALPN token the client offered (`crates/chatmail/src/shared_listener.rs`). The
 listener takes over the existing `http_tls` slot rather than binding 443 twice.
 
-**Explicit directives protect the setting.** When the matching file/environment
-value is absent, `__SHARED_PORT_IMAP__` / `__SHARED_PORT_SMTP__` are managed by the admin panel
-(`/admin/settings/shared_port_*`) or `madmail shared-port` (alias `madmail alpn`). The listener reads the
+**The directives are the default, not the last word.** `__SHARED_PORT_IMAP__` /
+`__SHARED_PORT_SMTP__` override them per protocol, written by the admin panel
+(`/admin/settings/shared_port_*`) or `madmail shared-port` (alias `madmail alpn`).
+Only an explicit `shared_port_imap` / `shared_port_smtp` (`settings { }`, top-level
+TOML, or `CHATMAIL_SHARED_PORT_*`) protects the toggle. The listener reads the
 flags once per connection and picks the TLS config advertising exactly the enabled
 tokens, so a toggle applies to the next connection — no restart, no rebinding, and
 a protocol that is switched off stops being advertised rather than being

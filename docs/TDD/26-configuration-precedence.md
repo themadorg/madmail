@@ -5,16 +5,33 @@ Issue: #217; supersedes conflicting precedence statements in TDD 13 and project 
 ## Contract
 
 For each operational setting, the first explicitly supplied value wins:
-**environment → file → database → built-in default**. Explicit startup flags
+**environment → explicit file setting → database → module directive → built-in
+default** (explicit sources are defined below). Explicit startup flags
 select paths or override their documented startup-only values. Database-backed
 CLI commands are mutations, not startup overrides. `false`, zero (where valid),
 and empty lists are explicit values, not absence.
 
 A shared registry defines setting names, database keys, validation, and environment
 names (`CHATMAIL_<UPPERCASE_SETTING>`). Both TOML top-level fields and a `.conf`
-`settings { name value }` block support registry settings. Existing module-specific
-`.conf` directives remain supported. Unknown TOML keys and unknown `settings`
-directives fail with actionable errors. Legacy module blocks remain compatible.
+`settings { name value }` block support registry settings. Unknown TOML keys and
+unknown `settings` directives fail with actionable errors.
+
+**Only explicit sources protect a setting:** a `CHATMAIL_<NAME>` variable,
+`CHATMAIL_{SMTP,IMAP,HTTP}_ADDR` (which protects that service's `*_port` and
+`*_local_only`), a `settings { }` entry, or a top-level TOML key that is a registry
+name. Module-specific directives (listener lines, `alpn_imap` / `alpn_smtp`,
+`hostname`, `imap { turn_* iroh_relay_url }`, `turn { realm secret relay_* }`,
+`chatmail { ss_* language admin_path admin_web_path allow_inbound_remote_rcpt }`,
+`storage.imapsql { retention appendlimit }`, `max_message_size`) and TOML legacy
+fields (`smtp_listen`, `turn_enable`, `retention`, ...) remain file defaults that a
+database value overrides, as before. `madmail install` writes listener, TURN, proxy
+and Iroh directives, so this rule keeps a fresh install's CLI and panel settings
+writable. A port setting never implies a bind mode: `*_local_only` is protected only
+when set explicitly or through `CHATMAIL_*_ADDR`.
+
+Effective value order: protected value → database → module directive → built-in
+default. The SMTP identity is the exception it was before: it uses a protected
+`smtp_hostname` or the `hostname` directive, never a database row.
 
 Each DB connection carries an immutable policy snapshot. Runtime setting reads
 (single, batch and list) resolve protected values before consulting persisted rows.
@@ -49,23 +66,33 @@ of routine traffic logs; no mail data, credentials or environment values are log
 
 ## Migration
 
-Previously DB values often won. Explicit file values now protect those settings;
-existing DB rows remain intact but inactive. Removing the higher-priority source
-and restarting exposes the stored value again. Generated templates should comment
-optional values where operators are expected to use CLI/UI management. Enabling
-admin-web must not persist a default path. Retention duration alone does not enable
+Existing configurations keep their behaviour: module directives, including lines
+older templates wrote uncommented (`retention 24h`, `appendlimit 100M`,
+`max_message_size 100M`, `language <code>`, `turn_enable yes`), stay below database
+values and lock nothing, so an upgrade does not silently freeze CLI/panel settings.
+The legacy `retention` line never drove purging and still only labels the info page.
+Protection is opt-in through `settings { }`, top-level TOML registry keys, or the
+environment; while protected, existing DB rows remain intact but inactive, and
+removing the source and restarting exposes them again. Enabling admin-web must not
+persist a default path. Admin path writes (CLI and API) validate the value, its
+character set, and overlap with the effective other path before any write. Retention duration alone does not enable
 purging: message_retention_enabled must explicitly be true from some source.
 
 ## Verification plan
 
 - Registry: every supported key, environment mapping, invalid bool/port/duration,
   path normalization, secrets excluded from Debug/metadata/error messages.
-- Parsers: TOML/.conf parity, aliases, false vs absent, unknown settings, correct
-  block placement, relay min/max validation and retention enablement.
+- Parsers: TOML/.conf parity, false vs absent, unknown settings, correct block
+  placement, relay min/max validation and retention enablement; listener lines,
+  `alpn_*` and every directive the install template writes (current and older
+  templates) produce no protection.
 - Storage: SQLite and PostgreSQL-compatible access; single/batch/list resolution;
   file/env conflicts; guarded set/reset; independent pools and cloned snapshots.
 - CLI: nonzero protected writes, no partial compound writes, service snapshot with
-  a different environment, offline behavior, restart replacing stale protections.
+  a different environment, offline behavior, restart replacing stale protections;
+  on a generated config, `port … set/local/reset`, `shared-port`, `proxy password`
+  / `cipher`, `message-size` and `language` succeed; status output separates a
+  protected value from a stored DB override.
 - API: authenticated source metadata, 409 conflicts, unchanged DB after rejection,
   custom admin path remount and old path behavior, auth at the new endpoint.
 - Runtime: admin-web reset/enable/file path regression, TURN ranges and retention
@@ -133,3 +160,22 @@ invoked CLI and restart; removal of protections restoring original DB values and
 editing; and rejection of invalid ENV/file booleans, unknown keys, and reversed TURN
 ranges. The checked values include admin web enable/path, API path, retention and
 TURN relay bounds. This reusable script supersedes the earlier ad hoc source check.
+
+## Review follow-up (#219)
+
+The first implementation derived protection from module directives. On a fresh
+install the generated listener lines and `alpn_*` locked `smtp_port`,
+`smtp_local_only`, `imap_port`, `https_port`, `shared_port_*`, and the TURN, proxy
+and Iroh lines locked `turn_port`, `ss_password`, `ss_cipher` and more; an older
+template's `retention 24h` overrode the database retention. Protection now comes
+only from the explicit sources above. Regression tests:
+`ctl::install::tests::generated_config_keeps_cli_settings_writable` (renders the
+install template, also with the older uncommented lines, and runs the CLI against
+it), `settings_policy::tests::*` (listener/alpn/legacy directives, `settings` block,
+`CHATMAIL_*_PORT` versus `CHATMAIL_*_ADDR`, TURN range, admin path overlap and
+character set), `parse::policy_tests::toml_listen_and_legacy_fields_are_defaults_registry_keys_lock`,
+admin `protected_setting_without_row_is_not_reported_as_set` and
+`admin_web_path_overlap_uses_file_api_path`, CLI `rejected_paths_write_nothing`,
+`proxy_settings_protected_only_by_explicit_settings_block`, and the shared-port
+status test. The Docker installer suite also runs `madmail port smtp set 2525`
+after a real install.

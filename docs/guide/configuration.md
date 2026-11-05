@@ -3,11 +3,18 @@
 Madmail resolves operational settings in this order:
 
 1. Environment variables (`CHATMAIL_<SETTING_NAME_IN_UPPERCASE>`).
-2. Explicit settings in the selected configuration file.
+2. Explicit settings in the selected configuration file: a `.conf` `settings { }`
+   entry, or a top-level TOML key named in the registry below.
 3. Persisted database settings managed by CLI/API/admin web.
-4. Built-in defaults.
+4. Module directives in the configuration file (listener lines such as
+   `smtp tcp://0.0.0.0:25`, `alpn_imap`, `turn_port`, `ss_password`, `retention`,
+   `appendlimit`, ...), then built-in defaults.
 
-An explicit environment or file value protects that setting. Database-backed set,
+An environment value or explicit file setting protects that setting. Module
+directives never do: they are the defaults that the database overrides, exactly as
+in earlier versions, so the configuration `madmail install` generates (which keeps
+its listener, TURN, proxy and Iroh lines) leaves every CLI and panel setting
+writable. A fresh install can run `madmail port smtp set 2525`. Database-backed set,
 reset, enable, and disable commands cannot override it, even if the requested value
 is the same. CLI commands fail; the admin API returns a 409 `configuration_locked`
 status in its response envelope. The panel shows read-only settings and their source.
@@ -49,15 +56,34 @@ settings {
 ```
 
 The `settings` block accepts the operational names in the registry below. Existing
-module directives still work: admin paths in `chatmail { ... }`, relay bounds in
-`turn { ... }`, and `retention 14d` in `storage.imapsql { ... }`. Retention duration
-alone does not enable deletion; also set `message_retention_enabled true` in
-`settings`. Do not specify the same setting in multiple file locations; the explicit
-`settings` value is intended to replace its module directive, not duplicate it.
+module directives still work as file defaults: listener addresses, `alpn_*`, admin
+paths in `chatmail { ... }`, `turn_*` in `imap { ... }`, relay bounds in
+`turn { ... }`, `ss_*`, `iroh_relay_url`, `appendlimit`, `max_message_size`,
+`language`, and `retention` in `storage.imapsql { ... }`. A database value set from
+the CLI or panel overrides them; to protect one, move it into `settings`. For
+example `settings { smtp_port 2525 }` locks the SMTP port, while the listener line
+`smtp tcp://0.0.0.0:25` only sets the bind default. A port setting does not lock the
+bind mode: `smtp_local_only` stays writable unless it is set explicitly too.
+Retention duration alone does not enable deletion; also set
+`message_retention_enabled true`. The legacy `storage.imapsql` `retention` line only
+labels the info page; deletion uses `message_retention` and
+`message_retention_enabled`.
 
-For an environment override, use e.g. `CHATMAIL_ADMIN_WEB_PATH=/private-admin`.
-Legacy listener overrides `CHATMAIL_SMTP_ADDR`, `CHATMAIL_IMAP_ADDR`, and
-`CHATMAIL_HTTP_ADDR` also protect their effective port and bind mode.
+In TOML, a top-level key protects its value when it is a registry name (for example
+`smtp_port`, `admin_path`, `turn_port`, `language`). Other fields such as
+`smtp_listen`, `turn_enable` or `retention` are file defaults, like their `.conf`
+directives. `chatmail.toml.example` therefore leaves `admin_path` and
+`admin_web_path` commented out.
+
+For an environment override, use e.g. `CHATMAIL_ADMIN_WEB_PATH=/private-admin` or
+`CHATMAIL_SMTP_PORT=2525`. The listener overrides `CHATMAIL_SMTP_ADDR`,
+`CHATMAIL_IMAP_ADDR`, and `CHATMAIL_HTTP_ADDR` are explicit bind choices: they
+protect both their port and their bind mode.
+
+`smtp_hostname` from the environment or `settings` replaces the `hostname`
+directive for the server identity. A database `__SMTP_HOSTNAME__` row only feeds the
+admin status and the admin URL that CLI commands print; it does not change the mail
+identity.
 
 ## Diagnostics and migration
 
@@ -67,12 +93,17 @@ never secret values. These operator configuration warnings are emitted even unde
 No-Log; mail and traffic logging remain disabled. `madmail status --json` includes
 `configuration_locks`. The authenticated settings API includes
 `configuration_sources` with `source`, `locked`, and `database_value_present`.
+In setting values, `value` is the effective value and `is_set` is true only when a
+database row exists. CLI status commands report a protected value as `protected`
+(JSON `source` / `protected_by`), not as a database override.
 
-Earlier versions often preferred database values. After upgrading, explicit file
-values take priority. Existing database values are preserved but inactive while
-protected; removing the file/environment value and restarting exposes them again.
-Review existing configuration and database settings before upgrading. Leave optional
-file values commented out if you want to manage them from the panel or CLI.
+Existing configurations keep their behaviour: their module directives (including
+lines an older installer wrote, such as `retention 24h`, `appendlimit 100M`,
+`language en` or `turn_enable yes`) remain defaults below database values, so
+nothing becomes locked by an upgrade. Only settings you add to a `settings` block,
+top-level TOML registry keys, and `CHATMAIL_*` variables are protected. While a
+setting is protected its database value is preserved but inactive; removing the
+protection and restarting exposes it again.
 
 The service writes source-only `configuration-locks.json` in its state directory.
 Local CLI commands honor this snapshot even when their environment differs from
@@ -80,9 +111,13 @@ systemd. It remains conservative while the service is stopped: change the source
 and restart to refresh locks. With no server snapshot, offline CLI commands use
 only their selected file/environment. Status from an offline CLI describes its local effective values; the running API remains authoritative for live environment-derived values. Direct SQL edits are outside these safeguards.
 
-Enabling admin-web no longer writes `/admin` into the database. If an older version
-left a database path, the new file path wins. The web path and API path are separate
-and must not overlap. Invalid/unknown TOML fields and unknown `settings` directives
+Enabling admin-web no longer writes `/admin` into the database. A protected
+`admin_web_path` wins over an older database path; a `chatmail { admin_web_path }`
+directive is a default below it. The web path and API path are separate and must not
+overlap: `madmail admin-web path` and the admin API check a new or reset path against
+the effective other path (protected value, database, file directive, default) and
+accept only ASCII letters, digits and `.:/@-_` (at most 253 characters) before
+writing anything, so a rejected value changes nothing. Invalid/unknown TOML fields and unknown `settings` directives
 fail validation; legacy module syntax remains compatible.
 
 ## Operational registry

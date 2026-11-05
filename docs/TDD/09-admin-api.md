@@ -299,7 +299,7 @@ registration/quota hooks, retry/timeout policy, persistence and security tests.
 
 ## Deployment configuration protection
 
-Environment and explicit file values override database settings. Settings responses
+Environment values and explicit file settings (`settings { }`, top-level TOML) override database settings; module directives such as listener lines do not lock. Settings responses
 include `configuration_sources` with `source`, `locked`, and
 `database_value_present`; this metadata contains no setting values. Rejected writes
 and resets return envelope status `409` with `error_code: "configuration_locked"`
