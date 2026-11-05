@@ -200,7 +200,13 @@ async fn uninstall_unix(args: &Args, flags: &UninstallArgs) -> Result<()> {
     if args.json {
         let left: Vec<_> = kept
             .iter()
-            .map(|k| serde_json::json!({ "path": shown(&k.path), "reason": k.reason }))
+            .map(|k| {
+                serde_json::json!({
+                    "path": k.path.to_string_lossy(),
+                    "path_shown": shown(&k.path),
+                    "reason": k.reason,
+                })
+            })
             .collect();
         CtlOut::from_args(args, "uninstall").done_msg(
             "",
@@ -475,10 +481,8 @@ fn uninstall_state_dir_with(
     let Some(from_config) = ctx.config.state_dir.clone() else {
         return (ctx.state_dir.clone(), None);
     };
-    let mut users = unit_service_users();
-    for name in [primary, DEFAULT_BINARY_NAME, "chatmail"] {
-        push_unique_string(&mut users, name.to_string());
-    }
+    let (unit_users, unit_stems) = unit_users_and_stems();
+    let users = trust_accounts(&unit_users, &unit_stems, primary);
     let groups = groups_of(&users).map(|mut groups| {
         let config_dir = args.config.parent().unwrap_or(Path::new("/"));
         for gid in owning_gids([config_dir, from_config.as_path(), args.state_dir.as_path()]) {
@@ -506,24 +510,45 @@ fn uninstall_state_dir_with(
     }
 }
 
-/// The `User=` values of madmail/chatmail units, read before the full
-/// detection so the trust check of the config file knows the service accounts.
-fn unit_service_users() -> Vec<String> {
+/// The accounts whose groups count as the service's in the trust checks of
+/// uninstall (the config file's and the removal's): the `User=` values of
+/// madmail/chatmail units (`unit_users`), the accounts named after those units
+/// (`unit_stems`), `primary`, `madmail` and `chatmail`. A name without an
+/// account adds no group ([`groups_of`] skips it).
+fn trust_accounts(unit_users: &[String], unit_stems: &[String], primary: &str) -> Vec<String> {
+    let mut accounts = Vec::new();
+    for name in unit_users
+        .iter()
+        .chain(unit_stems)
+        .map(String::as_str)
+        .chain([primary, DEFAULT_BINARY_NAME, "chatmail"])
+    {
+        push_unique_string(&mut accounts, name.to_string());
+    }
+    accounts
+}
+
+/// The `User=` values and the names (stems) of madmail/chatmail units, read
+/// before the full detection so the trust check of the config file knows the
+/// service accounts.
+fn unit_users_and_stems() -> (Vec<String>, Vec<String>) {
     let mut users = Vec::new();
+    let mut stems = Vec::new();
     for base in SYSTEMD_UNIT_DIRS {
         let Ok(entries) = fs::read_dir(base) else {
             continue;
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let family = path
+            let Some(stem) = path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .and_then(|n| n.strip_suffix(".service"))
-                .is_some_and(is_family_stem);
-            if !family {
+                .filter(|stem| is_family_stem(stem))
+            else {
                 continue;
-            }
+            };
+            push_unique_string(&mut stems, stem.to_string());
             let Ok(content) = fs::read_to_string(&path) else {
                 continue;
             };
@@ -537,7 +562,7 @@ fn unit_service_users() -> Vec<String> {
             }
         }
     }
-    users
+    (users, stems)
 }
 
 /// A lookup of the groups of service accounts, as [`groups_of`] does it.
@@ -758,10 +783,7 @@ fn detect_installation(
     if !plan.service_users.is_empty() {
         plan.installation_found = true;
     }
-    let mut accounts = plan.service_users.clone();
-    for name in [primary, DEFAULT_BINARY_NAME] {
-        push_unique_string(&mut accounts, name.to_string());
-    }
+    let accounts = trust_accounts(&plan.service_users, &plan.service_names, primary);
     // A directory one of these groups can write is not trusted on the way to a
     // path to remove: the groups of the accounts and the groups owning the
     // state directories. When an account's groups cannot be read, no
@@ -2544,6 +2566,19 @@ mod tests {
         push_unique_string(&mut names, "madmail".into());
         push_unique_string(&mut names, "chatmail".into());
         assert_eq!(names, vec!["madmail", "chatmail"]);
+    }
+
+    #[test]
+    fn config_and_removal_trust_count_the_same_accounts() {
+        // Both trust checks build their account list with this one helper:
+        // User= values, unit names, the primary binary name, madmail and
+        // chatmail, each once.
+        let users = vec!["mailsvc".to_string(), "madmail".to_string()];
+        let stems = vec!["madmail-relay".to_string(), "madmail".to_string()];
+        assert_eq!(
+            trust_accounts(&users, &stems, "mymail"),
+            vec!["mailsvc", "madmail", "madmail-relay", "mymail", "chatmail"]
+        );
     }
 
     #[test]
