@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import { browser } from '$app/environment';
 	import Button from '$lib/components/Button.svelte';
 	import MadGlitchText from '$lib/components/MadGlitchText.svelte';
@@ -30,7 +32,7 @@
 <div class="error-page">
 	<header class="error-top">
 		<div class="error-top__inner">
-			<button type="button" class="back" aria-label="Back" onclick={goBack}>
+			<button type="button" class="back" aria-label={t("Back")} onclick={goBack}>
 				<span class="icon" aria-hidden="true">{@html chevronLeft}</span>
 			</button>
 			<MadmailLogo href="/" size="2rem" class="error-logo" transitionName="madmail-logo" />
@@ -41,11 +43,11 @@
 		<h1 class="code">
 			<MadGlitchText text={title} />
 		</h1>
-		<p class="headline">{headline}</p>
-		<p class="detail">{detail}</p>
+		<p class="headline">{t(headline)}</p>
+		<p class="detail">{t(detail)}</p>
 		<div class="actions">
-			<Button href="/" variant="primary">Back to home</Button>
-			<Button href="/docs">Documentation</Button>
+			<Button href="/" variant="primary">{t('Back to home')}</Button>
+			<Button href="/docs">{t('Documentation')}</Button>
 		</div>
 	</main>
 </div>

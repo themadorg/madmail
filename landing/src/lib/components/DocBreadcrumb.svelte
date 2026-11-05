@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, localize } = useSiteLanguage();
 	import { labelFromRoute, resolveDocHref, routeFromHref } from '$lib/docs.js';
 	import {
 		ancestorTrailForDirId,
@@ -10,12 +12,13 @@
 	} from '$lib/docTreeData.js';
 	import { docPages } from '$lib/nav.js';
 
-	/** @type {{ currentHref?: string }} */
-	let { currentHref = '' } = $props();
+	/** @type {{ currentHref?: string, currentTitle?: string }} */
+	let { currentHref = '', currentTitle } = $props();
 
 	const isIndex = $derived(currentHref === '/docs');
 	const onDirListing = $derived(isDirListingHref(currentHref));
 	const currentLabel = $derived.by(() => {
+		if (currentTitle) return currentTitle;
 		if (onDirListing) {
 			const dir = findDirById(docTreeNodes, routeFromHref(currentHref));
 			if (dir) return dir.label;
@@ -40,17 +43,17 @@
 	}
 </script>
 
-<nav class="breadcrumb" aria-label="Breadcrumb">
+<nav class="breadcrumb" aria-label={t("Breadcrumb")}>
 	{#if isIndex}
-		<span class="current" aria-current="page">Documentation</span>
+		<span class="current" aria-current="page">{t("Documentation")}</span>
 	{:else}
-		<a href="/docs">Documentation</a>
+		<a href="/docs">{t("Documentation")}</a>
 		{#each ancestors as ancestor (ancestor.id)}
 			<span class="sep" aria-hidden="true">›</span>
-			<a href={hrefForAncestor(ancestor)}>{ancestor.label}</a>
+			<a href={localize(hrefForAncestor(ancestor))}>{t(ancestor.label)}</a>
 		{/each}
 		<span class="sep" aria-hidden="true">›</span>
-		<span class="current" aria-current="page">{currentLabel}</span>
+		<span class="current" aria-current="page">{t(currentLabel)}</span>
 	{/if}
 </nav>
 

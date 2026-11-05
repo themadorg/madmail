@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import { browser } from '$app/environment';
 	import { loadRawDoc } from '$lib/rawDocModules.js';
 	import { routeFromHref } from '$lib/docs.js';
@@ -98,12 +100,12 @@
 	<div class="copy-page__button">
 		<button type="button" class="copy-page__main" onclick={copyMarkdown}>
 			<span class="icon" aria-hidden="true">{@html documentDuplicate}</span>
-			<span>{status || 'Copy page'}</span>
+			<span>{t(status || 'Copy page')}</span>
 		</button>
 		<button
 			type="button"
 			class="copy-page__menu-toggle"
-			aria-label="Copy options"
+			aria-label={t("Copy options")}
 			aria-expanded={menuOpen}
 			aria-haspopup="menu"
 			onclick={toggleMenu}
@@ -114,9 +116,9 @@
 
 	{#if menuOpen}
 		<div class="copy-page__menu" role="menu">
-			<button type="button" role="menuitem" onclick={copyMarkdown}><span class="icon" aria-hidden="true">{@html documentDuplicate}</span>Copy page</button>
-			<button type="button" role="menuitem" onclick={copyLink}><span class="icon" aria-hidden="true">{@html linkIcon}</span>Copy link</button>
-			<a href={githubUrl} role="menuitem" target="_blank" rel="noopener noreferrer"><span class="icon" aria-hidden="true">{@html githubIcon}</span>View on GitHub</a>
+			<button type="button" role="menuitem" onclick={copyMarkdown}><span class="icon" aria-hidden="true">{@html documentDuplicate}</span>{t("Copy page")}</button>
+			<button type="button" role="menuitem" onclick={copyLink}><span class="icon" aria-hidden="true">{@html linkIcon}</span>{t("Copy link")}</button>
+			<a href={githubUrl} role="menuitem" target="_blank" rel="noopener noreferrer"><span class="icon" aria-hidden="true">{@html githubIcon}</span>{t("View on GitHub")}</a>
 		</div>
 	{/if}
 </div>

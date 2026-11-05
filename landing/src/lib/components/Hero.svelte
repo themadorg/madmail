@@ -1,4 +1,7 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
+	import LanguageSwitcher from './LanguageSwitcher.svelte';
 	import { releases } from '$lib/releases.js';
 	import Button from '$lib/components/Button.svelte';
 	import MadGlitchText from '$lib/components/MadGlitchText.svelte';
@@ -12,21 +15,21 @@
 </script>
 
 <section class="hero">
+	<div class="hero-language"><LanguageSwitcher id="home-language" /></div>
 	<MadmailLogo class="hero-logo" interactive transitionName="madmail-logo" />
 	<h1><MadGlitchText text="madmail v2" /></h1>
 	<p class="subtitle">
-		Bringing the madness to mail delivery.
+		{t("Bringing the madness to mail delivery.")}
 		<button type="button" class="hashtag" onclick={onDeltachat}>#deltachat</button>
 	</p>
 	<p class="tagline">
-		Rust chatmail relay for
-		<button type="button" class="link" onclick={onDeltachat}>Delta Chat</button>, encrypted,
-		federated, one binary.
+		{t("Rust chatmail relay for")}
+		<button type="button" class="link" onclick={onDeltachat}>{t("Delta Chat")}</button>{t(", encrypted, federated, one binary.")}
 	</p>
 	<NavLinks links={heroNav} class="nav" ariaLabel="Site navigation" />
 	<div class="actions">
-		<Button href="{repo}/releases" variant="primary">Download</Button>
-		<Button href="/docs/quick-setup">Quick Start</Button>
+		<Button href="{repo}/releases" variant="primary">{t("Download")}</Button>
+		<Button href="/docs/quick-setup">{t("Quick Start")}</Button>
 	</div>
 	{#if latest}
 		<a class="latest-release" href="/releases">{latest.tag_name}</a>
@@ -34,6 +37,7 @@
 </section>
 
 <style>
+	.hero-language { position: absolute; top: 1rem; right: 1.5rem; }
 	.hero {
 		display: flex;
 		flex-direction: column;

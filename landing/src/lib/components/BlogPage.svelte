@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, siteLanguage, localize } = useSiteLanguage();
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import DocHeader from '$lib/components/DocHeader.svelte';
@@ -11,7 +13,7 @@
 	let { posts, selected = null } = $props();
 	// Query strings don't exist at prerender time; the static page is English and ?lang= applies after hydration.
 	const requestedLanguage = $derived(browser ? page.url.searchParams.get('lang') : null);
-	const indexLanguage = $derived(['en', 'fa', 'ru'].includes(requestedLanguage) ? requestedLanguage : 'en');
+	const indexLanguage = $derived(['en', 'fa', 'ru'].includes(requestedLanguage) ? requestedLanguage : siteLanguage.code);
 	const groups = $derived([...new Set(posts.map((post) => post.translation))].map((key) => {
 		const variants = posts.filter((post) => post.translation === key);
 		return variants.find((post) => post.language === indexLanguage) ?? variants.find((post) => post.language === 'en') ?? variants[0];
@@ -34,17 +36,17 @@
 						<a href="https://github.com/{encodeURIComponent(selected.author)}">{selected.author}</a>
 					{/if}
 					<svg class="meta-dot" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="2" fill="currentColor" /></svg>
-					<a href="/blog/{selected.slug}/source.md">Source</a>
+					<a href="/blog/{selected.slug}/source.md">{t("Source")}</a>
 				</p>
 			{:else}
 				<h1>{indexLanguage === 'fa' ? 'وبلاگ' : indexLanguage === 'ru' ? 'Блог' : 'Blog'}</h1>
-				<p>{indexLanguage === 'fa' ? 'یادداشت‌های پروژهٔ مدمیل.' : indexLanguage === 'ru' ? 'Заметки о проекте Madmail.' : 'Notes from the Madmail project.'} <a href="/blog/rss.xml">RSS</a></p>
+				<p>{indexLanguage === 'fa' ? 'یادداشت‌های پروژهٔ مدمیل.' : indexLanguage === 'ru' ? 'Заметки о проекте Madmail.' : 'Notes from the Madmail project.'} <a href="/blog/rss.xml">{t("RSS")}</a></p>
 			{/if}
 		</div>
 	</header>
 	<main>
 		{#if visible.length === 0}
-			<p>No posts yet.</p>
+			<p>{t("No posts yet.")}</p>
 		{:else}
 			{#each visible as post (post.slug)}
 				{#if !selected}
@@ -54,9 +56,9 @@
 						<p class="date"><time datetime={post.date}>{post.date}</time></p>
 						{#if post.description}<p>{post.description}</p>{/if}
 					</a>
-					<div class="language-tags" aria-label="Available translations">
+					<div class="language-tags" aria-label={t("Available translations")}>
 						{#each allPosts.filter((variant) => variant.translation === post.translation) as variant}
-							<a href="/blog/{variant.slug}" lang={variant.language}>{variant.language.toUpperCase()}</a>
+							<a href={localize(`/blog/${variant.slug}`, variant.language)} lang={variant.language} hreflang={variant.language}>{variant.language.toUpperCase()}</a>
 						{/each}
 					</div>
 					</div>

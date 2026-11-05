@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, localize } = useSiteLanguage();
 	import MadmailLogo from '$lib/components/MadmailLogo.svelte';
 	import MadGlitchText from '$lib/components/MadGlitchText.svelte';
 	let { spacious = false } = $props();
@@ -38,15 +40,14 @@
 			<div class="footer-name"><MadGlitchText text="madmail" /></div>
 		</div>
 	{/if}
-	<nav aria-label="Resources">
+	<nav aria-label={t("Resources")}>
 		{#each resources as link}
-			<a href={link.href}>{link.label}</a>
+			<a href={localize(link.href)}>{t(link.label)}</a>
 		{/each}
-		<a href="/blog/rss.xml">RSS</a>
+		<a href="/blog/rss.xml">{t("RSS")}</a>
 	</nav>
 	<p class="license">
-		<a href="{repo}/blob/main/LICENCE">AGPL-3.0-or-later</a> · Use at your own risk. Validate for your
-		threat model before production use.
+		<a href="{repo}/blob/main/LICENCE">AGPL-3.0-or-later</a> {t("· Use at your own risk. Validate for your threat model before production use.")}
 	</p>
 </footer>
 

@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { siteLanguage, t, localize, localizeTree } = useSiteLanguage();
 	import sunIcon from '$lib/icons/sun.svg?raw';
 	import moonIcon from '$lib/icons/moon.svg?raw';
 	import systemIcon from '$lib/icons/computer-desktop.svg?raw';
@@ -18,6 +20,7 @@
 	let { currentHref = '' } = $props();
 
 	let query = $state('');
+	const translatedNodes = $derived(localizeTree(docTreeNodes));
 
 	let folderPath = $state([]);
 	let direction = $state(1);
@@ -33,7 +36,7 @@
 		query = '';
 	}
 
-	function findFolder(id, nodes = docTreeNodes) {
+	function findFolder(id, nodes = translatedNodes) {
 		for (const node of nodes) {
 			if (node.type !== 'dir') continue;
 			if (node.id === id) return node;
@@ -49,8 +52,8 @@
 
 	const currentFolder = $derived(findFolder(folderPath.at(-1)));
 	const visibleNodes = $derived(query.trim()
-		? searchFiles(filterDocTree(docTreeNodes, query, 'all'))
-		: currentFolder?.children ?? docTreeNodes);
+		? searchFiles(filterDocTree(translatedNodes, query, 'all'))
+		: currentFolder?.children ?? translatedNodes);
 
 	function enterFolder(id) {
 		direction = 1;
@@ -64,7 +67,7 @@
 
 	/** @param {import('$lib/docTreeData.js').DocTreeNode} node */
 	function isActive(node) {
-		return node.type === 'file' && sameDocPage(node.href, currentHref);
+		return node.type === 'file' && sameDocPage(node.href, localize(currentHref));
 	}
 
 	$effect(() => {
@@ -86,9 +89,9 @@
 			<span class="icon" aria-hidden="true">{@html magnifyingGlass}</span>
 			<input
 				type="search"
-				placeholder="Filter documentation…"
+				placeholder={t("Filter documentation\u2026")}
 				bind:value={query}
-				aria-label="Search documentation"
+				aria-label={t("Search documentation")}
 			/>
 		</label>
 
@@ -96,31 +99,31 @@
 {/snippet}
 
 {#snippet footerControls()}
-	<button class="panel-action" aria-label={`Color theme: ${theme.mode}. Switch to ${theme.mode === 'system' ? 'dark' : theme.mode === 'dark' ? 'light' : 'system'} mode`} title={`Theme: ${theme.mode}`} onclick={() => setTheme(theme.mode === 'system' ? 'dark' : theme.mode === 'dark' ? 'light' : 'system')}>
+	<button class="panel-action" aria-label={`${t("Color theme")}: ${t(theme.mode)}`} title={`${t("Color theme")}: ${t(theme.mode)}`} onclick={() => setTheme(theme.mode === 'system' ? 'dark' : theme.mode === 'dark' ? 'light' : 'system')}>
 		<span aria-hidden="true">{@html theme.mode === 'system' ? systemIcon : theme.mode === 'dark' ? moonIcon : sunIcon}</span>
 	</button>
-	<button class="panel-action hide-sidebar" aria-label="Hide documentation sidebar" title="Hide sidebar" onclick={closeDocTree}><span aria-hidden="true">{@html hideIcon}</span></button>
-	<button class="panel-action" aria-label="Enter focus mode" title="Focus mode (Escape to exit)" onclick={() => setDocFocus(true)}><span aria-hidden="true">{@html focusIcon}</span></button>
+	<button class="panel-action hide-sidebar" aria-label={t("Hide documentation sidebar")} title={t("Hide sidebar")} onclick={closeDocTree}><span aria-hidden="true">{@html hideIcon}</span></button>
+	<button class="panel-action" aria-label={t("Enter focus mode")} title={t("Focus mode (Escape to exit)")} onclick={() => setDocFocus(true)}><span aria-hidden="true">{@html focusIcon}</span></button>
 {/snippet}
 
 <Modal
 	bind:open={docTreeModal.open}
 	bind:docked={docTreeModal.docked}
-	title={docTreeModal.docked ? undefined : 'Documentation'}
+	title={docTreeModal.docked ? undefined : t('Documentation')}
 	hideClose={docTreeModal.docked}
 	controlsBottom={docTreeModal.docked}
 	sidebarLayout
 	bind:sidebarWidth={docTreeModal.width}
 	maxWidth="var(--modal-max-width-lg)"
 	height="var(--modal-height-lg)"
-	label="Documentation"
+	label={t("Documentation")}
 	{toolbar}
 	{footerControls}
 >
-	<nav class="doc-tree" aria-label="Documentation pages">
+	<nav class="doc-tree" aria-label={t("Documentation pages")}>
 		{#if currentFolder}
 			<button class="folder-back" onclick={leaveFolder}>
-				<span aria-hidden="true">‹</span> {currentFolder.label}
+				<span aria-hidden="true">‹</span> {t(currentFolder.label)}
 			</button>
 		{/if}
 		{#key currentFolder?.id ?? 'root'}
@@ -132,7 +135,7 @@
 				{/each}
 			</ul>
 		{:else}
-			<p class="empty">No documentation matches your search.</p>
+			<p class="empty">{t("No documentation matches your search.")}</p>
 		{/if}
 		</div>
 		{/key}
@@ -142,13 +145,13 @@
 {#snippet treeNode(node, depth)}
 	<li class="node" class:dir={node.type === 'dir'}>
 		{#if node.type === 'dir'}
-			<button type="button" class="folder-row" onclick={() => enterFolder(node.id)} aria-label={`Open ${node.label}`}>
-				<span>{node.label}</span>
-				<span class="icon" aria-hidden="true">{@html chevronRight}</span>
+			<button type="button" class="folder-row" onclick={() => enterFolder(node.id)} aria-label={`Open ${t(node.label)}`}>
+				<span>{t(node.label)}</span>
+				<span class="icon" aria-hidden="true">{@html siteLanguage.code === 'fa' ? hideIcon : chevronRight}</span>
 			</button>
 		{:else}
-			<a href={node.href} class="file-link" class:active={isActive(node)} aria-current={isActive(node) ? 'page' : undefined} onclick={onFileClick}>
-				{node.label}
+			<a href={localize(node.href)} class:untranslated={node.translationAvailable === false} title={node.translationAvailable === false ? t("Not available in this language") : undefined} class="file-link" class:active={isActive(node)} aria-current={isActive(node) ? 'page' : undefined} onclick={onFileClick}>
+				{t(node.label)}
 			</a>
 		{/if}
 	</li>
@@ -333,6 +336,8 @@
 	}
 	.folder-row:hover { color: var(--color-text); }
 	.file-link:hover { color: var(--color-text); background: var(--color-hover); text-decoration: none; }
+	.file-link.untranslated { color: var(--color-text-faint); opacity: 0.6; cursor: pointer; }
+	.file-link.untranslated:hover { background: transparent; color: var(--color-text-faint); }
 	.file-link.active { color: var(--color-text); background: var(--color-surface-raised); font-weight: 400; }
 	@media (prefers-reduced-motion: reduce) {
 		.folder-row, .file-link { transition: none; }

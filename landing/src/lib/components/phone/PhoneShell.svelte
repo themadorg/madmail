@@ -1,4 +1,7 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, siteLanguage } = useSiteLanguage();
+	import LanguageSwitcher from '../LanguageSwitcher.svelte';
 	import MadmailLogo from '$lib/components/MadmailLogo.svelte';
 	import SiteFooter from '$lib/components/SiteFooter.svelte';
 	import { latestPhone, phonePages, phoneReleasesUrl } from '$lib/phone.js';
@@ -12,19 +15,20 @@
 <div class="phone-shell">
 	<header class="bar">
 		<a class="brand" href="/phone">
-			<MadmailLogo size="1.75rem" alt="" />
-			<span>Madmail Mobile</span>
+			<MadmailLogo size="1.75rem" alt="" transitionName="madmail-logo" />
+			<span>{t("Madmail Mobile")}</span>
 		</a>
-		<nav aria-label="Madmail Mobile">
+		<nav aria-label={t("Madmail Mobile")}>
 			{#each phonePages as page}
-				<a href={page.href} aria-current={current === page.href ? 'page' : undefined}>{page.label}</a>
+				<a href={page.href} aria-current={current === page.href ? 'page' : undefined}>{t(page.label)}</a>
 			{/each}
-			<a href="/">Server</a>
+			<a href="/">{t('Server')}</a>
 		</nav>
-		<a class="pill pill--small" href={downloadHref}>Download</a>
+		<a class="pill pill--small" href={downloadHref}>{t('Download')}</a>
+		<LanguageSwitcher id="phone-language" />
 	</header>
 
-	<main>
+	<main lang={siteLanguage.code === 'fa' ? 'fa' : 'en'} dir={siteLanguage.code === 'fa' ? 'rtl' : 'ltr'}>
 		{@render children()}
 	</main>
 
@@ -83,7 +87,7 @@
 	nav {
 		display: flex;
 		gap: 1.25rem;
-		margin-left: auto;
+		margin-inline-start: auto;
 	}
 
 	nav a {
@@ -136,6 +140,9 @@
 	.phone-shell :global(.pill--soft:hover) {
 		background: color-mix(in srgb, var(--pm-red) 24%, transparent);
 	}
+
+	.phone-shell :global(:lang(fa) :is(h1, h2, h3, .caption)) { letter-spacing: 0; line-height: 1.5; }
+	.phone-shell :global(:is(.mono, .address, .guest, .fingerprint)) { direction: ltr; unicode-bidi: isolate; }
 
 	/* Shared layout for the Install and Questions pages. */
 	.phone-shell :global(.doc) {
@@ -200,13 +207,13 @@
 		nav {
 			order: 3;
 			width: 100%;
-			margin-left: 0;
+			margin-inline-start: 0;
 			gap: 1.1rem;
 			overflow-x: auto;
 		}
 
 		.pill--small {
-			margin-left: auto;
+			margin-inline-start: auto;
 		}
 	}
 </style>

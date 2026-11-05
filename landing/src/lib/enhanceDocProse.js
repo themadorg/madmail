@@ -1,3 +1,4 @@
+import { initPostgresOptions } from './postgresOptions.js';
 import { initCopyOnlyCodeBlock, initEditableCodeBlock, isShellCodeBlock } from './codeBlock.js';
 import { slugifyHeading, uniqueSlug } from './slugify.js';
 
@@ -127,6 +128,7 @@ function wrapTableOfContents(root) {
 
 /** @param {HTMLElement} node */
 function enhance(node) {
+	initPostgresOptions(node);
 	wrapTableOfContents(node);
 	addHeadingIds(node);
 	syncTocAnchors(node);

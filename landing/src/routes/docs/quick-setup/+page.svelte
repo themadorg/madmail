@@ -5,7 +5,7 @@
 </script>
 
 {#key data.href}
-	<DocPage href={data.href}>
+	<DocPage href={data.href} language={data.language} languages={data.languages}>
 		{#if data.Content}
 			<data.Content />
 		{:else if data.html}

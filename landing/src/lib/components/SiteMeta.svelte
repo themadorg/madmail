@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, siteLanguage } = useSiteLanguage();
 	import { page } from '$app/state';
 	import {
 		defaultDescription,
@@ -20,16 +22,16 @@
 		}
 
 		if (page.data?.metaTitle || page.data?.title) {
-			return `${page.data.metaTitle ?? page.data.title} · Madmail`;
+			return `${t(page.data.metaTitle ?? page.data.title)} · ${t("Madmail")}`;
 		}
 
 		return defaultTitle;
 	});
 
-	const description = $derived(page.data?.description || defaultDescription);
+	const description = $derived(t(page.data?.description || defaultDescription));
 	// Pages that render the same content as another URL point their canonical at it.
 	const canonicalUrl = $derived(`${siteOrigin}${page.data?.canonical ?? page.url.pathname}`);
-	const locale = $derived(ogLocales[page.data?.language ?? 'en'] ?? 'en_US');
+	const locale = $derived(ogLocales[siteLanguage.code] ?? 'en_US');
 	/** @type {{ hreflang: string, href: string }[]} */
 	const alternates = $derived(isError ? [] : (page.data?.alternates ?? []));
 	const markdownHref = $derived(isError ? null : (page.data?.markdownHref ?? null));
@@ -51,10 +53,10 @@
 		<link rel="alternate" hreflang={alternate.hreflang} href={`${siteOrigin}${alternate.href}`} />
 	{/each}
 	{#if markdownHref}
-		<link rel="alternate" type="text/markdown" title="Markdown" href={markdownHref} />
+		<link rel="alternate" type="text/markdown" title={t("Markdown")} href={markdownHref} />
 	{/if}
-	<link rel="alternate" type="application/rss+xml" title="Madmail blog" href="/blog/rss.xml" />
-	<link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
+	<link rel="alternate" type="application/rss+xml" title={t("Madmail blog")} href="/blog/rss.xml" />
+	<link rel="alternate" type="text/plain" title={t("llms.txt")} href="/llms.txt" />
 
 	<meta property="og:type" content={page.data?.article ? 'article' : 'website'} />
 	{#if page.data?.article}

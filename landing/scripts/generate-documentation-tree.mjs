@@ -169,7 +169,7 @@ async function buildTree(dir, groups = []) {
 			: markdownToPlainText(content);
 
 		searchPages.push({
-			label: fileLabel(route),
+			label: /[-_](fa|ru|es)$/.test(route) && headings[0] ? headings[0] : fileLabel(route),
 			href: link.href,
 			group: groups.length ? groups.join(' › ') : 'Documentation',
 			route,
@@ -180,7 +180,7 @@ async function buildTree(dir, groups = []) {
 		nodes.push({
 			id: route,
 			type: 'file',
-			label: fileLabel(route),
+			label: /[-_](fa|ru|es)$/.test(route) && headings[0] ? headings[0] : fileLabel(route),
 			route,
 			href: link.href,
 			compiled: link.compiled

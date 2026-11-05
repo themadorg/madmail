@@ -11,7 +11,8 @@
 					document.documentElement.dataset.light = '';
 				}
 			} catch (_) {}
-			document.documentElement.classList.toggle('docs-theme', location.pathname === '/docs' || location.pathname.startsWith('/docs/') || location.pathname === '/releases' || location.pathname.startsWith('/releases/'));
+			const pagePath = location.pathname.replace(/^\/fa(?=\/|$)/, '') || '/';
+			document.documentElement.classList.toggle('docs-theme', pagePath === '/docs' || pagePath.startsWith('/docs/') || pagePath === '/releases' || pagePath.startsWith('/releases/'));
 		</script>
 		%sveltekit.head%
 	</head>

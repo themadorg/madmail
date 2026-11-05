@@ -1,27 +1,42 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, setSiteLanguage, localize } = useSiteLanguage();
 	import { goto } from '$app/navigation';
 	/** @type {{ id: string, label: string, menuLabel: string, icon: string, items: { label: string, href: string, current: boolean, lang?: string, icon?: string }[], align?: 'left' | 'right' }} */
 	let { id, label, menuLabel, icon, items, align = 'left' } = $props();
 	let menu;
+	let trigger;
+	function positionMenu() {
+		if (!menu?.matches(':popover-open') || !trigger) return;
+		const rect = trigger.getBoundingClientRect();
+		const rtl = document.documentElement.dir === 'rtl';
+		const end = (align === 'right') !== rtl;
+		const left = end ? rect.right - menu.offsetWidth : rect.left;
+		menu.style.left = `${Math.max(8, Math.min(left, window.innerWidth - menu.offsetWidth - 8))}px`;
+		menu.style.top = `${Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - menu.offsetHeight - 8))}px`;
+	}
 	async function select(event, item) {
 		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 		event.preventDefault();
+		if (item.lang) setSiteLanguage(item.lang);
 		menu?.hidePopover();
 		if (item.current) return;
 		await Promise.allSettled(menu.getAnimations().map((animation) => animation.finished));
 		if (menu.matches(':popover-open')) return;
-		await goto(item.href);
+		await goto(item.lang ? item.href : localize(item.href));
 	}
 </script>
 
-<button type="button" class="section-toggle" class:language-toggle={id === 'post-languages'} popovertarget={id} aria-label={label} title={label}>
+<svelte:window onresize={positionMenu} onscroll={positionMenu} />
+
+<button bind:this={trigger} type="button" class="section-toggle" class:language-toggle={id.includes('language')} popovertarget={id} aria-label={label} title={label}>
 	<span class="icon" aria-hidden="true">{@html icon}</span>
 </button>
-<nav bind:this={menu} {id} class="section-navigation" class:align-right={align === 'right'} popover aria-label={menuLabel}>
+<nav bind:this={menu} {id} class="section-navigation" class:align-right={align === 'right'} popover ontoggle={positionMenu} aria-label={menuLabel}>
 	{#each items as item}
-		<a href={item.href} lang={item.lang} aria-current={item.current ? 'true' : undefined} onclick={(event) => select(event, item)}>
+		<a href={item.lang ? item.href : localize(item.href)} lang={item.lang} hreflang={item.lang} aria-current={item.current ? 'true' : undefined} onclick={(event) => select(event, item)}>
 			{#if item.icon}<span class="item-icon" aria-hidden="true">{@html item.icon}</span>{/if}
-			{item.label}
+			{t(item.label)}
 		</a>
 	{/each}
 </nav>
@@ -70,7 +85,7 @@
 		transition: opacity 180ms ease, transform 180ms ease,
 			display 180ms allow-discrete, overlay 180ms allow-discrete;
 		position: fixed;
-		inset: 3.25rem auto auto 2.75rem;
+		inset: auto;
 		margin: 0;
 		min-width: 10rem;
 		padding: 0.35rem;
@@ -92,7 +107,7 @@
 		transition: background-color 180ms ease, color 180ms ease;
 	}
 	.align-right {
-		inset: 3.25rem 1rem auto auto;
+
 		text-align: center;
 	}
 	.align-right a { justify-content: center; }

@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import { routeFromHref } from '$lib/docs.js';
 	import pencilSquare from '$lib/icons/pencil-square.svg?raw';
 
@@ -13,7 +15,7 @@
 
 <a href={editUrl} class="edit-page" target="_blank" rel="noopener noreferrer">
 	<span class="icon" aria-hidden="true">{@html pencilSquare}</span>
-	<span>Edit</span>
+	<span>{t("Edit")}</span>
 </a>
 
 <style>

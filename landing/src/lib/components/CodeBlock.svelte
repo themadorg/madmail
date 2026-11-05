@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import { CHECK_ICON, flashCodeBlock, UNDO_ICON } from '$lib/codeBlock.js';
 	import copyIcon from '$lib/icons/document-duplicate.svg?raw';
 
@@ -64,16 +66,16 @@
 			bind:this={textareaEl}
 			bind:value={draft}
 			spellcheck="false"
-			aria-label="Edit code"
+			aria-label={t("Edit code")}
 			onblur={finishEdit}
 		></textarea>
 	{/if}
 
-	<div class="code-toolbar" role="toolbar" aria-label="Code actions" tabindex="-1" onmousedown={keepFocus}>
+	<div class="code-toolbar" role="toolbar" aria-label={t("Code actions")} tabindex="-1" onmousedown={keepFocus}>
 		<button
 			type="button"
 			class="code-action code-copy"
-			aria-label="Copy code"
+			aria-label={t("Copy code")}
 			data-copied={copied ? '' : undefined}
 			onclick={copy}
 		>
@@ -82,11 +84,11 @@
 	</div>
 
 	{#if editing}
-		<div class="code-undo-bar" role="toolbar" aria-label="Undo changes" tabindex="-1" onmousedown={keepFocus}>
+		<div class="code-undo-bar" role="toolbar" aria-label={t("Undo changes")} tabindex="-1" onmousedown={keepFocus}>
 			<button
 				type="button"
 				class="code-action code-undo"
-				aria-label="Undo changes"
+				aria-label={t("Undo changes")}
 				disabled={draft === code}
 				onclick={undo}
 			>

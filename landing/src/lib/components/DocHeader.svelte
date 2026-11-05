@@ -1,4 +1,7 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
+	import LanguageSwitcher from './LanguageSwitcher.svelte';
 	import HeaderDropdown from '$lib/components/HeaderDropdown.svelte';
 	import SharePageModal from '$lib/components/SharePageModal.svelte';
 	import MadmailLogo from '$lib/components/MadmailLogo.svelte';
@@ -9,8 +12,7 @@
 	import magnifyingGlass from '$lib/icons/magnifying-glass.svg?raw';
 	import queueList from '$lib/icons/queue-list.svg?raw';
 	import chevronDown from '$lib/icons/chevron-down.svg?raw';
-	import languageIcon from '$lib/icons/language.svg?raw';
-	import bookOpen from '$lib/icons/book-open.svg?raw';
+		import bookOpen from '$lib/icons/book-open.svg?raw';
 	import tagIcon from '$lib/icons/tag.svg?raw';
 	import newspaper from '$lib/icons/newspaper.svg?raw';
 	import { repo } from '$lib/nav.js';
@@ -36,50 +38,48 @@
 		<div class="brand-start">
 			<MadmailLogo href="/" size="1.5rem" class="doc-logo" transitionName="madmail-logo" />
 			<div class="docs-label">
-				<a href="/">Madmail</a>
+				<a href="/">{t("Madmail")}</a>
 				<span aria-hidden="true"> / </span>
-				<a href={section === 'Blog' ? blogHref : section === 'Releases' ? '/releases' : '/docs'}>{section}</a>
+				<a href={section === 'Blog' ? blogHref : section === 'Releases' ? '/releases' : '/docs'}>{t(section)}</a>
 			</div>
-			<HeaderDropdown id="section-navigation" label="Switch section" menuLabel="Site sections" icon={chevronDown} items={[
-				{ label: 'Docs', href: '/docs', current: section === 'Docs', icon: bookOpen },
-				{ label: 'Releases', href: '/releases', current: section === 'Releases', icon: tagIcon },
-				{ label: 'Blog', href: blogHref, current: section === 'Blog', icon: newspaper }
+			<HeaderDropdown id="section-navigation" label={t("Switch section")} menuLabel={t("Site sections")} icon={chevronDown} items={[
+				{ label: t('Docs'), href: '/docs', current: section === 'Docs', icon: bookOpen },
+				{ label: t('Releases'), href: '/releases', current: section === 'Releases', icon: tagIcon },
+				{ label: t('Blog'), href: blogHref, current: section === 'Blog', icon: newspaper }
 			]} />
 			{#if section === 'Docs' && !(docTreeModal.open && docTreeModal.docked)}
 			<button
 				type="button"
 				class="docs-tree"
-				aria-label="Documentation tree"
+				aria-label={t("Documentation tree")}
 				onclick={openDocTree}
 			>
 				<span class="icon" aria-hidden="true">{@html queueList}</span>
 			</button>
 			{/if}
 		</div>
-		<button type="button" class="search-bar" aria-label="Search pages" onclick={() => openCommandPalette()}>
+		<button type="button" class="search-bar" aria-label={t("Search pages")} onclick={() => openCommandPalette()}>
 			<span class="icon" aria-hidden="true">{@html magnifyingGlass}</span>
-			<span>Search documentation…</span>
-			<kbd>Ctrl K</kbd>
+			<span>{t("Search documentation…")}</span>
+			<kbd>{t("Ctrl K")}</kbd>
 		</button>
 		<div class="brand-end">
-			{#if languages.length}
-				<HeaderDropdown id="post-languages" label="Change post language" menuLabel="Post languages" icon={languageIcon} align="right" items={languages.map((language) => ({ ...language, lang: language.label === 'فارسی' ? 'fa' : language.label === 'Русский' ? 'ru' : language.label === 'English' ? 'en' : undefined }))} />
-			{/if}
+			<LanguageSwitcher {languages} />
 			<button
 				type="button"
 				class="search"
-				aria-label="Search pages"
+				aria-label={t("Search pages")}
 				onclick={() => openCommandPalette()}
 			>
 				<span class="icon" aria-hidden="true">{@html magnifyingGlass}</span>
 			</button>
-			<button type="button" class="share" aria-label="Share page" title="Share page" onclick={sharePage}>
+			<button type="button" class="share" aria-label={t("Share page")} title={t("Share page")} onclick={sharePage}>
 				<span class="icon" aria-hidden="true">{@html shareIcon}</span>
 			</button>
 			<a
 				href={repo}
 				class="github"
-				aria-label="GitHub repository"
+				aria-label={t("GitHub repository")}
 				target="_blank"
 				rel="noopener noreferrer"
 			>
@@ -132,9 +132,9 @@
 		.brand { grid-template-columns: 1fr minmax(16rem, 28rem) 1fr; gap: 1rem; }
 		.brand > .brand-end { grid-column: 3; }
 		.brand-end .search { display: none; }
-		.search-bar { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.35rem 0.65rem; border: 1px solid transparent; border-radius: 0.4rem; background: transparent; color: var(--color-text-subtle); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; transition: background-color 160ms ease; }
+		.search-bar { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.35rem 0.65rem; border: 1px solid transparent; border-radius: 0.4rem; background: transparent; color: var(--color-text-subtle); font: inherit; font-size: 0.8rem; text-align: start; cursor: pointer; transition: background-color 160ms ease; }
 		.search-bar:hover { background: var(--color-hover); }
-		.search-bar kbd { margin-left: auto; font-size: 0.7rem; border: 1px solid var(--color-border); border-radius: 0.2rem; padding: 0.1rem 0.3rem; opacity: 0.6; }
+		.search-bar kbd { margin-inline-start: auto; font-size: 0.7rem; border: 1px solid var(--color-border); border-radius: 0.2rem; padding: 0.1rem 0.3rem; opacity: 0.6; }
 	}
 
 	.brand-start {

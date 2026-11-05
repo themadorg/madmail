@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, siteLanguage } = useSiteLanguage();
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import PhoneMark from '$lib/components/phone/PhoneMark.svelte';
 	import PhoneShell from '$lib/components/phone/PhoneShell.svelte';
@@ -26,18 +28,17 @@
 
 <PhoneShell current="/phone/install">
 	<article class="doc">
-		<h1>Install Madmail Mobile</h1>
+		<h1>{t("Install Madmail Mobile")}</h1>
 		<p class="lede">
-			Madmail Mobile isn't in Google Play. You install the signed APK from GitHub, and newer versions
-			update it in place.
+			{t("Madmail Mobile isn't in Google Play. You install the signed APK from GitHub, and newer versions update it in place.")}
 		</p>
 
-		<ul class="group requirements" aria-label="Requirements">
+		<ul class="group requirements" aria-label={t("Requirements")} >
 			{#each requirements as row}
 				<li>
 					<PhoneMark hue={row.hue} icon={row.icon} />
-					<span>{row.label}</span>
-					<span class="value">{row.value}</span>
+					<span>{t(row.label)}</span>
+					<span class="value">{t(row.value)}</span>
 				</li>
 			{/each}
 		</ul>
@@ -45,85 +46,75 @@
 		{#if latestPhone}
 			<div class="download">
 				<div>
-					<p class="version">Madmail Mobile {latestPhone.version}</p>
+					<p class="version">{t("Madmail Mobile")} {latestPhone.version}</p>
 					<p class="small">
-						{latestPhone.prerelease ? 'Pre-release' : 'Release'} from {formatReleaseDate(latestPhone.date)}{latestPhone.engine
-							? `, with Madmail engine ${latestPhone.engine}`
+						{t(latestPhone.prerelease ? 'Pre-release' : 'Release')} {t('from')} {formatReleaseDate(latestPhone.date, siteLanguage.code)}{latestPhone.engine
+							? `, ${t("with Madmail engine")} ${latestPhone.engine}`
 							: ''}.
 					</p>
 				</div>
 				<div class="download-actions">
 					{#if latestPhone.apk}
 						<a class="pill" href={latestPhone.apk.browser_download_url}>
-							Download APK, {formatMegabytes(latestPhone.apk.size)}
+							{t("Download APK")}, <bdi>{formatMegabytes(latestPhone.apk.size)}</bdi>
 						</a>
 					{/if}
-					<a class="pill pill--soft" href={latestPhone.url}>Release notes</a>
+					<a class="pill pill--soft" href={latestPhone.url}>{t("Release notes")}</a>
 				</div>
 				<p class="files small">
 					{#if latestPhone.sums}<a href={latestPhone.sums.browser_download_url}>SHA256SUMS</a>{/if}
-					{#if latestPhone.source}<a href={latestPhone.source.browser_download_url}>Source code</a>{/if}
-					<a href={phoneReleasesUrl}>All releases</a>
+					{#if latestPhone.source}<a href={latestPhone.source.browser_download_url}>{t("Source code")}</a>{/if}
+					<a href={phoneReleasesUrl}>{t("All releases")}</a>
 				</p>
 			</div>
 		{:else}
-			<p><a class="pill" href={phoneReleasesUrl}>Get the APK from GitHub</a></p>
+			<p><a class="pill" href={phoneReleasesUrl}>{t("Get the APK from GitHub")}</a></p>
 		{/if}
 
-		<h2>Set up hosting</h2>
+		<h2>{t("Set up hosting")}</h2>
 		<ol class="steps">
-			<li>Download the APK on the phone that will host the server.</li>
+			<li>{t("Download the APK on the phone that will host the server.")}</li>
 			<li>
-				Open it. The first time, Android asks you to allow installs from your browser or file manager. Allow
-				it for that app only.
+				{t("Open it. The first time, Android asks you to allow installs from your browser or file manager. Allow it for that app only.")}
 			</li>
-			<li>Open Madmail Mobile, tap <strong>Get started</strong> and choose <strong>This phone</strong>.</li>
-			<li>
-				Name the server and allow background access, so Android doesn't pause it when the screen is off.
-				Then tap <strong>Add this phone</strong>.
-			</li>
-			<li>Turn on Wi-Fi or a hotspot, and tap <strong>Start hosting</strong> on the overview.</li>
-			<li>Open <strong>Invite</strong> and let your guest scan the QR code in Delta Chat.</li>
+			<li>{t("Open Madmail Mobile, tap Get started and choose This phone.")}</li>
+			<li>{t("Name the server and allow background access, so Android does not pause it when the screen is off. Then tap Add this phone.")}</li>
+			<li>{t("Turn on Wi-Fi or a hotspot, and tap Start hosting on the overview.")}</li>
+			<li>{t("Open Invite and let your guest scan the QR code in Delta Chat.")}</li>
 		</ol>
-		<p>
-			Managing a server elsewhere? Choose <strong>Remote server</strong> to install Madmail on a Linux
-			machine over SSH, or <strong>Existing instance</strong> to connect with an admin key.
-		</p>
+		<p>{t("Managing a server elsewhere? Choose Remote server to install Madmail on a Linux machine over SSH, or Existing instance to connect with an admin key.")}</p>
 
-		<h2>Check the download</h2>
+		<h2>{t("Check the download")}</h2>
 		<p>
-			Every release APK is signed with the same certificate. Its SHA-256 fingerprint is
+			{t("Every release APK is signed with the same certificate. Its SHA-256 fingerprint is")}
 		</p>
 		<p class="fingerprint">{phoneCertSha256}</p>
 		<p>
-			On a computer, put the APK next to <code>SHA256SUMS</code> and run these commands.
-			<code>apksigner</code> comes with the Android SDK build tools. Its
-			<em>certificate SHA-256 digest</em> line must match the fingerprint above.
+			{t("On a computer, put the APK next to")} <code>SHA256SUMS</code> {t("and run these commands.")}
+			<code>apksigner</code> {t("comes with the Android SDK build tools. Its")}
+			<em>{t("certificate SHA-256 digest")}</em> {t("line must match the fingerprint above.")}
 		</p>
 		<CodeBlock code={verifyCommands} />
 
-		<h2>Update</h2>
+		<h2>{t("Update")}</h2>
 		<p>
-			On the overview, <strong>Versions</strong> lists releases from GitHub. Madmail Mobile checks a newer
-			APK's package, signature and version before handing it to Android to install. You can also install a
-			newer APK over the old one yourself. A backup is made before an upgraded engine first opens your data.
+			{t("On the overview,")} <strong>{t("Versions")}</strong> {t("lists releases from GitHub. Madmail Mobile checks a newer APK's package, signature and version before handing it to Android to install. You can also install a newer APK over the old one yourself. A backup is made before an upgraded engine first opens your data.")}
 		</p>
 		<div class="warning" role="note">
 			<PhoneMark hue="orange" icon="alert" />
 			<p>
-				<strong>Don't uninstall to reinstall.</strong> Uninstalling deletes the server's private data,
-				including its accounts and mail. A release APK also can't update a development build.
+				<strong>{t("Don't uninstall to reinstall.")}</strong> {t("Uninstalling deletes the server's private data, including its accounts and mail. A release APK also can't update a development build.")}
 			</p>
 		</div>
 
 		{#if history.length}
-			<h2>Recent releases</h2>
+			<h2>{t("Recent releases")}</h2>
 			<ul class="group history">
 				{#each history as release}
 					{#if release}
 						<li>
 							<a href={release.url}>{release.version}</a>
-							<span class="value">{formatReleaseDate(release.date)}</span>
+							<span class="value">{formatReleaseDate(release.date, siteLanguage.code)}</span>
 						</li>
 					{/if}
 				{/each}
@@ -199,11 +190,11 @@
 
 	.steps {
 		margin: 0 0 1.25rem;
-		padding-left: 1.4rem;
+		padding-inline-start: 1.4rem;
 	}
 
 	.steps li {
-		padding-left: 0.3rem;
+		padding-inline-start: 0.3rem;
 		margin-bottom: 0.55rem;
 	}
 

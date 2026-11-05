@@ -607,3 +607,19 @@ installer suite; running a service under systemd PID 1 is not covered here.
 ## Raw IMAP/SMTP WebSocket transport
 
 See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.
+
+## Public website localization
+
+`npm test --prefix landing` checks language-aware URLs, translation families
+(including `_en` / `_fa` filenames), translated navigation labels and article
+availability. English uses unprefixed URLs; Persian uses `/fa`, independently of
+previous browser preferences. `npm run build --prefix landing` prerenders both
+interfaces, including Persian pages that work without JavaScript.
+
+For interactive changes, check desktop and mobile layouts in both languages:
+quick-start and PostgreSQL content, language switching with query strings and
+anchors, muted but clickable untranslated links, share-link selection/copying,
+and the mobile screenshot gallery. Gallery checks include mouse dragging versus
+clicking, native touch swiping, keyboard navigation, focus and scroll restoration,
+and reduced-motion behavior. PostgreSQL method/OS choices must show only the
+matching installation and connection commands while keeping shared migration steps.

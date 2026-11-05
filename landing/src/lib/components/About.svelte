@@ -1,14 +1,12 @@
+<script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
+</script>
 <section class="about">
-	<h2>What is Chatmail?</h2>
+	<h2>{t("What is Chatmail?")}</h2>
+	<p><strong>Chatmail</strong> {t('is a protocol for secure, private chat over email. Delta Chat turns IMAP and SMTP into fast, encrypted messaging and works best when both sides use a chatmail relay.')}</p>
 	<p>
-		<strong>Chatmail</strong> is the protocol for secure, private chat over email. Delta Chat uses it to
-		turn IMAP and SMTP into a fast, encrypted messaging experience, and it works best when both sides
-		use a proper <strong>chatmail relay</strong>.
-	</p>
-	<p>
-		Madmail is one implementation of that relay: a Rust rewrite of Madmail v1 with SMTP, IMAP,
-		encryption enforcement, and real-time services built in. It is not a general-purpose mail server
-		It is specialized for how Delta Chat works.
+		{t("Madmail is one implementation of that relay: a Rust rewrite of Madmail v1 with SMTP, IMAP, encryption enforcement, and real-time services built in. It is not a general-purpose mail server It is specialized for how Delta Chat works.")}
 	</p>
 </section>
 

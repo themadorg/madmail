@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, localize } = useSiteLanguage();
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { loadSearchPages, searchPalette } from '$lib/commandSearch.js';
@@ -21,7 +23,10 @@
 
 	const results = $derived.by(() => {
 		theme.light;
-		return searchPalette(pages ?? [], query);
+		const translatedPages = (pages ?? []).map((item) => ({ ...item,
+			label: t(item.label), group: t(item.group), text: `${item.text ?? ''} ${item.label}`
+		}));
+		return searchPalette(translatedPages, query);
 	});
 
 	/** @type {HTMLInputElement | undefined} */
@@ -120,19 +125,19 @@
 	/** @param {string} href */
 	function navigate(href) {
 		close();
-		goto(href);
+		goto(localize(href));
 	}
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
 
 {#if commandPalette.open}
-	<button type="button" class="backdrop" aria-label="Close command palette" transition:fade={{ duration: 180, easing: cubicInOut }} onclick={close}></button>
+	<button type="button" class="backdrop" aria-label={t("Close command palette")} transition:fade={{ duration: 180, easing: cubicInOut }} onclick={close}></button>
 	<div
 		class="palette"
 		role="dialog"
 		aria-modal="true"
-		aria-label="Command palette"
+		aria-label={t("Command palette")}
 		transition:fade={{ duration: 180, easing: cubicInOut }}
 	>
 		<label class="search">
@@ -140,18 +145,18 @@
 			<input
 				bind:this={inputEl}
 				type="search"
-				placeholder="Search pages or run commands…"
+				placeholder={t("Search pages or run commands\u2026")}
 				bind:value={query}
-				aria-label="Search pages or run commands"
+				aria-label={t("Search pages or run commands")}
 				autocomplete="off"
 				spellcheck="false"
 			/>
-			<kbd class="hint" aria-hidden="true">Esc</kbd>
+			<kbd class="hint" aria-hidden="true">{t("Esc")}</kbd>
 		</label>
 
-		<div class="results" bind:this={listEl} role="listbox" aria-label="Commands and pages">
+		<div class="results" bind:this={listEl} role="listbox" aria-label={t("Commands and pages")}>
 			{#if loading && !pages}
-				<p class="status">Loading search index…</p>
+				<p class="status">{t("Loading search index…")}</p>
 			{:else if results.length}
 				{#each results as item, index (item.id)}
 					<button
@@ -165,16 +170,16 @@
 						onclick={() => runItem(item)}
 					>
 						<span class="result-main">
-							<span class="label">{item.label}</span>
+							<span class="label">{t(item.label)}</span>
 							{#if item.hint && (query.trim() || item.kind === 'command')}
-								<span class="match">{item.hint}</span>
+								<span class="match">{t(item.hint)}</span>
 							{/if}
 						</span>
-						<span class="group">{item.group}</span>
+						<span class="group">{t(item.group)}</span>
 					</button>
 				{/each}
 			{:else}
-				<p class="empty">No commands or pages match your search.</p>
+				<p class="empty">{t("No commands or pages match your search.")}</p>
 			{/if}
 		</div>
 	</div>

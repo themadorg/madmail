@@ -1,5 +1,10 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, siteLanguage } = useSiteLanguage();
 	import { onMount } from 'svelte';
+	import { dragScroll } from '$lib/dragScroll.js';
+	import ImageViewer from '$lib/components/phone/ImageViewer.svelte';
+	let viewer;
 	import PhoneFrame from '$lib/components/phone/PhoneFrame.svelte';
 	import PhoneMark from '$lib/components/phone/PhoneMark.svelte';
 	import PhoneShell from '$lib/components/phone/PhoneShell.svelte';
@@ -81,27 +86,24 @@
 <PhoneShell current="/phone">
 	<section class="hero">
 		<div class="hero-copy">
-			<h1>Your phone is the mail server.</h1>
+			<h1>{t("Your phone is the mail server.")}</h1>
 			<p class="lede">
-				Madmail Mobile runs a Madmail chatmail server on an Android phone. Turn on a hotspot, show a QR
-				code, and the people around you chat in Delta Chat with end-to-end encryption. No domain, no VPS.
+				{t("Madmail Mobile runs a Madmail chatmail server on an Android phone. Turn on a hotspot, show a QR code, and the people around you chat in Delta Chat with end-to-end encryption. No domain, no VPS.")}
 			</p>
-			<p class="address" aria-label="Example address: {address}">
+			<p class="address" aria-label={`${t("Example address:")} ${address}`}>
 				<span aria-hidden="true">{shown}</span>
 			</p>
-			<p class="address-note">Addresses use the phone's IP, so there's nothing to register.</p>
+			<p class="address-note">{t("Addresses use the phone's IP, so there's nothing to register.")}</p>
 			<div class="actions">
 				<a class="pill" href={downloadHref}>
-					Download for Android
+					{t("Download for Android")}
 					<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5v10m0 0-4-4m4 4 4-4M4 16.5h12" /></svg>
 				</a>
-				<a class="pill pill--soft" href="/phone/install">How to install</a>
+				<a class="pill pill--soft" href="/phone/install">{t("How to install")}</a>
 			</div>
 			{#if latestPhone}
 				<p class="meta">
-					Version {latestPhone.version}{latestPhone.prerelease ? ' pre-release' : ''}{latestPhone.apk
-						? `, ${formatMegabytes(latestPhone.apk.size)}`
-						: ''}. For ARM64 phones with Android 8 or later.
+					{t("Version")} <bdi>{latestPhone.version}</bdi>{latestPhone.prerelease ? ` ${t('pre-release')}` : ''}{#if latestPhone.apk}, <bdi>{formatMegabytes(latestPhone.apk.size)}</bdi>{/if}. {t("For ARM64 phones with Android 8 or later.")}
 				</p>
 			{/if}
 		</div>
@@ -121,14 +123,13 @@
 
 	<section class="choose">
 		<div class="choose-copy">
-			<h2>One app, three places to run it</h2>
+			<h2>{t("One app, three places to run it")}</h2>
 			<p>
-				The first screen asks where the server lives. Pick the phone in your hand, a VPS you rent, or a
-				Madmail you already run. Every server you add gets the same overview, invites and settings.
+				{t("The first screen asks where the server lives. Pick the phone in your hand, a VPS you rent, or a Madmail you already run. Every server you add gets the same overview, invites and settings.")}
 			</p>
 			<p class="aside">
-				Madmail Mobile isn't a chat app. Guests chat in
-				<a href="https://delta.chat">Delta Chat</a>; this app runs the server they connect to.
+				{t("Madmail Mobile isn't a chat app. Guests chat in")}
+				<a href="https://delta.chat">{t("Delta Chat")}</a>{t("; this app runs the server they connect to.")}
 			</p>
 		</div>
 		<div class="sheet">
@@ -137,8 +138,8 @@
 					<li class="choice">
 						<PhoneMark hue={choice.hue} icon={choice.icon} size="choice" />
 						<div>
-							<strong>{choice.title}</strong>
-							<span>{choice.text}</span>
+							<strong>{t(choice.title)}</strong>
+							<span>{t(choice.text)}</span>
 						</div>
 					</li>
 				{/each}
@@ -147,39 +148,36 @@
 	</section>
 
 	<section class="join">
-		<h2>How a guest joins</h2>
+		<h2>{t("How a guest joins")}</h2>
 		<ol class="steps">
 			<li>
-				<PhoneFrame src={overview} alt="Overview screen with the hosting switch and server status" />
+				<PhoneFrame src={overview} alt={t("Overview screen with the hosting switch and server status")} />
 				<div>
-					<h3>Start hosting</h3>
+					<h3>{t("Start hosting")}</h3>
 					<p>
-						Tap Start hosting on the overview. The status dot turns green only after the server answers its
-						health check.
+						{t("Tap Start hosting on the overview. The status dot turns green only after the server answers its health check.")}
 					</p>
 				</div>
 			</li>
 			<li>
-				<PhoneFrame src={invite} alt="Invite screen with the guest address and an account QR code" />
+				<PhoneFrame src={invite} alt={t("Invite screen with the guest address and an account QR code")} />
 				<div>
-					<h3>Show the QR code</h3>
+					<h3>{t("Show the QR code")}</h3>
 					<p>
-						Invite makes a personal account QR, or invitation links with use limits and an expiry. While the
-						QR is on screen it changes every five seconds, so one code means one guest.
+						{t("Invite makes a personal account QR, or invitation links with use limits and an expiry. While the QR is on screen it changes every five seconds, so one code means one guest.")}
 					</p>
 				</div>
 			</li>
 			<li>
 				<div class="dc-card">
 					<span class="dc-icon">{@html deltachatIcon}</span>
-					<span class="dc-title">Delta Chat</span>
-					<span class="dc-row"><span class="dot"></span>Encrypted chat</span>
+					<span class="dc-title">{t("Delta Chat")}</span>
+					<span class="dc-row"><span class="dot"></span>{t("Encrypted chat")}</span>
 				</div>
 				<div>
-					<h3>Scan it in Delta Chat</h3>
+					<h3>{t("Scan it in Delta Chat")}</h3>
 					<p>
-						The guest scans the code in Delta Chat and has an account on your phone. Messages between guests
-						are end-to-end encrypted.
+						{t("The guest scans the code in Delta Chat and has an account on your phone. Messages between guests are end-to-end encrypted.")}
 					</p>
 				</div>
 			</li>
@@ -188,66 +186,69 @@
 
 	<section class="screens" aria-labelledby="screens-title">
 		<div class="screens-head">
-			<h2 id="screens-title">Around the app</h2>
-			<p>Built natively in Kotlin and Jetpack Compose. It follows your phone's light or dark theme.</p>
+			<h2 id="screens-title">{t("Around the app")}</h2>
+			<p>{t("Built natively in Kotlin and Jetpack Compose. It follows your phone's light or dark theme.")}</p>
 		</div>
-		<ul class="strip">
-			{#each screens as screen}
+		<ul class="strip" use:dragScroll tabindex="0" aria-label={t("Around the app")}>
+			{#each screens as screen, index}
 				<li>
-					<PhoneFrame src={screen.src} alt={screen.caption} />
-					<p>{screen.caption}</p>
+					<button type="button" class="screen-preview" data-phone-screen={index} aria-haspopup="dialog" aria-controls="phone-image-viewer" aria-label={`${t('Enlarge screenshot')}: ${t(screen.caption)}`} onclick={(event) => viewer.open(index, event.currentTarget)}>
+						<PhoneFrame src={screen.src} alt={t(screen.caption)} />
+					</button>
+					<p>{t(screen.caption)}</p>
 				</li>
 			{/each}
 		</ul>
 	</section>
 
 	<section class="inside">
-		<h2>Under the hood</h2>
+		<h2>{t("Under the hood")}</h2>
 		<div class="inside-grid">
 			{#each groups as group}
 				<div class="panel">
-					<h3 class="caption">{group.caption}</h3>
+					<h3 class="caption">{t(group.caption)}</h3>
 					<ul class="group">
 						{#each group.rows as row}
 							<li class="row">
 								<PhoneMark hue={row.hue} icon={row.icon} />
-								<span class="row-label">{row.label}</span>
-								<span class="row-value" class:mono={row.mono}>{row.value}</span>
+								<span class="row-label">{t(row.label)}</span>
+								<span class="row-value" class:mono={row.mono}>{t(row.value)}</span>
 							</li>
 						{/each}
 					</ul>
-					<p class="footer">{group.footer}</p>
+					<p class="footer">{t(group.footer)}</p>
 				</div>
 			{/each}
 		</div>
 	</section>
 
 	<section class="limits">
-		<h2>Not there yet</h2>
-		<p class="limits-intro">Madmail Mobile is a pre-release. Here's what it can't do yet.</p>
+		<h2>{t("Not there yet")}</h2>
+		<p class="limits-intro">{t("Madmail Mobile is a pre-release. Here's what it can't do yet.")}</p>
 		<ul>
-			<li>Android only, on ARM64 phones. There's no iPhone version and it isn't in Google Play.</li>
-			<li>Guests on mobile data may not reach you. Many carriers put phones behind shared addresses.</li>
-			<li>Hosting keeps the address it started with. After switching networks, stop and start hosting.</li>
-			<li>Calls and attachments between guests haven't been fully tested on real networks.</li>
-			<li>Root ports, guided backup restore and some web admin settings aren't in the app yet.</li>
-			<li>Translations haven't been reviewed by native speakers.</li>
+			<li>{t("Android only, on ARM64 phones. There's no iPhone version and it isn't in Google Play.")}</li>
+			<li>{t("Guests on mobile data may not reach you. Many carriers put phones behind shared addresses.")}</li>
+			<li>{t("Hosting keeps the address it started with. After switching networks, stop and start hosting.")}</li>
+			<li>{t("Calls and attachments between guests haven't been fully tested on real networks.")}</li>
+			<li>{t("Root ports, guided backup restore and some web admin settings aren't in the app yet.")}</li>
+			<li>{t("Translations haven't been reviewed by native speakers.")}</li>
 		</ul>
 	</section>
 
 	<section class="cta">
 		<PhoneMark hue="red" icon="phone" size="hero" />
-		<h2>Try it on a spare phone</h2>
-		<p>An Android phone and its hotspot are enough to see it work. Your main phone joins as a guest.</p>
+		<h2>{t("Try it on a spare phone")}</h2>
+		<p>{t("An Android phone and its hotspot are enough to see it work. Your main phone joins as a guest.")}</p>
 		<div class="actions">
-			<a class="pill" href={downloadHref}>Download{latestPhone ? ` ${latestPhone.version}` : ''}</a>
-			<a class="pill pill--soft" href="/phone/faq">Read the questions</a>
+			<a class="pill" href={downloadHref}>{t("Download")}{latestPhone ? ` ${latestPhone.version}` : ''}</a>
+			<a class="pill pill--soft" href="/phone/faq">{t("Read the questions")}</a>
 		</div>
 		<p class="cert">
-			Every release is signed with the same key.<br />
+			{t("Every release is signed with the same key.")}<br />
 			<span class="mono">SHA-256 {phoneCertSha256}</span>
 		</p>
 	</section>
+	<ImageViewer bind:this={viewer} images={screens} />
 </PhoneShell>
 
 <style>
@@ -576,9 +577,21 @@
 		list-style: none;
 		overflow-x: auto;
 		scroll-snap-type: x mandatory;
+		scrollbar-width: none;
+		cursor: grab;
+		user-select: none;
 		scroll-padding-inline: max(1.5rem, calc((100vw - 69rem) / 2));
 		--device-width: 13rem;
 	}
+
+	.strip::-webkit-scrollbar { display: none; }
+	.strip:global(.is-dragging) { cursor: grabbing; scroll-snap-type: none; }
+	.strip:focus-visible { outline: 2px solid var(--pm-red); outline-offset: -2px; }
+
+	.screen-preview { display: block; padding: 0; border: 0; border-radius: 2rem; background: none; color: inherit; cursor: zoom-in; transition: transform 160ms ease; }
+	.screen-preview:focus-visible { outline: 2px solid var(--pm-red); outline-offset: 4px; }
+	@media (hover: hover) { .screen-preview:hover { transform: scale(1.025); } }
+	@media (prefers-reduced-motion: reduce) { .screen-preview { transition: none; } }
 
 	.strip li {
 		flex: none;
@@ -636,7 +649,7 @@
 
 	.row-value {
 		color: var(--pm-ink-soft);
-		text-align: right;
+		text-align: end;
 	}
 
 	.footer {
@@ -665,7 +678,7 @@
 
 	.limits li {
 		position: relative;
-		padding-left: 1.4rem;
+		padding-inline-start: 1.4rem;
 		line-height: 1.55;
 		color: var(--color-text-muted);
 	}
@@ -673,7 +686,7 @@
 	.limits li::before {
 		content: '';
 		position: absolute;
-		left: 0;
+		inset-inline-start: 0;
 		top: 0.6em;
 		width: 0.5rem;
 		height: 0.5rem;

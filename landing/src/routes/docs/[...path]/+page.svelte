@@ -6,7 +6,7 @@
 </script>
 
 {#key data.href}
-	<DocPage href={data.href}>
+	<DocPage directory={data.kind === 'dir'} href={data.href} language={data.language ?? 'en'} languages={data.languages ?? []}>
 		{#if data.kind === 'dir'}
 			<DocDirListing title={data.title} entries={data.entries} />
 		{:else if data.Content}

@@ -1,8 +1,10 @@
 <script>
-	import { onMount, untrack, tick } from 'svelte';
+	import { onMount, untrack, tick, setContext } from 'svelte';
 	import { onNavigate } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
+	import { createSiteLanguage, languageContext } from '$lib/siteLanguage.svelte.js';
+	import { languageFromPath, stripLanguagePrefix } from '$lib/localization.js';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import DocTreeModal from '$lib/components/DocTreeModal.svelte';
 	import SiteMeta from '$lib/components/SiteMeta.svelte';
@@ -11,13 +13,37 @@
 	import { madMode } from '$lib/madMode.svelte.js';
 	import { theme, watchSystemTheme } from '$lib/theme.svelte.js';
 	import '$lib/styles/global.css';
+	import { localizeSiteLinks } from '$lib/localizeSiteLinks.js';
 
 	let { children } = $props();
+	const scope = createSiteLanguage(languageFromPath(page.url.pathname));
+	setContext(languageContext, scope);
+	const { siteLanguage, setSiteLanguage, localize, t } = scope;
+	const pathname = $derived(stripLanguagePrefix(page.url.pathname));
 	onMount(watchSystemTheme);
+	$effect(() => {
+		const language = languageFromPath(page.url.pathname);
+		untrack(() => setSiteLanguage(language));
+	});
+	$effect(() => {
+		if (!browser) return;
+		page.url.pathname;
+		document.documentElement.lang = siteLanguage.code === 'fa' ? 'fa' : 'en';
+		document.documentElement.dir = siteLanguage.code === 'fa' ? 'rtl' : 'ltr';
+		queueMicrotask(() => {
+			for (const [selector, message] of [['.code-copy', 'Copy code'], ['.code-edit', 'Edit code'], ['.code-undo', 'Undo changes']]) {
+				document.querySelectorAll(selector).forEach((button) => button.setAttribute('aria-label', t(message)));
+			}
+			document.querySelectorAll('.heading-link').forEach((link) => {
+				const heading = link.closest('.heading-wrap')?.querySelector('h1,h2,h3,h4,h5,h6');
+				link.setAttribute('aria-label', `${t('Copy link to')} ${heading?.textContent ?? ''}`);
+			});
+		});
+	});
 
 	$effect(() => {
 		if (!browser) return;
-		document.documentElement.classList.toggle('docs-theme', page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/') || page.url.pathname === '/releases' || page.url.pathname.startsWith('/releases/') || page.url.pathname === '/blog' || page.url.pathname.startsWith('/blog/'));
+		document.documentElement.classList.toggle('docs-theme', pathname === '/docs' || pathname.startsWith('/docs/') || pathname === '/releases' || pathname.startsWith('/releases/') || pathname === '/blog' || pathname.startsWith('/blog/'));
 	});
 
 	let activeTransition;
@@ -27,8 +53,8 @@
 			if (!document.startViewTransition) return;
 			if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-			const fromDocs = navigation.from?.url.pathname.startsWith('/docs');
-			const toDocs = navigation.to?.url.pathname.startsWith('/docs');
+			const fromDocs = stripLanguagePrefix(navigation.from?.url.pathname ?? '').startsWith('/docs');
+			const toDocs = stripLanguagePrefix(navigation.to?.url.pathname ?? '').startsWith('/docs');
 			if (fromDocs && toDocs) return;
 
 			return new Promise((resolve) => {
@@ -70,7 +96,7 @@
 	let wasOnDocs = false;
 	$effect(() => {
 		if (!browser) return;
-		const onDocs = page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/');
+		const onDocs = pathname === '/docs' || pathname.startsWith('/docs/');
 		untrack(() => {
 			if (onDocs && !wasOnDocs && window.matchMedia('(min-width: 1024px)').matches) {
 				docTreeModal.open = true;
@@ -83,7 +109,7 @@
 	$effect(() => {
 		if (!browser) return;
 
-		const onDocs = page.url.pathname.startsWith('/docs');
+		const onDocs = pathname.startsWith('/docs');
 		const dockedOpen = onDocs && page.url.searchParams.get('focus') !== 'true' && docTreeModal.open && docTreeModal.docked;
 
 		document.documentElement.classList.toggle('doc-tree-docked', dockedOpen);
@@ -104,10 +130,14 @@
 	<link rel="stylesheet" href="/fonts/fonts.css" />
 </svelte:head>
 
+<div style="display: contents" use:localizeSiteLinks={{ localize, code: siteLanguage.code }}>
+
 {#key page.url.pathname}
 	{@render children()}
 {/key}
 <CommandPalette />
 {#if !browser || page.url.searchParams.get('focus') !== 'true'}
-	<DocTreeModal currentHref={page.url.pathname} />
+	<DocTreeModal currentHref={pathname} />
 {/if}
+
+</div>

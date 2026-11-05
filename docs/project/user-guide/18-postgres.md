@@ -62,7 +62,7 @@ Set **both** `auth.pass_table` and `storage.imapsql` to the same Postgres `drive
 
 4. Stop SQLite-using processes if you already started the server once. Restart Madmail (`systemctl restart madmail`, or `docker restart madmail`). First boot against an empty Postgres database applies `crates/chatmail-db/migrations/postgres/`.
 
-5. Confirm with `madmail status` and a login or `madmail accounts list`. Leftover `credentials.db` / `chatmail.db` files in `state_dir` are unused after the switch; they are not deleted automatically.
+5. Confirm with `madmail status` and a login or `madmail accounts status`. Leftover `credentials.db` / `chatmail.db` files in `state_dir` are unused after the switch; they are not deleted automatically.
 
 Use `sslmode=require` (or stricter) when Postgres is not on localhost. Do not commit DSNs with real passwords.
 
@@ -80,11 +80,11 @@ Stop Madmail first so SQLite is idle.
 
 ```bash
 sudo systemctl stop madmail
-madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' --dry-run
-madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' -y
+sudo madmail --config /etc/madmail/madmail.conf db sqlite-to-postgres --dsn 'host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable' --dry-run
+sudo madmail --config /etc/madmail/madmail.conf db sqlite-to-postgres --dsn 'host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable' -y
 ```
 
-`--dry-run` only counts SQLite rows. A real copy applies v2 Postgres migrations, then inserts application tables. It refuses if Postgres already has password rows unless you pass `--force`. CLI flags: [`db sqlite-to-postgres`](../../guide/cli/db-sqlite-to-postgres.md).
+`--dry-run` only counts SQLite rows. A real copy applies v2 Postgres migrations, then inserts application tables. Use a fresh, empty destination. `--force` deletes existing rows from the copied destination tables; do not use it for this workflow. CLI flags: [`db sqlite-to-postgres`](../../guide/cli/db-sqlite-to-postgres.md).
 
 Then set `driver postgres` and the same DSN in **both** config blocks (as in [Fresh Postgres](#fresh-postgres-recommended-path)) and start the server.
 

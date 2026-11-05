@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, localize } = useSiteLanguage();
 	/** @type {{ links: { label: string, href: string }[], class?: string, currentHref?: string, ariaLabel?: string }} */
 	let { links, class: className = '', currentHref = '', ariaLabel = 'Documentation' } = $props();
 
@@ -11,12 +13,12 @@
 <nav class={className} aria-label={ariaLabel}>
 	{#each links as link}
 		<a
-			href={link.href}
+			href={localize(link.href)}
 			class:active={currentHref === link.href}
 			aria-current={currentHref === link.href ? 'page' : undefined}
 			rel={isExternal(link.href) ? 'noopener noreferrer' : undefined}
 		>
-			{link.label}
+			{t(link.label)}
 		</a>
 	{/each}
 </nav>

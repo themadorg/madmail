@@ -1,7 +1,10 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import { browser } from '$app/environment';
 	import { fade } from 'svelte/transition';
 	import { cubicInOut } from 'svelte/easing';
+	import closeIcon from '$lib/icons/x-mark.svg?raw';
 	import panelCenter from '$lib/icons/panel-center.svg?raw';
 	import panelLeft from '$lib/icons/panel-left.svg?raw';
 
@@ -65,7 +68,7 @@
 	}
 
 	function moveResize(event) {
-		if (resizing) resizeTo(event.clientX);
+		if (resizing) resizeTo(document.documentElement.dir === 'rtl' ? window.innerWidth - event.clientX : event.clientX);
 	}
 
 	function resizeKey(event) {
@@ -73,7 +76,7 @@
 		event.preventDefault();
 		if (event.key === 'Home') resizeTo(200);
 		else if (event.key === 'End') resizeTo(560);
-		else resizeTo(sidebarWidth + (event.key === 'ArrowRight' ? 16 : -16));
+		else resizeTo(sidebarWidth + ((event.key === 'ArrowRight') !== (document.documentElement.dir === 'rtl') ? 16 : -16));
 	}
 
 	$effect(() => {
@@ -123,7 +126,7 @@
 			duration: reducedMotion ? 0 : ms,
 			easing,
 			css: (/** @type {number} */ t) => {
-				if (fromLeft) return `opacity: ${t}; transform: translateX(${(t - 1) * 24}px);`;
+				if (fromLeft) return `opacity: ${t}; transform: translateX(${(t - 1) * (document.documentElement.dir === 'rtl' ? -24 : 24)}px);`;
 				const scale = 0.96 + 0.04 * t;
 				return `opacity: ${t}; transform: translate(-50%, -50%) scale(${scale});`;
 			}
@@ -159,7 +162,7 @@
 		transition:modalTransition={{ duration, easing: cubicInOut }}
 	>
 		{#if sidebarLayout && docked}
-			<div class="resize-handle" role="slider" tabindex="0" aria-label="Resize documentation sidebar"
+			<div class="resize-handle" role="slider" tabindex="0" aria-label={t("Resize documentation sidebar")}
 				aria-orientation="vertical" aria-valuemin="200" aria-valuemax="560" aria-valuenow={sidebarWidth}
 				onpointerdown={startResize} onpointermove={moveResize}
 				onpointerup={() => { resizing = false; }} onlostpointercapture={() => { resizing = false; }}
@@ -170,7 +173,7 @@
 				<button
 					type="button"
 					class="dock"
-					aria-label={docked ? 'Center modal' : 'Dock to left'}
+					aria-label={t(docked ? 'Center modal' : 'Dock to left')}
 					aria-pressed={docked}
 					onclick={toggleDock}
 				>
@@ -178,7 +181,7 @@
 				</button>
 			{/if}
 			{#if footerControls}{@render footerControls()}{/if}
-			{#if !hideClose}<button type="button" class="close" aria-label="Close" onclick={close}>×</button>{/if}
+			{#if !hideClose}<button type="button" class="close" aria-label={t("Close")} onclick={close}><span class="icon" aria-hidden="true">{@html closeIcon}</span></button>{/if}
 		</div>
 
 		{#if title && !logo}
@@ -204,7 +207,7 @@
 {/if}
 
 <style>
-	.resize-handle { position: absolute; top: 0; right: 0; bottom: 0; width: 6px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; z-index: 2; }
+	.resize-handle { position: absolute; top: 0; inset-inline-end: 0; bottom: 0; width: 6px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; z-index: 2; }
 	.resize-handle:hover, .resize-handle:focus-visible, .resizing .resize-handle { background: var(--color-border-strong); }
 	.resizing { user-select: none; }
 	.modal.sidebar-layout.docked { transition: var(--transition-theme); }
@@ -252,7 +255,8 @@
 
 	.modal.docked {
 		top: 0;
-		left: 0;
+		left: auto;
+		inset-inline-start: 0;
 		width: var(--modal-docked-width);
 		height: 100dvh;
 		max-height: 100dvh;
@@ -266,7 +270,7 @@
 		height: calc(100dvh - 3rem);
 		max-height: calc(100dvh - 3rem);
 		padding: 0.75rem;
-		border-right: 1px solid var(--color-border);
+		border-inline-end: 1px solid var(--color-border);
 		background: var(--color-bg);
 	}
 
@@ -286,7 +290,7 @@
 	.controls {
 		position: absolute;
 		top: calc(1rem - 2px);
-		right: 1rem;
+		inset-inline-end: 1rem;
 		z-index: 1;
 		display: flex;
 		align-items: center;
@@ -313,14 +317,14 @@
 	h2 {
 		flex-shrink: 0;
 		margin: 0 0 0.75rem;
-		padding-right: 2.5rem;
+		padding-inline-end: 2.5rem;
 		font-size: 1.15rem;
 		font-weight: 600;
 		letter-spacing: -0.02em;
 	}
 
 	.modal:has(.dock) h2 {
-		padding-right: 4.5rem;
+		padding-inline-end: 4.5rem;
 	}
 
 	.toolbar {
@@ -410,7 +414,7 @@
 
 	.body :global(p:not(.modal-links)) {
 		margin: 0 0 0.75rem;
-		text-align: justify;
+		text-align: start;
 		hyphens: auto;
 	}
 

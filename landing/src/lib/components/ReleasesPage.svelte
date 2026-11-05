@@ -1,4 +1,6 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t } = useSiteLanguage();
 	import { onMount, tick } from 'svelte';
 	import DocHeader from '$lib/components/DocHeader.svelte';
 	import { renderReleaseMarkdown } from '$lib/releaseMarkdown.js';
@@ -55,20 +57,20 @@
 <div class="release-page">
 <main>
 	<div class="page-heading">
-		<h1>{selectedRelease ? selectedRelease.tag_name : 'Releases'}</h1>
-		<p>What’s new, what’s improved, and everything you need to upgrade.</p>
+		<h1>{selectedRelease ? selectedRelease.tag_name : t('Releases')}</h1>
+		<p>{t("What’s new, what’s improved, and everything you need to upgrade.")}</p>
 	</div>
 	{#if loading}
-		<p role="status">Loading releases…</p>
+		<p role="status">{t("Loading releases…")}</p>
 	{:else if failed}
-		<p role="status">Release information is temporarily unavailable. <a href="{repo}/releases">View releases on GitHub</a>.</p>
+		<p role="status">{t("Release information is temporarily unavailable.")} <a href="{repo}/releases">{t("View releases on GitHub")}</a>.</p>
 	{:else if releases.length === 0}
-		<p>No releases available yet.</p>
+		<p>{t("No releases available yet.")}</p>
 	{:else}
 		<div class="release-layout" class:single={selectedRelease}>
 			{#if !selectedRelease}<aside>
-				<nav class="versions" aria-label="Release versions">
-					<h2>Versions</h2>
+				<nav class="versions" aria-label={t("Release versions")}>
+					<h2>{t("Versions")}</h2>
 					{#each releases as release, index (release.id)}
 						<a href={`#${release.tag_name}`} class:active={activeVersion === release.tag_name} aria-current={activeVersion === release.tag_name ? 'location' : undefined} onclick={(event) => {
 							event.preventDefault();
@@ -77,20 +79,20 @@
 								block: 'start'
 							});
 							history.replaceState(history.state, '', `#${release.tag_name}`);
-						}}>{release.tag_name}{#if index === 0}<span>Latest</span>{/if}</a>
+						}}>{release.tag_name}{#if index === 0}<span>{t("Latest")}</span>{/if}</a>
 					{/each}
 				</nav>
 			</aside>{/if}
 			<div class="release-content">
 		{#each releases as release, index (release.id)}
 			<article id={release.tag_name}>
-				{#if index === 0 && !selectedRelease}<p class="latest">Latest release</p>{/if}
+				{#if index === 0 && !selectedRelease}<p class="latest">{t("Latest release")}</p>{/if}
 				<h2><a class="release-title" href={`/releases/${encodeURIComponent(release.tag_name)}`}>{release.name || release.tag_name}</a></h2>
 				<p class="date">{release.tag_name} · <time datetime={release.published_at}>{release.published_at.slice(0, 10)}</time></p>
-				{#if release.body}<div class="notes">{@html renderReleaseMarkdown(release.body)}</div>{/if}
+				{#if release.body}<div class="notes" lang="en" dir="ltr">{@html renderReleaseMarkdown(release.body)}</div>{/if}
 				{#if release.assets.length}
 					<details class="assets" open>
-						<summary>Assets <span>{release.assets.length}</span></summary>
+						<summary>{t("Assets")} <span>{release.assets.length}</span></summary>
 					<ul>
 						{#each release.assets as asset (asset.id)}
 							<li>
@@ -100,14 +102,14 @@
 									{#if asset.digest}<code class="asset-digest" title={asset.digest}>{asset.digest}</code>{/if}
 								</div>
 								<span class="asset-size">{asset.size >= 1048576 ? `${(asset.size / 1048576).toFixed(1)} MB` : `${(asset.size / 1024).toFixed(1)} KB`}</span>
-								<a class="asset-download" href={asset.browser_download_url} aria-label={`Download ${asset.name}`} title={`Download ${asset.name}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M3 15v4.5A1.5 1.5 0 0 0 4.5 21h15a1.5 1.5 0 0 0 1.5-1.5V15" /></svg></a>
-								{#if asset.digest}<details class="asset-checksum"><summary>SHA256 checksum</summary><code>{asset.digest}</code></details>{/if}
+								<a class="asset-download" href={asset.browser_download_url} aria-label={`${t("Download")} ${asset.name}`} title={`${t("Download")} ${asset.name}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M3 15v4.5A1.5 1.5 0 0 0 4.5 21h15a1.5 1.5 0 0 0 1.5-1.5V15" /></svg></a>
+								{#if asset.digest}<details class="asset-checksum"><summary>{t("SHA256 checksum")}</summary><code>{asset.digest}</code></details>{/if}
 							</li>
 						{/each}
 					</ul>
 					</details>
 				{/if}
-				<a class="github-release" href={release.html_url}>View release on GitHub
+				<a class="github-release" href={release.html_url}>{t("View release on GitHub")}
 					<!-- Heroicons: arrow-top-right-on-square (MIT). -->
 					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" width="18" height="18">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />

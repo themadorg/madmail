@@ -17,14 +17,14 @@ madmail db sqlite-to-postgres --dsn <DSN> [--sqlite PATH] [--dry-run] [--force] 
 | `--dsn` | Postgres URL (`postgres://…`) or libpq `key=value` string |
 | `--sqlite` | SQLite file (default: application DB from config / state-dir) |
 | `--dry-run` | Count SQLite rows only; do not connect to Postgres |
-| `--force` | `DELETE` every row from all copied Postgres tables first (otherwise the copy is refused when any of them is non-empty) |
+| `--force` | Replace existing rows in the copied destination tables; use a fresh, empty destination for a normal migration |
 | `-y`, `--yes` | Skip confirmation (`--dry-run` does not prompt) |
 
 ## Notes
 
 - Stop the server before copying a live database.
 - `--dry-run` never writes. A real copy creates the v2 Postgres schema (sqlx migrations) then inserts rows.
-- The copy runs in a single transaction, including the `--force` deletes: if any table fails, the Postgres database is left exactly as it was.
+- Copied rows and `--force` deletes run in one transaction: if a table fails, those changes are rolled back. Schema preparation happens before that transaction, so newly created schema objects may remain.
 - Copying into a Postgres database whose `passwords` table still uses the legacy Madmail key/value layout is refused; migrate that database to the v2 schema first.
 - Legacy Madmail (Go) databases are read from their own table and column names (singular `quota`, `failed_http_s` / `success_http_s`). The report's `source_table` column shows what was actually read.
 - Mail files are not copied. `sharing.db` is not copied.

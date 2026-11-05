@@ -1,26 +1,28 @@
 <script>
+	import { useSiteLanguage } from '$lib/siteLanguage.svelte.js';
+	const { t, localize, localizeTree } = useSiteLanguage();
 	import chevronRight from '$lib/icons/chevron-right.svg?raw';
 
 	/** @type {{ title: string, entries: import('$lib/docTreeData.js').DocDirListingEntry[] }} */
 	let { title, entries } = $props();
 
-	const folders = $derived(entries.filter((entry) => entry.kind === 'dir'));
-	const pages = $derived(entries.filter((entry) => entry.kind === 'file'));
+	const folders = $derived(localizeTree(entries).filter((entry) => entry.kind === 'dir'));
+	const pages = $derived(localizeTree(entries).filter((entry) => entry.kind === 'file'));
 </script>
 
-<h1>{title}</h1>
+<h1>{t(title)}</h1>
 
 {#if entries.length === 0}
-	<p class="empty">This section has no pages yet.</p>
+	<p class="empty">{t("This section has no pages yet.")}</p>
 {:else}
 	{#if folders.length}
 		<section class="section">
-			<p class="group-label">Folders</p>
+			<p class="group-label">{t("Folders")}</p>
 			<ul class="list">
 				{#each folders as entry (entry.href)}
 					<li>
-						<a href={entry.href} class="item item--dir">
-							<span class="label">{entry.label}</span>
+						<a href={localize(entry.href)} class="item item--dir">
+							<span class="label">{t(entry.label)}</span>
 							<span class="icon" aria-hidden="true">{@html chevronRight}</span>
 						</a>
 					</li>
@@ -31,12 +33,12 @@
 
 	{#if pages.length}
 		<section class="section">
-			<p class="group-label">{folders.length ? 'Pages' : 'Pages in this section'}</p>
+			<p class="group-label">{t(folders.length ? 'Pages' : 'Pages in this section')}</p>
 			<ul class="list">
 				{#each pages as entry (entry.href)}
 					<li>
-						<a href={entry.href} class="item">
-							<span class="label">{entry.label}</span>
+						<a href={localize(entry.href)} class:untranslated={entry.translationAvailable === false} title={entry.translationAvailable === false ? t("Not available in this language") : undefined} class="item">
+							<span class="label">{t(entry.label)}</span>
 							<span class="icon" aria-hidden="true">{@html chevronRight}</span>
 						</a>
 					</li>
@@ -116,9 +118,13 @@
 		text-decoration: none;
 	}
 
+	.section ul.list > li > a.item.untranslated { color: var(--color-text-faint); opacity: 0.6; cursor: pointer; background: transparent; }
+
 	.label {
 		min-width: 0;
 	}
+
+	.icon:dir(rtl) { transform: rotate(180deg); }
 
 	.icon :global(svg) {
 		display: block;
