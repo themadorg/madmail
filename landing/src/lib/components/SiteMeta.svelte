@@ -19,6 +19,8 @@
 			return page.status === 404 ? '404 · Madmail' : `${page.status} · Madmail`;
 		}
 
+		if (page.data?.fullTitle) return page.data.fullTitle;
+
 		if (page.data?.metaTitle || page.data?.title) {
 			return `${page.data.metaTitle ?? page.data.title} · Madmail`;
 		}
@@ -30,6 +32,13 @@
 	// Pages that render the same content as another URL point their canonical at it.
 	const canonicalUrl = $derived(`${siteOrigin}${page.data?.canonical ?? page.url.pathname}`);
 	const locale = $derived(ogLocales[page.data?.language ?? 'en'] ?? 'en_US');
+	/** Other editions of this page, as og:locale:alternate. */
+	const altLocales = $derived(
+		(page.data?.alternates ?? [])
+			.map((/** @type {{ hreflang: string }} */ a) => ogLocales[a.hreflang])
+			.filter((/** @type {string | undefined} */ l) => l && l !== locale)
+	);
+	const imageAlt = $derived(page.data?.ogImageAlt ?? 'Madmail: chatmail relay for Delta Chat, on an airmail envelope');
 	/** @type {{ hreflang: string, href: string }[]} */
 	const alternates = $derived(isError ? [] : (page.data?.alternates ?? []));
 	const markdownHref = $derived(isError ? null : (page.data?.markdownHref ?? null));
@@ -62,6 +71,9 @@
 		<meta property="article:author" content={`https://github.com/${encodeURIComponent(page.data.author)}`} />
 	{/if}
 	<meta property="og:locale" content={locale} />
+	{#each altLocales as alt (alt)}
+		<meta property="og:locale:alternate" content={alt} />
+	{/each}
 	<meta property="og:site_name" content={siteName} />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
@@ -69,13 +81,14 @@
 	<meta property="og:image" content={ogImageUrl} />
 	<meta property="og:image:width" content={String(ogImageWidth)} />
 	<meta property="og:image:height" content={String(ogImageHeight)} />
-	<meta property="og:image:alt" content="Madmail logo and tagline" />
+	<meta property="og:image:type" content="image/png" />
+	<meta property="og:image:alt" content={imageAlt} />
 
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
 	<meta name="twitter:image" content={ogImageUrl} />
-	<meta name="twitter:image:alt" content="Madmail logo and tagline" />
+	<meta name="twitter:image:alt" content={imageAlt} />
 
 	{#if jsonLd}
 		{@html `<script type="application/ld+json">${jsonLd}</script>`}

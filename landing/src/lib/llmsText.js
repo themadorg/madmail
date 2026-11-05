@@ -71,23 +71,25 @@ async function docLink(route) {
 
 const englishPosts = () => posts.filter((post) => post.language === 'en');
 
-const summary = `> Madmail is a free, open-source (AGPL-3.0) chatmail relay written in Rust: a purpose-built email server for Delta Chat that ships SMTP, IMAP, HTTP federation, an admin API, and TURN/Iroh call relays as a single Linux binary.`;
+const summary = `> Madmail is a free, open-source (AGPL-3.0-or-later) chatmail relay written in Rust: a purpose-built email server for Delta Chat that ships SMTP, IMAP, HTTP federation, an admin API, and TURN/Iroh call relays as a single binary. It is made by TheMadOrg (https://themadorg.net). We care about secure communication.`;
 
 const facts = `Key facts:
 
 - Madmail is a chatmail relay, not a general-purpose mail server. It only accepts end-to-end encrypted (OpenPGP) mail and rejects plaintext messages.
 - Accounts are created just in time (JIT registration) the first time a Delta Chat client logs in; there is no separate sign-up flow.
 - Relays federate over HTTPS (\`/mxdeliv\`) and fall back to SMTP, so Madmail interoperates with other chatmail relays and regular mail servers.
-- Install on Linux (amd64/arm64) with one binary: download from ${repoUrl}/releases/latest, then run \`sudo ./madmail install --simple --domain mail.example.org\`. Docker images are also available.
+- Install on Linux (amd64/arm64) with one binary: download from ${repoUrl}/releases/latest, then run \`sudo ./madmail install --simple --domain mail.example.org --acme-email you@example.com\`, or \`--ip YOUR_IP --auto-ip-cert\` without a domain. Windows 10 and 11 have an installer, and Docker images are also available.
+- Madmail Admin (https://admin.madmail.chat) is the web panel for a running relay; Madmail Mobile (${siteOrigin}/phone) hosts a relay on an Android phone.
 - TLS certificates come from ACME (Let's Encrypt) automatically, including for bare-IP deployments.
-- Source code: ${repoUrl}. Website: ${siteOrigin}/. Latest release: ${releases[0]?.tag_name ?? 'see GitHub'}.`;
+- Licence: AGPL-3.0-or-later. Source code: ${repoUrl}. Website: ${siteOrigin}/. Latest release: ${releases[0]?.tag_name ?? 'see GitHub'}.
+- The home page is published in English (${siteOrigin}/), Persian (${siteOrigin}/fa), Spanish (${siteOrigin}/es) and Russian (${siteOrigin}/ru); the documentation is in English.`;
 
 export async function buildLlmsTxt() {
 	const groups = groupedRoutes();
 	const parts = [`# Madmail\n\n${summary}\n\n${facts}`];
 
 	parts.push(
-		`## Start here\n\n- [Documentation index](${siteOrigin}/docs.md): Overview of the Madmail user and operator guide.\n- [Quick start](${siteOrigin}${markdownUrlForRoute('project/user-guide/02-quick-start')}): Install and run a chatmail relay, from local testing to public deployment.\n- [What is chatmail?](${siteOrigin}${markdownUrlForRoute('project/user-guide/01-what-is-chatmail')}): How chatmail relays work and what Madmail implements.\n- [Full documentation in one file](${siteOrigin}/llms-full.txt): The guides below concatenated as Markdown.`
+		`## Start here\n\n- [Documentation index](${siteOrigin}/docs.md): Overview of the Madmail user and operator guide.\n- [Quick start](${siteOrigin}${markdownUrlForRoute('project/user-guide/02-quick-start')}): Install and run a chatmail relay, from local testing to public deployment.\n- [What is chatmail?](${siteOrigin}${markdownUrlForRoute('project/user-guide/01-what-is-chatmail')}): How chatmail relays work and what Madmail implements.\n- [Full documentation in one file](${siteOrigin}/llms-full.txt): The guides below concatenated as Markdown.\n- [Madmail in Persian](${siteOrigin}/fa), [in Spanish](${siteOrigin}/es), [in Russian](${siteOrigin}/ru): The home page, translated.`
 	);
 
 	for (const section of SECTIONS.filter((candidate) => !candidate.optional)) {

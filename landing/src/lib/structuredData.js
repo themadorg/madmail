@@ -1,6 +1,10 @@
+import { faqKeys } from './i18n/faq.js';
+import { homePath, languages, translate } from './i18n/index.js';
 import {
 	defaultDescription,
 	ogImageUrl,
+	organizationGithub,
+	organizationId,
 	organizationName,
 	organizationUrl,
 	repoUrl,
@@ -11,17 +15,21 @@ import {
 
 /** schema.org JSON-LD graphs, rendered by SiteMeta.svelte from `page.data.jsonLd`. */
 
-const organizationId = `${siteOrigin}/#organization`;
 const websiteId = `${siteOrigin}/#website`;
 const softwareId = `${siteOrigin}/#software`;
+const sourceId = `${siteOrigin}/#source`;
 
+/**
+ * TheMadOrg's full Organization node lives on themadorg.net under the same @id;
+ * this is the short reference copy so the graph resolves on its own.
+ */
 const organization = {
 	'@type': 'Organization',
 	'@id': organizationId,
 	name: organizationName,
 	url: organizationUrl,
-	logo: `${siteOrigin}/apple-touch-icon.png`,
-	sameAs
+	logo: `${organizationUrl}/logo.png`,
+	sameAs: [organizationGithub]
 };
 
 const website = {
@@ -30,48 +38,92 @@ const website = {
 	name: siteName,
 	url: `${siteOrigin}/`,
 	description: defaultDescription,
-	inLanguage: 'en',
+	inLanguage: languages.map((l) => l.code),
 	publisher: { '@id': organizationId }
 };
 
-/** @param {{ tag_name: string, published_at?: string } | null | undefined} latest */
-export function homeJsonLd(latest) {
+/**
+ * The home page graph for one locale: who publishes Madmail, what the software and its
+ * source are, this page, and the questions shown on it (FAQPage mirrors the visible list).
+ * @param {{ tag_name: string, published_at?: string } | null | undefined} latest
+ * @param {string} [lang]
+ */
+export function homeJsonLd(latest, lang = 'en') {
+	/** @param {string} key */
+	const t = (key) => translate(lang, key);
+	const pageUrl = `${siteOrigin}${homePath(lang)}`;
+	const pageId = `${pageUrl}#webpage`;
+	const version = latest ? latest.tag_name.replace(/^v/, '') : null;
 	return {
 		'@context': 'https://schema.org',
 		'@graph': [
 			organization,
 			website,
 			{
+				'@type': 'WebPage',
+				'@id': pageId,
+				url: pageUrl,
+				name: t('meta_title'),
+				description: t('meta_description'),
+				inLanguage: lang,
+				isPartOf: { '@id': websiteId },
+				about: { '@id': softwareId },
+				mainEntity: { '@id': softwareId },
+				primaryImageOfPage: { '@type': 'ImageObject', url: ogImageUrl, width: 1200, height: 630 },
+				publisher: { '@id': organizationId }
+			},
+			{
 				'@type': 'SoftwareApplication',
 				'@id': softwareId,
 				name: siteName,
 				alternateName: ['madmail', 'Madmail chatmail relay'],
-				description: defaultDescription,
+				description: t('faq_what_a'),
+				slogan: t('motto'),
 				url: `${siteOrigin}/`,
 				image: ogImageUrl,
 				applicationCategory: 'CommunicationApplication',
-				applicationSubCategory: 'Mail server',
-				operatingSystem: 'Linux',
-				programmingLanguage: 'Rust',
-				license: 'https://www.gnu.org/licenses/agpl-3.0.html',
+				applicationSubCategory: 'Chatmail relay',
+				operatingSystem: 'Linux, Windows',
+				license: 'https://spdx.org/licenses/AGPL-3.0-or-later.html',
 				isAccessibleForFree: true,
 				offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
 				downloadUrl: `${repoUrl}/releases/latest`,
-				codeRepository: repoUrl,
-				...(latest ? { softwareVersion: latest.tag_name.replace(/^v/, '') } : {}),
+				installUrl: `${siteOrigin}/docs/quick-setup`,
+				softwareHelp: { '@type': 'CreativeWork', url: `${siteOrigin}/docs` },
+				...(version ? { softwareVersion: version } : {}),
 				...(latest?.published_at ? { dateModified: latest.published_at } : {}),
-				featureList: [
-					'SMTP submission and delivery',
-					'IMAP mailbox access',
-					'PGP-only policy: unencrypted mail is rejected',
-					'Just-in-time account registration',
-					'HTTP federation with SMTP fallback',
-					'No-Log mode',
-					'Built-in TURN and Iroh relay for calls and WebXDC',
-					'Automatic ACME/TLS certificates'
-				],
+				featureList: ['f_mail', 'f_pgp', 'f_jit', 'f_fed', 'f_nolog', 'f_calls', 'f_tls', 'f_admin'].map(
+					(key) => `${t(key)}: ${t(`${key}_body`)}`
+				),
+				sameAs,
 				author: { '@id': organizationId },
 				publisher: { '@id': organizationId }
+			},
+			{
+				'@type': 'SoftwareSourceCode',
+				'@id': sourceId,
+				name: 'madmail',
+				description: t('faq_what_a'),
+				codeRepository: repoUrl,
+				programmingLanguage: 'Rust',
+				runtimePlatform: 'Linux',
+				license: 'https://spdx.org/licenses/AGPL-3.0-or-later.html',
+				targetProduct: { '@id': softwareId },
+				...(version ? { version } : {}),
+				author: { '@id': organizationId },
+				publisher: { '@id': organizationId }
+			},
+			{
+				'@type': 'FAQPage',
+				'@id': `${pageUrl}#faq`,
+				url: pageUrl,
+				inLanguage: lang,
+				isPartOf: { '@id': pageId },
+				mainEntity: faqKeys.map((key) => ({
+					'@type': 'Question',
+					name: t(`faq_${key}_q`),
+					acceptedAnswer: { '@type': 'Answer', text: t(`faq_${key}_a`) }
+				}))
 			}
 		]
 	};
