@@ -20,6 +20,10 @@ madmail federation list --json
 - **Success:** `{"ok":true,"command":"…","data":{…}}` on stdout (optional `message` field).
 - **Failure:** `{"ok":false,"error":"…"}` on stderr, exit code 1.
 
+Installer exception: `install` prints human progress before its final JSON envelope.
+Its config/state paths also follow [installer-specific rules](install.md#paths-and-global-flags);
+global `--config` does not select the file written or repaired.
+
 Full schemas per command: [json-output.md](json-output.md).
 
 ## Path auto-detection

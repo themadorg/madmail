@@ -8,7 +8,10 @@ It is written in the same spirit as the original Madmail "chatmail" documentatio
 
 - New to chatmail? Start with **[What is Chatmail?](./01-what-is-chatmail.md)**
 - Want to run your own server right now? See **[Quick Start: Local Dev & Public Server](./02-quick-start.md)**
-- Just want the shortest path to a working public server? Follow **[Install on a Public IP with Let's Encrypt](./../install-simple-ip-acme.md)** (short & practical)
+- Just want the shortest path to a working public server? Follow **[Install on a Public IP with Let's Encrypt](../../install-simple-ip-acme.md)** (short & practical)
+
+- Need custom installation paths or an account/unit repair? See the **[complete installer CLI reference](../../guide/cli/install.md)** and **[Quick Setup examples](02-quick-start.md#custom-paths-and-targeted-repair)**.
+- For all operator commands, use the **[full CLI index](../../guide/cli/README.md)**.
 
 ## Main Guides
 

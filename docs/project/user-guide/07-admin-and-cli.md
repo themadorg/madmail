@@ -13,6 +13,19 @@ The application database defaults to SQLite (`credentials.db` / `chatmail.db`). 
 
 One particularly useful CLI command for production servers is `madmail upgrade` (see the Quick Start guide for how signed binary upgrades work).
 
+## Installation and host repair
+
+The [full CLI index](../../guide/cli/README.md) documents operator commands.
+For installation, use the [complete `install` reference](../../guide/cli/install.md):
+`--system` provisions a Unix service even at custom paths; `--local` bootstraps
+application files without host provisioning. `--user-only` repairs an existing
+account and permissions; `--systemd-only` replaces its unit and reloads systemd.
+Repair modes preserve application file contents and never start services.
+
+Use the [Quick Setup examples](02-quick-start.md#custom-paths-and-targeted-repair)
+and [repair prerequisites](../../guide/cli/install.md#repair-only-the-service-account-or-systemd-unit).
+Full install rewrites configuration; skip flags do not make it a targeted repair.
+
 ## The Web Admin Dashboard
 
 This is the graphical way to manage the server **when the admin SPA is embedded and enabled**.
