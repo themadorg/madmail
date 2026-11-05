@@ -24,15 +24,32 @@ that is a symlink to a data volume is fine.
 
 Install and repair print `Skipping ownership of <path>: <reason>` for a TLS file
 they will not change by path, and `Ownership of <path> left unchanged: <reason>`
-for an entry in the state directory they left alone, for example a file that has
-several hard links and belongs to another account. These are protections, not
-errors: the service account can write to its state directory, so install does not
-follow links there. Keep certificates and the config file in root-owned
-directories outside the state directory, or check the named file and fix its
-owner yourself. An error that starts with `refusing to` names the
-directory or link on the path that the service account can change (or says that
-the config file has several hard links); move the file to a root-owned directory
-outside the state directory and run the command again.
+for an entry in the state directory they left alone, for example
+`belongs to uid 0, not to the service account; it may be another account's file`.
+Install gives a file in the state directory to the service account only when it
+already belongs to that account (or to the previous owner of the state directory)
+or install wrote it in that run, so a file a root command created there, or a link
+to another account's file, keeps its owner. These are protections, not errors: the
+service account can write to its state directory, so install does not follow
+links there. Check the named file and, if madmail needs it, change its owner
+yourself. Keep certificates and the config file in root-owned directories outside
+the state directory.
+
+When install prints `<state> belonged to uid <n>, which is now account <name>`,
+the old service uid was reused by another account; files of that uid in the state
+directory are left as they are. Give them to the service account yourself after
+checking them, for example
+`find <state> -uid <n> -exec chown -h madmail:madmail {} +`.
+
+An error that starts with `refusing to` stops install before it writes the file.
+It names the directory or link on the path that the service account can change,
+or says that the config file has several hard links, that a config path outside
+`--state-dir` resolves into the state directory through a link, or that
+`--binary-path` is in (or resolves into) the state directory. Move the file to a
+root-owned directory outside the state directory and run the command again.
+With `--skip-user`, install refuses to run when the service account does not exist
+but the state directory exists and is not owned by root; create the account (run
+install without `--skip-user`) or give the directory to root first.
 
 Uninstall leaves a directory in place when its name does not show that it belongs
 to madmail, and lists it as `Left in place: <path> (<reason>)`. Check the listed

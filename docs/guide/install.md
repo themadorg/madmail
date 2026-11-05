@@ -87,8 +87,9 @@ install refuses a masked unit, and refuses an existing `--state-dir` when the
 service account's home is elsewhere and still exists, before changing anything; see
 [custom paths](cli/install.md#new-server-with-custom-paths). Install treats the
 state directory as controlled by the service account: it never reads, writes or
-changes the owner or mode of a file through a link inside it, and changes the
-owner of a hard-linked file there only when it belongs to the service account; see
+changes the owner or mode of a file through a link inside it, and gives a file
+there to the service account only when it already belongs to the service account
+or install wrote it in this run; see
 [path safety](cli/install.md#path-safety). Uninstall removes a config or state
 directory as a whole only when it is named for madmail; see
 [uninstall](cli/uninstall.md#what-is-removed).

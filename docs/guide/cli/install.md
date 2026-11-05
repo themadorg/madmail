@@ -93,48 +93,76 @@ IP certificates, see [IP ACME setup](../../install-simple-ip-acme.md).
 
 ## Path safety
 
-These rules apply to a system install and to `--user-only` repair when install
-creates or uses the service account. They assume the service account may be
-compromised and may change its state directory while install runs.
+These rules apply to a system install and to `--user-only` repair when the
+service account exists (install creates it first unless `--skip-user` is given).
+They assume the service account may be compromised and may change its state
+directory while install runs.
 
 - Every path install writes into the state directory, and the paths of the
-  config file, the TLS files and their directories, are resolved one component
-  at a time. (The binary, the systemd unit, the man page and completions go into
-  root-owned system directories and are written by path.)
-  A directory or link on the way that is owned by the service account, a
-  directory writable by its group, or a world-writable directory without the
-  sticky bit is never followed. When install would write through such a path
-  (the config file, a generated certificate or key) or change the config file's
-  owner, it stops with an error. A TLS file whose owner install only adjusts is
-  left unchanged instead, and the output notes
-  `Skipping ownership of <path>: <reason>`.
-- A TLS or config path that reaches the state directory (it is below
-  `--state-dir`, or a link on its path points into it) is not changed by path.
-  The ownership walk gives it the service owner, and the output notes
+  config file, the TLS files and their directories and the binary, are resolved
+  one component at a time. (The systemd unit, the man page and completions go
+  into root-owned system directories and are written by path.)
+  A directory or link on the way that is owned by the service account (or by
+  the previous owner of the state directory), a directory writable by one of the
+  service account's groups (primary or supplementary), or a world-writable
+  directory without the sticky bit is never followed. When install would write
+  through such a path (the config file, a generated certificate or key, the
+  binary) or change the config file's owner, it stops with an error. A TLS file
+  whose owner install only adjusts is left unchanged instead, and the output
+  notes `Skipping ownership of <path>: <reason>`. Only mode bits are checked: a
+  POSIX ACL that lets the service account write a directory is caught only when
+  that directory's group is one of the service account's groups.
+- A TLS path that reaches the state directory (it is below `--state-dir`, or a
+  link on its path points into it) is not changed by path. The ownership walk
+  sets its owner, and the output notes
   `Skipping ownership of <path>: inside the service-writable state directory`.
-- The state tree is walked by file descriptor. Links are skipped. A file with
-  more than one hard link is changed only when it belongs to the service account
-  (or to the previous owner of the state directory, after the account was
-  recreated with a new uid); any other one is listed as
-  `Ownership of <path> left unchanged: has <n> hard links and belongs to uid <uid>, ...`.
-  Mail files, which the store hard-links between folders, belong to the service
-  and are changed.
+- A config path given outside `--state-dir` that resolves into the state
+  directory through a link is refused. A config path below `--state-dir` is
+  allowed.
+- `--binary-path` must not be inside `--state-dir` and its directory must not
+  resolve into the state directory; install refuses such a path before it
+  changes anything. The binary is written as `root:root`, mode `0755`.
+- The state tree is walked by file descriptor. Links are skipped. A file
+  (anything but a directory) is changed only when it belongs to the service
+  account, to the previous owner of the state directory (after the account was
+  recreated with a new uid), or was written by this install run; the link count
+  does not matter. Any other file is listed as
+  `Ownership of <path> left unchanged: belongs to uid <uid>, not to the service account; ...`
+  (with `and has <n> hard links` when it has more than one). Check such a file
+  and change its owner yourself if madmail needs it, for example a database file
+  that a root command created. Mail files, which the store hard-links between
+  folders, belong to the service and are changed.
+- When the previous owner's uid now belongs to another account, install says so
+  (`<state dir> belonged to uid <uid>, which is now account <name>`) and does not
+  count that uid as the service's: files of that uid are listed and left alone.
 - The config file ends with mode `0640`: owned by `root:<group>` outside the
   state directory, by the service account inside it. Outside the state
-  directory, a config file with more than one hard link is refused.
+  directory, a config file with more than one hard link is refused; inside it,
+  a config file that belongs to another account and was not written by this run
+  is refused.
 - The config and certs directories are re-owned to `root:<group>` and lose
   their group and other write bits only when they are dedicated to madmail
   (named `madmail`, `chatmail`, either followed by `-` or `_` and a suffix, or the
   binary name, and not a well-known directory such as `/etc` or `/usr/local/etc`;
-  a `certs` directory directly inside such a directory also counts). Any other
-  directory keeps its owner and mode, and the output says so.
+  a `certs` directory directly inside such a directory also counts). The rule
+  applies both to the path as given and to the directory it resolves to, and the
+  resolved directory must not be one of the well-known directories (compared by
+  device and inode). Any other directory keeps its owner and mode, and the
+  output says so (`Leaving owner and mode of <dir> unchanged`).
 - ACME certificates are obtained into a private temporary directory and then
-  copied into place. The install language is stored in the database with the
-  service account's user and group ids, not as root.
+  copied into place. When the service account controls the state directory,
+  the install language is stored in the database with the service account's
+  effective user and group ids, not as root (see the limit in
+  `docs/TDD/12-security.md`).
 
-With `--skip-user` (and for a local install) there is no service account to
-guard against: files are written by path as the calling user, and the config file
-is written with mode `0640` without following a link at its own name.
+With `--skip-user` and an existing service account, install still writes every
+file through these checks; it only skips the account step and the ownership
+changes (a rewritten config file keeps the previous file's owner). With
+`--skip-user` and no such account, there is no service account to guard against:
+files are written by path as root, and the config file is written with mode
+`0640` without following a link at its own name. If the account is missing but
+the state directory exists and is not owned by root, `--skip-user` is refused.
+A local install writes by path as the calling user.
 
 ## Local bootstrap
 

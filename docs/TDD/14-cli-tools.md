@@ -292,13 +292,14 @@ exists (`usermod -m` refuses an existing target); `-m` is used only when it does
 Root works next to a service account that owns the state directory and may be
 compromised: while root runs, it can create, rename (including
 `renameat2(RENAME_EXCHANGE)` loops) and link anything in that tree. During a
-system install or `--user-only` repair, every root write into the state
-directory, and every write or ownership or mode change of the config file, the
-TLS files and their directories, therefore goes through file descriptors
+system install (also with `--skip-user` when the account exists) or a
+`--user-only` repair, every root write into the state directory, and every write
+or ownership or mode change of the config file, the TLS files and their
+directories and the binary, therefore goes through file descriptors
 (`ctl/secure_fs.rs`), never through a path the service account can change. The
-binary, the systemd unit, the man page and shell completions, and the parent of
-the state directory (created before the account) are written by path into
-root-owned system directories:
+systemd unit, the man page and shell completions, and the parent of the state
+directory (created before the account) are written by path into root-owned
+system directories:
 
 - Paths are resolved by a checked resolver. It opens `/` and then each component
   relative to the previous directory with `O_NOFOLLOW`; a symbolic link is read
@@ -306,8 +307,10 @@ root-owned system directories:
   Every directory and link on the way is checked with `fstat` /
   `fstatat(AT_SYMLINK_NOFOLLOW)` and refused when it is owned by the service uid
   (or by the previous owner of the state directory), is a directory writable by
-  the service group, or is world-writable without the sticky bit. Uid 0 never
-  counts as the service. Because every directory passed through is trusted, an
+  a group of the service account (primary or supplementary, from `id -G`), or is
+  world-writable without the sticky bit. Uid 0 and gid 0 never count as the
+  service. Only mode bits are read, so a POSIX ACL entry for the service account
+  is caught only when the directory's group is one of its groups. Because every directory passed through is trusted, an
   entry cannot be swapped between its check and the next `openat`.
 - The state directory is opened once with this resolver (an operator link to a
   data volume works) and recognized by device and inode. When resolving any other
@@ -317,55 +320,79 @@ root-owned system directories:
   `O_CREAT | O_EXCL | O_NOFOLLOW`, then `fchmod`, `fchown`, write, `fsync` and
   `renameat`. A planted link or hard link at the target is replaced, not written
   through. This covers the config file, the DKIM key and TXT record, self-signed
-  and ACME certificates and keys, and the ACME account file. The directories
+  and ACME certificates and keys, the ACME account file and the binary (written
+  `root:root` mode 0755 into a trusted directory). The device and inode of every
+  file written this way are recorded for the ownership walk. The directories
   install creates are made with `mkdirat` in trusted directories.
+- `--binary-path` inside `--state-dir`, or whose directory resolves into the
+  state directory or has a refused component, stops install before it changes
+  anything.
 - The ACME client writes into a private staging directory (root, mode 0700, in a
   root-owned or sticky temporary directory). Install copies its results into place
   with the writes above.
 - The install language is written to the SQLite database with the effective uid
   and gid of the service account (`setegid` / `seteuid`, supplementary groups
-  reduced to the service group), after the ownership walk, so root opens no
-  database file in the tree.
+  reduced to the service group), after the ownership walk, whenever the state
+  directory is controlled by the service account under the trust rule above; any
+  other state directory (for example a new root-owned one with `--skip-user`) is
+  used as root. Only the effective ids
+  change; the saved uid stays 0 (see `12-security.md`).
 - The config file is changed through its descriptor: outside the state tree it
   ends `root:<group>` with mode 0640. A config path with a refused component, or a
   config file with more than one hard link, stops install with an error. Inside
-  the tree it is set to mode 0640 and the walk gives it to the service account.
+  the tree it is set to mode 0640 and the walk gives it to the service account; an
+  in-tree config file that belongs to another account and was not written by this
+  run is refused, and so is a config path outside `--state-dir` that resolves into
+  the tree.
 - A TLS file outside the tree is given to the service account through its
   descriptor. A TLS path that reaches the tree, or has a refused component, is not
   changed by path; the output notes `Skipping ownership of <path>`. A TLS file
   whose final object is owned by the service uid is accepted, so repair and
-  reinstall keep working; the hard-link rule below still applies to it.
+  reinstall keep working. Outside the tree a TLS file with more than one hard link
+  is changed only when it belongs to the service uid or the previous service uid;
+  its directory is trusted, so the service account cannot have placed it there.
 - The config directory and the certs directory are re-owned to `root:<group>`,
   and their group and other write bits are cleared, only when they are dedicated
   to madmail (named `madmail`, `chatmail`, either followed by `-` or `_` and a
   suffix, or the binary name, and not a well-known system directory such as `/etc`
   or `/usr/local/etc`; a `certs` directory directly inside such a directory also
-  counts). Any other directory keeps its owner and mode.
+  counts). Both the path as given and the physical path the resolver walked must
+  pass, and the opened directory must not be a well-known directory by device and
+  inode, so a madmail-named link to `/etc/ssl/private` or `/etc` is not followed
+  into a change. Any other directory keeps its owner and mode.
 
 The state tree is chowned by a descriptor walk (`ctl/install/chown_walk.rs`). The
 owner of the state directory before the walk is recorded as the previous service
-uid. Each directory is opened relative to its parent with
+uid, unless `id -nu` names another account for that uid; the trust rule above
+counts the previous owner as untrusted in both cases. Each directory is opened relative to its parent with
 `O_NOFOLLOW | O_DIRECTORY` and changed with `fchown`. Every other entry is opened
 by itself and checked with `fstat` on that descriptor before it is changed: on
 Linux with `openat(O_PATH | O_NOFOLLOW)` and `fchownat(fd, "", AT_EMPTY_PATH)`; on
 other systems regular files are opened with
 `O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY` and changed with `fchown`, and other
-non-directory entries are left unchanged. Links are skipped. A file with more than
-one hard link is changed only when it belongs to the service uid or the previous
-service uid, since otherwise it can be a link to another account's file (for
-example `/etc/shadow` when `fs.protected_hardlinks` is 0); the mail store
+non-directory entries are left unchanged. Links are skipped. Any other
+non-directory is changed only when it belongs to the service uid or the previous
+service uid, or when install wrote it in this run (its device and inode were
+recorded), whatever its link count: a hard link to another account's file (for
+example `/etc/shadow` when `fs.protected_hardlinks` is 0) becomes the inode's
+only link once the original name is replaced by a rename. The mail store
 hard-links every message into the maildirs, and those files belong to the
-service. A file with one link exists only in the tree and is changed whatever its
-owner. Skipped entries are listed as `Ownership of <path> left unchanged: <reason>`.
+service. Skipped entries are listed as `Ownership of <path> left unchanged:
+<reason>` (the first 50, then a count); a file a root command created in the
+tree is among them, and the operator changes its owner after checking it.
 An entry that is replaced or removed during the walk (`ELOOP`, `ENOTDIR`,
 `ENOENT`) is skipped with a warning. The walk is iterative and stops descending
 after 64 levels, each open level holding one descriptor.
 TLS ownership is applied only to the given `--cert-path`/`--key-path` files, so
 custom locations must be repeated.
 
-These protections need the service account: with `--skip-user`, or for a local
-install, files are written by path as the calling user and the config file is
-written with mode 0640 and `O_NOFOLLOW`, owned by that user.
+`--skip-user` skips only the account step and the ownership changes (config,
+TLS, the walk); when the account exists every write above still goes through
+the descriptor handle, and a rewritten config file keeps the previous file's
+owner. With `--skip-user` and no account, files are written by path as root and
+the config file is written with mode 0640 and `O_NOFOLLOW`; that is refused when
+the state directory exists and is not owned by root. A local install writes by
+path as the calling user.
 A passwd
 home that resolves to the same directory as `--state-dir` counts as equal to it. Systemd-only requires an existing config
 file, state directory, executable binary and service account; it writes the unit
@@ -388,9 +415,12 @@ directory in use, `/etc/madmail*` and `/etc/chatmail*`, `/var/lib/madmail*` and
 and `--config` path of every `madmail*`/`chatmail*` unit. The state directory in
 use is `state_dir` from the config file when the config file sets it, and
 `--state-dir` otherwise. `state_dir` from the config file is used only when the
-file and every directory and link on its path are owned by root, are not
-group-writable unless the group is root, and are not world-writable (a directory
-with the sticky bit, such as `/tmp`, may be); otherwise uninstall uses
+file and every directory and link on its path are owned by root, the file is not
+group-writable unless the group is root, no directory is writable by a group of a
+service account (the `User=` accounts of the units and the accounts named like
+the binary, `madmail` or `chatmail`, with their supplementary groups), and
+nothing is world-writable (a directory with the sticky bit, such as `/tmp`, may
+be); otherwise uninstall uses
 `--state-dir` and lists the ignored value as left in place, unless another source
 plans that directory for removal.
 
@@ -408,12 +438,18 @@ the homes of root, regular accounts (uid 1000 or more except `nobody`), `$HOME` 
 
 A directory is also not removed as a whole when it is or contains a path that
 stays: a kept path, a state directory under `--keep-data`, or a config directory
-or file under `--keep-config`. Such a config directory loses only its config file;
-such a state, log, cache or runtime directory is kept. Before each removal the
-parent of the path is resolved with the checked resolver under the same rule;
-a path with a component that fails it is not removed, and uninstall stops with
-an error naming the component. The last
-component is never followed: a link is removed itself, a file is unlinked through
+or file under `--keep-config`. Containment is checked on the paths as written and
+after resolving links in both (the longest existing prefix canonicalized), so a
+config directory that is a link into the state directory counts as inside it; a
+path that cannot be resolved counts as contained. Such a config directory loses
+only its config file; such a state, log, cache or runtime directory is kept.
+Before each removal the parent of the path is resolved with the checked resolver
+under the same rule (a directory group-writable by a group outside the service
+accounts' groups, such as Ubuntu's `/var/log`, root:syslog 0775, passes); a path
+with a component that fails it is not removed, and uninstall stops with an error
+naming the component. The last
+component is never followed: a link is removed itself (the output says
+`Removed link <path> (its target <target> was left in place)`), a file is unlinked through
 the parent's descriptor, and a directory is removed with `remove_dir_all`, which
 does not follow links inside it. `/run`, `/var/log` and `/var/cache` entries are
 derived only from family names, and accounts are deleted with `userdel` without

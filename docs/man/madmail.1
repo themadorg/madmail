@@ -94,10 +94,11 @@ chowns TLS files at the given paths, and they also decide the unit'\&s
 ProtectHome= setting.\& Account repair repoints an existing account at the
 existing state directory without moving it.\& Install and account repair
 never read, write or change the owner or mode of a file through a link
-inside the state directory, and change the owner of a file there with more
-than one hard link only when it belongs to the service account.\& A path
-outside it is not followed through a directory or link the service account
-controls.\& Unit repair refuses a symlinked or masked unit file.\&
+inside the state directory, and give a file there to the service account
+only when it already belongs to the service account or was written by
+that run.\& A path outside it is not followed through a directory or link
+the service account controls, and a \fB--binary-path\fR inside it is
+refused.\& Unit repair refuses a symlinked or masked unit file.\&
 These modes conflict with each other, local/cert-only/skip and Windows
 service/firewall flags.\& Stop the service before account repair.\& Unit
 customizations belong in drop-ins; a failed reload leaves the written unit.\&

@@ -39,10 +39,19 @@ binary (first word of `ExecStart=`) and the config file (the `--config` path in
 state directory in use: the `state_dir` of the config file uninstall reads
 (`--config`) when it sets one, otherwise `--state-dir`.
 
-`state_dir` from the config file is used only when the config file, and every
-directory and link on its path, is owned by root, is not group-writable unless
-the group is root, and is not world-writable (a directory with the sticky bit,
-such as `/tmp`, may be). Otherwise uninstall uses `--state-dir`, and lists the
+`state_dir` from the config file is used only when these all hold:
+
+- the config file, and every directory and link on its path, is owned by root;
+- the config file is not group-writable unless its group is root;
+- no directory on the path is group-writable by a group of a service account
+  (the `User=` accounts of the units and the accounts named like the binary,
+  `madmail` or `chatmail`, with their supplementary groups). A directory
+  group-writable by another system group, such as `/var/log` on Ubuntu
+  (`root:syslog`, mode 0775), passes;
+- nothing on the path is world-writable (a directory with the sticky bit, such
+  as `/tmp`, may be).
+
+Mode bits are read, not ACLs. Otherwise uninstall uses `--state-dir`, and lists the
 ignored directory as left in place with the reason
 `named by state_dir in <config>, which is not used: <component> is <reason>`
 (unless another source plans that directory for removal). A `--dry-run` without
@@ -80,13 +89,17 @@ only that file is removed.
 a path that stays (a path left in place, a state directory under `--keep-data`,
 or a config directory or file under `--keep-config`) is not removed as a whole: a
 config directory then loses only its config file, and a state, log, cache or
-runtime directory is left in place.
+runtime directory is left in place. This is checked both on the paths as written
+and after links in them are resolved, so a config directory that is a link into
+the state directory counts as being inside it. A path that cannot be resolved
+counts as inside.
 
 Before each removal, every directory and link on the way to the path must pass
 the same check as the config file above; otherwise uninstall stops with an error
 that names the failing component. The last component is not followed: a link is
-removed itself, not its target, and a directory is removed without following
-links inside it.
+removed itself, not its target (the output says
+`Removed link <path> (its target <target> was left in place)`), and a directory is
+removed without following links inside it.
 
 `/run/<name>`, `/var/log/<name>` and `/var/cache/<name>` are removed for unit names
 and for the names of removed state directories that follow the naming rule above.

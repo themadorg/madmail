@@ -139,31 +139,56 @@ loops), link and hard-link anything there while root runs, and
 `fs.protected_hardlinks` may be 0.
 
 - Install resolves every path it writes into the state directory, and the paths
-  of the config file, the TLS files and their directories, one component at a
-  time (`ctl/secure_fs.rs`) and does not follow a directory or link owned by the
-  service account (current or previous uid), a directory writable by its group, or
-  a world-writable directory without the sticky bit. Inside the state directory,
-  recognized by device and inode, every component is opened with `O_NOFOLLOW`, and
-  files are written by create-new-then-rename with `fchmod` / `fchown` on the new
-  descriptor. Ownership and modes of those files and directories are changed
-  through the opened descriptor. The binary, the unit file and the man page and
-  completions are written by path into root-owned system directories.
+  of the config file, the TLS files and their directories and the binary, one
+  component at a time (`ctl/secure_fs.rs`) and does not follow a directory or link
+  owned by the service account (current or previous uid), a directory writable by
+  one of its groups (primary or supplementary), or a world-writable directory
+  without the sticky bit. Inside the state directory, recognized by device and
+  inode, every component is opened with `O_NOFOLLOW`, and files are written by
+  create-new-then-rename with `fchmod` / `fchown` on the new descriptor. Ownership
+  and modes of those files and directories are changed through the opened
+  descriptor. The unit file and the man page and completions are written by path
+  into root-owned system directories. A `--binary-path` inside the state
+  directory, or whose directory resolves into it, is refused, and so is a config
+  path outside the state directory that resolves into it.
 - The ownership walk of the state tree (`ctl/install/chown_walk.rs`) checks and
-  changes each entry through a descriptor for that entry, skips links, and skips a
-  file with more than one hard link that does not belong to the service account.
-- The ACME client writes only into a root-owned 0700 staging directory, and the
-  install language is written to the database with the service account's
-  effective ids.
+  changes each entry through a descriptor for that entry and skips links. A file
+  is given to the service account only when it already belongs to the service uid
+  or the previous service uid, or when install wrote it in this run (recorded by
+  device and inode). The link count is not used: a hard link to another account's
+  file becomes that inode's only link once the original name is replaced by a
+  rename. When the previous owner's uid now names another account (`id -nu`), that
+  uid's files are not changed.
+- The ACME client writes only into a root-owned 0700 staging directory.
 - Directories outside the state directory are re-owned or re-moded only when they
-  are dedicated to madmail by name (`ctl/host_paths.rs`).
+  are dedicated to madmail by name, both as given and as resolved, and are not a
+  well-known system directory by device and inode (`ctl/host_paths.rs`).
 - Uninstall applies the same naming rule to every directory it would remove,
-  never removes a directory that is or contains a kept path, uses a config file's
-  `state_dir` only when that file and its path are owned by root and not writable
-  by others, and removes a path only after checking every directory and link on
-  the way to it, without following the last component.
+  never removes a directory that is or contains a kept path (also through links),
+  uses a config file's `state_dir` only when that file and its path are owned by
+  root and not writable by others, and removes a path only after checking every
+  directory and link on the way to it, without following the last component.
 
-With `--skip-user` or a local install there is no service account; those modes
-write by path as the caller. See [CLI tools](14-cli-tools.md) for the details.
+Known limits:
+
+- Trust is decided from owner and mode bits only. A POSIX ACL that grants the
+  service account write access to a directory owned by root, with a group that is
+  not one of its groups, is not detected.
+- The install language is written to the SQLite database by the installer process
+  with the service account's effective uid and gid (`setegid` / `seteuid`, groups
+  reduced to the service group); the saved set-user-ID stays 0. That keeps root
+  from opening or creating a file through a link the account planted, but a
+  database crafted to exploit a memory-safety bug in SQLite could run code that
+  calls `seteuid(0)`. The seed runs as root, without that change, only when the
+  state directory is not controlled by the service account (not owned by its
+  current or previous uid, not writable by its groups, and not world-writable
+  without the sticky bit).
+- With `--skip-user` and an existing account, writes still go through the
+  descriptor checks; without an account there is no service to defend against, and
+  install refuses a state directory that exists and is not owned by root. A local
+  install writes by path as the caller.
+
+See [CLI tools](14-cli-tools.md) for the details.
 
 ## Rust-Specific Security
 - Prefer crates with good audit history (`rustls`, `tokio`, `axum`, `sqlx`)

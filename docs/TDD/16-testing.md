@@ -342,7 +342,8 @@ The descriptor-based install and uninstall fixes (checked path resolver in
 `ctl/secure_fs.rs`, shared naming rule in `ctl/host_paths.rs`) add Docker cases
 for: a file outside the tree, owned by root and hard-linked into the state
 directory (`hl-planted`), which keeps `root:root` and mode `0600` and is reported as
-`Ownership of ... left unchanged: has 2 hard links and belongs to uid 0`; a planted
+`Ownership of ... left unchanged: belongs to uid 0, not to the service account
+and has 2 hard links`; a planted
 link to `/etc/shadow`, after which the hash, owner and mode of `/etc/shadow` are
 unchanged; account repair with a new uid while another account holds the old one,
 after which the service's own file with two hard links belongs to the new uid; an
@@ -365,9 +366,34 @@ config `state_dir` naming a shared directory, a `state_dir` from a world-writabl
 directory that is ignored, `--keep-data` with a config directory that is or
 contains the state directory, `--keep-config` with a state directory that
 contains the config, and removal that refuses a path through a world-writable
-directory and removes a link instead of its target. There are 37 Unix
-`ctl::install`, 27 `ctl::uninstall`, 10 `ctl::secure_fs` and 1 `ctl::host_paths`
-unit tests after these fixes.
+directory and removes a link instead of its target.
+
+The follow-up fixes (the walk changes a non-directory only when it belongs to the
+current or previous service uid or install wrote it in this run; the binary and
+`--skip-user` writes go through descriptors; supplementary groups count as service
+groups) add Docker cases for: `/etc/shadow` hard-linked into the tree and then
+renamed over by a copy, so the inode has one link, after which `/etc/shadow`
+stays `root` and repair prints `left unchanged: belongs to uid 0, not to the
+service account;`; account repair with a new uid on a pre-created account; a
+reused uid (the old service uid given to another account, `uidsquatter`), after
+which install prints `belonged to uid <n>, which is now account uidsquatter` and
+leaves that uid's files unchanged; `--binary-path` inside the state directory,
+which is refused before anything changes; `--skip-user` with a DNS domain and the
+account present, where `dkim/default.txt` is planted as a link to `/etc/shadow`:
+the hash, owner and mode of `/etc/shadow` are unchanged, the record is written
+(`v=DKIM1`), the config file is `root:madmail` mode 0640, and a later normal
+install gives the record to `madmail`; `--skip-user` with no account and a state
+directory owned by `nobody`, which is refused (`does not exist, but state
+directory`); and uninstall with `/var/log` set to a non-root group with mode 0775
+(as on Ubuntu, `root:syslog`), which still removes `/var/log/madmail`. New unit
+tests cover the walk decision (foreign files skipped unless written in the run,
+whatever their link count), supplementary groups, root-only trust of directories
+group-writable by system groups, a config path outside `--state-dir` that
+resolves into it, a madmail-named link to a shared directory, a `--binary-path`
+inside or resolving into the state tree, keep-flag containment through links, the
+`Removed link` message, and removal under a parent writable by a system group.
+There are 41 `ctl::install`, 30 `ctl::uninstall`, 10 `ctl::secure_fs` and 1
+`ctl::host_paths` unit tests on a Unix host after these fixes.
 
 The full Docker suite passed with a Linux aarch64 musl debug build of these fixes.
 Its output was:
@@ -380,7 +406,7 @@ PASS: custom-path account, ownership, binary/docs, unit verification, service-us
 PASS: each skip flag independently and combined, JSON results, escaped binary and state paths
 PASS: non-root local install and propagated systemd failure
 PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, home repointing, planted-link and masked-unit refusal, unit mode, content preservation, repeatability and failure propagation
-PASS: state walk skips foreign hard links and planted links, follows a new service uid, and never writes through an operator link into the tree
+PASS: state walk skips foreign files (hard-linked or renamed), planted links and files of a reused uid, follows a new service uid, never writes through an operator link into the tree, and --skip-user writes through descriptors
 PASS: uninstall keeps a shared config directory and its other files and a shared state directory, removes the dedicated state directory
 PASS: complete Unix installer E2E matrix
 ```
