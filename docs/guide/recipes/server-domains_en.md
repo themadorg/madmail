@@ -106,9 +106,13 @@ accounts still need to receive mail.
 
 `jit_domain` restricts **first-login account creation through IMAP/SMTP**.
 It does not disable public `/new` registration on those domains. That endpoint
-has its own registration-open and registration-token policy. The browser page
-may also generate credentials locally for a later JIT login; credentials for
-a retired JIT domain will fail to create a new account through that path.
+has its own registration-open and registration-token policy. First-login
+creation also requires public registration to be open, JIT registration to
+be enabled, and no required registration token. When first-login creation is
+off, the registration page creates the account through `POST /new`. The
+browser may also generate credentials locally for a later JIT login while it
+is on; credentials for a retired JIT domain
+will fail to create a new account through that path.
 
 If your goal is to stop every public creation path on a domain, narrowing JIT
 alone is insufficient. See the [registration controls](../cli/registration.md)

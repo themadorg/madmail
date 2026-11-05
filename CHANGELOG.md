@@ -1,3 +1,34 @@
+# [2.39.1](https://github.com/themadorg/madmail/compare/v2.39.0-unstable...v2.39.1-unstable) (2026-11-04)
+
+### Bug Fixes
+
+* upgrade ctutils to 0.4.7 ([9fece62](https://github.com/themadorg/madmail/commit/9fece628d927889823ee9e7b0ff92c881ec5c849))
+* **auth:** require open registration and JIT for password sign-up ([40be1af](https://github.com/themadorg/madmail/commit/40be1af8f3a3f2ce962e2d9dcd4cff16ca810929)), [#235](https://github.com/themadorg/madmail/issues/235)
+* **auth:** share the sign-up gate and keep the page in step with it ([7b4f513](https://github.com/themadorg/madmail/commit/7b4f5138ae7ac7a90dd4911a0c6a22baceedeee7)), [#235](https://github.com/themadorg/madmail/issues/235)
+
+# [2.39.0](https://github.com/themadorg/madmail/compare/v2.38.2-unstable...v2.39.0-unstable) (2026-11-04)
+
+### Features
+
+* **landing:** SEO, AEO and GEO overhaul for madmail.chat ([bdbf57b](https://github.com/themadorg/madmail/commit/bdbf57bae92d79dc8c688d221e638fc6754a7525))
+
+### Bug Fixes
+
+* **deps:** bump ctutils to 0.4.4 for RUSTSEC-2026-0385 ([6679a77](https://github.com/themadorg/madmail/commit/6679a7710d4a5a38205fcf0ac4f29a942a210883))
+* **landing:** fail the build when a page crashes during prerender ([b63609a](https://github.com/themadorg/madmail/commit/b63609a1719ddb68940d98b520eb8f6c3d50b394))
+
+# [2.38.2](https://github.com/themadorg/madmail/compare/v2.38.1-unstable...v2.38.2-unstable) (2026-10-21)
+
+### Bug Fixes
+
+* **db:** preserve PostgreSQL federation statistics across restarts ([86ea64a](https://github.com/themadorg/madmail/commit/86ea64a105b2ab3310d34f05f76fe3670d27e587))
+
+# [2.38.1](https://github.com/themadorg/madmail/compare/v2.38.0-unstable...v2.38.1-unstable) (2026-10-21)
+
+### Bug Fixes
+
+* upgrade webpki crates flagged by cargo audit ([5e9842a](https://github.com/themadorg/madmail/commit/5e9842aa013249fb73dcf3a16291e9ed7f0f3e2c))
+
 # [2.38.0](https://github.com/themadorg/madmail/compare/v2.37.0-unstable...v2.38.0-unstable) (2026-10-20)
 
 ### Features
