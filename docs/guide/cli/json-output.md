@@ -203,17 +203,57 @@ One envelope per sample (newline-delimited when `--count` is not 1):
 
 ### `install`
 
+`--dry-run` reports the selected mode and planned actions without changing the host:
+
 ```json
 {
   "ok": true,
   "command": "install",
-  "message": "Install completed",
   "data": {
-    "config_path": "/etc/madmail/madmail.conf",
-    "state_dir": "/var/lib/madmail"
+    "dry_run": true,
+    "system_install": true,
+    "create_service_user": true,
+    "install_binary": true,
+    "install_systemd": true
   }
 }
 ```
+
+`create_service_user` is false with `--skip-user`; `install_systemd` is false with
+`--skip-systemd`; `install_binary` and `install_systemd` are false with `--cert-only`.
+All three are false for a local install (`system_install: false`).
+
+A completed install:
+
+```json
+{
+  "ok": true,
+  "command": "install",
+  "data": {
+    "installed": true,
+    "primary_domain": "[203.0.113.50]",
+    "paths_explicit": false,
+    "config": "/etc/madmail/madmail.conf",
+    "state_dir": "/var/lib/madmail",
+    "system_install": true,
+    "service_installed": true,
+    "service_started": false,
+    "firewall_applied": false,
+    "man_page": "/usr/share/man/man1/madmail.1",
+    "completions": {
+      "bash": "/usr/share/bash-completion/completions/madmail",
+      "zsh": "/usr/share/zsh/site-functions/_madmail",
+      "fish": "/usr/share/fish/vendor_completions.d/madmail.fish"
+    }
+  }
+}
+```
+
+On Unix, `service_installed: true` means the systemd unit was written and
+`systemctl daemon-reload` ran; the service is not enabled or started (run
+`systemctl enable --now`). On Windows it reports `--install-service`.
+`man_page` and `completions` are `null` for a local install.
+`--cert-only` returns `cert_only`, `primary_domain`, `tls_mode`, `cert_path` and `key_path`.
 
 ### `uninstall`
 
