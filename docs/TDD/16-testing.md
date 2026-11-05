@@ -369,7 +369,7 @@ contains the config, and removal that refuses a path through a world-writable
 directory and removes a link instead of its target.
 
 The follow-up fixes (the walk changes a non-directory only when it belongs to the
-current or previous service uid or install wrote it in this run; the binary and
+current or previous service uid; the binary and
 `--skip-user` writes go through descriptors; supplementary groups count as service
 groups) add Docker cases for: `/etc/shadow` hard-linked into the tree and then
 renamed over by a copy, so the inode has one link, after which `/etc/shadow`
@@ -386,14 +386,46 @@ install gives the record to `madmail`; `--skip-user` with no account and a state
 directory owned by `nobody`, which is refused (`does not exist, but state
 directory`); and uninstall with `/var/log` set to a non-root group with mode 0775
 (as on Ubuntu, `root:syslog`), which still removes `/var/log/madmail`. New unit
-tests cover the walk decision (foreign files skipped unless written in the run,
-whatever their link count), supplementary groups, root-only trust of directories
+tests cover the walk decision (foreign files skipped whatever their link count),
+supplementary groups, root-only trust of directories
 group-writable by system groups, a config path outside `--state-dir` that
 resolves into it, a madmail-named link to a shared directory, a `--binary-path`
 inside or resolving into the state tree, keep-flag containment through links, the
 `Removed link` message, and removal under a parent writable by a system group.
-There are 41 `ctl::install`, 30 `ctl::uninstall`, 10 `ctl::secure_fs` and 1
-`ctl::host_paths` unit tests on a Unix host after these fixes.
+
+The next fixes remove the list of files install wrote in the run: the walk gave
+any such inode away, so a hard link the service account made into the tree to
+the config file root had just written outside it (`/etc/madmail/madmail.conf`)
+handed that file to the service. Files install writes inside the tree now get the
+service account as owner on the new descriptor, the walk changes only files of
+the current or previous service uid and directories of those or root (another
+account's directory is reported and not entered), the state directory itself is
+changed last, the config file's owner and mode are set after the walk, in-tree
+reads require a service-owned file (on Linux opened with `O_PATH` and reopened
+through `/proc/self/fd`), and the parents of `--state-dir` are created with the
+checked resolver before `useradd`. Docker cases: the config file hard-linked into
+the tree before a reinstall, and a loop that waits for the walk to change the
+ctime of a sentinel file and then hard-links the new config file into 400
+directories while the walk runs; afterwards the config file is `root:madmail`
+mode 0640, no linked name belongs to `madmail`, and install either succeeds or
+stops with `refusing to change config file ...: it has <n> hard links`; a run that fails at the certificate step
+(`--tls-mode file` without the files) leaves `dkim/default.private` as
+`madmail:madmail` mode 0600, and after the next run `madmail` can still read it;
+root-owned TLS files under `--state-dir` with `--tls-mode file`, for which install
+prints `Skipping ownership of <path>: inside the state directory and belongs to
+uid 0, not to the service account` and the `chown madmail:madmail <path>`
+command and leaves the key `root:root` mode 0600; and a config directory under
+`--state-dir`, where the config file is `madmail:madmail` mode 0640 after an
+install and still after a `--skip-user` reinstall. The repair case with a planted
+link from the config directory into the tree now expects `a link inside the
+state directory; links there are not followed`. New unit tests cover the walk
+decision for directories (root and service directories changed, another
+account's not entered), the walk reaching the state directory last, a config file
+written outside the tree and hard-linked into it (not changed by the walk, then
+refused for its two links), the in-tree owner on creation and its `--skip-user`
+rule, and in-tree reads of another account's file. There are 44 `ctl::install`,
+30 `ctl::uninstall`, 10 `ctl::secure_fs` and 1 `ctl::host_paths` unit tests on a
+Unix host after these fixes.
 
 The full Docker suite passed with a Linux aarch64 musl debug build of these fixes.
 Its output was:
@@ -407,6 +439,7 @@ PASS: each skip flag independently and combined, JSON results, escaped binary an
 PASS: non-root local install and propagated systemd failure
 PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, home repointing, planted-link and masked-unit refusal, unit mode, content preservation, repeatability and failure propagation
 PASS: state walk skips foreign files (hard-linked or renamed), planted links and files of a reused uid, follows a new service uid, never writes through an operator link into the tree, and --skip-user writes through descriptors
+PASS: config hard-linked into the tree (before and during the walk) stays root:madmail 640, DKIM keys survive a failed run, root-owned in-tree TLS files are reported, and an in-tree config keeps the service owner with --skip-user
 PASS: uninstall keeps a shared config directory and its other files and a shared state directory, removes the dedicated state directory
 PASS: complete Unix installer E2E matrix
 ```

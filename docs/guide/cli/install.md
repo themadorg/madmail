@@ -113,33 +113,47 @@ directory while install runs.
   POSIX ACL that lets the service account write a directory is caught only when
   that directory's group is one of the service account's groups.
 - A TLS path that reaches the state directory (it is below `--state-dir`, or a
-  link on its path points into it) is not changed by path. The ownership walk
-  sets its owner, and the output notes
-  `Skipping ownership of <path>: inside the service-writable state directory`.
+  link on its path points into it) is not changed by path. A file there that
+  belongs to the service account (or to the previous owner of the state
+  directory) is handled by the ownership walk; install writes its own
+  certificates and keys there with that owner. A root-owned certificate or key
+  you copied into the state directory is left as it is, and the output notes
+  `Skipping ownership of <path>: inside the state directory and belongs to uid 0, not to the service account, ...`
+  with the `chown` command to run after you check the file. For a link there it
+  notes `a link inside the state directory; links there are not followed`.
 - A config path given outside `--state-dir` that resolves into the state
   directory through a link is refused. A config path below `--state-dir` is
   allowed.
 - `--binary-path` must not be inside `--state-dir` and its directory must not
   resolve into the state directory; install refuses such a path before it
   changes anything. The binary is written as `root:root`, mode `0755`.
+- Files install writes into the state directory (DKIM keys, generated
+  certificates, the ACME account, a config file under `--state-dir`) belong to
+  the service account from the moment they are created, so a run that stops at
+  a later step leaves files the service can read.
 - The state tree is walked by file descriptor. Links are skipped. A file
   (anything but a directory) is changed only when it belongs to the service
-  account, to the previous owner of the state directory (after the account was
-  recreated with a new uid), or was written by this install run; the link count
-  does not matter. Any other file is listed as
+  account or to the previous owner of the state directory (after the account was
+  recreated with a new uid); the link count does not matter. A directory is also
+  changed when root owns it. Any other file or directory is listed as
   `Ownership of <path> left unchanged: belongs to uid <uid>, not to the service account; ...`
-  (with `and has <n> hard links` when it has more than one). Check such a file
-  and change its owner yourself if madmail needs it, for example a database file
-  that a root command created. Mail files, which the store hard-links between
-  folders, belong to the service and are changed.
+  (with `and has <n> hard links` when it has more than one); a directory listed
+  this way is not entered. Each listed file is followed by the
+  `chown <user>:<group> <path>` command. Check such a file (it may be a hard link
+  to another account's file) and run the command if madmail needs it, for
+  example for a database file that a root command created. Mail files, which the
+  store hard-links between folders, belong to the service and are changed. The
+  state directory itself is changed last, so an interrupted run can be repeated.
 - When the previous owner's uid now belongs to another account, install says so
   (`<state dir> belonged to uid <uid>, which is now account <name>`) and does not
-  count that uid as the service's: files of that uid are listed and left alone.
+  count that uid as the service's: files and directories of that uid are listed
+  and left alone.
 - The config file ends with mode `0640`: owned by `root:<group>` outside the
-  state directory, by the service account inside it. Outside the state
-  directory, a config file with more than one hard link is refused; inside it,
-  a config file that belongs to another account and was not written by this run
-  is refused.
+  state directory, by the service account inside it. Its owner and mode are set
+  after the ownership walk. Outside the state directory, a config file with more
+  than one hard link is refused (also when the service account linked it into
+  the state directory during the walk); inside it, a config file that belongs to
+  another account is refused.
 - The config and certs directories are re-owned to `root:<group>` and lose
   their group and other write bits only when they are dedicated to madmail
   (named `madmail`, `chatmail`, either followed by `-` or `_` and a suffix, or the

@@ -151,14 +151,19 @@ loops), link and hard-link anything there while root runs, and
   into root-owned system directories. A `--binary-path` inside the state
   directory, or whose directory resolves into it, is refused, and so is a config
   path outside the state directory that resolves into it.
+- Files install writes inside the state directory get the service account as
+  owner on the new file's descriptor, before they are renamed into place.
 - The ownership walk of the state tree (`ctl/install/chown_walk.rs`) checks and
   changes each entry through a descriptor for that entry and skips links. A file
   is given to the service account only when it already belongs to the service uid
-  or the previous service uid, or when install wrote it in this run (recorded by
-  device and inode). The link count is not used: a hard link to another account's
-  file becomes that inode's only link once the original name is replaced by a
-  rename. When the previous owner's uid now names another account (`id -nu`), that
-  uid's files are not changed.
+  or the previous service uid; a directory also when root owns it. A directory of
+  another account is not changed or descended into. The link count is not used: a
+  hard link to another account's file becomes that inode's only link once the
+  original name is replaced by a rename. So a file root owns, for example the
+  config file root just wrote outside the tree and the service linked into it,
+  is never handed over. When the previous owner's uid now names another account
+  (`id -nu`), that uid's files and directories are not changed.
+- The config file's owner and mode are set after the walk, so they are final.
 - The ACME client writes only into a root-owned 0700 staging directory.
 - Directories outside the state directory are re-owned or re-moded only when they
   are dedicated to madmail by name, both as given and as resolved, and are not a

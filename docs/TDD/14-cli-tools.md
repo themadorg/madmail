@@ -297,9 +297,11 @@ system install (also with `--skip-user` when the account exists) or a
 or ownership or mode change of the config file, the TLS files and their
 directories and the binary, therefore goes through file descriptors
 (`ctl/secure_fs.rs`), never through a path the service account can change. The
-systemd unit, the man page and shell completions, and the parent of the state
-directory (created before the account) are written by path into root-owned
-system directories:
+systemd unit, the man page and shell completions are written by path into
+root-owned system directories. The parent directories of the state directory are
+created before the account step with the checked resolver below (`mkdirat` in
+trusted directories, the parent itself checked too), so `useradd` and `usermod`
+never run when a component is refused:
 
 - Paths are resolved by a checked resolver. It opens `/` and then each component
   relative to the previous directory with `O_NOFOLLOW`; a symbolic link is read
@@ -321,9 +323,22 @@ system directories:
   `renameat`. A planted link or hard link at the target is replaced, not written
   through. This covers the config file, the DKIM key and TXT record, self-signed
   and ACME certificates and keys, the ACME account file and the binary (written
-  `root:root` mode 0755 into a trusted directory). The device and inode of every
-  file written this way are recorded for the ownership walk. The directories
+  `root:root` mode 0755 into a trusted directory). A file written inside the
+  state tree gets its owner on the new descriptor before the rename: the service
+  account, or with `--skip-user` the service account when the file it replaces
+  was a regular file of that account, and root otherwise. The ownership walk
+  therefore never needs to know which files install wrote. The directories
   install creates are made with `mkdirat` in trusted directories.
+- A file inside the tree is read as root (the DKIM private key, the ACME account
+  file) only when it is a regular file with one link that belongs to the service
+  uid or the previous service uid (with `--skip-user` also root); otherwise
+  install refuses to read it and prints the `chown` command to run after
+  checking it. On Linux the entry is opened with `O_PATH | O_NOFOLLOW`, checked
+  with `fstat`, and only a regular file is reopened for reading through
+  `/proc/self/fd`, so a device node placed there is never opened. On other
+  systems it is checked with `fstatat` and opened with
+  `O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY`; the type is checked again on
+  the descriptor.
 - `--binary-path` inside `--state-dir`, or whose directory resolves into the
   state directory or has a refused component, stops install before it changes
   anything.
@@ -337,18 +352,23 @@ system directories:
   other state directory (for example a new root-owned one with `--skip-user`) is
   used as root. Only the effective ids
   change; the saved uid stays 0 (see `12-security.md`).
-- The config file is changed through its descriptor: outside the state tree it
-  ends `root:<group>` with mode 0640. A config path with a refused component, or a
-  config file with more than one hard link, stops install with an error. Inside
-  the tree it is set to mode 0640 and the walk gives it to the service account; an
-  in-tree config file that belongs to another account and was not written by this
-  run is refused, and so is a config path outside `--state-dir` that resolves into
-  the tree.
+- The config file is changed through its descriptor after the ownership walk:
+  outside the state tree it ends `root:<group>` with mode 0640. A config path with
+  a refused component, or a config file with more than one hard link (also one
+  the service account made during the walk), stops install with an error. Inside
+  the tree install writes it owned by the service account and sets mode 0640; an
+  in-tree config file that belongs to another account is refused, and so is a
+  config path outside `--state-dir` that resolves into the tree.
 - A TLS file outside the tree is given to the service account through its
-  descriptor. A TLS path that reaches the tree, or has a refused component, is not
-  changed by path; the output notes `Skipping ownership of <path>`. A TLS file
-  whose final object is owned by the service uid is accepted, so repair and
-  reinstall keep working. Outside the tree a TLS file with more than one hard link
+  descriptor. A TLS path with a refused component is not changed; the output
+  notes `Skipping ownership of <path>`. A TLS path that reaches the tree is not
+  changed by path: a file there that belongs to the service uid or the previous
+  service uid was handled by the walk (install writes its own TLS files there
+  with that owner). For a link there, or a file of another account (for example a
+  root-owned certificate the operator copied in), the output notes
+  `Skipping ownership of <path>` with the reason and, for a file, the `chown`
+  command to run after checking it. A TLS file whose final object is owned by the
+  service uid is accepted, so repair and reinstall keep working. Outside the tree a TLS file with more than one hard link
   is changed only when it belongs to the service uid or the previous service uid;
   its directory is trusted, so the service account cannot have placed it there.
 - The config directory and the certs directory are re-owned to `root:<group>`,
@@ -365,21 +385,26 @@ The state tree is chowned by a descriptor walk (`ctl/install/chown_walk.rs`). Th
 owner of the state directory before the walk is recorded as the previous service
 uid, unless `id -nu` names another account for that uid; the trust rule above
 counts the previous owner as untrusted in both cases. Each directory is opened relative to its parent with
-`O_NOFOLLOW | O_DIRECTORY` and changed with `fchown`. Every other entry is opened
+`O_NOFOLLOW | O_DIRECTORY`, checked with `fstat` and changed with `fchown` when it
+belongs to the service uid, the previous service uid or root; a directory of
+another account is reported and not descended into. The state directory itself
+is changed last, so a run that stops half way can be repeated with the same
+previous uid. Every other entry is opened
 by itself and checked with `fstat` on that descriptor before it is changed: on
 Linux with `openat(O_PATH | O_NOFOLLOW)` and `fchownat(fd, "", AT_EMPTY_PATH)`; on
 other systems regular files are opened with
 `O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY` and changed with `fchown`, and other
 non-directory entries are left unchanged. Links are skipped. Any other
 non-directory is changed only when it belongs to the service uid or the previous
-service uid, or when install wrote it in this run (its device and inode were
-recorded), whatever its link count: a hard link to another account's file (for
-example `/etc/shadow` when `fs.protected_hardlinks` is 0) becomes the inode's
-only link once the original name is replaced by a rename. The mail store
-hard-links every message into the maildirs, and those files belong to the
-service. Skipped entries are listed as `Ownership of <path> left unchanged:
-<reason>` (the first 50, then a count); a file a root command created in the
-tree is among them, and the operator changes its owner after checking it.
+service uid, whatever its link count: a hard link to another account's file (for
+example `/etc/shadow`, or the config file root just wrote, when
+`fs.protected_hardlinks` is 0) becomes the inode's only link once the original
+name is replaced by a rename. The mail store hard-links every message into the
+maildirs, and those files belong to the service. Skipped entries are listed as
+`Ownership of <path> left unchanged: <reason>` (the first 50, then a count), each
+file of another account followed by the `chown <user>:<group> <path>` command; a
+file a root command created in the tree is among them, and the operator runs the
+command after checking that it is madmail's own file.
 An entry that is replaced or removed during the walk (`ELOOP`, `ENOTDIR`,
 `ENOENT`) is skipped with a warning. The walk is iterative and stops descending
 after 64 levels, each open level holding one descriptor.
@@ -388,8 +413,9 @@ custom locations must be repeated.
 
 `--skip-user` skips only the account step and the ownership changes (config,
 TLS, the walk); when the account exists every write above still goes through
-the descriptor handle, and a rewritten config file keeps the previous file's
-owner. With `--skip-user` and no account, files are written by path as root and
+the descriptor handle. Outside the tree a rewritten config file keeps the
+previous file's owner; inside it, a rewritten file is the service account's when
+the file it replaces was, and root's otherwise. With `--skip-user` and no account, files are written by path as root and
 the config file is written with mode 0640 and `O_NOFOLLOW`; that is refused when
 the state directory exists and is not owned by root. A local install writes by
 path as the calling user.

@@ -27,17 +27,18 @@ they will not change by path, and `Ownership of <path> left unchanged: <reason>`
 for an entry in the state directory they left alone, for example
 `belongs to uid 0, not to the service account; it may be another account's file`.
 Install gives a file in the state directory to the service account only when it
-already belongs to that account (or to the previous owner of the state directory)
-or install wrote it in that run, so a file a root command created there, or a link
-to another account's file, keeps its owner. These are protections, not errors: the
+already belongs to that account (or to the previous owner of the state directory);
+files install writes there belong to the service account from the start. So a
+file a root command created there, or a link to another account's file, keeps its
+owner, and the output shows the `chown` command to run after you check it. These are protections, not errors: the
 service account can write to its state directory, so install does not follow
 links there. Check the named file and, if madmail needs it, change its owner
 yourself. Keep certificates and the config file in root-owned directories outside
 the state directory.
 
 When install prints `<state> belonged to uid <n>, which is now account <name>`,
-the old service uid was reused by another account; files of that uid in the state
-directory are left as they are. Give them to the service account yourself after
+the old service uid was reused by another account; files and directories of that
+uid in the state directory are left as they are. Give them to the service account yourself after
 checking them, for example
 `find <state> -uid <n> -exec chown -h madmail:madmail {} +`.
 

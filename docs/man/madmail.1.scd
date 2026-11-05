@@ -84,9 +84,10 @@ Extended documentation:
 	ProtectHome= setting. Account repair repoints an existing account at the
 	existing state directory without moving it. Install and account repair
 	never read, write or change the owner or mode of a file through a link
-	inside the state directory, and give a file there to the service account
-	only when it already belongs to the service account or was written by
-	that run. A path outside it is not followed through a directory or link
+	inside the state directory, write their own files there owned by the
+	service account, and give an existing file there to the service account
+	only when it already belongs to the service account or its previous uid.
+	A path outside it is not followed through a directory or link
 	the service account controls, and a *--binary-path* inside it is
 	refused. Unit repair refuses a symlinked or masked unit file.
 	These modes conflict with each other, local/cert-only/skip and Windows
