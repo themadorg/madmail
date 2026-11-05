@@ -187,6 +187,9 @@ pub struct Trust {
     uids: Vec<u32>,
     gid: Option<u32>,
     root_only: bool,
+    /// With `root_only`: one more owner that counts as trusted (the caller, when
+    /// not root; used by tests and dry runs).
+    also: Option<u32>,
     /// Tests cannot create files owned by another uid; they mark objects
     /// (by device and inode) that count as owned by the service instead.
     #[cfg(test)]
@@ -208,6 +211,7 @@ impl Trust {
             uids,
             gid: (gid != 0).then_some(gid),
             root_only: false,
+            also: None,
             #[cfg(test)]
             marked: Vec::new(),
         }
@@ -227,8 +231,20 @@ impl Trust {
             uids: Vec::new(),
             gid: None,
             root_only: true,
+            also: None,
             #[cfg(test)]
             marked: Vec::new(),
+        }
+    }
+
+    /// [`Trust::root_only`] for the effective user: when it is not root, its
+    /// own files count as trusted too, since it can change them anyway.
+    pub fn root_or_caller() -> Self {
+        // SAFETY: geteuid has no preconditions.
+        let euid = unsafe { libc::geteuid() };
+        Self {
+            also: (euid != 0).then_some(euid),
+            ..Self::root_only()
         }
     }
 
@@ -236,7 +252,7 @@ impl Trust {
     /// path, or `None` when it is trusted. `/` and root-owned directories with
     /// mode 0755 pass. Link permission bits carry no meaning and are ignored.
     pub fn verdict(&self, st: &libc::stat) -> Option<&'static str> {
-        if self.root_only && st.st_uid != 0 {
+        if self.root_only && st.st_uid != 0 && Some(st.st_uid) != self.also {
             return Some("not owned by root");
         }
         #[cfg(test)]
@@ -251,7 +267,7 @@ impl Trust {
             libc::S_IFLNK => None,
             libc::S_IFDIR => {
                 let group_writable = mode & 0o020 != 0;
-                if group_writable && self.root_only && st.st_gid != 0 {
+                if group_writable && self.root_only && st.st_gid != 0 && self.also.is_none() {
                     Some("group-writable by a group other than root")
                 } else if group_writable && Some(st.st_gid) == self.gid {
                     Some("group-writable by the service group")
