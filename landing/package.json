@@ -13,11 +13,14 @@
 		"prepare": "svelte-kit sync || echo ''"
 	},
 	"devDependencies": {
-		"@fontsource/inter": "^5.2.8",
+		"@fontsource-variable/sofia-sans": "^5.3.0",
+		"@fontsource-variable/sofia-sans-extra-condensed": "^5.3.0",
+		"@fontsource-variable/vazirmatn": "^5.3.0",
 		"@fontsource/jetbrains-mono": "^5.2.8",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.63.0",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
+		"lightningcss": "^1.32.0",
 		"mdsvex": "^0.12.7",
 		"svelte": "^5.56.1",
 		"unist-util-visit": "^5.1.0",
