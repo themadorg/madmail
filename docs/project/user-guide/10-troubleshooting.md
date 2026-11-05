@@ -16,6 +16,12 @@ and service account already present. It replaces the generated unit; keep custom
 unit settings in drop-ins. See the [complete repair procedure](../../guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
 and [error reference](../../guide/cli/install.md#troubleshooting).
 
+A full install stops before changing anything if the unit file is masked (run
+`systemctl unmask madmail`), or if the service account's home is elsewhere while
+`--state-dir` already exists, so data in the old home is not left behind. Move the
+data if needed, run `--user-only` with the same paths, then retry. A state directory
+that is a symlink to a data volume is fine.
+
 ## Users Cannot Register or Log In
 
 ### Possible causes
