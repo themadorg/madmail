@@ -369,8 +369,11 @@ impl<'a> ServiceTree<'a> {
     }
 
     /// A path is in the tree when it is lexically below the state directory, or
-    /// when it resolves (or, if it does not exist, its parent resolves) below the
-    /// resolved state directory, e.g. through an operator link into the tree.
+    /// when it or any of its ancestors resolves below the resolved state
+    /// directory, e.g. through an operator link into the tree. Checking every
+    /// ancestor matters: below a component that resolves into the tree, the
+    /// service account controls the rest of the path, including a final link
+    /// that would make the whole path resolve elsewhere (such as `/etc/shadow`).
     /// Resolving follows links, but only to decide that root must not touch the
     /// path here, which is the safe direction.
     fn contains(&self, path: &Path) -> bool {
@@ -380,15 +383,9 @@ impl<'a> ServiceTree<'a> {
         let Some(canonical) = &self.canonical else {
             return false;
         };
-        resolve(path).is_some_and(|p| p.starts_with(canonical))
+        path.ancestors()
+            .any(|p| fs::canonicalize(p).is_ok_and(|r| r.starts_with(canonical)))
     }
-}
-
-fn resolve(path: &Path) -> Option<PathBuf> {
-    fs::canonicalize(path).ok().or_else(|| {
-        let name = path.file_name()?;
-        Some(fs::canonicalize(path.parent()?).ok()?.join(name))
-    })
 }
 
 /// A passwd home that resolves to the state directory is already correct, so it
@@ -700,6 +697,13 @@ mod tests {
         assert!(tree.contains(&data.join("certs/privkey.pem")));
         // A path elsewhere that resolves into the tree through a link.
         symlink(data.join("certs"), links.join("etc-certs")).unwrap();
+        assert!(tree.contains(&links.join("etc-certs/fullchain.pem")));
+        // The service account replaces the file with a link out of its tree: the
+        // whole path now resolves elsewhere, but its parent is still in the tree.
+        let (_outside, outside) = real_tempdir();
+        fs::write(outside.join("shadow"), "x").unwrap();
+        fs::remove_file(data.join("certs/fullchain.pem")).unwrap();
+        symlink(outside.join("shadow"), data.join("certs/fullchain.pem")).unwrap();
         assert!(tree.contains(&links.join("etc-certs/fullchain.pem")));
         assert!(!tree.contains(&links.join("other.pem")));
         // A missing state directory has no resolved form; only lexical checks apply.

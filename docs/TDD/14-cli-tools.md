@@ -289,13 +289,28 @@ ownership using installer rules. Existing config and state directories are requi
 content is preserved, but ownership and config mode may change. An existing account
 with another home is repointed with `usermod -d` and no `-m` when the state directory
 exists (`usermod -m` refuses an existing target); `-m` is used only when it does not.
-The state tree is chowned without following symlinks (`lchown`, no descent into
-linked directories), because the service account can plant links there; the
+The state tree is chowned without following symlinks, because the service account
+can plant links and swap entries there while root walks it. The walk uses file
+descriptors only (`ctl/install/chown_walk.rs`): each directory is opened relative
+to its parent with `O_NOFOLLOW | O_DIRECTORY` and changed with `fchown`, entries
+are listed through a duplicate descriptor and classified with
+`fstatat(AT_SYMLINK_NOFOLLOW)`, links are skipped, and other entries are changed
+with `fchownat(AT_SYMLINK_NOFOLLOW)`. An entry that is replaced or removed during
+the walk (`ELOOP`, `ENOTDIR`, `ENOENT`) is skipped with a warning, as is a file
+with several hard links and another owner. The walk is iterative and stops
+descending after 64 levels, each open level holding one descriptor. The
 operator-chosen state directory root is resolved once (`canonicalize`), so a
-symlinked root such as a data-volume link keeps working. TLS ownership is applied
-only to the given `--cert-path`/`--key-path` files, so custom locations must be
-repeated; a path below the state directory is skipped when any of its components
-there is a link, and is otherwise changed with `lchown`. Systemd-only requires an existing config
+symlinked root such as a data-volume link keeps working; the resolved root is
+opened with `O_NOFOLLOW`, and the walk fails if it was replaced by a link.
+TLS ownership is applied only to the given `--cert-path`/`--key-path` files, so
+custom locations must be repeated. A cert, key, certs directory or config path is
+in the service tree when it is lexically below `--state-dir` or when it or any of
+its ancestors resolves below the resolved state directory (below such a component
+the service account controls the rest of the path, including a final link out of
+the tree); such paths are
+not chowned by path, and the walk gives them the service owner. Paths outside the
+tree are in root-owned directories, so operator links there are followed. A passwd
+home that resolves to the same directory as `--state-dir` counts as equal to it. Systemd-only requires an existing config
 file, state directory, executable binary and service account; it writes the unit
 through a temporary file and `rename`, refuses a symlinked or masked unit path, and
 runs daemon-reload, without enabling or starting it. The cert/key paths also feed the
@@ -307,3 +322,22 @@ use the same binary name and paths as the original install. Dry runs need no roo
 and report the selected operation without mutation. Live prerequisites are checked
 before provisioning; failures return a nonzero exit status. This is a deliberate
 extension to the full installer, preserving its default behavior.
+
+### Uninstall path safety
+
+`uninstall` reads `User=`, `WorkingDirectory=` and the `ExecStart=` binary and
+`--config` path from every `madmail*`/`chatmail*` unit. A directory derived from a
+unit is removed with all its contents only when its basename is a family name
+(`madmail`, `chatmail`, or either followed by `-` or `_` and a suffix) or the
+running binary's name. From any other config directory only `<binary>.conf` is
+removed, and TLS files in its `certs/` subdirectory are reported but kept, since
+the unit does not record whether install generated them. A shared
+`WorkingDirectory=` is kept unless the operator passes it as `--state-dir`.
+Well-known system directories (`/`, `/etc`, `/usr`, `/usr/local`, `/usr/local/etc`,
+`/opt`, `/srv`, `/var`, `/var/lib`, `/home`, `/root`, `/tmp` and others), every
+`/home/<name>`, and the homes of root, regular accounts (uid 1000 or more except
+`nobody`), `$HOME` and `$SUDO_USER` are never removed as a whole from any source,
+checked both lexically and after resolution. `/run`, `/var/log` and `/var/cache`
+entries are derived only from family names, and accounts are deleted with
+`userdel` without `-r`. The plan and the JSON result (`left_in_place`) list every
+path left in place with its reason.

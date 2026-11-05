@@ -67,11 +67,13 @@ account, applies permissions, installs the binary and CLI docs, and writes a uni
 using these paths. The state directory may be a symlink to a data volume; it is
 resolved once, and links inside it are never followed. Before changing anything,
 a full install refuses a symlinked or masked unit file (`systemctl unmask` it
-first). If the service account already exists with a home elsewhere and the
-`--state-dir` already exists (for example a pre-created mount point), it also
-refuses instead of leaving the data in the old home behind: move the data if
-needed, run `--user-only` with the same paths to repoint the account, then retry.
-A missing `--state-dir` is filled by moving the old home there. Then inspect and
+first). If the service account already exists with a home elsewhere that still
+exists, and the `--state-dir` already exists (for example a pre-created mount
+point), it also refuses instead of leaving the data in the old home behind: move
+the data if needed, run `--user-only` with the same paths to repoint the account,
+then retry. A home that resolves to the same directory as `--state-dir` (for
+example a symlinked `--state-dir`) is not "elsewhere". A missing `--state-dir` is
+filled by moving the old home there. Then inspect and
 start the service:
 
 ```bash
@@ -121,9 +123,15 @@ No `--simple`, `--non-interactive`, domain, IP or ACME options are needed.
   repointed at the existing state directory; nothing is moved. Ownership is only
   applied to TLS files at the given paths, so repeat custom `--cert-path` and
   `--key-path` values (the plan output lists the paths it will use). Symlinks
-  inside the state directory are never followed or chowned through, including a
-  linked directory on the way to a TLS file; a symlinked state directory itself is
-  resolved once.
+  inside the state directory are never followed or chowned through: the state
+  tree is walked by file descriptor, so an entry swapped for a link during the
+  walk is skipped with a warning. A TLS or config path inside the state tree
+  (written below `--state-dir`, or with the path or one of its parent directories
+  resolving below it) is not chowned by path; the
+  walk gives it the service owner, and the output notes `Skipping ownership of
+  <path>`. A symlinked state directory itself is resolved once. TLS paths outside
+  the state tree, such as `/etc/madmail/certs` or an ACME client's live directory,
+  are root-owned, so links there are the operator's and are followed.
 - `--systemd-only` replaces the unit and runs `systemctl daemon-reload`. It requires
   an existing executable binary and service user/group. Keep local unit changes in
   systemd drop-ins. It does not enable, start or restart the service. Repeat custom

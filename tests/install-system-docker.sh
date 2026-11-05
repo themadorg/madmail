@@ -261,6 +261,23 @@ ln -s /tmp/root-tls /var/xyzzy/lib/madmail/tls
 grep -q 'Skipping ownership of /var/xyzzy/lib/madmail/tls/fullchain.pem' /tmp/user-planted-tls.log
 [[ "$(stat -c '%U:%G' /tmp/root-tls/fullchain.pem)" = root:root ]]
 rm /var/xyzzy/lib/madmail/tls
+# Nested planted links are skipped by the descriptor walk as well.
+mkdir -p /var/xyzzy/lib/madmail/nested/deeper
+ln -s /etc/passwd /var/xyzzy/lib/madmail/nested/deeper/planted-passwd
+ln -s /etc /var/xyzzy/lib/madmail/nested/planted-etc
+# A TLS path outside the state tree that resolves into it (through an operator
+# link) is not chowned by path: the service's own link there would redirect it.
+mkdir /var/xyzzy/lib/madmail/op-tls
+ln -s /etc/shadow /var/xyzzy/lib/madmail/op-tls/fullchain.pem
+ln -s /var/xyzzy/lib/madmail/op-tls /tmp/op-tls
+/tmp/madmail install --user-only "${repair_paths[@]}" \
+    --cert-path /tmp/op-tls/fullchain.pem > /tmp/user-op-tls.log
+grep -q 'Skipping ownership of /tmp/op-tls/fullchain.pem' /tmp/user-op-tls.log
+[[ "$(stat -c '%U:%G' /etc/shadow)" = "$shadow_owner" ]]
+[[ "$(stat -c '%U:%G' /etc)" = root:root && "$(stat -c '%U' /etc/passwd)" = root ]]
+[[ "$(stat -c '%U:%G' /var/xyzzy/lib/madmail/nested/deeper)" = madmail:madmail ]]
+[[ "$(stat -c '%U' /var/xyzzy/lib/madmail/nested/deeper/planted-passwd)" = root ]]
+rm -r /var/xyzzy/lib/madmail/nested /var/xyzzy/lib/madmail/op-tls /tmp/op-tls
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-repoint.log
 [[ "$(getent passwd madmail | cut -d: -f6)" = /var/xyzzy/lib/madmail ]]
 [[ "$(id -u madmail)" = "$repair_uid" ]]
@@ -325,5 +342,36 @@ rm /etc/systemd/system/madmail.service
 sha256sum -c /tmp/repair-unit.before >/dev/null
 reject 'systemctl daemon-reload failed' env MADMAIL_TEST_SYSTEMCTL_EXIT=1 /tmp/madmail install --systemd-only "${repair_paths[@]}"
 echo 'PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, home repointing, planted-link and masked-unit refusal, unit mode, content preservation, repeatability and failure propagation'
+
+# Uninstall after an install with a shared --config-dir removes only the files
+# install put there and leaves the directory and everything else in it.
+mkdir -p /usr/local/etc
+echo keep > /usr/local/etc/other.conf
+/tmp/madmail install --simple --system --ip 127.0.0.1 --tls-mode self_signed \
+    --non-interactive --config-dir /usr/local/etc --state-dir /var/xyzzy/lib/madmail \
+    --binary-path /var/xyzzy/bin/madmail > /tmp/shared-install.log
+grep -q -- '--config /usr/local/etc/madmail.conf' /etc/systemd/system/madmail.service
+[[ -f /usr/local/etc/madmail.conf && -f /usr/local/etc/certs/privkey.pem ]]
+/tmp/madmail uninstall --dry-run > /tmp/uninstall-plan.log
+grep -qx 'Config file (removed): /usr/local/etc/madmail.conf' /tmp/uninstall-plan.log
+grep -qx 'Left in place: /usr/local/etc (well-known system directory; only madmail.conf is removed)' /tmp/uninstall-plan.log
+grep -q '^Left in place: /usr/local/etc/certs/privkey.pem (TLS file' /tmp/uninstall-plan.log
+grep -qx 'State dir (removed with all contents): /var/xyzzy/lib/madmail' /tmp/uninstall-plan.log
+if grep -q '^Config dir.*/usr/local/etc$' /tmp/uninstall-plan.log; then fail 'shared config dir planned for removal'; fi
+/tmp/madmail --json uninstall --dry-run > /tmp/uninstall-plan.json
+python3 - /tmp/uninstall-plan.json <<'PYJSON'
+import json, sys
+envelope = [json.loads(l) for l in open(sys.argv[1]) if l.startswith('{')][-1]
+left = {entry['path'] for entry in envelope['data']['left_in_place']}
+assert {'/usr/local/etc', '/usr/local/etc/certs/fullchain.pem', '/usr/local/etc/certs/privkey.pem'} <= left, left
+PYJSON
+[[ -f /usr/local/etc/madmail.conf && -d /var/xyzzy/lib/madmail ]]
+/tmp/madmail uninstall --force > /tmp/uninstall.log
+[[ "$(cat /usr/local/etc/other.conf)" = keep ]]
+[[ ! -e /usr/local/etc/madmail.conf && -f /usr/local/etc/certs/privkey.pem ]]
+grep -q '^Left in place: /usr/local/etc/certs/fullchain.pem (TLS file' /tmp/uninstall.log
+[[ ! -e /var/xyzzy/lib/madmail && ! -e /etc/systemd/system/madmail.service && ! -e /var/xyzzy/bin/madmail ]]
+absent_user madmail
+echo 'PASS: uninstall keeps a shared config directory and its other files, removes the dedicated state directory'
 echo 'PASS: complete Unix installer E2E matrix'
 INNER
