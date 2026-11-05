@@ -96,8 +96,10 @@ Host-side CLI account creation does not emit this server-runtime event.
 ```
 
 Quota rejections use `imap.append`, `smtp.inbound`, `smtp.submission`, `websmtp`,
-`federation.inbound`, `mxdeliv`, or `admin.notice` paths. WebIMAP APPEND shares
-`imap.append`. Rejections for one username across paths coalesce for one hour.
+`federation.inbound`, `mxdeliv`, `admin.notice`, or `federation.dsn` paths.
+WebIMAP APPEND shares `imap.append`. `federation.dsn` fires when the delivery
+report for a failed outbound message is skipped because the sender is over
+quota. Rejections for one username across paths coalesce for one hour.
 Mail rejection behavior remains the same whether delivery of the alert succeeds
 or fails. Payloads contain no passwords, message content, device IDs or invite IDs.
 

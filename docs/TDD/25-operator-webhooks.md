@@ -26,7 +26,8 @@ the existing per-user creation lock and emit one event.
 A rejected quota check emits metadata without changing the existing rejection or
 PGP policy. Paths: `imap.append` (also WebIMAP's shared APPEND handler),
 `smtp.inbound`, `smtp.submission`, `websmtp`, `mxdeliv`, `federation.inbound`,
-and `admin.notice`. Quota events coalesce per user for one hour across paths.
+`admin.notice`, and `federation.dsn` (an outbound-failure report skipped because
+the sender is over quota). Quota events coalesce per user for one hour across paths.
 An event disabled by policy or dropped before enqueueing does not reserve a
 dedup entry. The cache holds at most 4096 users; at capacity, new alerts are
 counted as dropped rather than evicting an unexpired entry and duplicating it.
