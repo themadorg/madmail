@@ -626,6 +626,9 @@ async fn admin_federation_transport_block_updates_cache() {
     for bad in [
         json!({ "policy": "REJECT", "enabled": true, "transports": { "smtp": "nope" } }),
         json!({ "transports": { "http": "allow", "smtp": "nope" } }),
+        // A bad policy is a 400 (not a 500) and must not let valid fields through.
+        json!({ "policy": "MAYBE", "enabled": true, "transports": { "http": "allow" } }),
+        json!({ "policy": "MAYBE", "enabled": true }),
         json!({ "policy": "REJECT", "enabled": true, "domain": "evil.test" }),
         json!({ "enabled": true, "domain": "a@b", "transports": { "smtp": "block" } }),
         json!({ "enabled": true, "domain": "evil.test", "transports": { "smtp": "nope" } }),
@@ -733,6 +736,57 @@ async fn admin_federation_transport_domain_override_updates_cache() {
     .await
     .unwrap_err();
     assert_eq!(err.0, 400);
+}
+
+#[tokio::test]
+async fn admin_federation_corrupt_overrides_row_saves_nothing() {
+    let (st, _dir) = test_state(
+        "secret-token-01234567890123456789012345678901",
+        AppConfig::default(),
+    )
+    .await;
+    let key = chatmail_db::settings_keys::FEDERATION_TRANSPORT_DOMAINS;
+    chatmail_db::set_setting(&st.pool, key, "[1,2]")
+        .await
+        .unwrap();
+    let before = resources::dispatch(&st, "GET", "/admin/settings/federation", &json!({}))
+        .await
+        .unwrap()
+        .1
+        .unwrap();
+    let mode_before = st.app.federation_policy.global_mode();
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/federation",
+        &json!({
+            "enabled": true,
+            "policy": "REJECT",
+            "domain": "evil.test",
+            "transports": { "smtp": "block" }
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400, "{}", err.1);
+    assert!(err.1.contains("corrupt"), "{}", err.1);
+    let after = resources::dispatch(&st, "GET", "/admin/settings/federation", &json!({}))
+        .await
+        .unwrap()
+        .1
+        .unwrap();
+    assert_eq!(after.get("enabled"), before.get("enabled"));
+    assert_eq!(after.get("policy"), before.get("policy"));
+    assert_eq!(after.get("transports"), before.get("transports"));
+    assert_eq!(st.app.federation_policy.global_mode(), mode_before);
+    assert_eq!(
+        chatmail_db::get_setting(&st.pool, key)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("[1,2]")
+    );
+    assert!(st.app.federation_transport.overrides().is_empty());
 }
 
 #[tokio::test]

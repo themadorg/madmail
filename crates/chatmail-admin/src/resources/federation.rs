@@ -21,13 +21,13 @@ use serde_json::{json, Value};
 use super::{status_storage::db_err, AdminResult};
 use crate::AdminState;
 use chatmail_db::{
-    federation_policy_label, get_bool_setting, get_setting, set_federation_policy_label,
-    set_setting, settings_keys,
+    federation_policy_label, get_bool_setting, get_setting, parse_federation_policy_label,
+    set_federation_policy_label, set_setting, settings_keys,
 };
 use chatmail_state::{
-    domain_overrides_json, load_domain_overrides, load_transport_policy,
-    normalize_transport_domain, parse_override_mode, parse_transport_mode, set_transport_mode,
-    PolicyMode, TransportName, TransportPolicy,
+    check_domain_overrides_writable, domain_overrides_json, load_domain_overrides,
+    load_transport_policy, normalize_transport_domain, parse_override_mode, parse_transport_mode,
+    set_transport_mode, PolicyMode, TransportName, TransportPolicy,
 };
 use chatmail_types::ChatmailError;
 
@@ -173,7 +173,13 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
         "POST" => {
             let req: FederationPost =
                 serde_json::from_value(body.clone()).map_err(|e| (400, e.to_string()))?;
-            // Reject a bad `domain` or `transports` value before `enabled` or `policy` is saved.
+            // Check the whole body before any setting is written, so a 400 saves nothing.
+            let policy = req
+                .policy
+                .as_deref()
+                .map(parse_federation_policy_label)
+                .transpose()
+                .map_err(config_or_db)?;
             if req.domain.is_some() && req.transports.is_none() {
                 return Err((400, "transports required when domain is set".into()));
             }
@@ -181,6 +187,17 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
                 .transports
                 .map(|body| parse_transport_post(body, req.domain.clone()))
                 .transpose()?;
+            if let Some(TransportUpdate::Domain { .. }) = transports {
+                let raw = get_setting(&st.pool, settings_keys::FEDERATION_TRANSPORT_DOMAINS)
+                    .await
+                    .map_err(db_err)?;
+                check_domain_overrides_writable(raw.as_deref()).map_err(config_or_db)?;
+            }
+            // Transports first: `update_domain` checks the row again under its lock, and
+            // a refusal there must still leave `enabled` and `policy` unsaved.
+            if let Some(update) = transports {
+                apply_transport_post(st, update).await?;
+            }
             if let Some(en) = req.enabled {
                 set_setting(
                     &st.pool,
@@ -190,16 +207,13 @@ pub async fn policy(st: &AdminState, method: &str, body: &Value) -> AdminResult 
                 .await
                 .map_err(db_err)?;
             }
-            if let Some(p) = req.policy {
+            if let Some(p) = policy {
                 set_federation_policy_label(&st.pool, &p)
                     .await
-                    .map_err(db_err)?;
+                    .map_err(config_or_db)?;
                 st.app
                     .federation_policy
                     .set_global_mode(PolicyMode::from_label(&p));
-            }
-            if let Some(update) = transports {
-                apply_transport_post(st, update).await?;
             }
             Ok((200, Some(federation_settings_body(st).await?)))
         }

@@ -221,6 +221,20 @@ pub async fn load_domain_overrides(
     Ok(parse_domain_overrides(raw.as_deref().unwrap_or("")))
 }
 
+/// Refuse a stored overrides row that a domain write would have to replace:
+/// anything but an empty value or a JSON object. Callers that save other
+/// settings in the same request run this first, so a refusal saves nothing.
+pub fn check_domain_overrides_writable(raw: Option<&str>) -> Result<()> {
+    let raw = raw.unwrap_or("");
+    if raw.trim().is_empty() || matches!(serde_json::from_str::<Value>(raw), Ok(Value::Object(_))) {
+        return Ok(());
+    }
+    Err(ChatmailError::config(format!(
+        "stored federation transport overrides are corrupt; clear {} first",
+        settings_keys::FEDERATION_TRANSPORT_DOMAINS
+    )))
+}
+
 /// Apply override updates for one destination domain and persist the map.
 /// `None` removes that transport's override. An empty map deletes the setting.
 ///
@@ -235,15 +249,8 @@ pub async fn update_domain_transports(
 ) -> Result<String> {
     let domain = normalize_transport_domain(domain)?;
     let raw = get_setting(pool, settings_keys::FEDERATION_TRANSPORT_DOMAINS).await?;
-    let raw = raw.as_deref().unwrap_or("");
-    if !raw.trim().is_empty() && !matches!(serde_json::from_str::<Value>(raw), Ok(Value::Object(_)))
-    {
-        return Err(ChatmailError::config(format!(
-            "stored federation transport overrides are corrupt; clear {} first",
-            settings_keys::FEDERATION_TRANSPORT_DOMAINS
-        )));
-    }
-    let mut map = parse_domain_overrides(raw);
+    check_domain_overrides_writable(raw.as_deref())?;
+    let mut map = parse_domain_overrides(raw.as_deref().unwrap_or(""));
     let mut entry = map.remove(&domain).unwrap_or_default();
     for (name, mode) in updates {
         entry.set(*name, *mode);

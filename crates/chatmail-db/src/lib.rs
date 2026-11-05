@@ -54,7 +54,8 @@ pub use endpoint_cache::{
     set_endpoint_override, EndpointOverrideRow,
 };
 pub use federation_policy::{
-    federation_policy_label, normalize_federation_domain, set_federation_policy_label,
+    federation_policy_label, normalize_federation_domain, parse_federation_policy_label,
+    set_federation_policy_label,
 };
 pub use inbound::{
     inbound_local_recipient_allowed, is_federation_rcpt_blocked, is_federation_sender_blocked,
