@@ -1,3 +1,20 @@
+# [2.40.0](https://github.com/themadorg/madmail/compare/v2.39.2-unstable...v2.40.0-unstable) (2026-11-05)
+
+### Features
+
+* **federation:** add outbound transport allow/block ([f699b25](https://github.com/themadorg/madmail/commit/f699b2595ed8f6547072a6c25771d74302ee34f3)), [#57](https://github.com/themadorg/madmail/issues/57)
+* **federation:** add per-domain transport overrides ([89343d2](https://github.com/themadorg/madmail/commit/89343d23e1291e928ec5951f195bcd86d06f8050)), [#57](https://github.com/themadorg/madmail/issues/57)
+* **federation:** report outbound delivery failure to the sender ([9c0d94f](https://github.com/themadorg/madmail/commit/9c0d94fe2a116289c1a40bf7c031478af17e9bf1)), [#57](https://github.com/themadorg/madmail/issues/57)
+
+### Bug Fixes
+
+* **admin:** check the whole federation POST before saving any field ([579a9e8](https://github.com/themadorg/madmail/commit/579a9e830cc0e1d48864caf3feee2fdeab25d07a))
+* **delivery:** keep the delivery report reason in CRLF lines ([0b252de](https://github.com/themadorg/madmail/commit/0b252ded87af8dc741c694d0ae153ad6f4f7d94a))
+* **delivery:** keep the report boundary out of every part ([7582067](https://github.com/themadorg/madmail/commit/758206700dad85416ee1c7d936f2489cf8fc160c))
+* **federation:** harden sender delivery reports and test queue wiring ([e50e076](https://github.com/themadorg/madmail/commit/e50e076d20ce8a053a98cd2dcd73332bf06740ec)), [#191](https://github.com/themadorg/madmail/issues/191)
+* **federation:** lock and validate domain transport override writes ([851d485](https://github.com/themadorg/madmail/commit/851d485dd4015643f0e64ed416161645f7f18896)), [#189](https://github.com/themadorg/madmail/issues/189), [#188](https://github.com/themadorg/madmail/issues/188)
+* **federation:** tighten outbound transport policy handling ([8456ce9](https://github.com/themadorg/madmail/commit/8456ce9f1ad845772941855674fe56af5c5b7013)), [#188](https://github.com/themadorg/madmail/issues/188), [#191](https://github.com/themadorg/madmail/issues/191)
+
 # [2.39.2](https://github.com/themadorg/madmail/compare/v2.39.1-unstable...v2.39.2-unstable) (2026-11-05)
 
 ### Bug Fixes
