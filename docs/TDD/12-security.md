@@ -138,14 +138,16 @@ state directory and can create, rename (including `renameat2(RENAME_EXCHANGE)`
 loops), link and hard-link anything there while root runs, and
 `fs.protected_hardlinks` may be 0.
 
-- Install resolves every path it writes or changes one component at a time
-  (`ctl/secure_fs.rs`) and does not follow a directory or link owned by the
+- Install resolves every path it writes into the state directory, and the paths
+  of the config file, the TLS files and their directories, one component at a
+  time (`ctl/secure_fs.rs`) and does not follow a directory or link owned by the
   service account (current or previous uid), a directory writable by its group, or
   a world-writable directory without the sticky bit. Inside the state directory,
   recognized by device and inode, every component is opened with `O_NOFOLLOW`, and
   files are written by create-new-then-rename with `fchmod` / `fchown` on the new
-  descriptor. Ownership and modes elsewhere are changed through the opened
-  descriptor.
+  descriptor. Ownership and modes of those files and directories are changed
+  through the opened descriptor. The binary, the unit file and the man page and
+  completions are written by path into root-owned system directories.
 - The ownership walk of the state tree (`ctl/install/chown_walk.rs`) checks and
   changes each entry through a descriptor for that entry, skips links, and skips a
   file with more than one hard link that does not belong to the service account.

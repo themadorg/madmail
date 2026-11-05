@@ -291,10 +291,14 @@ with another home is repointed with `usermod -d` and no `-m` when the state dire
 exists (`usermod -m` refuses an existing target); `-m` is used only when it does not.
 Root works next to a service account that owns the state directory and may be
 compromised: while root runs, it can create, rename (including
-`renameat2(RENAME_EXCHANGE)` loops) and link anything in that tree. Every root
-write and every ownership or mode change during a system install or `--user-only`
-repair therefore goes through file descriptors (`ctl/secure_fs.rs`), never
-through a path the service account can change:
+`renameat2(RENAME_EXCHANGE)` loops) and link anything in that tree. During a
+system install or `--user-only` repair, every root write into the state
+directory, and every write or ownership or mode change of the config file, the
+TLS files and their directories, therefore goes through file descriptors
+(`ctl/secure_fs.rs`), never through a path the service account can change. The
+binary, the systemd unit, the man page and shell completions, and the parent of
+the state directory (created before the account) are written by path into
+root-owned system directories:
 
 - Paths are resolved by a checked resolver. It opens `/` and then each component
   relative to the previous directory with `O_NOFOLLOW`; a symbolic link is read

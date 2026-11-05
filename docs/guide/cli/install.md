@@ -97,7 +97,10 @@ These rules apply to a system install and to `--user-only` repair when install
 creates or uses the service account. They assume the service account may be
 compromised and may change its state directory while install runs.
 
-- Every path install writes or changes is resolved one component at a time.
+- Every path install writes into the state directory, and the paths of the
+  config file, the TLS files and their directories, are resolved one component
+  at a time. (The binary, the systemd unit, the man page and completions go into
+  root-owned system directories and are written by path.)
   A directory or link on the way that is owned by the service account, a
   directory writable by its group, or a world-writable directory without the
   sticky bit is never followed. When install would write through such a path
