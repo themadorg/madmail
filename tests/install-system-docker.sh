@@ -5,6 +5,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BINARY="${MADMAIL_INSTALL_TEST_BINARY:-$ROOT/target/debug/madmail}"
 IMAGE="madmail-install-system:test"
 [[ -x "$BINARY" ]] || { echo "Build madmail first: cargo build -p chatmail" >&2; exit 1; }
+# The container runs the binary: a macOS (Mach-O) host build fails with an exec error.
+[[ "$(head -c4 "$BINARY" | od -An -tx1 | tr -d ' \n')" == 7f454c46 ]] || {
+    echo "$BINARY is not a Linux ELF binary; set MADMAIL_INSTALL_TEST_BINARY to a Linux build" >&2
+    exit 1
+}
 # The test image copies no sources: do not send the repository as build context.
 docker build -t "$IMAGE" - < "$ROOT/tests/install-system.Dockerfile"
 docker run --rm -i --network none -v "$BINARY:/input/madmail:ro" "$IMAGE" bash -s <<'INNER'
@@ -30,7 +35,7 @@ PYJSON
 }
 cp /input/madmail /tmp/madmail
 chmod 755 /tmp/madmail
-mkdir -p /var/xyzzy/{etc,lib,bin} /test-bin
+mkdir -p /test-bin
 # PID 1 is not systemd: record daemon-reload while testing real generated unit
 # syntax with systemd-analyze below. No host systemd access is granted.
 cat > /test-bin/systemctl <<'SYSTEMCTL'
@@ -71,7 +76,7 @@ echo 'PASS: mode conflicts, automatic/explicit modes, JSON plans, invalid paths 
 grep -q 'Install mode:  system' /tmp/dry-run.log
 grep -q 'install and daemon-reload systemd unit' /tmp/dry-run.log
 absent_user madmail
-[[ ! -e /var/xyzzy/etc/madmail && ! -e /tmp/systemctl-calls ]]
+[[ ! -e /var/xyzzy && ! -e /tmp/systemctl-calls ]]
 if runuser -u nobody -- /tmp/madmail "${args[@]}" > /tmp/nonroot.log 2>&1; then
     echo 'Non-root system install unexpectedly succeeded'; exit 1
 fi
@@ -102,6 +107,36 @@ uid_before="$(id -u madmail)"
 /tmp/madmail "${args[@]}" > /tmp/reinstall.log
 [[ "$(id -u madmail)" = "$uid_before" ]]
 [[ "$(stat -c '%U:%G:%a' /var/xyzzy/etc/madmail/madmail.conf)" = root:madmail:640 ]]
+# Existing users can migrate into a tree whose parents do not exist.
+echo preserved > /var/xyzzy/lib/madmail/migration-marker
+/tmp/madmail install --simple --system --ip 127.0.0.1 --tls-mode self_signed \
+    --config-dir /home/mmcfg/madmail --state-dir /home/mmstate/madmail \
+    --binary-path /var/xyzzy/bin/madmail > /tmp/migrate.log
+[[ "$(getent passwd madmail | cut -d: -f6)" = /home/mmstate/madmail ]]
+[[ -f /home/mmstate/madmail/migration-marker ]]
+grep -q '^ProtectHome=false$' /etc/systemd/system/madmail.service
+systemd-analyze verify /etc/systemd/system/madmail.service
+runuser -u madmail -- test -r /home/mmstate/madmail/credentials.db
+
+# Simulate usermod updating passwd before a failed move; rollback must use no -m.
+cat > /test-bin/usermod <<'USERMOD'
+#!/bin/bash
+if [[ " $* " == *" -m "* ]]; then
+    /usr/sbin/usermod -d "$2" "${@: -1}"
+    exit 1
+fi
+exec /usr/sbin/usermod "$@"
+USERMOD
+chmod 755 /test-bin/usermod
+reject 'previous home restored' /tmp/madmail "${args[@]}"
+[[ "$(getent passwd madmail | cut -d: -f6)" = /home/mmstate/madmail ]]
+[[ -f /home/mmstate/madmail/migration-marker ]]
+rm /test-bin/usermod
+/tmp/madmail "${args[@]}" > /tmp/migrate-back.log
+[[ -f /var/xyzzy/lib/madmail/migration-marker ]]
+grep -q '^ProtectHome=true$' /etc/systemd/system/madmail.service
+echo 'PASS: missing parents, home paths, migration data preservation and failed-move rollback'
+
 # Independent skip flags still skip system steps while copying the requested binary.
 cp /tmp/madmail /tmp/skippedmail
 /tmp/skippedmail install --simple --system --skip-user --skip-systemd \
@@ -135,7 +170,16 @@ json_check /tmp/nouser.log system_install true service_installed true
 [[ -x '/tmp/nouser bin%name' && -f /etc/systemd/system/nousermail.service ]]
 systemd-analyze verify /etc/systemd/system/nousermail.service
 [[ "$(wc -l < /tmp/systemctl-calls)" = "$((reloads_before + 1))" ]]
-echo 'PASS: each skip flag independently and combined, JSON results, escaped binary path'
+# WorkingDirectory= is taken verbatim; ReadWritePaths= and ExecStart= are quoted.
+cp /tmp/madmail /tmp/spacemail
+useradd -rU -d /nonexistent spacemail
+/tmp/spacemail install --simple --system --skip-user --ip 127.0.0.1 \
+    --tls-mode self_signed --config-dir '/tmp/space config' --state-dir '/tmp/space state' \
+    --binary-path /tmp/space-bin > /tmp/space.log
+grep -qx 'WorkingDirectory=/tmp/space state' /etc/systemd/system/spacemail.service
+grep -qx 'ReadWritePaths="/tmp/space state" "/tmp/space config"' /etc/systemd/system/spacemail.service
+systemd-analyze verify /etc/systemd/system/spacemail.service
+echo 'PASS: each skip flag independently and combined, JSON results, escaped binary and state paths'
 
 # Local bootstrap really works as a non-root user and does not copy a host binary.
 install -d -o nobody -g nogroup /tmp/nonroot-local

@@ -215,10 +215,58 @@ The `data` fields depend on the selected operation:
 | Completed certificate-only | `cert_only`, `primary_domain`, `tls_mode`, `cert_path`, `key_path` |
 | Repair, including dry-run | `mode`, `dry_run`, `system_install`, `create_service_user`, `apply_permissions`, `install_binary`, `install_systemd`, `service_installed`, `service_started` |
 
-`man_page` and `completions` are null for local installs; system installs report
-paths, with `bash`, `zsh` and `fish` fields in `completions`. `config` is the config
-path (not `config_path`). Unix `service_installed` means the unit was installed;
-`service_started` remains false. Windows uses its service registration/start flags.
+A full-install `--dry-run` reports the planned actions without changing the host:
+
+```json
+{
+  "ok": true,
+  "command": "install",
+  "data": {
+    "dry_run": true,
+    "system_install": true,
+    "create_service_user": true,
+    "install_binary": true,
+    "install_systemd": true
+  }
+}
+```
+
+`create_service_user` is false with `--skip-user`; `install_systemd` is false with
+`--skip-systemd`; `install_binary` and `install_systemd` are false with `--cert-only`.
+All three are false for a local install (`system_install: false`).
+
+A completed install:
+
+```json
+{
+  "ok": true,
+  "command": "install",
+  "data": {
+    "installed": true,
+    "primary_domain": "[203.0.113.50]",
+    "paths_explicit": false,
+    "config": "/etc/madmail/madmail.conf",
+    "state_dir": "/var/lib/madmail",
+    "system_install": true,
+    "service_installed": true,
+    "service_started": false,
+    "firewall_applied": false,
+    "man_page": "/usr/share/man/man1/madmail.1",
+    "completions": {
+      "bash": "/usr/share/bash-completion/completions/madmail",
+      "zsh": "/usr/share/zsh/site-functions/_madmail",
+      "fish": "/usr/share/fish/vendor_completions.d/madmail.fish"
+    }
+  }
+}
+```
+
+`config` is the config path (not `config_path`). On Unix, `service_installed: true`
+means the systemd unit was written and `systemctl daemon-reload` ran; the service is
+not enabled or started (run `systemctl enable --now`), so `service_started` remains
+false. On Windows they report `--install-service` / `--start-service`.
+`man_page` and `completions` are `null` for a local install.
+`--cert-only` returns `cert_only`, `primary_domain`, `tls_mode`, `cert_path` and `key_path`.
 
 Repair preview example:
 
@@ -374,6 +422,7 @@ Dry-run / completed uninstall returns paths and flags in `data`. When nothing to
     "registration_open": false,
     "token_required": true,
     "jit_enabled": true,
+    "password_signup": false,
     "blocklisted": 2,
     "mail_directories": 12,
     "state_dir": "/var/lib/madmail",

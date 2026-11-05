@@ -367,6 +367,7 @@ fn apply_directive(name: &str, args: &[String], block_path: &[&str], cfg: &mut A
             "www_dir" if has_value => {
                 cfg.www_dir = Some(PathBuf::from(strip_quotes(&value)));
             }
+            "websocket_bridge_enabled" => cfg.websocket_bridge_enabled = parse_bool(arg0),
             "enable_contact_sharing" => cfg.enable_contact_sharing = parse_bool(arg0),
             "sharing_dsn" if has_value => {
                 cfg.sharing_dsn = Some(strip_quotes(&value));

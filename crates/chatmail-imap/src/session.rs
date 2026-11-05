@@ -76,6 +76,7 @@ pub struct ImapSession {
     cfg: ImapSessionConfig,
     _tag: u32,
     authenticated_user: Option<String>,
+    transport_authenticated: Option<Arc<std::sync::atomic::AtomicBool>>,
     selected_mailbox: Option<String>,
     selected_folder_needs_expunge: bool,
     messages: Vec<MailMessage>,
@@ -123,6 +124,7 @@ impl ImapSession {
             cfg,
             _tag: 0,
             authenticated_user: None,
+            transport_authenticated: None,
             selected_mailbox: None,
             selected_folder_needs_expunge: false,
             messages: Vec::new(),
@@ -131,6 +133,21 @@ impl ImapSession {
             cached_inbox_messages: None,
             events_rx: None,
         }
+    }
+
+    /// Serve bytes from a trusted TLS-terminated transport. Caller must establish
+    /// confidentiality before invoking this entry point; STARTTLS is unavailable.
+    pub async fn handle_secure_transport<S>(
+        &mut self,
+        stream: S,
+        authenticated: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        self.cfg.starttls_config = None;
+        self.transport_authenticated = Some(authenticated);
+        self.serve_loop(stream, true, false).await
     }
 
     pub async fn handle_connection(&mut self, stream: TcpStream) -> Result<()> {
@@ -350,6 +367,9 @@ impl ImapSession {
                     .init_mailbox_dir(&user, "DeltaChat")
                     .await;
                 self.authenticated_user = Some(user);
+                if let Some(flag) = &self.transport_authenticated {
+                    flag.store(true, std::sync::atomic::Ordering::Release);
+                }
                 Ok(Some(format!("{t} OK LOGIN completed\r\n")))
             }
             "LIST" | "LSUB" => {

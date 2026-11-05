@@ -29,6 +29,23 @@ madmail uninstall [OPTIONS]
 | `--dry-run` | Show what would be removed |
 | `--log-file` | Log path (default: `/var/log/madmail-uninstall.log`) |
 
+## What is detected
+
+Uninstall reads every `madmail*` / `chatmail*` unit in the systemd unit directories.
+From each unit it takes `User=`, the state directory (`WorkingDirectory=`), the
+binary (first word of `ExecStart=`) and the config directory (parent of the
+`--config` path in `ExecStart=`), so a custom-path `install --system` (for example
+`--config-dir /var/xyzzy/etc/madmail`) has its config, secrets and TLS key removed.
+It also finds `/etc/madmail*`, `/etc/chatmail*`, `/var/lib/madmail*`,
+`/var/lib/chatmail*`, family binaries in `/usr/local/bin` and `/usr/bin`, and the
+`--state-dir` given to uninstall.
+
+Limits: a config directory with only one path component (such as `/etc`) is never
+derived from a unit. If the unit file was removed or edited by hand, custom config
+and state directories outside the default locations are not found; pass
+`--state-dir` and remove the config directory yourself. Check the plan with
+`--dry-run` first.
+
 ## Examples
 
 ```bash

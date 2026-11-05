@@ -19,6 +19,7 @@ The command is **Madmail-compatible**. The binary name (`madmail`, `chatmail`, �
 - [Examples](#examples)
 - [After install](#after-install)
 - [Related docs](#related-docs)
+- [Installer regression testing](#installer-regression-testing)
 
 ---
 
@@ -149,7 +150,7 @@ Choose installation intent explicitly when using custom paths:
 
 - `--system`: Unix system install, requiring root, regardless of directory layout.
 - `--local`: local bootstrap; skip host account/ownership, binary, CLI docs and unit installation.
-- The flags are mutually exclusive. `--skip-user` and `--skip-systemd` still opt out of their respective system steps. System config, state and binary paths must be absolute.
+- The flags are mutually exclusive. `--skip-user` and `--skip-systemd` still opt out of their respective system steps. System config, state and binary paths must be absolute and must not contain control characters or end with whitespace or a backslash (systemd cannot represent them). Spaces, quotes and `%` inside a path are escaped in the generated unit.
 
 For example, the custom-path bootstrap in issue #216 becomes:
 
@@ -201,7 +202,7 @@ ReadWritePaths=/var/lib/madmail /etc/madmail
 ExecStart=/usr/local/bin/madmail --config /etc/madmail/madmail.conf run --libexec /var/lib/madmail
 ```
 
-**Custom `--config-dir` / `--state-dir`** — unit omits `StateDirectory` / `ConfigurationDirectory` and uses your paths in `WorkingDirectory`, `ReadWritePaths`, and `ExecStart` instead. `RuntimeDirectory=<binary>` is retained to create the service-owned `/run/<binary>` directory.
+**Custom `--config-dir` / `--state-dir`** — unit omits `StateDirectory` / `ConfigurationDirectory` and uses your paths in `WorkingDirectory`, `ReadWritePaths`, and `ExecStart` instead. `RuntimeDirectory=<binary>` is retained to create the service-owned `/run/<binary>` directory. If a required path is under `/home`, `/root`, or `/run/user`, the unit disables `ProtectHome` so systemd does not hide it; ordinary filesystem permissions still apply. Other layouts keep `ProtectHome=true`.
 
 ---
 
@@ -300,7 +301,12 @@ sudo madmail install --simple --domain example.org \
   --acme-email admin@example.org
 ```
 
-systemd `ExecStart` and `ReadWritePaths` use the custom directories; `StateDirectory` shortcuts are omitted.
+systemd `ExecStart`, `WorkingDirectory`, and `ReadWritePaths` use the custom directories;
+`StateDirectory` shortcuts are omitted, while `RuntimeDirectory` is retained.
+When a required state, configuration, binary, or TLS path is under `/home`, `/root`,
+or `/run/user`, the unit sets `ProtectHome=false`; other layouts retain
+`ProtectHome=true`. Parent directories must still allow the service user to traverse
+and read the required files (in particular, `/root` normally does not).
 
 ### Non-interactive domain install (no `--simple`)
 
@@ -430,5 +436,7 @@ Developers can run `make test-install-docker` for a compact debug build and an
 isolated Debian provisioning test. It covers installation modes, permissions,
 custom systemd paths, repeated installation, skip flags, dry-run/JSON output and
 failure handling without modifying host accounts or services. Docker and Cargo
-are required. This test validates unit syntax and service-user boot; it does not
+are required, and the mounted binary must be a Linux (ELF) build: on macOS, set
+`MADMAIL_INSTALL_TEST_BINARY` to a Linux binary and run
+`bash tests/install-system-docker.sh` (CI does not run this suite). This test validates unit syntax and service-user boot; it does not
 run systemd as PID 1. Details: [testing design](../TDD/16-testing.md#expanded-installer-e2e-matrix).

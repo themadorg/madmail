@@ -29,6 +29,7 @@ Each row calls `store.toggleService(resource, current)` → `POST` with `enable`
 | Admin web UI | `/admin/services/admin_web` | `enabled` | `disable` |
 | Auto-purge seen | `/admin/services/auto_purge_seen` | `enabled` | `disable` |
 | WebIMAP | `/admin/services/webimap` | `enabled` | `disable` |
+| WebSocket mail bridge | `/admin/services/websocket_bridge` | `enabled` | `disable` |
 | WebSMTP | `/admin/services/websmtp` | `enabled` | `disable` |
 
 **API body for toggles:** `{ "action": "enable" | "disable" | "open" | "close" | "auto" }`
@@ -67,3 +68,4 @@ Special UX: `admin_path` and `ss_password` have dice buttons for random values.
 - Enable TURN/Iroh for Delta Chat calls and large attachments
 - Point `smtp_hostname` at the real public name clients should use
 - Change `admin_path` / `admin_web_path` to obscure operator endpoints (expect reload)
+The WebSocket mail bridge is disabled by default. Its toggle applies to new connections immediately. See [operator/client instructions](../guide/cli/websocket-bridge.md); browser origins must be explicitly allowlisted.

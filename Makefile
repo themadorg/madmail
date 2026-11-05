@@ -324,6 +324,11 @@ test-install-docker:
 	bash tests/install-system-docker.sh
 
 # Full workspace + landing tests in Docker, then isolated install/mail/API/TURN checks.
+test-websocket-bridge-docker:
+	bash tests/websocket-bridge-docker.sh
+
+.PHONY: test-websocket-bridge-docker
+
 test-docker:
 	bash tests/docker-test.sh
 
@@ -560,3 +565,7 @@ help:
 	@echo ""
 	@echo "Defaults: STATE_DIR=$(STATE_DIR) CONFIG=$(CONFIG)"
 	@echo "Push uses: BINARY_PUSH=$(BINARY_PUSH) (remote paths: scripts/deploy.sh)"
+
+.PHONY: test-postgres-restart-docker
+test-postgres-restart-docker:
+	bash tests/postgres-restart-docker.sh

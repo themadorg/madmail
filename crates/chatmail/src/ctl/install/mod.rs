@@ -772,6 +772,16 @@ impl InstallConfig {
                         "{flag} must be absolute for a system install"
                     )));
                 }
+                // systemd strips trailing whitespace and treats a trailing `\`
+                // as a line continuation, so such paths cannot be written to the unit.
+                if path
+                    .to_string_lossy()
+                    .ends_with(|c: char| c.is_whitespace() || c == '\\')
+                {
+                    return Err(ChatmailError::config(format!(
+                        "{flag} must not end with whitespace or a backslash for a system install"
+                    )));
+                }
             }
         }
 
@@ -1043,6 +1053,13 @@ mod tests {
         assert_eq!(cfg.binary_path, PathBuf::from("/var/xyzzy/bin/madmail"));
         assert!(!cfg.use_default_systemd_paths);
         args.binary_path = Some("relative/madmail".into());
+        assert!(InstallConfig::from_args(&global, &args).is_err());
+        args.binary_path = Some("/var/xyzzy/bin/madmail".into());
+        args.state_dir = Some("/var/xyzzy/lib/mail data".into());
+        assert!(InstallConfig::from_args(&global, &args).is_ok());
+        args.state_dir = Some("/var/xyzzy/lib/madmail ".into());
+        assert!(InstallConfig::from_args(&global, &args).is_err());
+        args.state_dir = Some("/var/xyzzy/lib/madmail\\".into());
         assert!(InstallConfig::from_args(&global, &args).is_err());
         let local =
             InstallArgs::try_parse_from(["install", "--simple", "--ip", "127.0.0.1", "--local"])

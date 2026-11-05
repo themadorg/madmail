@@ -17,6 +17,8 @@ Chatmail's correctness is defined by **real Delta Chat client behavior**, not ju
 
 ## Docker tests
 
+`make test-postgres-restart-docker` builds Madmail's Docker image and starts a disposable PostgreSQL 18 container. It verifies empty cold start, populated restart, forward migration from the original INT4 federation statistics schema, and the legacy ensure path with Go HTTPS column names. Every counter is checked for preservation and values above the INT4 limit. A PostgreSQL-backed Rust test also exercises runtime tracker updates, flushing, reconnecting, and hydration. Containers and database volumes are removed; logs remain under `target/postgres-restart-tests/`. Requirements: Docker, Cargo, OpenSSL, and curl. To test an existing image, set `MADMAIL_POSTGRES_TEST_IMAGE` and `MADMAIL_POSTGRES_TEST_SKIP_BUILD=1`; `MADMAIL_POSTGRES_TEST_DB_IMAGE` overrides the PostgreSQL image.
+
 `make test-docker` runs the full default Rust workspace suite and landing-site tests inside Docker, then builds the shipping image and installs an isolated self-signed relay. Docker clients check browser-selected DNS/IP account domains, foreign-host fallback, multi-domain JIT login and wrong-password rejection, metrics disabled by default, enable/disable across restarts, custom listen IP/port, HTTP Basic authentication success and rejection, saved CLI credentials, password removal, HTTPS and dashboard serving, admin authentication, SMTP TLS/STARTTLS delivery, IMAP retrieval and login rejection, plaintext rejection, restart persistence, and live IMAP TURN metadata plus UDP allocation. The runner removes its containers and volumes and retains logs under `target/docker-tests/`. See [Docker test instructions](../guide/docker.md#automated-local-docker-tests) for prerequisites, ignored/external tests, and port overrides. The PGP/MIME fixture and TURN allocation checks do not replace real Delta Chat client or media round-trip tests.
 
 `make test-deltachat-docker` runs the existing 11 cmlxc relay_minitest checks and extensive Delta Chat RPC scenarios against two Docker relays, including encrypted messaging, groups, cross-relay delivery, files, and large-file SHA-256 verification. `make test-full-docker` combines both Docker suites. See [extensive Docker tests](../guide/docker.md#extensive-delta-chat-and-cmlxc-tests-in-docker) for selection, artifacts, and the explicit signing-key/Go-camouflage/LXC-exchanger exclusions.
@@ -263,21 +265,27 @@ for the Windows CI runner; it was not executed locally.
 compilation disabled and two build jobs, then runs the isolated Debian test. This
 limits local build storage and memory without changing release or normal dev profiles.
 The image receives only its Dockerfile as build context; source/build directories
-are not uploaded to Docker. The binary is mounted read-only for the test.
+are not uploaded to Docker. The binary is mounted read-only for the test and must
+be a Linux ELF build; the script refuses other binaries (such as a macOS host build)
+before starting Docker, so on macOS set `MADMAIL_INSTALL_TEST_BINARY` to a Linux
+build. CI does not run this suite.
 
 Coverage includes flag conflicts; automatic FHS/custom and explicit modes; JSON
 plans (including certificate-only and skip flags); rejected relative/control-character
 paths; dry-run side-effect absence; root enforcement; root and non-root local
 bootstrap; real account, ownership, binary and host-doc installation; generated-unit
 verification; boot as the service user; repeated installation; each skip flag
-independently and combined; an escaped binary path; and propagation of daemon-reload
-failure. Negative assertions explicitly fail the suite when an unexpected user or
+independently and combined; an escaped binary path; a state directory with a
+space (verbatim `WorkingDirectory=`, quoted `ReadWritePaths=`); and propagation of
+daemon-reload failure. Negative assertions explicitly fail the suite when an unexpected user or
 unit directive is present. An actual systemd PID-1 start remains outside this test;
 only daemon-reload is stubbed. Windows service installation remains a separate flow.
 
 Expanded matrix verification: `make test-install-docker` passed after a clean
-compact build, and all 17 installer unit tests passed with the same compact
-profiles. The test Docker build context was 2 KiB. No production/release profile
+compact build, and the installer unit tests (17 at the time) passed with the same
+compact profiles. After the #220 review fixes there are 19 `ctl::install` unit tests
+and 18 `ctl::uninstall` unit tests; the spaced state-directory Docker case added with
+those fixes has not yet been run in the Docker suite. The test Docker build context was 2 KiB. No production/release profile
 settings were changed. Failure-path checks include invalid mode/path input,
 non-root system installation, and a nonzero daemon-reload result.
 
@@ -290,3 +298,7 @@ binary hashes, unchanged accounts and file modes during unit-only repair, no uni
 or daemon changes during user-only repair, and propagated daemon-reload failures.
 Systemd uses the same recording stub and real unit syntax verification as the full
 installer suite; running a service under systemd PID 1 is not covered here.
+
+## Raw IMAP/SMTP WebSocket transport
+
+See [the bridge TDD](26-websocket-mail-bridge.md) and [operator/client usage](../guide/cli/websocket-bridge.md). The bridge is opt-in, TLS-only, and reuses native authenticated mail sessions. Coverage lives in `tests/websocket_bridge_e2e.rs`; run the isolated Docker scenario with `bash tests/websocket-bridge-docker.sh`.

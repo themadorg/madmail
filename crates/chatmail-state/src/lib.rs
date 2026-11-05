@@ -15,6 +15,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+/// HTTP connection was terminated by Madmail's TLS listener.
+#[derive(Clone, Copy)]
+pub struct SecureHttp;
+
 pub mod auth;
 pub mod events;
 pub mod federation_size;

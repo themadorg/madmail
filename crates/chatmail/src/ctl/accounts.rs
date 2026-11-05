@@ -24,9 +24,8 @@ use chatmail_auth::{hash_password, is_importable_hash, normalize_username};
 use chatmail_config::cli::AccountsCommand;
 use chatmail_config::{build_dclogin_link, Args, DcloginMailSettings};
 use chatmail_db::{
-    account_info, blocklist, delete_quota_row, get_bool_setting, is_reserved_address,
-    load_mail_port_overrides, passwords, settings_keys, DbPool, BULK_DELETE_REASON, CLI_BAN_REASON,
-    CLI_DELETE_REASON,
+    account_info, blocklist, delete_quota_row, is_reserved_address, load_mail_port_overrides,
+    passwords, DbPool, BULK_DELETE_REASON, CLI_BAN_REASON, CLI_DELETE_REASON,
 };
 use chatmail_storage::MailboxStore;
 use chatmail_types::{ChatmailError, Result};
@@ -154,10 +153,11 @@ async fn accounts_status(
         .filter(|u| !is_internal_settings_key(u))
         .count();
 
-    let reg_open = get_bool_setting(pool, settings_keys::REGISTRATION_OPEN, false).await?;
-    let token_required =
-        get_bool_setting(pool, settings_keys::REGISTRATION_TOKEN_REQUIRED, false).await?;
-    let jit = get_bool_setting(pool, settings_keys::JIT_REGISTRATION_ENABLED, true).await?;
+    let signup = chatmail_db::SignupSettings::load(pool).await?;
+    let reg_open = signup.registration_open;
+    let token_required = signup.token_required;
+    let jit = signup.jit_enabled;
+    let password_signup = signup.password_signup_allowed();
 
     let blocked = blocklist::list_blocked_users(pool).await?.len();
     let mail_root = ctx.state_dir.join("mail");
@@ -176,6 +176,7 @@ async fn accounts_status(
             "registration_open": reg_open,
             "token_required": token_required,
             "jit_enabled": jit,
+            "password_signup": password_signup,
             "blocklisted": blocked,
             "mail_directories": mail_count,
             "state_dir": ctx.state_dir.display().to_string(),
@@ -195,6 +196,11 @@ async fn accounts_status(
     out.line(format!(
         "JIT registration: {}",
         if jit { "enabled" } else { "disabled" }
+    ));
+    // The effective IMAP/SMTP gate, so the three rows above are not read as an OR (#235).
+    out.line(format!(
+        "First-login sign-up (IMAP/SMTP): {} (running server applies after reload)",
+        if password_signup { "on" } else { "off" }
     ));
     out.line(format!("Blocklisted: {blocked}"));
     out.line(format!("Mail directories: {mail_count}"));
