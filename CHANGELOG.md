@@ -1,3 +1,9 @@
+# [3.1.0](https://github.com/themadorg/madmail/compare/v3.0.0-unstable...v3.1.0-unstable) (2026-11-05)
+
+### Features
+
+* **website:** add Persian localization and mobile image viewer ([32cddc4](https://github.com/themadorg/madmail/commit/32cddc4d9592fd7b13fdb3e71d044cce94cf747e))
+
 # [3.0.0](https://github.com/themadorg/madmail/compare/v2.42.0-unstable...v3.0.0-unstable) (2026-11-05)
 
 ### Bug Fixes
