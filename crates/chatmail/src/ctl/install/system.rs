@@ -68,7 +68,14 @@ pub fn validate_service_prerequisites(cfg: &InstallConfig) -> Result<()> {
     Ok(())
 }
 
-pub fn create_service_user(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
+/// `adopt_existing_state` is set by repair: an existing account is then repointed
+/// at the existing state directory. A full install refuses that instead, because
+/// data in the previous home would be left behind.
+pub fn create_service_user(
+    cfg: &InstallConfig,
+    dry_run: bool,
+    adopt_existing_state: bool,
+) -> Result<()> {
     if cfg.skip_user || !cfg.system_install {
         return Ok(());
     }
@@ -90,7 +97,7 @@ pub fn create_service_user(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
             "   User {} already exists — fixing home/group",
             cfg.maddy_user
         );
-        return ensure_service_account(cfg, dry_run);
+        return ensure_service_account(cfg, dry_run, adopt_existing_state);
     }
 
     if dry_run {
@@ -138,11 +145,15 @@ pub fn create_service_user(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
         )));
     }
     println!("   ✓ User {}", cfg.maddy_user);
-    ensure_service_account(cfg, dry_run)
+    ensure_service_account(cfg, dry_run, adopt_existing_state)
 }
 
 /// Align passwd/group with systemd `User=` / `Group=` (fixes 217/USER after a broken install).
-fn ensure_service_account(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
+fn ensure_service_account(
+    cfg: &InstallConfig,
+    dry_run: bool,
+    adopt_existing_state: bool,
+) -> Result<()> {
     if dry_run {
         return Ok(());
     }
@@ -183,9 +194,11 @@ fn ensure_service_account(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
         Path::new(previous_home),
         &cfg.state_dir,
         cfg.state_dir.is_dir(),
+        Path::new(previous_home).exists(),
+        adopt_existing_state,
         &cfg.maddy_group,
         &cfg.maddy_user,
-    );
+    )?;
     let moves_home = args.iter().any(|arg| arg == "-m");
     let status = Command::new("usermod")
         .args(&args)
@@ -193,11 +206,15 @@ fn ensure_service_account(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
         .map_err(|e| ChatmailError::config(format!("usermod: {e}")))?;
     if !status.success() {
         if !moves_home {
+            let step = if args.iter().any(|arg| arg == "-d") {
+                format!("setting home {}", cfg.state_dir.display())
+            } else {
+                "updating group/shell".to_string()
+            };
             return Err(ChatmailError::config(format!(
-                "usermod failed for {} (exit status {:?}) while setting home {}",
+                "usermod failed for {} (exit status {:?}) while {step}",
                 cfg.maddy_user,
-                status.code(),
-                cfg.state_dir.display()
+                status.code()
             )));
         }
         // A failed move can still update passwd. Restore only the account entry:
@@ -223,16 +240,32 @@ fn ensure_service_account(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
 
 /// `usermod` arguments aligning an existing account with the install paths.
 /// The home is only moved (`-m`) when the state directory does not exist yet:
-/// `usermod -m` refuses an existing target, and repair always has one.
+/// `usermod -m` refuses an existing target. Repair always has one and adopts it
+/// with `-d` alone. A full install adopts it only when the previous home is gone;
+/// otherwise it refuses, as it would leave that data behind and continue with a
+/// different state directory.
 fn usermod_args(
     previous_home: &Path,
     state_dir: &Path,
     state_dir_exists: bool,
+    previous_home_exists: bool,
+    adopt_existing_state: bool,
     group: &str,
     user: &str,
-) -> Vec<String> {
+) -> Result<Vec<String>> {
     let mut args = Vec::new();
     if previous_home != state_dir {
+        if state_dir_exists && previous_home_exists && !adopt_existing_state {
+            return Err(ChatmailError::config(format!(
+                "user {user} has home {} but state directory {} already exists; \
+                 a full install would leave the data in {} behind. Move it there if \
+                 needed, run `install --user-only` with the same paths to repoint the \
+                 account, then retry",
+                previous_home.display(),
+                state_dir.display(),
+                previous_home.display()
+            )));
+        }
         args.push("-d".to_string());
         args.push(state_dir.to_string_lossy().into_owned());
         if !state_dir_exists {
@@ -242,7 +275,7 @@ fn usermod_args(
     for arg in ["-g", group, "-s", "/sbin/nologin", user] {
         args.push(arg.to_string());
     }
-    args
+    Ok(args)
 }
 
 /// TLS material and config must be readable by the service user.
@@ -270,27 +303,44 @@ pub fn setup_config_permissions(cfg: &InstallConfig, dry_run: bool) -> Result<()
     for path in [&cfg.cert_path, &cfg.key_path] {
         if state_dir_symlink(&cfg.state_dir, path) {
             println!(
-                "   ! Skipping ownership of symlink {} inside the state directory",
+                "   ! Skipping ownership of {}: symlink inside the state directory",
                 path.display()
             );
         } else if path.is_file() {
-            chown(path, Some(uid), Some(gid)).map_err(|e| io_error("chown", path, e))?;
+            chown_path(&cfg.state_dir, path, uid, gid).map_err(|e| io_error("chown", path, e))?;
         }
     }
     if let Some(certs) = cfg.cert_path.parent() {
         if !state_dir_symlink(&cfg.state_dir, certs) {
-            chown(certs, Some(0), Some(gid)).ok();
+            chown_path(&cfg.state_dir, certs, 0, gid).ok();
         }
     }
     Ok(())
 }
 
 /// The service account can plant links in its own state tree, so root must not
-/// chown through them. Operator-chosen links elsewhere (e.g. to an ACME client's
-/// live directory) keep being followed.
+/// chown through them: a path below the state directory counts as planted if any
+/// of its components there is a link. Operator-chosen links elsewhere (e.g. to an
+/// ACME client's live directory) keep being followed.
 fn state_dir_symlink(state_dir: &Path, path: &Path) -> bool {
-    path.starts_with(state_dir)
-        && fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
+    let Ok(relative) = path.strip_prefix(state_dir) else {
+        return false;
+    };
+    let mut current = state_dir.to_path_buf();
+    relative.components().any(|component| {
+        current.push(component);
+        fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink())
+    })
+}
+
+/// Inside the state directory a link swapped in after the check changes only the
+/// link itself; outside it, operator links are followed.
+fn chown_path(state_dir: &Path, path: &Path, uid: u32, gid: u32) -> io::Result<()> {
+    if path.starts_with(state_dir) {
+        lchown(path, Some(uid), Some(gid))
+    } else {
+        chown(path, Some(uid), Some(gid))
+    }
 }
 
 pub fn install_binary(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
@@ -396,16 +446,11 @@ fn lookup_uid_gid(name: &str) -> Result<(u32, u32)> {
 
 /// Recursively chown the service-writable state tree without following symlinks:
 /// the service account can plant links there, so root must never chown through
-/// them or descend into linked directories.
+/// them or descend into linked directories. The root itself is chosen by the
+/// operator (e.g. a link to a data volume), so it is resolved once first.
 fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<()> {
-    let metadata = fs::symlink_metadata(root).map_err(|e| io_error("stat", root, e))?;
-    if metadata.file_type().is_symlink() {
-        return Err(ChatmailError::config(format!(
-            "refusing to change ownership through symlink {}; use the resolved state directory",
-            root.display()
-        )));
-    }
-    chown_entries(root, uid, gid)
+    let root = fs::canonicalize(root).map_err(|e| io_error("resolve", root, e))?;
+    chown_entries(&root, uid, gid)
 }
 
 fn chown_entries(dir: &Path, uid: u32, gid: u32) -> Result<()> {
@@ -453,31 +498,50 @@ mod tests {
     #[test]
     fn usermod_keeps_matching_home_and_never_moves_into_existing_state() {
         let state = Path::new("/var/xyzzy/lib/madmail");
+        let old = Path::new("/var/wrong/madmail");
         let tail = ["-g", "madmail", "-s", "/sbin/nologin", "madmail"];
-        assert_eq!(usermod_args(state, state, true, "madmail", "madmail"), tail);
+        let args = |previous, state_exists, previous_exists, adopt| {
+            usermod_args(
+                previous,
+                state,
+                state_exists,
+                previous_exists,
+                adopt,
+                "madmail",
+                "madmail",
+            )
+        };
+        assert_eq!(args(state, true, true, false).unwrap(), tail);
         let mut repoint = vec!["-d", "/var/xyzzy/lib/madmail"];
         repoint.extend(tail);
-        assert_eq!(
-            usermod_args(
-                Path::new("/var/wrong/madmail"),
-                state,
-                true,
-                "madmail",
-                "madmail"
-            ),
-            repoint
-        );
+        // Repair adopts the existing state dir; a full install only does so when
+        // nothing is left behind in the previous home.
+        assert_eq!(args(old, true, true, true).unwrap(), repoint);
+        assert_eq!(args(old, true, false, false).unwrap(), repoint);
         let mut moved = vec!["-d", "/var/xyzzy/lib/madmail", "-m"];
         moved.extend(tail);
-        assert_eq!(
-            usermod_args(
-                Path::new("/var/wrong/madmail"),
-                state,
-                false,
-                "madmail",
-                "madmail"
-            ),
-            moved
+        assert_eq!(args(old, false, true, false).unwrap(), moved);
+        assert_eq!(args(old, false, true, true).unwrap(), moved);
+    }
+
+    #[test]
+    fn full_install_refuses_to_abandon_previous_home() {
+        let err = usermod_args(
+            Path::new("/var/lib/madmail"),
+            Path::new("/srv/madmail"),
+            true,
+            true,
+            false,
+            "madmail",
+            "madmail",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("/var/lib/madmail")
+                && err.contains("/srv/madmail")
+                && err.contains("--user-only"),
+            "{err}"
         );
     }
 
@@ -517,10 +581,15 @@ mod tests {
         assert_eq!(owner(&target_dir), before);
         assert_eq!(owner(&target_dir.join("inner")), before);
 
+        // An operator-chosen link to the state directory is resolved, not refused;
+        // links inside it are still skipped.
+        fs::write(root.join("sub/after-link"), "x").unwrap();
         let linked_root = outside.path().join("state-link");
         symlink(root, &linked_root).unwrap();
-        let err = chown_tree(&linked_root, uid, gid).unwrap_err().to_string();
-        assert!(err.contains("symlink"), "{err}");
+        chown_tree(&linked_root, uid, gid).unwrap();
+        assert_eq!(owner(&root.join("sub/after-link")), (uid, gid));
+        assert_eq!(owner(&target_file), before);
+        assert_eq!(owner(&target_dir.join("inner")), before);
     }
 
     #[test]
@@ -537,5 +606,18 @@ mod tests {
         assert!(state_dir_symlink(state.path(), &inside));
         assert!(!state_dir_symlink(state.path(), &operator_link));
         assert!(!state_dir_symlink(outside.path(), &target));
+
+        // A linked directory between the state dir and the file is planted too.
+        symlink(outside.path(), state.path().join("tls")).unwrap();
+        assert!(state_dir_symlink(
+            state.path(),
+            &state.path().join("tls/fullchain.pem")
+        ));
+        fs::create_dir(state.path().join("certs")).unwrap();
+        fs::write(state.path().join("certs/fullchain.pem"), "x").unwrap();
+        assert!(!state_dir_symlink(
+            state.path(),
+            &state.path().join("certs/fullchain.pem")
+        ));
     }
 }

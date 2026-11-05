@@ -135,7 +135,7 @@ fn repair_installation(global: &Args, args: &InstallArgs) -> Result<()> {
                 ));
             }
             if args.user_only {
-                system::create_service_user(&cfg, false)?;
+                system::create_service_user(&cfg, false, true)?;
                 system::setup_config_permissions(&cfg, false)?;
                 system::setup_permissions(&cfg, false)?;
             } else {
@@ -218,7 +218,10 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
 
     #[cfg(unix)]
     {
-        system::create_service_user(&cfg, false)?;
+        if cfg.system_install && !args.skip_systemd && !args.cert_only {
+            systemd::check_unit_path(&cfg)?;
+        }
+        system::create_service_user(&cfg, false, false)?;
     }
     create_directories(&cfg)?;
     generate_dkim_keys(&cfg);

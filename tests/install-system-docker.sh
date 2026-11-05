@@ -135,7 +135,17 @@ rm /test-bin/usermod
 /tmp/madmail "${args[@]}" > /tmp/migrate-back.log
 [[ -f /var/xyzzy/lib/madmail/migration-marker ]]
 grep -q '^ProtectHome=true$' /etc/systemd/system/madmail.service
-echo 'PASS: missing parents, home paths, migration data preservation and failed-move rollback'
+# A full install into a pre-created state dir (e.g. a mount point) must not
+# repoint the account and leave the data in its previous home behind.
+mkdir -p /srv/premade/madmail
+reject 'would leave the data in /var/xyzzy/lib/madmail behind' /tmp/madmail install --simple \
+    --system --ip 127.0.0.1 --tls-mode self_signed --config-dir /var/xyzzy/etc/madmail \
+    --state-dir /srv/premade/madmail --binary-path /var/xyzzy/bin/madmail
+[[ "$(getent passwd madmail | cut -d: -f6)" = /var/xyzzy/lib/madmail ]]
+[[ -f /var/xyzzy/lib/madmail/migration-marker && -z "$(ls -A /srv/premade/madmail)" ]]
+grep -q '^ProtectHome=true$' /etc/systemd/system/madmail.service
+rmdir /srv/premade/madmail
+echo 'PASS: missing parents, home paths, migration data preservation, failed-move rollback and pre-created state refusal'
 
 # Independent skip flags still skip system steps while copying the requested binary.
 cp /tmp/madmail /tmp/skippedmail
@@ -242,6 +252,15 @@ chmod 600 /var/xyzzy/etc/madmail/madmail.conf
 ln -s /etc/shadow /var/xyzzy/lib/madmail/planted-file
 ln -s /etc /var/xyzzy/lib/madmail/planted-dir
 shadow_owner="$(stat -c '%U:%G' /etc/shadow)"
+# A TLS path through a linked directory in the state tree is not chowned either.
+mkdir /tmp/root-tls
+printf 'x' > /tmp/root-tls/fullchain.pem
+ln -s /tmp/root-tls /var/xyzzy/lib/madmail/tls
+/tmp/madmail install --user-only "${repair_paths[@]}" \
+    --cert-path /var/xyzzy/lib/madmail/tls/fullchain.pem > /tmp/user-planted-tls.log
+grep -q 'Skipping ownership of /var/xyzzy/lib/madmail/tls/fullchain.pem' /tmp/user-planted-tls.log
+[[ "$(stat -c '%U:%G' /tmp/root-tls/fullchain.pem)" = root:root ]]
+rm /var/xyzzy/lib/madmail/tls
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-repoint.log
 [[ "$(getent passwd madmail | cut -d: -f6)" = /var/xyzzy/lib/madmail ]]
 [[ "$(id -u madmail)" = "$repair_uid" ]]
@@ -281,6 +300,15 @@ mv /etc/systemd/system/madmail.service /tmp/madmail.service.saved
 ln -s /dev/null /etc/systemd/system/madmail.service
 reject 'is a symlink' /tmp/madmail install --systemd-only "${repair_paths[@]}"
 [[ "$(readlink /etc/systemd/system/madmail.service)" = /dev/null ]]
+# A full install checks the unit path before changing the account or any file.
+sha256sum /etc/passwd /etc/group > /tmp/masked-accounts.before
+find /var/xyzzy/etc/madmail /var/xyzzy/lib/madmail /var/xyzzy/bin -printf '%p %u %g %m\n' | sort > /tmp/masked-modes.before
+find /var/xyzzy/etc/madmail /var/xyzzy/lib/madmail /var/xyzzy/bin -type f -exec sha256sum {} + | sort > /tmp/masked-files.before
+reject 'is a symlink' /tmp/madmail "${args[@]}"
+sha256sum -c /tmp/masked-accounts.before >/dev/null
+find /var/xyzzy/etc/madmail /var/xyzzy/lib/madmail /var/xyzzy/bin -printf '%p %u %g %m\n' | sort | diff -u /tmp/masked-modes.before -
+find /var/xyzzy/etc/madmail /var/xyzzy/lib/madmail /var/xyzzy/bin -type f -exec sha256sum {} + | sort | diff -u /tmp/masked-files.before -
+[[ "$(readlink /etc/systemd/system/madmail.service)" = /dev/null ]]
 printf '[Unit]\nDescription=other\n' > /tmp/other.service
 sha256sum /tmp/other.service > /tmp/other-unit.before
 ln -sfn /tmp/other.service /etc/systemd/system/madmail.service
@@ -289,11 +317,13 @@ sha256sum -c /tmp/other-unit.before >/dev/null
 [[ -L /etc/systemd/system/madmail.service ]]
 [[ "$(wc -l < /tmp/systemctl-calls)" = "$reloads_before" ]]
 rm /etc/systemd/system/madmail.service
-/tmp/madmail install --systemd-only "${repair_paths[@]}" > /tmp/unit-unmasked.log
+# The unit mode does not depend on the caller's umask.
+(umask 077; /tmp/madmail install --systemd-only "${repair_paths[@]}" > /tmp/unit-unmasked.log)
 [[ -f /etc/systemd/system/madmail.service && ! -L /etc/systemd/system/madmail.service ]]
+[[ "$(stat -c '%a' /etc/systemd/system/madmail.service)" = 644 ]]
 [[ ! -e /etc/systemd/system/madmail.service.tmp ]]
 sha256sum -c /tmp/repair-unit.before >/dev/null
 reject 'systemctl daemon-reload failed' env MADMAIL_TEST_SYSTEMCTL_EXIT=1 /tmp/madmail install --systemd-only "${repair_paths[@]}"
-echo 'PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, home repointing, symlink refusal, content preservation, repeatability and failure propagation'
+echo 'PASS: isolated repair conflicts, prerequisites, dry-run, account/unit restoration, home repointing, planted-link and masked-unit refusal, unit mode, content preservation, repeatability and failure propagation'
 echo 'PASS: complete Unix installer E2E matrix'
 INNER

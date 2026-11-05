@@ -19,7 +19,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -27,29 +27,45 @@ use chatmail_types::{ChatmailError, Result};
 
 use super::config::InstallConfig;
 
+fn unit_file_path(cfg: &InstallConfig) -> PathBuf {
+    Path::new("/etc/systemd/system").join(format!("{}.service", cfg.binary_name))
+}
+
 pub fn install_unit(cfg: &InstallConfig) -> Result<()> {
-    let unit_path = Path::new("/etc/systemd/system").join(format!("{}.service", cfg.binary_name));
+    let unit_path = unit_file_path(cfg);
     write_unit_file(&unit_path, &render_systemd_unit(cfg), &cfg.binary_name)?;
     println!("✓ Wrote {}", unit_path.display());
     Ok(())
 }
 
-/// Replace the unit atomically. A symlink (a `systemctl mask` link to /dev/null or
-/// a link to another file) is refused instead of being written through.
+/// Full-install preflight: refuse a symlinked or masked unit before any other
+/// step changes the host, instead of failing at the end.
+pub fn check_unit_path(cfg: &InstallConfig) -> Result<()> {
+    refuse_unit_symlink(&unit_file_path(cfg), &cfg.binary_name)
+}
+
+/// A symlink (a `systemctl mask` link to /dev/null or a link to another file) is
+/// refused instead of being written through.
+fn refuse_unit_symlink(unit_path: &Path, name: &str) -> Result<()> {
+    match fs::symlink_metadata(unit_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(ChatmailError::config(format!(
+            "{} is a symlink (masked?); run `systemctl unmask {name}` and retry",
+            unit_path.display()
+        ))),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(ChatmailError::config(format!(
+            "stat {}: {e}",
+            unit_path.display()
+        ))),
+    }
+}
+
+/// Replace the unit atomically with mode 0644, whatever the process umask.
 fn write_unit_file(unit_path: &Path, body: &str, name: &str) -> Result<()> {
     let write_err =
         |e: std::io::Error| ChatmailError::config(format!("write {}: {e}", unit_path.display()));
-    match fs::symlink_metadata(unit_path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            return Err(ChatmailError::config(format!(
-                "{} is a symlink (masked?); run `systemctl unmask {name}` and retry",
-                unit_path.display()
-            )));
-        }
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(write_err(e)),
-    }
+    refuse_unit_symlink(unit_path, name)?;
     let mut staging = unit_path.as_os_str().to_owned();
     staging.push(".tmp");
     let staging = PathBuf::from(staging);
@@ -63,7 +79,10 @@ fn write_unit_file(unit_path: &Path, body: &str, name: &str) -> Result<()> {
         .create_new(true)
         .mode(0o644)
         .open(&staging)
-        .and_then(|mut file| file.write_all(body.as_bytes()))
+        .and_then(|mut file| {
+            file.write_all(body.as_bytes())?;
+            file.set_permissions(fs::Permissions::from_mode(0o644))
+        })
         .and_then(|()| fs::rename(&staging, unit_path));
     if let Err(e) = written {
         let _ = fs::remove_file(&staging);
@@ -344,6 +363,10 @@ mod tests {
         write_unit_file(&unit, "first", "madmail").unwrap();
         write_unit_file(&unit, "second", "madmail").unwrap();
         assert_eq!(std::fs::read_to_string(&unit).unwrap(), "second");
+        assert_eq!(
+            std::fs::metadata(&unit).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
         assert!(!dir.path().join("madmail.service.tmp").exists());
 
         let other = dir.path().join("other.service");
