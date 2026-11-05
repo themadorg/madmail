@@ -1,153 +1,124 @@
 <script>
-	import { browser } from '$app/environment';
-	import Button from '$lib/components/Button.svelte';
-	import MadGlitchText from '$lib/components/MadGlitchText.svelte';
-	import MadmailLogo from '$lib/components/MadmailLogo.svelte';
-	import chevronLeft from '$lib/icons/chevron-left.svg?raw';
+	import { page } from '$app/state';
+	import SiteNav from '$lib/components/airmail/SiteNav.svelte';
+	import { homePath } from '$lib/i18n/index.js';
+	import { useI18n } from '$lib/i18n/use.svelte.js';
 
-	/** @type {{ error: App.Error, status: number }} */
-	let { error, status } = $props();
-
+	const status = $derived(page.status);
+	const error = $derived(page.error);
+	const i18n = useI18n();
 	const is404 = $derived(status === 404);
-	const title = $derived(is404 ? '404' : String(status));
-	const headline = $derived(is404 ? 'Page not found' : 'Something went wrong');
-	const detail = $derived(
-		is404
-			? "This page doesn't exist or was moved."
-			: (error?.message ?? 'An unexpected error occurred.')
-	);
-
-	function goBack() {
-		if (!browser) return;
-		if (history.length > 1) {
-			history.back();
-		} else {
-			window.location.href = '/';
-		}
-	}
+	const title = $derived(is404 ? i18n.t('notfound_title') : i18n.t('error_title'));
+	const body = $derived(is404 ? i18n.t('notfound_body') : i18n.t('error_body'));
 </script>
 
-<div class="error-page">
-	<header class="error-top">
-		<div class="error-top__inner">
-			<button type="button" class="back" aria-label="Back" onclick={goBack}>
-				<span class="icon" aria-hidden="true">{@html chevronLeft}</span>
-			</button>
-			<MadmailLogo href="/" size="2rem" class="error-logo" transitionName="madmail-logo" />
-		</div>
-	</header>
-
-	<main class="error-main">
-		<h1 class="code">
-			<MadGlitchText text={title} />
-		</h1>
-		<p class="headline">{headline}</p>
-		<p class="detail">{detail}</p>
-		<div class="actions">
-			<Button href="/" variant="primary">Back to home</Button>
-			<Button href="/docs">Documentation</Button>
+<div class="airmail error-page">
+	<SiteNav />
+	<main id="main" class="wrap">
+		<!-- An undeliverable letter comes back with the post office's slip on it. -->
+		<div class="slip sheet">
+			<div class="stamp" aria-hidden="true">
+				<span class="hand">☚</span>
+				<span lang="en" dir="ltr">{status}</span>
+			</div>
+			<h1>{title}</h1>
+			<p class="body">{body}</p>
+			{#if !is404 && error?.message}
+				<p class="detail" lang="en" dir="ltr">{error.message}</p>
+			{/if}
+			<p class="path" lang="en" dir="ltr">{page.url.pathname}</p>
+			<div class="actions">
+				<a class="action" href={homePath(i18n.lang)}>{i18n.t('notfound_home')}</a>
+				<a class="textlink" href="/docs">{i18n.t('notfound_docs')}</a>
+			</div>
 		</div>
 	</main>
 </div>
 
 <style>
 	.error-page {
-		display: flex;
-		flex-direction: column;
-		min-height: 100vh;
 		min-height: 100dvh;
-		background: var(--color-bg);
-		color: var(--color-text);
-		transition: var(--transition-theme);
+		background: var(--paper-2);
+		color: var(--ink);
 	}
 
-	.error-top {
-		flex-shrink: 0;
-		height: 5rem;
-		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg);
-		transition: var(--transition-theme);
-	}
-
-	.error-top__inner {
+	main {
 		display: grid;
-		grid-template-columns: 1fr auto 1fr;
+		place-items: center;
+		padding-block: clamp(3rem, 8vw, 7rem);
+	}
+
+	.slip {
+		position: relative;
+		width: min(100%, 40rem);
+		padding: clamp(2rem, 5vw, 3.5rem);
+		border: 10px solid transparent;
+		border-image: var(--airmail) 10 / 10px round;
+		background-clip: padding-box;
+	}
+
+	/* The rubber stamp across the corner. */
+	.stamp {
+		position: absolute;
+		inset-block-start: 1.5rem;
+		inset-inline-end: 1.5rem;
+		display: inline-flex;
 		align-items: center;
-		height: 100%;
-		max-width: 48rem;
-		margin: 0 auto;
-		padding: 0 1.5rem;
-	}
-
-	.back {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 2.25rem;
-		height: 2.25rem;
-		padding: 0;
-		border: none;
-		border-radius: 0.5rem;
-		background: transparent;
-		color: var(--color-text-subtle);
-		cursor: pointer;
-		grid-column: 1;
-		justify-self: start;
-	}
-
-	.back:hover {
-		background: var(--color-hover);
-		color: var(--color-text);
-	}
-
-	.error-top :global(.error-logo) {
-		grid-column: 2;
-		justify-self: center;
-	}
-
-	.icon :global(svg) {
-		display: block;
-		width: 1.25rem;
-		height: 1.25rem;
-	}
-
-	.error-main {
-		display: flex;
-		flex: 1;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 2rem 1.5rem 3rem;
-		text-align: center;
-	}
-
-	.code {
-		margin: 0 0 1rem;
-		font-size: clamp(4rem, 18vw, 7rem);
-		font-weight: 700;
+		gap: 0.4rem;
+		padding: 0.35rem 0.7rem 0.4rem;
+		border: 3px solid var(--red);
+		color: var(--red);
+		font-family: var(--font-display);
+		font-size: 1.125rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
 		line-height: 1;
-		letter-spacing: -0.04em;
+		text-transform: uppercase;
+		rotate: -6deg;
 	}
 
-	.headline {
-		margin: 0 0 0.5rem;
-		font-size: clamp(1.25rem, 4vw, 1.5rem);
-		font-weight: 600;
+	.stamp:dir(rtl) {
+		rotate: 6deg;
 	}
 
-	.detail {
-		margin: 0 0 2rem;
-		max-width: 28rem;
-		font-size: 1rem;
-		line-height: 1.6;
-		color: var(--color-text-muted);
+	.hand {
+		font-size: 1.4em;
+		letter-spacing: 0;
+	}
+
+	h1 {
+		max-width: 12ch;
+		padding-inline-end: 5rem;
+		font-size: var(--step-h2);
+	}
+
+	.body {
+		margin-top: 1.25rem;
+		max-width: 32rem;
+		font-size: var(--step-lead);
+	}
+
+	.detail,
+	.path {
+		margin-top: 1rem;
+		color: var(--ink-2);
+		font-family: var(--font-code);
+		font-size: var(--step-small);
+		overflow-wrap: anywhere;
 	}
 
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		justify-content: center;
-		gap: 0.75rem;
+		gap: 1rem 1.75rem;
+		margin-top: 2rem;
+	}
+
+	@media (max-width: 560px) {
+		.stamp {
+			position: static;
+			margin-bottom: 1.5rem;
+		}
 	}
 </style>
