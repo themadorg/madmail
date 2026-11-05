@@ -54,6 +54,38 @@ Before install, create an **`A`/`AAAA`** record for the hostname pointing at you
 
 If both A and AAAA exist and you omit `--ip`, install sets `$(public_ip)` (TURN / discovery) from a **public IPv4** when available. To advertise IPv6 for TURN instead, pass `--ip` with that address.
 
+### Custom paths and targeted repair
+
+For a new Unix service at custom paths, select `--system` explicitly:
+
+```bash
+sudo ./madmail install --simple --system --domain mail.example.org \
+  --acme-email admin@example.org \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail --dry-run
+```
+
+Review the plan, rerun without `--dry-run`, then `sudo systemctl enable --now madmail`.
+Use `--local` for application bootstrap without host users or systemd changes.
+Running as root alone does not select system mode for custom paths.
+
+For an **existing installation**, avoid rerunning full bootstrap just to fix its
+account or unit. Stop the service if present, then run the needed repair:
+
+```bash
+sudo ./madmail install --user-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail
+sudo ./madmail install --systemd-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail
+```
+
+Account repair fixes user/group and permissions. Unit repair replaces the unit and
+reloads systemd. Both preserve config, database, certificate and binary contents;
+start the service explicitly afterward. Use the original executable name and paths.
+
+[Complete CLI reference and all flags](../../guide/cli/install.md) · [Mode comparison](../../guide/cli/install.md#choose-the-operation) · [Repair prerequisites](../../guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
+
 ### Windows
 
 Prefer the **setup wizard** when available (`madmail-windows-amd64-setup.exe` from the GitHub **Release** assets), or use the CLI.
@@ -114,14 +146,15 @@ To obtain a ready-to-use binary without compiling:
 1. Go to the releases page:  
    **https://github.com/themadorg/madmail/releases**
 
-2. Download the latest release for your architecture. Releases ship several Linux variants:
+2. Download the latest release for your architecture. Releases ship several Linux variants and a Windows installer:
 
    | Asset | Use when |
    |-------|----------|
-   | `madmail-linux-amd64` / `.tar.gz` | Default glibc build (newer distros) |
-   | `madmail-linux-amd64-legacy` / `.tar.gz` | Older glibc (e.g. Ubuntu 22.04; `GLIBC_2.38+` errors) |
+   | `madmail-linux-amd64` / `.tar.gz` | Debian 13, Ubuntu 24.04, Ubuntu 26.04, and AlmaLinux 10 |
+   | `madmail-linux-amd64-legacy` / `.tar.gz` | Debian 12, Ubuntu 22.04, and Rocky Linux 9 (`GLIBC_2.38` not found) |
    | `madmail-linux-amd64-musl` / `.tar.gz` | musl alternative |
    | arm64 equivalents (`…-arm64…`, `…-legacy…`, `…-musl…`) | Same matrix for arm64 |
+   | `madmail-windows-amd64-setup.exe` | Windows 10 and 11 (x64). Iroh is not available on Windows. The stable installer has no admin web panel for now; prerelease `Madmail TESTING` installers differ ([details](../../guide/install.md#supported-operating-systems)) |
 
    Example with `wget` (default amd64):
 
@@ -185,7 +218,8 @@ This command:
 - Writes a basic config
 - Sets up the systemd service
 
-After it finishes, your server is reachable on the normal mail ports and you can connect with Delta Chat using your IP address or a domain that points to it.
+After installation, run `sudo systemctl enable --now madmail`. Once the service
+is running and the firewall permits access, your server is reachable on the normal mail ports and you can connect with Delta Chat using your IP address or a domain that points to it.
 
 ## Option 2: Using the Admin Web Interface
 

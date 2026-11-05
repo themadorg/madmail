@@ -41,7 +41,7 @@ pub use cas::{hash_bytes, ContentStore};
 pub use maildir::{mailbox_exists, MailboxStore, MaildirPaths};
 pub use maildir_message::{
     copy_message, expunge_deleted, list_mailbox_messages, move_message, split_maildir_filename,
-    store_add_flags, MaildirFlags, StoredMessage,
+    store_add_flags, MailboxListing, MaildirFlags, StoredMessage,
 };
 pub use purge::{
     prune_unread_older, purge_all_mail_blobs, purge_mail_blobs_older, purge_read_messages,

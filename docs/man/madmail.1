@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "madmail" "1" "2026-10-07" "2.31.3" "User Commands"
+.TH "madmail" "1" "2026-10-17" "2.36.0" "User Commands"
 .PP
 .SH NAME
 .PP
@@ -72,7 +72,57 @@ Read configuration from \fB--config\fR and persistent state from
 Write configuration, TLS material, databases, optional systemd unit,
 service user, system-wide binary, manual page, and shell tab
 completion scripts.\&
+Use \fB--system\fR for a Unix host service with custom paths, or \fB--local\fR
+for bootstrap without host changes.\& \fB--dry-run\fR reports the selected
+mode and planned actions.\& \fB--skip-user\fR and \fB--skip-systemd\fR remain
+independent opt-outs.\& Before changing the host, a system install refuses
+a masked unit file, an existing \fB--state-dir\fR while the service
+account'\&s home is elsewhere and still exists (repoint it with
+\fB--user-only\fR first), and a \fB--state-dir\fR that is not a directory of
+its own: a well-known system directory, a directory directly under /,
+a user'\&s home directory, a directory below /etc, /usr, /lib, /bin,
+/sbin, /boot, /dev, /proc, /sys or /run that is not named for madmail,
+a path that resolves to one of these, a directory of root or of a uid
+without an account name that is not empty and whose physical path is
+not named for madmail (such as /var/lib/dpkg; not with \fB--skip-user\fR),
+unless it holds only lost+found or the root-owned marker file
+\&.madmail-state that install creates in a state directory it creates,
+or a directory of another named account.\& Account names
+are looked up with the C library and then with \fBgetent passwd\fR, so
+accounts from LDAP or sssd count too; \fBgetent\fR cannot tell a directory
+service that is down from a missing account.\& It also stops when a
+lookup of the owner of an existing state directory or of the groups of
+the service account reports an error.\& Install and both repair modes
+check this before they create or change the account.\&
 See EXAMPLES and NOTES.\&
+.PP
+For existing Unix installations, \fB--user-only\fR repairs the service account
+and config/TLS/state permissions; \fB--systemd-only\fR replaces the unit and
+runs daemon-reload without enabling or starting the service.\& Both imply
+system mode and preserve config, database, certificates and binary contents.\&
+Use the original executable name and config/state/binary paths; paths are
+not inferred from config contents.\& Existing config and state are required;
+unit repair also requires an executable binary and service user/group.\&
+No domain/IP or non-interactive flag is needed.\& Preview with \fB--dry-run\fR.\&
+Repeat custom \fB--cert-path\fR/\fB--key-path\fR values: account repair only
+chowns TLS files at the given paths, and they also decide the unit'\&s
+ProtectHome= setting.\& Account repair repoints an existing account at the
+existing state directory without moving it.\& As root, install and
+account repair never read, write or change the owner or mode of a file
+through a link inside the state directory; when the service account
+controls that directory, install opens the database with its effective
+user and group ids.\& Files they write
+there are owned by the service account (with \fB--skip-user\fR, only when
+the file they replace belongs to the service account), and an existing
+file there is given to the service account only when it already belongs
+to the service account or its previous uid.\&
+A path outside it is not followed through a directory or link
+the service account controls, and a \fB--binary-path\fR inside it is
+refused.\& Unit repair refuses a symlinked or masked unit file.\&
+These modes conflict with each other, local/cert-only/skip and Windows
+service/firewall flags.\& Stop the service before account repair.\& Unit
+customizations belong in drop-ins; a failed reload leaves the written unit.\&
+.PP
 .PP
 .RE
 \fBuninstall\fR
@@ -80,6 +130,16 @@ See EXAMPLES and NOTES.\&
 Remove the service, configuration, and data.\&
 Confirmation is required; use keep flags such as \fB--keep-data\fR to
 preserve selected artifacts.\&
+A config or state directory is removed as a whole only when its name is
+the binary name, or madmail or chatmail optionally followed by a suffix
+starting with - or _, whatever found it (a unit, discovery, \fB--state-dir\fR
+or the config file).\& From any other config directory only the config file
+is removed, and any other state directory is kept.\& Well-known system
+directories and user homes are never removed as a whole.\& A directory that
+contains a path kept by \fB--keep-data\fR or \fB--keep-config\fR is not removed as
+a whole.\& A \fBstate_dir\fR from a config file that is not owned by root, or is
+writable by others, is not used.\& The plan lists every path removed or left
+in place.\&
 .PP
 .RE
 \fBupgrade\fR, \fBupdate\fR
@@ -168,7 +228,11 @@ Allow or deny non-local RCPT on unauthenticated inbound SMTP
 .RE
 \fBfederation\fR
 .RS 4
-Federation policy, domain rules, and silent-dismiss lists.\&
+Federation policy, domain rules, silent-dismiss lists, and outbound
+transport allow/block (\fBtransport status [DOMAIN]\fR, \fBtransport set\fR).\& Unset
+transports stay allowed.\& \fBtransport set --domain\fR overrides one
+destination; a missing override inherits the global mode.\& Run \fBreload\fR
+after a CLI change on a running server.\&
 .PP
 .RE
 \fBdkim\fR

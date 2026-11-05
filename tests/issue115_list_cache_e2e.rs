@@ -54,10 +54,11 @@ async fn issue115_concurrent_deliver_and_list_sees_all() {
         .await
         .expect("list");
     assert_eq!(
-        listed.len(),
+        listed.messages.len(),
         n,
         "all delivered messages must be listed; got {:?}",
         listed
+            .messages
             .iter()
             .map(|m| m.base_id.as_str())
             .collect::<Vec<_>>()

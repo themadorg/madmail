@@ -188,6 +188,8 @@ config. Updates activate immediately; see [25-operator-webhooks.md](25-operator-
 
 **Federation policy** (string, not bool): `__FEDERATION_POLICY__` = `ACCEPT` \| `REJECT`. Admin `/admin/settings/federation`.
 
+**Federation transports** (string, not bool): `__FEDERATION_TRANSPORT_HTTPS__`, `__FEDERATION_TRANSPORT_HTTP__`, `__FEDERATION_TRANSPORT_SMTP__` = `allow` \| `block`; unset means `allow`. Admin `/admin/settings/federation` (`transports` object, applied at once), CLI `madmail federation transport set` (applies after `madmail reload`). See [07-federation.md](07-federation.md).
+
 **Not in madmail-v2:** Madmail `__LOG_DISABLED__` / `/admin/services/log` — No-Log is static only (`log off` in `maddy.conf`; see [12-security.md](12-security.md)).
 
 ### Port overrides (empty = use `maddy.conf` listen address)

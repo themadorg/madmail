@@ -4,7 +4,7 @@
 # Deploy: `make push` builds release chatmail, scp's to test servers, replaces binary, restarts systemd (no signing).
 
 .PHONY: all init build build-admin-web build-chatmail-embed build-chatmail-embed-release build-with-admin-web build-release build-profiling build-release-static build-workspace build-all build-landing preview-landing \
-	test test-unit test-integration test-e2e test-docker test-deltachat-docker test-mini-docker test-full-docker test-maintenance test-imap test-turn test-core-turn test-deltachat test-deltachat-cmlxc test-mini-cmlxc test-full-cmlxc test-cmlxc-fullrun test-cmlxc-fullrun-madmail _test-cmlxc-prereqs t1-bench t1-report-demo \
+	test test-unit test-integration test-e2e test-docker test-install-docker test-deltachat-docker test-mini-docker test-full-docker test-maintenance test-imap test-turn test-core-turn test-deltachat test-deltachat-cmlxc test-mini-cmlxc test-full-cmlxc test-cmlxc-fullrun test-cmlxc-fullrun-madmail _test-cmlxc-prereqs t1-bench t1-report-demo \
 	check vet lint fmt fmt-check cov run run-bg run-debug ensure-dev-config restart stop logs reset-db dev-certs clean help \
 	sign push push1 push2 log1 log2 push-signed publish init-publish build-publish \
 	build-windows build-windows-amd64 build-windows-arm64 build-windows-setup \
@@ -318,6 +318,11 @@ docker-down:
 	@chmod +x $(DOCKER_DEPLOY_SCRIPT)
 	$(DOCKER_DEPLOY_SCRIPT) --purge
 
+# Keep this installer-only build small without changing developer/release defaults.
+test-install-docker:
+	CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_BUILD_JOBS=2 cargo build -p chatmail --locked
+	bash tests/install-system-docker.sh
+
 # Full workspace + landing tests in Docker, then isolated install/mail/API/TURN checks.
 test-websocket-bridge-docker:
 	bash tests/websocket-bridge-docker.sh
@@ -546,6 +551,7 @@ help:
 	@echo "Admin UI:  edit $(ADMIN_WEB_DIR) → make build-with-admin-web → make restart"
 	@echo "Deploy:    push, push1 (unsigned), push2 (static+sign+upgrade), push-signed, sign (scripts/sign.sh), log1, log2 (scripts/deploy.sh)"
 	@echo "Incus:     incus-up (data/incus-vm), incus-down (purge container + volume + data); INCUS_ARGS='--rebuild|--with-webadmin'"
+	@echo "Installer: test-install-docker (compact debug build + isolated Unix provisioning E2E)"
 	@echo "Docker:    docker-up (data/docker-vm), docker-down (purge container + image + data); DOCKER_ARGS='--rebuild|--with-webadmin'"
 	@echo "           test-docker (workspace + landing tests in Docker, then install/mail/API/TURN; cleans up containers and volumes)"
 	@echo "           test-deltachat-docker (cmlxc mini + extensive real-client messaging), test-mini-docker, test-full-docker (both suites)"

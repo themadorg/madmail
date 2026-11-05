@@ -31,6 +31,34 @@ Our current focus is on:
 
 We may add new features as needs arise.
 
+## Supported operating systems
+
+These releases are officially supported.
+
+### Linux (x86_64)
+
+A normal Linux install uses systemd.
+
+| Release | Binary |
+| --- | --- |
+| Debian 13 | `madmail-linux-amd64` |
+| Debian 12 | `madmail-linux-amd64-legacy` |
+| Ubuntu 26.04 | `madmail-linux-amd64` |
+| Ubuntu 24.04 | `madmail-linux-amd64` |
+| Ubuntu 22.04 | `madmail-linux-amd64-legacy` |
+| AlmaLinux 10 | `madmail-linux-amd64` |
+| Rocky Linux 9 | `madmail-linux-amd64-legacy` |
+
+Debian 12, Ubuntu 22.04, and Rocky Linux 9 ship glibc older than 2.38. The default `madmail-linux-amd64` build does not start there. Use the legacy build from the same release.
+
+RHEL-family hosts often enable firewalld (Rocky Linux 9 does by default). `madmail install` does not open ports there. Before install requests a certificate, allow HTTP, HTTPS, SMTP, submission, and IMAP. Also allow TURN for calls (3478/udp, 3478/tcp, 49152-65535/udp) and Shadowsocks when on (8388/tcp). See [the port list and `firewall-cmd` commands](docs/guide/install.md#supported-operating-systems).
+
+### Windows
+
+Windows 10 and Windows 11 (x64) are supported. Use `madmail-windows-amd64-setup.exe` from a stable release.
+
+Iroh is not available on Windows for now: the installer does not offer it, and turning it on can keep the service from starting. The admin API and the admin token work. The stable installer does not include the admin web panel for now. Prerelease installers with the same file name are `Madmail TESTING` builds and differ; see [Supported operating systems](docs/guide/install.md#supported-operating-systems).
+
 ## Quick Setup
 
 Download the release binary for your architecture, then install and start the service:
@@ -39,6 +67,9 @@ Download the release binary for your architecture, then install and start the se
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -fsSL "https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-${ARCH}" \
   -o madmail
+# Debian 12, Ubuntu 22.04, Rocky Linux 9 (x86_64, glibc older than 2.38): use the legacy build instead
+# curl -fsSL "https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64-legacy" \
+#   -o madmail
 chmod +x madmail
 ```
 
@@ -78,6 +109,38 @@ sudo systemctl start madmail
 ```
 
 > Replace `mail.example.org` with your hostname and `you@example.com` with a valid contact email.
+
+### Custom paths and targeted repair
+
+For a new Unix service at custom paths, select `--system` explicitly:
+
+```bash
+sudo ./madmail install --simple --system --domain mail.example.org \
+  --acme-email admin@example.org \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail --dry-run
+```
+
+Review the plan, rerun without `--dry-run`, then `sudo systemctl enable --now madmail`.
+Use `--local` for application bootstrap without host users or systemd changes.
+Running as root alone does not select system mode for custom paths.
+
+For an **existing installation**, avoid rerunning full bootstrap just to fix its
+account or unit. Stop the service if present, then run the needed repair:
+
+```bash
+sudo ./madmail install --user-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail
+sudo ./madmail install --systemd-only \
+  --config-dir /var/xyzzy/etc/madmail --state-dir /var/xyzzy/lib/madmail \
+  --binary-path /var/xyzzy/bin/madmail
+```
+
+Account repair fixes user/group and permissions. Unit repair replaces the unit and
+reloads systemd. Both preserve config, database, certificate and binary contents;
+start the service explicitly afterward. Use the original executable name and paths.
+
+[Complete CLI reference and all flags](docs/guide/cli/install.md) · [Mode comparison](docs/guide/cli/install.md#choose-the-operation) · [Repair prerequisites](docs/guide/cli/install.md#repair-only-the-service-account-or-systemd-unit)
 
 More detail:
 
