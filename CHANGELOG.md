@@ -1,3 +1,9 @@
+# [2.39.2](https://github.com/themadorg/madmail/compare/v2.39.1-unstable...v2.39.2-unstable) (2026-11-05)
+
+### Bug Fixes
+
+* **imap:** keep UIDNEXT stable after messages are deleted ([05c120b](https://github.com/themadorg/madmail/commit/05c120b8f336413318bb4b9bef137482bda53148)), [#233](https://github.com/themadorg/madmail/issues/233)
+
 # [2.39.1](https://github.com/themadorg/madmail/compare/v2.39.0-unstable...v2.39.1-unstable) (2026-11-04)
 
 ### Bug Fixes

@@ -47,8 +47,8 @@ Official GitHub Releases ship more than one Linux build per architecture. **The 
 
 | Asset (example) | When to use it |
 |-----------------|----------------|
-| `madmail-linux-amd64.tar.gz` | Default glibc build (newer distros) |
-| `madmail-linux-amd64-legacy.tar.gz` | Older glibc (e.g. Ubuntu 22.04 / hosts that report `GLIBC_2.38` / `GLIBC_2.39` not found) |
+| `madmail-linux-amd64.tar.gz` | Debian 13, Ubuntu 24.04, Ubuntu 26.04, and AlmaLinux 10 |
+| `madmail-linux-amd64-legacy.tar.gz` | Debian 12, Ubuntu 22.04, and Rocky Linux 9 (`GLIBC_2.38` / `GLIBC_2.39` not found) |
 | `madmail-linux-amd64-musl.tar.gz` | musl / static-ish alternative |
 | `…-arm64…` / `…-arm64-legacy…` / `…-arm64-musl…` | Same matrix for arm64 |
 

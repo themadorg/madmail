@@ -6,6 +6,7 @@ The command is **Madmail-compatible**. The binary name (`madmail`, `chatmail`, â
 
 ## Table of contents
 
+- [Supported operating systems](#supported-operating-systems)
 - [Quick start](#quick-start)
 - [Install modes](#install-modes)
 - [Targeted repair](cli/install.md#repair-only-the-service-account-or-systemd-unit)
@@ -22,6 +23,53 @@ The command is **Madmail-compatible**. The binary name (`madmail`, `chatmail`, â
 - [Installer regression testing](#installer-regression-testing)
 
 ---
+
+## Supported operating systems
+
+These releases are officially supported.
+
+### Linux (x86_64)
+
+A normal Linux install uses systemd.
+
+| Release | Binary |
+| --- | --- |
+| Debian 13 | `madmail-linux-amd64` |
+| Debian 12 | `madmail-linux-amd64-legacy` |
+| Ubuntu 26.04 | `madmail-linux-amd64` |
+| Ubuntu 24.04 | `madmail-linux-amd64` |
+| Ubuntu 22.04 | `madmail-linux-amd64-legacy` |
+| AlmaLinux 10 | `madmail-linux-amd64` |
+| Rocky Linux 9 | `madmail-linux-amd64-legacy` |
+
+Debian 12, Ubuntu 22.04, and Rocky Linux 9 ship glibc older than 2.38. The default `madmail-linux-amd64` build does not start there (`GLIBC_2.38` not found). Use `madmail-linux-amd64-legacy` from the same release, and keep that variant for later upgrades.
+
+RHEL-family hosts often enable firewalld. Rocky Linux 9 does by default; on AlmaLinux 10 it depends on the image. `madmail install` does not change firewalld rules, so open the ports before install requests a certificate:
+
+- Mail and web: 80, 443, 25, 465, 587, 143, and 993 (TCP).
+- TURN for Delta Chat calls, which install always turns on: 3478 (UDP and TCP) and the relay range 49152-65535 (UDP).
+- Shadowsocks, when on (`--simple` or `--enable-ss`): 8388 (TCP).
+
+```bash
+for p in 80/tcp 443/tcp 25/tcp 465/tcp 587/tcp 143/tcp 993/tcp \
+         3478/udp 3478/tcp 49152-65535/udp 8388/tcp; do
+  sudo firewall-cmd --permanent --add-port="$p"
+done
+sudo firewall-cmd --reload
+```
+
+The TURN ports can be changed in the config. See [Host firewall (Linux)](../TDD/20-deltachat-calls.md#host-firewall-linux).
+
+### Windows
+
+Windows 10 and Windows 11 (x64) are supported. Prefer `madmail-windows-amd64-setup.exe` from a stable release.
+
+Iroh is not available on Windows for now, because turning it on can keep the service from starting. The setup wizard does not offer it, and `madmail iroh install` and `madmail iroh enable` refuse to run on Windows. Do not pass `--enable-iroh` to `madmail install` there. The admin API and the token file under `%ProgramData%\Madmail\data\admin_token` work on every Windows build.
+
+Stable and prerelease installers differ:
+
+- The **stable** installer packages the signed server from the release. It does not include the admin web panel for now. Use the admin API with the token.
+- A **prerelease** (`vX.Y.Z-unstable`) installer has the same file name but is labeled `Madmail TESTING`. Its unsigned server embeds the admin web panel and the Windows Iroh relay program; Iroh still stays off as described above. It refuses to install where stable Madmail is present. Use it only on a disposable test machine.
 
 ## Quick start
 
