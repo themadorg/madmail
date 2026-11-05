@@ -136,7 +136,7 @@ pub fn build_failure_report(
     if recipient.is_empty() {
         return None;
     }
-    let reason = bounded(notice.reason.trim(), 2000);
+    let reason = report_reason(notice.reason, 2000);
     let explanation = match notice.kind {
         FailureKind::Permanent => format!("Your message to {recipient} was not delivered."),
         FailureKind::Expired => {
@@ -149,23 +149,25 @@ pub fn build_failure_report(
     let mut text = explanation;
     if !reason.is_empty() {
         text.push_str("\r\n\r\n");
-        text.push_str(reason);
+        text.push_str(&reason);
     }
     let status = match notice.kind {
         FailureKind::Permanent => "5.7.1",
         FailureKind::Expired | FailureKind::GaveUp => "5.4.7",
     };
-    let diagnostic = header_safe(reason);
+    let diagnostic = header_safe(&reason);
     let diagnostic = if diagnostic.is_empty() {
         "delivery failed".to_string()
     } else {
         diagnostic
     };
-    let boundary = format!("dsn{}", Uuid::new_v4().simple());
-    if text.contains(&boundary) || diagnostic.contains(&boundary) {
-        return None;
-    }
     let headers = original_headers(notice.original);
+    // A delimiter line is exactly `--` plus the boundary, so a boundary that
+    // occurs nowhere in the parts cannot be forged by a reason or header line,
+    // even one that starts with `--`. A random one is drawn until it is absent.
+    let boundary = (0..8)
+        .map(|_| format!("dsn{}", Uuid::new_v4().simple()))
+        .find(|b| !text.contains(b) && !diagnostic.contains(b) && !headers.contains(b))?;
     let from = format!("mailer-daemon@{domain}");
     let msg_id = format!("<dsn-{}@{domain}>", Uuid::new_v4().simple());
     let date = OffsetDateTime::now_utc()
@@ -207,6 +209,7 @@ pub fn build_failure_report(
     Some(raw.into_bytes())
 }
 
+/// Longest prefix of at most `max` bytes that ends on a UTF-8 char boundary.
 fn bounded(value: &str, max: usize) -> &str {
     if value.len() <= max {
         return value;
@@ -216,6 +219,52 @@ fn bounded(value: &str, max: usize) -> &str {
         end -= 1;
     }
     &value[..end]
+}
+
+/// The reason as CRLF lines for the 8bit text part, at most `max` bytes.
+///
+/// CRLF, a bare CR and a bare LF each end one line, so no bare CR or LF is
+/// left. Other control characters are dropped, and a line longer than the
+/// RFC 5322 limit of 998 bytes is split. The cut at `max` falls between
+/// lines or on a char boundary inside one, never inside a CRLF pair.
+fn report_reason(reason: &str, max: usize) -> String {
+    const MAX_LINE: usize = 998;
+    let unified = reason.replace("\r\n", "\n").replace('\r', "\n");
+    let mut out = String::new();
+    for line in unified.trim().split('\n') {
+        let line: String = line
+            .chars()
+            .filter(|c| *c == '\t' || !c.is_control())
+            .collect();
+        let mut rest = line.trim_end();
+        loop {
+            let chunk = bounded(rest, MAX_LINE);
+            let sep = if out.is_empty() { "" } else { "\r\n" };
+            let room = max.saturating_sub(out.len() + sep.len());
+            if chunk.len() > room {
+                let cut = bounded(chunk, room);
+                if !cut.is_empty() {
+                    out.push_str(sep);
+                    out.push_str(cut);
+                }
+                return trim_trailing_crlf(out);
+            }
+            out.push_str(sep);
+            out.push_str(chunk);
+            rest = &rest[chunk.len()..];
+            if rest.is_empty() {
+                break;
+            }
+        }
+    }
+    trim_trailing_crlf(out)
+}
+
+fn trim_trailing_crlf(mut text: String) -> String {
+    while text.ends_with("\r\n") {
+        text.truncate(text.len() - 2);
+    }
+    text
 }
 
 fn is_mailer_daemon(addr: &str) -> bool {
@@ -440,12 +489,22 @@ mod tests {
         let notice = FailureNotice {
             mail_from: "a@example.org",
             rcpt_to: "b@other.org",
-            reason: "remote rejected",
+            reason: "remote rejected\nline two\rline three\r\nline four\n--not a boundary\n",
             original,
             kind: FailureKind::Permanent,
         };
         let raw = build_failure_report("example.org", "a@example.org", &notice).unwrap();
         let text = String::from_utf8(raw.clone()).unwrap();
+        assert!(text.contains(
+            "\r\n\r\nremote rejected\r\nline two\r\nline three\r\nline four\r\n--not a boundary\r\n"
+        ));
+        let boundary = text
+            .split("boundary=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .unwrap();
+        assert_eq!(text.matches(&format!("--{boundary}")).count(), 4);
+        assert!(text.contains("Diagnostic-Code: smtp; remote rejected line two line three"));
         assert!(text.contains("Message-ID: <lf@example.org>\r\n"));
         assert!(!text.contains("SECRETARMOR"));
         assert!(!text.contains("BEGIN PGP MESSAGE"));
@@ -458,7 +517,51 @@ mod tests {
             if *b == b'\n' {
                 assert!(i > 0 && raw[i - 1] == b'\r', "bare LF at byte {i}");
             }
+            if *b == b'\r' {
+                assert_eq!(raw.get(i + 1), Some(&b'\n'), "bare CR at byte {i}");
+            }
         }
+    }
+
+    fn assert_crlf_only(text: &str) {
+        let bytes = text.as_bytes();
+        for (i, b) in bytes.iter().enumerate() {
+            if *b == b'\n' {
+                assert!(i > 0 && bytes[i - 1] == b'\r', "bare LF at byte {i}");
+            }
+            if *b == b'\r' {
+                assert_eq!(bytes.get(i + 1), Some(&b'\n'), "bare CR at byte {i}");
+            }
+        }
+    }
+
+    #[test]
+    fn reason_cut_never_splits_a_crlf_pair_or_a_char() {
+        for pad in 1990..2005 {
+            for tail in [
+                "\r\nmore",
+                "\rmore",
+                "\nmore",
+                "\u{e9}\u{e9}more",
+                "\u{1f600}more",
+            ] {
+                let reason = format!("{}{tail}", "a".repeat(pad));
+                let out = report_reason(&reason, 2000);
+                assert!(out.len() <= 2000, "{pad} {tail:?}");
+                assert!(!out.ends_with('\r'), "{pad} {tail:?}");
+                assert_crlf_only(&out);
+            }
+        }
+        let out = report_reason("bad\0byte\x07 here\r\n\r\n\r\n", 2000);
+        assert_eq!(out, "badbyte here");
+    }
+
+    #[test]
+    fn long_reason_line_is_split_under_the_line_limit() {
+        let out = report_reason(&"x".repeat(1500), 2000);
+        assert_crlf_only(&out);
+        assert_eq!(out.replace("\r\n", ""), "x".repeat(1500));
+        assert!(out.split("\r\n").all(|line| line.len() <= 998));
     }
 
     #[test]
