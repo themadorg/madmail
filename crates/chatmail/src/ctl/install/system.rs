@@ -399,8 +399,10 @@ impl SecureInstall {
         };
         let groups = service_groups(&cfg.maddy_user)?;
         let first = Trust::service(uid, gid, None).with_groups(groups.iter().copied());
-        let (_, st, physical) = open_state_root(&cfg.state_dir, &first, create)?;
-        check_state_root(cfg, &physical, &st, Some(uid))?;
+        let (first_fd, st, physical) = open_state_root(&cfg.state_dir, &first, create)?;
+        check_state_root(cfg, &physical, &first_fd, &st, Some(uid))?;
+        let first_id = file_id(&st);
+        drop(first_fd);
         // A previous owner other than root and the service account has no
         // account name (checked above): the service's uid before the account
         // was recreated.
@@ -409,6 +411,14 @@ impl SecureInstall {
         // Check the way to the state directory again with the old uid counted.
         let trust = Trust::service(uid, gid, old_uid).with_groups(groups.iter().copied());
         let (state_root, st, _) = open_state_root(&cfg.state_dir, &trust, false)?;
+        // The checks above were made on the directory opened first.
+        if file_id(&st) != first_id {
+            return Err(ChatmailError::config(format!(
+                "refusing to use state directory {}: the state directory changed while \
+                 install opened it",
+                shown(&cfg.state_dir)
+            )));
+        }
         Ok(Some(Self {
             uid,
             gid,
@@ -505,9 +515,10 @@ impl SecureInstall {
     }
 
     /// Write the config file (mode 0640). A config path given outside
-    /// `--state-dir` that resolves into the state directory through a link is
-    /// refused: the service account would control the file root's commands
-    /// read by default.
+    /// `--state-dir` as written that resolves into the state directory (through
+    /// a link in the config path, or because `--state-dir` is itself a link to
+    /// where the config path leads) is refused: the service account would
+    /// control the file root's commands read by default.
     pub fn write_config_file(
         &self,
         path: &Path,
@@ -800,7 +811,7 @@ impl SecureInstall {
                             "{} belongs to uid {owner} and is not in a directory dedicated to \
                              madmail or in /etc/letsencrypt/live or archive, so it may be \
                              another account's file. If it is your certificate or key, run: \
-                             chown {}:{} {}",
+                             chown -h {}:{} {}",
                             shown(&file.path),
                             self.user,
                             self.group,
@@ -916,26 +927,36 @@ impl SecureInstall {
     /// `chown -h` does not follow a link in the last component, but the
     /// directories on the way are resolved again by path, so the service and
     /// every process of its account are stopped first, and so is every
-    /// process of the account that now has uid `owner`, if one has.
+    /// process of the account that now has uid `owner`, if one has. A snapshot
+    /// of the running processes is not enough: a process can ignore SIGTERM,
+    /// and cron or at can start a new one after the check (they still run jobs
+    /// for an account whose password is locked), so the account is also
+    /// expired, which PAM's account check refuses, and its jobs are removed.
     fn file_chown_hint(&self, path: &Path, owner: u32) -> String {
         let quoted = shell_quote(path);
-        let other = match secure_fs::account_name(owner) {
-            Ok(Some(name)) if owner != 0 && name != self.user => format!(
-                ", and lock and stop every process of {name}, the account that has uid \
-                 {owner} (usermod -L {name}; pkill -u {name}; ps -u {name} must then list none)"
+        let (other, other_expiry) = match secure_fs::account_name(owner) {
+            Ok(Some(name)) if owner != 0 && name != self.user => (
+                format!(
+                    ". Do the same for {name}, the account that has uid {owner}: {}",
+                    stop_account_steps(&name)
+                ),
+                format!(" and usermod -e '' {name}"),
             ),
-            _ => String::new(),
+            _ => (String::new(), String::new()),
         };
         format!(
-            "stop the service (systemctl stop {unit}) and every process of {user} \
-             (pkill -u {user}; ps -u {user} must then list none){other}. Do not change the \
-             file if it has more than one hard link (stat -c %h {quoted} prints more than \
-             1); one link does not prove that it is madmail's file, so compare its content \
-             with what madmail writes there, or remove it and let madmail create it again. \
-             To keep it as madmail's file, run: chown -h {user}:{group} {quoted}",
+            "stop the service (systemctl stop {unit}) and every process of {user}: {steps}\
+             {other}. When you are done, end the expiry again (usermod -e '' {user}\
+             {other_expiry}); the service unit does not use PAM, so the service starts while \
+             its account is locked and expired. Do not change the file if it has more than \
+             one hard link (stat -c %h {quoted} prints more than 1); one link does not prove \
+             that it is madmail's file, so compare its content with what madmail writes \
+             there, or remove it and let madmail create it again. To keep it as madmail's \
+             file, run: chown -h {user}:{group} {quoted}",
             unit = self.primary,
             user = self.user,
             group = self.group,
+            steps = stop_account_steps(&self.user),
         )
     }
 
@@ -1001,12 +1022,25 @@ impl SecureInstall {
     }
 }
 
+/// The steps that stop every process of account `name` and keep new ones from
+/// starting, for the commands printed to the operator (see
+/// [`SecureInstall::file_chown_hint`]).
+fn stop_account_steps(name: &str) -> String {
+    format!(
+        "lock and expire the account, so that cron and at, which check the account with \
+         PAM, start no job for it (usermod -L -e 1 {name}); where cron or at is installed, \
+         remove its jobs (crontab -r -u {name}; atq lists the jobs, atrm removes them); \
+         kill its processes (pkill -KILL -u {name}); ps -u {name} must then list none"
+    )
+}
+
 /// `state_dir` is `--state-dir` as given (normalized).
 fn config_into_tree_error(path: &Path, state_dir: &Path) -> ChatmailError {
     ChatmailError::config(format!(
-        "refusing to use config file {}: it is outside the state directory {} but resolves \
-         into the state directory through a link, so the service account would control it. \
-         Point the link elsewhere, or give a --config-dir under {}",
+        "refusing to use config file {}: it is outside the state directory {} as written \
+         but resolves to a path inside it, so the service account would control it. If it \
+         belongs in the state directory, give a --config-dir under {}; otherwise use a \
+         config directory that does not lead into the state directory",
         shown(path),
         shown(state_dir),
         shown(state_dir)
@@ -1107,7 +1141,10 @@ fn state_dir_refusal(cfg: &InstallConfig, why: &str) -> ChatmailError {
 /// directory, a top-level one, a user's home directory, or one below `/etc`,
 /// `/usr` or another system directory that is not named for madmail); one with the
 /// device and inode of a well-known directory ([`host_paths::is_denied_dir_id`]);
-/// and one that belongs to another named account (see [`check_state_root`]).
+/// a missing one whose physical path (after a dangling operator link) is a
+/// system directory; a root-owned one that is not empty and not named for
+/// madmail; and one that belongs to another named account (see
+/// [`check_state_root`]).
 /// Install and both repair modes run it before the account is created or
 /// changed (`useradd` / `usermod -d` name the state directory) and
 /// [`SecureInstall::open`] runs the same checks on the directory it opens.
@@ -1132,20 +1169,43 @@ pub fn check_state_dir(cfg: &InstallConfig) -> Result<()> {
         check_final: false,
     };
     match resolver.resolve(&cfg.state_dir, Want::Dir) {
-        Ok(Resolved::Found(dir)) => {
-            check_state_root(cfg, &dir.path, &dir.st, service.map(|(uid, _)| uid))
-        }
+        Ok(Resolved::Found(dir)) => check_state_root(
+            cfg,
+            &dir.path,
+            &dir.fd,
+            &dir.st,
+            service.map(|(uid, _)| uid),
+        ),
         Ok(Resolved::Controlled { component, reason }) => {
             Err(state_dir_controlled(&cfg.state_dir, &component, reason))
         }
-        Ok(Resolved::Missing { .. } | Resolved::InTree(_)) => Ok(()),
+        // The directory install would create, after the operator's links: a
+        // dangling link into a system tree is refused before the account is
+        // created or changed.
+        Ok(Resolved::Missing { parent, name, rest }) => {
+            let mut physical = parent.path.join(&name);
+            if !rest.as_os_str().is_empty() {
+                physical.push(&rest);
+            }
+            match host_paths::system_dir_reason(&physical, &cfg.binary_name) {
+                Some(reason) => Err(state_dir_refusal(
+                    cfg,
+                    &format!("it resolves to {}, a {reason}", shown(&physical)),
+                )),
+                None => Ok(()),
+            }
+        }
+        Ok(Resolved::InTree(_)) => Ok(()),
         Err(e) if e.raw_os_error() == Some(libc::ENOENT) => Ok(()),
         Err(e) => Err(io_error("open state directory", &cfg.state_dir, e)),
     }
 }
 
 /// The checks of [`check_state_dir`] on an opened state directory: `physical`
-/// is the path walked to reach it and `st` its `stat`. Its owner must be root,
+/// is the path walked to reach it, `dir` its descriptor and `st` its `stat`.
+/// When root owns it and neither `--state-dir` nor `physical` is named for
+/// madmail, it must be empty (unless `--skip-user`, which has no walk). Its
+/// owner must be root,
 /// the service account (`service_uid`, when the account exists) or a uid
 /// without an account name (the service's previous uid after the account was
 /// recreated); a directory of another named account (for example `postgres`,
@@ -1154,10 +1214,18 @@ pub fn check_state_dir(cfg: &InstallConfig) -> Result<()> {
 fn check_state_root(
     cfg: &InstallConfig,
     physical: &Path,
+    dir: &OwnedFd,
     st: &libc::stat,
     service_uid: Option<u32>,
 ) -> Result<()> {
-    check_state_root_with(cfg, physical, st, service_uid, &secure_fs::account_name)
+    check_state_root_with(
+        cfg,
+        physical,
+        dir,
+        st,
+        service_uid,
+        &secure_fs::account_name,
+    )
 }
 
 /// [`check_state_root`] with the account lookup given (`lookup(uid)` is the
@@ -1166,6 +1234,7 @@ fn check_state_root(
 fn check_state_root_with(
     cfg: &InstallConfig,
     physical: &Path,
+    dir: &OwnedFd,
     st: &libc::stat,
     service_uid: Option<u32>,
     lookup: &dyn Fn(u32) -> io::Result<Option<String>>,
@@ -1186,6 +1255,33 @@ fn check_state_root_with(
         ));
     }
     let owner = st.st_uid;
+    let named = host_paths::is_named_for_madmail(&cfg.state_dir, &cfg.binary_name)
+        || host_paths::is_named_for_madmail(physical, &cfg.binary_name);
+    // A root-owned directory not named for madmail may be another program's
+    // (such as /var/lib/dpkg or /var/spool/cron): the state walk would give
+    // every root-owned directory in it to the service account. With
+    // --skip-user there is no walk.
+    if owner == 0 && !named && !cfg.skip_user {
+        let names = secure_fs::read_names(dir).map_err(|e| {
+            ChatmailError::config(format!(
+                "refusing to use state directory {}: cannot list {}: {e}",
+                shown(&cfg.state_dir),
+                shown(physical)
+            ))
+        })?;
+        if !names.is_empty() {
+            return Err(state_dir_refusal(
+                cfg,
+                &format!(
+                    "it belongs to root, is not empty and is not named for madmail, so it may \
+                     hold another program's files ({} has {} entries). Use an empty directory \
+                     or one named for madmail",
+                    shown(physical),
+                    names.len()
+                ),
+            ));
+        }
+    }
     if owner != 0 && Some(owner) != service_uid {
         let name = lookup(owner).map_err(|e| {
             ChatmailError::config(format!(
@@ -1204,11 +1300,17 @@ fn check_state_root_with(
                  madmail's data from before uid {owner} was given to {name}, stop the \
                  service, check the directory, give the directory itself to root \
                  (chown -h root:root {}) and re-run: files of uid {owner} in it are then \
-                 listed and left unchanged for you to check",
+                 listed and left unchanged for you to check{}",
                 shown(&cfg.state_dir),
                 cfg.maddy_user,
                 cfg.maddy_user,
-                shell_quote(physical)
+                shell_quote(physical),
+                if named {
+                    ""
+                } else {
+                    ". A root-owned state directory that is not named for madmail must be \
+                     empty, so move the data to one that is, such as /var/lib/madmail"
+                }
             )));
         }
     }
@@ -1543,17 +1645,35 @@ fn lookup_uid_gid(name: &str) -> Result<(u32, u32)> {
 }
 
 /// The groups (primary and supplementary) of the existing service account
-/// `user`. When they cannot be read install stops: a group it does not know of
-/// could write a directory it would then trust.
+/// `user` (every caller found it with [`lookup_uid_gid`] first). When they
+/// cannot be read install stops: a group it does not know of could write a
+/// directory it would then trust.
 fn service_groups(user: &str) -> Result<Vec<u32>> {
-    secure_fs::account_groups_checked(user)
-        .map(Option::unwrap_or_default)
-        .map_err(|e| {
-            ChatmailError::config(format!(
-                "refusing to continue: {e}. Install needs the groups of the service account \
-                 {user} to tell which directories it can write"
-            ))
-        })
+    service_groups_with(user, &secure_fs::account_groups_checked)
+}
+
+/// [`service_groups`] with the group lookup given. A lookup that finds no
+/// account is an error too: `id` has just found it, so the two ways of asking
+/// the account database disagree, and an empty group list would trust every
+/// directory one of its groups can write.
+fn service_groups_with(
+    user: &str,
+    lookup: &dyn Fn(&str) -> io::Result<Option<Vec<u32>>>,
+) -> Result<Vec<u32>> {
+    let refuse = |why: String| {
+        ChatmailError::config(format!(
+            "refusing to continue: {why}. Install needs the groups of the service account \
+             {user} to tell which directories it can write"
+        ))
+    };
+    match lookup(user) {
+        Ok(Some(groups)) => Ok(groups),
+        Ok(None) => Err(refuse(format!(
+            "the account database disagrees about {user}: id finds the account, but its \
+             groups lookup finds no such account"
+        ))),
+        Err(e) => Err(refuse(e.to_string())),
+    }
 }
 
 fn io_error(op: &str, path: &Path, e: io::Error) -> ChatmailError {
@@ -1640,6 +1760,12 @@ mod tests {
         let dir = tempfile::tempdir_in("/tmp").unwrap();
         let path = fs::canonicalize(dir.path()).unwrap();
         (dir, path)
+    }
+
+    /// `path` opened as the resolver opens a directory.
+    fn dir_fd(path: &Path) -> OwnedFd {
+        let c = secure_fs::cstring(path.as_os_str()).unwrap();
+        secure_fs::openat(libc::AT_FDCWD, &c, secure_fs::DIR_FLAGS, 0).unwrap()
     }
 
     fn id(path: &Path) -> FileId {
@@ -1957,7 +2083,7 @@ mod tests {
         let sec = handle(&state, Some(me), &[]);
         let path = state.join("sub/x.db");
         let hint = sec.in_tree_file_hint(&path, Path::new("sub"), UNUSED_UID, "If it is madmail's");
-        assert!(hint.starts_with("If it is madmail's, stop the service (systemctl stop madmail) and every process of madmail (pkill -u madmail; ps -u madmail must then list none). "), "{hint}");
+        assert!(hint.starts_with("If it is madmail's, stop the service (systemctl stop madmail) and every process of madmail: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1 madmail); where cron or at is installed, remove its jobs (crontab -r -u madmail; atq lists the jobs, atrm removes them); kill its processes (pkill -KILL -u madmail); ps -u madmail must then list none. When you are done, end the expiry again (usermod -e '' madmail); "), "{hint}");
         assert!(
             hint.contains("Do not change the file if it has more than one hard link"),
             "{hint}"
@@ -1977,13 +2103,21 @@ mod tests {
             let hint = sec.file_chown_hint(&path, other);
             assert!(
                 hint.contains(&format!(
-                    "usermod -L {name}; pkill -u {name}; ps -u {name} must then list none"
+                    "Do the same for {name}, the account that has uid {other}: lock and expire \
+                     the account, so that cron and at, which check the account with PAM, start \
+                     no job for it (usermod -L -e 1 {name}); where cron or at is installed, \
+                     remove its jobs (crontab -r -u {name}; atq lists the jobs, atrm removes \
+                     them); kill its processes (pkill -KILL -u {name}); ps -u {name} must then \
+                     list none. When you are done, end the expiry again (usermod -e '' madmail \
+                     and usermod -e '' {name})"
                 )),
                 "{hint}"
             );
         }
         // Root's files need no other account stopped.
-        assert!(!sec.file_chown_hint(&path, 0).contains("usermod -L"));
+        let hint = sec.file_chown_hint(&path, 0);
+        assert!(!hint.contains("Do the same for"), "{hint}");
+        assert!(!hint.contains("pkill -u "), "a plain SIGTERM: {hint}");
         // A directory on the way that belongs to another account: no command.
         fs::create_dir(state.join("sub/foreign")).unwrap();
         let strict = handle(&state, None, &[]);
@@ -2098,8 +2232,33 @@ mod tests {
             sec.write_config_file(&conf, b"new", None).unwrap_err(),
             sec.fix_config_file(&conf).unwrap_err(),
         ] {
-            assert!(err.to_string().contains("resolves into the"), "{err}");
+            assert!(
+                err.to_string()
+                    .contains("as written but resolves to a path inside it"),
+                "{err}"
+            );
         }
+        assert_eq!(
+            fs::read_to_string(state.join("etc/madmail.conf")).unwrap(),
+            "x"
+        );
+        // --state-dir is an operator link (/srv/m2 -> /data/real2) and the
+        // config path is the physical one (/data/real2/etc): no link in the
+        // config path, but it is still the state directory's.
+        let m2 = b.join("m2");
+        symlink(&state, &m2).unwrap();
+        let sec = handle(&m2, None, &[&state]);
+        let conf = state.join("etc/madmail.conf");
+        let err = sec.write_config_file(&conf, b"new", None).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&format!(
+                "it is outside the state directory {} as written but resolves to a path inside it",
+                m2.display()
+            )) && msg.contains(&format!("give a --config-dir under {}", m2.display()))
+                && !msg.contains("through a link"),
+            "{msg}"
+        );
         assert_eq!(
             fs::read_to_string(state.join("etc/madmail.conf")).unwrap(),
             "x"
@@ -2230,6 +2389,8 @@ mod tests {
         // SAFETY: zeroed `stat` is valid plain data.
         let mut st: libc::stat = unsafe { std::mem::zeroed() };
         let ok = Path::new("/var/lib/madmail");
+        let (_e, empty) = base();
+        let fd = dir_fd(&empty);
         // By path as given, before anything else is looked at.
         for dir in [
             "/var/lib",
@@ -2247,14 +2408,14 @@ mod tests {
                 err.contains("refusing to use state directory"),
                 "{dir}: {err}"
             );
-            let err = check_state_root(&cfg, ok, &st, None)
+            let err = check_state_root(&cfg, ok, &fd, &st, None)
                 .unwrap_err()
                 .to_string();
             assert!(err.contains("it is a "), "{dir}: {err}");
         }
         cfg.state_dir = ok.to_path_buf();
         // Physically, after the operator's links.
-        let err = check_state_root(&cfg, Path::new("/var/lib"), &st, None)
+        let err = check_state_root(&cfg, Path::new("/var/lib"), &fd, &st, None)
             .unwrap_err()
             .to_string();
         assert!(err.contains("resolves to /var/lib, a well-known"), "{err}");
@@ -2262,7 +2423,7 @@ mod tests {
         let root = fs::metadata("/").unwrap();
         st.st_dev = root.dev() as _;
         st.st_ino = root.ino() as _;
-        let err = check_state_root(&cfg, ok, &st, None)
+        let err = check_state_root(&cfg, ok, &fd, &st, None)
             .unwrap_err()
             .to_string();
         assert!(err.contains("same directory as a well-known"), "{err}");
@@ -2281,7 +2442,7 @@ mod tests {
             (UNUSED_UID, Some(me)),
         ] {
             st.st_uid = owner;
-            check_state_root(&cfg, &b, &st, service).unwrap();
+            check_state_root(&cfg, &b, &fd, &st, service).unwrap();
         }
         // Owned by another named account: refused, naming it.
         let named =
@@ -2289,7 +2450,7 @@ mod tests {
         if let Some(other) = named {
             st.st_uid = other;
             let name = secure_fs::account_name(other).unwrap().unwrap();
-            let err = check_state_root(&cfg, &b, &st, Some(me))
+            let err = check_state_root(&cfg, &b, &fd, &st, Some(me))
                 .unwrap_err()
                 .to_string();
             assert!(
@@ -2302,14 +2463,14 @@ mod tests {
         // account is someone else.
         if me != 0 {
             st.st_uid = me;
-            assert!(check_state_root(&cfg, &b, &st, None).is_err());
+            assert!(check_state_root(&cfg, &b, &fd, &st, None).is_err());
         }
         // When the owner cannot be looked up (an NSS service that is down, or
         // an `id` that only takes names), the directory is refused, not taken
         // for one of a uid without a name.
         st.st_uid = UNUSED_UID;
         let failing = |_: u32| -> io::Result<Option<String>> { Err(io::Error::other("NSS down")) };
-        let err = check_state_root_with(&cfg, &b, &st, Some(me), &failing)
+        let err = check_state_root_with(&cfg, &b, &fd, &st, Some(me), &failing)
             .unwrap_err()
             .to_string();
         assert!(
@@ -2318,12 +2479,107 @@ mod tests {
             "{err}"
         );
         let unnamed = |_: u32| -> io::Result<Option<String>> { Ok(None) };
-        check_state_root_with(&cfg, &b, &st, Some(me), &unnamed).unwrap();
+        check_state_root_with(&cfg, &b, &fd, &st, Some(me), &unnamed).unwrap();
         // Root and the service account are never looked up.
         for owner in [0, me] {
             st.st_uid = owner;
-            check_state_root_with(&cfg, &b, &st, Some(me), &failing).unwrap();
+            check_state_root_with(&cfg, &b, &fd, &st, Some(me), &failing).unwrap();
         }
+        // A lookup error code that POSIX also allows for "not found" (here
+        // EPERM from an NSS module) refuses the directory as well.
+        st.st_uid = UNUSED_UID;
+        let eperm = |_: u32| -> io::Result<Option<String>> {
+            Err(io::Error::from_raw_os_error(libc::EPERM))
+        };
+        assert!(check_state_root_with(&cfg, &b, &fd, &st, Some(me), &eperm).is_err());
+    }
+
+    #[test]
+    fn service_groups_fail_closed_when_the_account_database_disagrees() {
+        let found = |_: &str| -> io::Result<Option<Vec<u32>>> { Ok(Some(vec![996, 4])) };
+        assert_eq!(
+            service_groups_with("madmail", &found).unwrap(),
+            vec![996, 4]
+        );
+        // id found the account, but the groups lookup finds none (a musl build
+        // that does not see an NSS-only account): no empty list, an error.
+        let missing = |_: &str| -> io::Result<Option<Vec<u32>>> { Ok(None) };
+        let err = service_groups_with("madmail", &missing)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("the account database disagrees about madmail"),
+            "{err}"
+        );
+        let failing =
+            |_: &str| -> io::Result<Option<Vec<u32>>> { Err(io::Error::other("NSS down")) };
+        let err = service_groups_with("madmail", &failing)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("NSS down") && err.contains("refusing to continue"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_root_owned_state_dir_not_named_for_madmail_must_be_empty() {
+        let mut cfg = super::super::systemd::tests::sample_cfg();
+        cfg.system_install = true;
+        let (_b, b) = base();
+        let other = b.join("dpkg");
+        fs::create_dir_all(other.join("info")).unwrap();
+        let mine = b.join("madmail");
+        fs::create_dir_all(mine.join("info")).unwrap();
+        let empty = b.join("fresh");
+        fs::create_dir(&empty).unwrap();
+        let check = |cfg: &InstallConfig, dir: &Path| {
+            let fd = dir_fd(dir);
+            // SAFETY: zeroed `stat` is valid plain data.
+            let mut st: libc::stat = unsafe { std::mem::zeroed() };
+            let m = fs::metadata(dir).unwrap();
+            st.st_dev = m.dev() as _;
+            st.st_ino = m.ino() as _;
+            st.st_uid = 0;
+            check_state_root(cfg, dir, &fd, &st, None)
+        };
+        cfg.state_dir = other.clone();
+        let err = check(&cfg, &other).unwrap_err().to_string();
+        assert!(
+            err.contains("is not empty and is not named for madmail")
+                && err.contains("Use an empty directory or one named for madmail"),
+            "{err}"
+        );
+        // An empty directory, or one named for madmail, is accepted.
+        cfg.state_dir = empty.clone();
+        check(&cfg, &empty).unwrap();
+        cfg.state_dir = mine.clone();
+        check(&cfg, &mine).unwrap();
+        // With --skip-user nothing is handed over, so the rule does not apply.
+        cfg.state_dir = other.clone();
+        cfg.skip_user = true;
+        check(&cfg, &other).unwrap();
+    }
+
+    #[test]
+    fn a_dangling_state_dir_link_into_a_system_tree_is_refused_before_any_change() {
+        let mut cfg = super::super::systemd::tests::sample_cfg();
+        cfg.system_install = true;
+        let (_b, b) = base();
+        let link = b.join("m2");
+        symlink("/usr/newstate-for-test", &link).unwrap();
+        cfg.state_dir = link.clone();
+        let err = check_state_dir(&cfg).unwrap_err().to_string();
+        assert!(
+            err.contains("it resolves to /usr/newstate-for-test, a directory below /etc, /usr"),
+            "{err}"
+        );
+        // A dangling link to a directory install may create is accepted.
+        let target = b.join("real/madmail");
+        fs::create_dir(b.join("real")).unwrap();
+        fs::remove_file(&link).unwrap();
+        symlink(&target, &link).unwrap();
+        check_state_dir(&cfg).unwrap();
     }
 
     #[test]

@@ -359,11 +359,15 @@ impl Trust {
 /// root can write them (see there).
 pub const WELL_KNOWN_GROUP_DIRS: &[&str] = &["/var/log", "/var/mail"];
 
-/// Whether a passwd lookup error code means "no such entry". POSIX lets
-/// `getpwuid_r` and `getpwnam_r` report that with these codes as well as with
-/// a NULL result.
+/// Whether a passwd lookup error code means "no such entry". Only `ENOENT`
+/// does (musl reports a missing `/etc/passwd` with it); glibc and musl report a
+/// missing entry with 0 and a NULL result. Every other code, including the
+/// `ESRCH`, `EBADF` and `EPERM` that POSIX also allows for "not found", is an
+/// error: an NSS module can return them for an account that exists, and a
+/// caller that took that account for one without a name could give its files
+/// to the service account.
 fn not_found_code(rc: libc::c_int) -> bool {
-    matches!(rc, libc::ENOENT | libc::ESRCH | libc::EBADF | libc::EPERM)
+    rc == libc::ENOENT
 }
 
 /// Run a passwd lookup (`getpwuid_r` or `getpwnam_r`, given as `call`) with a
@@ -394,9 +398,77 @@ fn passwd_lookup<T>(
     }
 }
 
-/// The name of the account with uid `uid` (`getpwuid_r`): `Ok(None)` when no
-/// account has that uid, an error when the account database cannot be read.
+/// What `getent passwd <key>` says, from its exit status (`None` when it was
+/// killed by a signal) and its output: `Ok(Some(field))` with the `field`-th
+/// (0-based) `:`-separated field of the entry for exit status 0, `Ok(None)`
+/// for exit status 2 ("no such entry"), an error for anything else.
+fn parse_getent(
+    code: Option<i32>,
+    stdout: &[u8],
+    field: usize,
+    key: &str,
+) -> io::Result<Option<String>> {
+    match code {
+        Some(0) => {
+            let text = String::from_utf8_lossy(stdout);
+            let line = text.lines().next().unwrap_or_default();
+            match line.split(':').nth(field) {
+                Some(value) if line.split(':').count() >= 7 => Ok(Some(value.to_string())),
+                _ => Err(io::Error::other(format!(
+                    "getent passwd {key} printed an entry that cannot be read"
+                ))),
+            }
+        }
+        Some(2) => Ok(None),
+        Some(code) => Err(io::Error::other(format!(
+            "getent passwd {key} failed with exit status {code}"
+        ))),
+        None => Err(io::Error::other(format!(
+            "getent passwd {key} was killed by a signal"
+        ))),
+    }
+}
+
+/// Ask the host's account database (`getent passwd <key>`, which uses the
+/// host's NSS configuration) for field `field` of the entry for `key`, after
+/// the C library found none. A statically linked musl build reads only
+/// `/etc/passwd` and never asks NSS modules (LDAP, sssd, winbind,
+/// systemd-userdb), so an account that exists only there would otherwise look
+/// like a uid without a name. `Ok(None)` when `getent` finds no entry or is
+/// not installed (a host without it, such as BusyBox, has no NSS modules
+/// either); an error when it fails in any other way, so callers fail closed.
+/// An all-digit `key` is looked up as a uid. `getent` cannot tell an NSS
+/// service that is down from an entry that does not exist: both exit with 2.
+fn getent_passwd(key: &str, field: usize) -> io::Result<Option<String>> {
+    match std::process::Command::new("getent")
+        .arg("passwd")
+        .arg(key)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        Ok(out) => parse_getent(out.status.code(), &out.stdout, field, key),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(io::Error::other(format!(
+            "cannot run getent passwd {key}: {e}"
+        ))),
+    }
+}
+
+/// The name of the account with uid `uid` (`getpwuid_r`, then
+/// [`getent_passwd`] when that finds none): `Ok(None)` when no account has
+/// that uid, an error when the account database cannot be read.
 pub fn account_name(uid: u32) -> io::Result<Option<String>> {
+    account_name_c(uid)
+        .and_then(|found| match found {
+            Some(name) => Ok(Some(name)),
+            None => getent_passwd(&uid.to_string(), 0),
+        })
+        .map_err(|e| io::Error::new(e.kind(), format!("cannot look up uid {uid}: {e}")))
+}
+
+/// [`account_name`] from the C library alone.
+fn account_name_c(uid: u32) -> io::Result<Option<String>> {
     passwd_lookup(
         |pwd, buf, result| {
             // SAFETY: `pwd`, `buf` and `result` are valid for writes, and
@@ -413,12 +485,30 @@ pub fn account_name(uid: u32) -> io::Result<Option<String>> {
                 .into_owned()
         },
     )
-    .map_err(|e| io::Error::new(e.kind(), format!("cannot look up uid {uid}: {e}")))
 }
 
-/// The primary gid of account `user` (`getpwnam_r`): `Ok(None)` when there is
-/// no such account, an error when the account database cannot be read.
+/// The primary gid of account `user` (`getpwnam_r`, then [`getent_passwd`]
+/// when that finds none): `Ok(None)` when there is no such account, an error
+/// when the account database cannot be read.
 fn account_gid(user: &str) -> io::Result<Option<u32>> {
+    account_gid_c(user)
+        .and_then(|found| match found {
+            Some(gid) => Ok(Some(gid)),
+            // `getent` takes an all-digit key for a uid; such a name is not
+            // asked for (useradd refuses one).
+            None if user.bytes().all(|b| b.is_ascii_digit()) => Ok(None),
+            None => match getent_passwd(user, 3)? {
+                Some(gid) => gid.parse().map(Some).map_err(|_| {
+                    io::Error::other(format!("getent passwd {user} printed gid {gid:?}"))
+                }),
+                None => Ok(None),
+            },
+        })
+        .map_err(|e| io::Error::new(e.kind(), format!("cannot look up account {user}: {e}")))
+}
+
+/// [`account_gid`] from the C library alone.
+fn account_gid_c(user: &str) -> io::Result<Option<u32>> {
     let name = CString::new(user).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     passwd_lookup(
         |pwd, buf, result| {
@@ -428,11 +518,10 @@ fn account_gid(user: &str) -> io::Result<Option<u32>> {
         },
         |pwd| pwd.pw_gid,
     )
-    .map_err(|e| io::Error::new(e.kind(), format!("cannot look up account {user}: {e}")))
 }
 
 /// The groups of account `user` (primary and supplementary): `Ok(None)` when
-/// the account does not exist (`getpwnam_r`), an error when it exists but its
+/// the account does not exist ([`account_gid`]), an error when it exists but its
 /// groups cannot be read (`id -G`) or the account database cannot be read.
 /// Callers fail closed on an error: a group they do not know of could write a
 /// directory they then trust.
@@ -1403,6 +1492,36 @@ mod tests {
         assert!(passwd_lookup(|_, _, _| libc::ENOENT, |_| ())
             .unwrap()
             .is_none());
+        // Codes POSIX also allows for "not found" can come from an NSS module
+        // for an account that exists: they are errors, never "no account".
+        for rc in [libc::EPERM, libc::EBADF, libc::ESRCH] {
+            let e = passwd_lookup(|_, _, _| rc, |_| ()).unwrap_err();
+            assert_eq!(e.raw_os_error(), Some(rc));
+        }
+    }
+
+    #[test]
+    fn getent_output_is_read_by_exit_status() {
+        let entry = b"ldapuser:x:4242:4343:LDAP user:/home/ldapuser:/bin/sh\n";
+        assert_eq!(
+            parse_getent(Some(0), entry, 0, "4242").unwrap().as_deref(),
+            Some("ldapuser")
+        );
+        assert_eq!(
+            parse_getent(Some(0), entry, 3, "ldapuser")
+                .unwrap()
+                .as_deref(),
+            Some("4343")
+        );
+        // Exit status 2: no such entry.
+        assert_eq!(parse_getent(Some(2), b"", 0, "99999").unwrap(), None);
+        // Anything else fails closed: a usage error, an unsupported database,
+        // a signal, or an entry that cannot be read.
+        for code in [Some(1), Some(3), Some(127), None] {
+            assert!(parse_getent(code, b"", 0, "4242").is_err(), "{code:?}");
+        }
+        assert!(parse_getent(Some(0), b"garbage\n", 0, "4242").is_err());
+        assert!(parse_getent(Some(0), b"", 0, "4242").is_err());
     }
 
     #[test]
