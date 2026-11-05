@@ -106,7 +106,8 @@ pub fn fstatat_nofollow(dir: RawFd, name: &CStr) -> io::Result<libc::stat> {
     Ok(st)
 }
 
-fn readlinkat(dir: RawFd, name: &CStr) -> io::Result<OsString> {
+/// The target of the link `name` in `dir`.
+pub fn readlinkat(dir: RawFd, name: &CStr) -> io::Result<OsString> {
     let mut buf = vec![0u8; 4096];
     loop {
         // SAFETY: `buf` is writable for `buf.len()` bytes; `dir` is open.
@@ -192,6 +193,10 @@ pub struct Trust {
     /// With `root_only`: one more owner that counts as trusted (the caller, when
     /// not root; used by tests and dry runs).
     also: Option<u32>,
+    /// With `root_only`: the well-known directories (by device and inode) that
+    /// are trusted although a group other than root can write them, when that
+    /// group is not one of `groups` ([`WELL_KNOWN_GROUP_DIRS`]).
+    group_dirs: Vec<FileId>,
     /// Tests cannot create files owned by another uid; they mark objects
     /// (by device and inode) that count as owned by the service instead.
     #[cfg(test)]
@@ -226,6 +231,7 @@ impl Trust {
             groups: service_gids([gid]),
             root_only: false,
             also: None,
+            group_dirs: Vec::new(),
             #[cfg(test)]
             marked: Vec::new(),
         }
@@ -245,20 +251,41 @@ impl Trust {
     }
 
     /// Stricter rule for uninstall and staging: anything not owned by root is
-    /// untrusted, and so is a file (not a directory or link) that a group other
-    /// than root can write. Directories follow the same group rule as for
-    /// [`Trust::service`], with `service_groups` the groups of the service
-    /// accounts, so a system directory such as Ubuntu's `/var/log` (mode 0775,
-    /// group `syslog`) is not refused.
+    /// untrusted, and so is anything a group other than root can write: a file,
+    /// and a directory without the sticky bit. A sticky directory is handled
+    /// like `/tmp`: every component must still be owned by root, so nobody else
+    /// can rename or replace the entries followed in it. `service_groups` are
+    /// the groups of the service accounts. The only group-writable directories
+    /// without the sticky bit that pass are the well-known ones in
+    /// [`WELL_KNOWN_GROUP_DIRS`] (Ubuntu's `/var/log`, `root:syslog` 0775, and
+    /// Debian's `/var/mail`, `root:mail` 2775), recognized by the device and
+    /// inode of the directory each path resolves to, and only when their group
+    /// is not one of `service_groups`.
     pub fn root_only(service_groups: impl IntoIterator<Item = u32>) -> Self {
+        use std::os::unix::fs::MetadataExt;
+        let group_dirs = WELL_KNOWN_GROUP_DIRS
+            .iter()
+            .filter_map(|d| std::fs::metadata(d).ok())
+            .filter(|m| m.is_dir())
+            .map(|m| (m.dev(), m.ino()))
+            .collect();
         Self {
             uids: Vec::new(),
             groups: service_gids(service_groups),
             root_only: true,
             also: None,
+            group_dirs,
             #[cfg(test)]
             marked: Vec::new(),
         }
+    }
+
+    /// Count these directories (by device and inode) as well-known
+    /// group-writable directories (tests).
+    #[cfg(test)]
+    pub fn with_group_dirs(mut self, ids: Vec<FileId>) -> Self {
+        self.group_dirs = ids;
+        self
     }
 
     /// [`Trust::root_only`] for the effective user: when it is not root, its
@@ -296,20 +323,59 @@ impl Trust {
         match kind(st) {
             libc::S_IFLNK => None,
             libc::S_IFDIR => {
+                let sticky = mode & 0o1000 != 0;
                 if group_writable && self.groups.contains(&st.st_gid) {
                     Some("group-writable by a group of the service account")
-                } else if mode & 0o002 != 0 && mode & 0o1000 == 0 {
+                } else if mode & 0o002 != 0 && !sticky {
                     Some("world-writable without the sticky bit")
+                } else if group_writable
+                    && self.root_only
+                    && st.st_gid != 0
+                    && !sticky
+                    && !self.group_dirs.contains(&file_id(st))
+                {
+                    Some("group-writable by a group other than root, without the sticky bit")
                 } else {
                     None
                 }
             }
-            _ if group_writable && self.root_only && st.st_gid != 0 && self.also.is_none() => {
+            _ if group_writable && self.root_only && st.st_gid != 0 => {
                 Some("group-writable by a group other than root")
             }
             _ if mode & 0o002 != 0 => Some("world-writable"),
             _ => None,
         }
+    }
+}
+
+/// Directories that [`Trust::root_only`] trusts although a group other than
+/// root can write them (see there).
+pub const WELL_KNOWN_GROUP_DIRS: &[&str] = &["/var/log", "/var/mail"];
+
+/// The groups of account `user` (primary and supplementary) from `id -G`:
+/// `Ok(None)` when the account does not exist, an error when it exists but its
+/// groups cannot be read.
+pub fn account_groups_checked(user: &str) -> io::Result<Option<Vec<u32>>> {
+    let exists = std::process::Command::new("id")
+        .arg("-u")
+        .arg(user)
+        .output()?
+        .status
+        .success();
+    if !exists {
+        return Ok(None);
+    }
+    let out = std::process::Command::new("id")
+        .arg("-G")
+        .arg(user)
+        .output()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let groups: Option<Vec<u32>> = text.split_whitespace().map(|g| g.parse().ok()).collect();
+    match groups {
+        Some(groups) if out.status.success() && !groups.is_empty() => Ok(Some(groups)),
+        _ => Err(io::Error::other(format!(
+            "cannot read the groups of account {user}"
+        ))),
     }
 }
 
@@ -837,6 +903,194 @@ pub fn read_fd(fd: &OwnedFd, max: usize) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
+/// List the entries of the open directory `fd`, except `.` and `..`. The
+/// listing uses a duplicate descriptor, so `fd` stays open for `*at` calls.
+pub fn read_names(fd: &OwnedFd) -> io::Result<Vec<CString>> {
+    // SAFETY: `fd` is an open descriptor; dup returns a new one or -1.
+    let dup = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
+    if dup < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `dup` is a fresh descriptor. On success fdopendir takes ownership
+    // of it (closedir closes it); on failure it stays ours and is closed here.
+    let dirp = unsafe { libc::fdopendir(dup) };
+    if dirp.is_null() {
+        let e = io::Error::last_os_error();
+        // SAFETY: fdopendir failed, so `dup` is still owned by us.
+        drop(unsafe { OwnedFd::from_raw_fd(dup) });
+        return Err(e);
+    }
+    let stream = DirStream(dirp);
+    let mut names = Vec::new();
+    loop {
+        clear_errno();
+        // SAFETY: `stream.0` is a valid DIR stream until DirStream is dropped.
+        let entry = unsafe { libc::readdir(stream.0) };
+        if entry.is_null() {
+            // NULL is the end of the stream unless errno was set.
+            let e = io::Error::last_os_error();
+            return match e.raw_os_error() {
+                Some(0) | None => Ok(names),
+                Some(_) => Err(e),
+            };
+        }
+        // SAFETY: readdir returned a valid dirent whose d_name is NUL-terminated;
+        // the name is copied before the next readdir call. d_name's declared
+        // length differs between platforms, so it is read as a C string only.
+        let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) };
+        if name.to_bytes() != b"." && name.to_bytes() != b".." {
+            names.push(name.to_owned());
+        }
+    }
+}
+
+/// Owns a `DIR*` from fdopendir and closes it (and its descriptor) on drop.
+struct DirStream(*mut libc::DIR);
+
+impl Drop for DirStream {
+    fn drop(&mut self) {
+        // SAFETY: the pointer came from a successful fdopendir and is closed once.
+        unsafe {
+            libc::closedir(self.0);
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "dragonfly"))]
+fn clear_errno() {
+    // SAFETY: __errno_location returns this thread's errno slot.
+    unsafe { *libc::__errno_location() = 0 }
+}
+
+#[cfg(any(target_vendor = "apple", target_os = "freebsd"))]
+fn clear_errno() {
+    // SAFETY: __error returns this thread's errno slot.
+    unsafe { *libc::__error() = 0 }
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "dragonfly",
+    target_vendor = "apple",
+    target_os = "freebsd"
+)))]
+fn clear_errno() {
+    // Other Unix targets are not built; a NULL readdir is then read as the end
+    // of the stream only when errno happens to be zero.
+}
+
+/// Directory levels [`remove_dir_tree`] descends; each open level holds one
+/// descriptor.
+pub const MAX_REMOVE_DEPTH: usize = 256;
+
+/// One directory being emptied by [`remove_dir_tree`].
+struct RemoveLevel {
+    fd: OwnedFd,
+    /// The directory's name in its parent (the level below on the stack).
+    name: CString,
+    names: std::vec::IntoIter<CString>,
+    /// How often the directory was listed again after its entries were removed.
+    relisted: usize,
+}
+
+/// Remove the directory `name` in the open directory `dir`, with everything
+/// in it, through descriptors only: `expected` is the device and inode the
+/// caller checked (`fstatat` without following), and the directory is opened
+/// with `O_NOFOLLOW | O_DIRECTORY` and compared with it. Each directory below
+/// is opened relative to its parent's descriptor the same way and listed with
+/// `fdopendir`; every other entry (a link too) is removed with `unlinkat` on
+/// the parent's descriptor, so nothing is followed and no path is resolved
+/// again. An entry that another process replaces is looked at again; one that
+/// disappears is skipped. A directory that still has entries after being
+/// listed eight more times, or a tree deeper than [`MAX_REMOVE_DEPTH`], is an
+/// error.
+pub fn remove_dir_tree(dir: RawFd, name: &CStr, expected: FileId) -> io::Result<()> {
+    let fd = openat(dir, name, DIR_FLAGS, 0)?;
+    if file_id(&fstat(fd.as_raw_fd())?) != expected {
+        return Err(io::Error::other(
+            "the directory was replaced after it was checked",
+        ));
+    }
+    let names = read_names(&fd)?;
+    let mut stack = vec![RemoveLevel {
+        fd,
+        name: name.to_owned(),
+        names: names.into_iter(),
+        relisted: 0,
+    }];
+    while let Some(top) = stack.last_mut() {
+        let Some(entry) = top.names.next() else {
+            let again = read_names(&top.fd)?;
+            if !again.is_empty() && top.relisted < 8 {
+                top.relisted += 1;
+                top.names = again.into_iter();
+                continue;
+            }
+            let done = stack.pop().expect("stack is not empty");
+            let parent = stack.last().map_or(dir, |l| l.fd.as_raw_fd());
+            drop(done.fd);
+            match unlinkat(parent, &done.name, true) {
+                Err(e) if e.raw_os_error() == Some(libc::ENOENT) && !stack.is_empty() => {}
+                other => other?,
+            }
+            continue;
+        };
+        let parent = top.fd.as_raw_fd();
+        if let Some(child) = remove_entry_at(parent, &entry, stack.len())? {
+            stack.push(child);
+        }
+    }
+    Ok(())
+}
+
+/// Remove one entry of a directory being emptied, or open it when it is a
+/// directory (returned to be emptied next). `depth` is the number of open
+/// levels.
+fn remove_entry_at(parent: RawFd, name: &CStr, depth: usize) -> io::Result<Option<RemoveLevel>> {
+    let gone = |e: &io::Error| e.raw_os_error() == Some(libc::ENOENT);
+    for _ in 0..8 {
+        let st = match fstatat_nofollow(parent, name) {
+            Ok(st) => st,
+            Err(e) if gone(&e) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        if kind(&st) == libc::S_IFDIR {
+            if depth >= MAX_REMOVE_DEPTH {
+                return Err(io::Error::other(format!(
+                    "deeper than {MAX_REMOVE_DEPTH} levels"
+                )));
+            }
+            match openat(parent, name, DIR_FLAGS, 0) {
+                Ok(fd) => {
+                    let names = read_names(&fd)?;
+                    return Ok(Some(RemoveLevel {
+                        fd,
+                        name: name.to_owned(),
+                        names: names.into_iter(),
+                        relisted: 0,
+                    }));
+                }
+                Err(e) if gone(&e) => return Ok(None),
+                // Replaced by a link or a file since the fstatat: look again.
+                Err(e) if matches!(e.raw_os_error(), Some(libc::ELOOP) | Some(libc::ENOTDIR)) => {}
+                Err(e) => return Err(e),
+            }
+        } else {
+            match unlinkat(parent, name, false) {
+                Ok(()) => return Ok(None),
+                Err(e) if gone(&e) => return Ok(None),
+                // Replaced by a directory since the fstatat: look again.
+                Err(e) if matches!(e.raw_os_error(), Some(libc::EISDIR) | Some(libc::EPERM)) => {}
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    Err(io::Error::other(
+        "the entry kept changing while it was removed",
+    ))
+}
+
 // ---------------------------------------------------------------------------
 // Running a step as the service account.
 
@@ -999,12 +1253,54 @@ mod tests {
         let strict = Trust::root_only([990]);
         set(&mut st, libc::S_IFDIR, 0o755, 1000, 0);
         assert!(strict.verdict(&st).is_some());
-        // Ubuntu's /var/log (root:syslog 0775) and Debian's /var/mail (root:mail
-        // 2775) are trusted: the service account is not in those groups.
+        // Any other directory writable by a group other than root is refused
+        // under the root-only rule, unless it has the sticky bit.
         set(&mut st, libc::S_IFDIR, 0o775, 0, 4);
-        assert_eq!(strict.verdict(&st), None, "system group directory");
+        st.st_dev = 7;
+        st.st_ino = 42;
+        assert!(strict.verdict(&st).is_some(), "system group directory");
         set(&mut st, libc::S_IFDIR, 0o2775, 0, 8);
-        assert_eq!(strict.verdict(&st), None, "setgid system group directory");
+        assert!(strict.verdict(&st).is_some(), "setgid group directory");
+        set(&mut st, libc::S_IFDIR, 0o1775, 0, 4);
+        assert_eq!(strict.verdict(&st), None, "sticky group directory");
+        set(&mut st, libc::S_IFDIR, 0o1775, 0, 990);
+        assert!(
+            strict.verdict(&st).is_some(),
+            "sticky service group directory"
+        );
+        // Ubuntu's /var/log (root:syslog 0775) and Debian's /var/mail (root:mail
+        // 2775) are trusted by device and inode, when the service account is not
+        // in those groups.
+        let known = Trust::root_only([990]).with_group_dirs(vec![(7, 42)]);
+        set(&mut st, libc::S_IFDIR, 0o775, 0, 4);
+        assert_eq!(
+            known.verdict(&st),
+            None,
+            "well-known system group directory"
+        );
+        set(&mut st, libc::S_IFDIR, 0o2775, 0, 8);
+        assert_eq!(known.verdict(&st), None, "well-known setgid directory");
+        set(&mut st, libc::S_IFDIR, 0o775, 0, 990);
+        assert!(
+            known.verdict(&st).is_some(),
+            "well-known dir of a service group"
+        );
+        st.st_ino = 43;
+        set(&mut st, libc::S_IFDIR, 0o775, 0, 4);
+        assert!(known.verdict(&st).is_some(), "another directory");
+        // The caller's own files count as trusted for a non-root caller, but a
+        // group-writable file never does.
+        let caller = Trust {
+            also: Some(1000),
+            ..Trust::root_only([990])
+        };
+        set(&mut st, libc::S_IFREG, 0o640, 1000, 1000);
+        assert_eq!(caller.verdict(&st), None, "caller's file");
+        set(&mut st, libc::S_IFREG, 0o660, 1000, 1000);
+        assert!(
+            caller.verdict(&st).is_some(),
+            "caller's group-writable file"
+        );
         set(&mut st, libc::S_IFDIR, 0o775, 0, 990);
         assert!(strict.verdict(&st).is_some(), "service group directory");
         set(&mut st, libc::S_IFREG, 0o660, 0, 4);
@@ -1269,6 +1565,47 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains(".tmp-"))
             .count();
         assert_eq!(leftovers, 0);
+    }
+
+    #[test]
+    fn remove_dir_tree_works_through_descriptors_and_never_follows_links() {
+        let (_b, b) = base();
+        let outside = b.join("outside");
+        fs::create_dir_all(outside.join("dir")).unwrap();
+        fs::write(outside.join("dir/keep"), "x").unwrap();
+        fs::write(outside.join("file"), "x").unwrap();
+        let tree = b.join("madmail");
+        fs::create_dir_all(tree.join("a/b/c")).unwrap();
+        fs::write(tree.join("a/b/c/file"), "x").unwrap();
+        fs::write(tree.join("top"), "x").unwrap();
+        symlink(outside.join("dir"), tree.join("a/dir-link")).unwrap();
+        symlink(outside.join("file"), tree.join("a/b/file-link")).unwrap();
+        symlink(tree.join("missing"), tree.join("dangling")).unwrap();
+        fs::hard_link(outside.join("file"), tree.join("hard")).unwrap();
+        let parent = openat(
+            libc::AT_FDCWD,
+            &cstring(b.as_os_str()).unwrap(),
+            DIR_FLAGS,
+            0,
+        )
+        .unwrap();
+        let name = cstring(OsStr::new("madmail")).unwrap();
+        // A directory other than the one checked is not removed.
+        let err = remove_dir_tree(parent.as_raw_fd(), &name, id(&outside)).unwrap_err();
+        assert!(err.to_string().contains("replaced"), "{err}");
+        assert!(tree.join("top").is_file());
+        remove_dir_tree(parent.as_raw_fd(), &name, id(&tree)).unwrap();
+        assert!(fs::symlink_metadata(&tree).is_err());
+        assert!(outside.join("dir/keep").is_file());
+        assert_eq!(fs::read_to_string(outside.join("file")).unwrap(), "x");
+        // A link in place of the directory is not followed.
+        symlink(&outside, &tree).unwrap();
+        let err = remove_dir_tree(parent.as_raw_fd(), &name, id(&outside)).unwrap_err();
+        assert!(
+            matches!(err.raw_os_error(), Some(libc::ELOOP) | Some(libc::ENOTDIR)),
+            "{err}"
+        );
+        assert!(outside.join("dir/keep").is_file());
     }
 
     #[test]

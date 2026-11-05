@@ -65,13 +65,13 @@
 
 use std::ffi::{CStr, CString, OsStr};
 use std::io;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 use crate::ctl::secure_fs::cstring;
-use crate::ctl::secure_fs::{fchown, fstat, fstatat_nofollow, kind, openat, DIR_FLAGS};
+use crate::ctl::secure_fs::{fchown, fstat, fstatat_nofollow, kind, openat, read_names, DIR_FLAGS};
 
 /// Directory levels below the root that are still changed. Install-created
 /// state (databases, DKIM keys, mail directories) is a few levels deep.
@@ -388,83 +388,6 @@ fn changed_under_us(e: &io::Error) -> bool {
         e.raw_os_error(),
         Some(libc::ELOOP) | Some(libc::ENOTDIR) | Some(libc::ENOENT)
     )
-}
-
-/// List the entries of the open directory `fd`, except `.` and `..`. The
-/// listing uses a duplicate descriptor, so `fd` stays open for `*at` calls.
-fn read_names(fd: &OwnedFd) -> io::Result<Vec<CString>> {
-    // SAFETY: `fd` is an open descriptor; dup returns a new one or -1.
-    let dup = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
-    if dup < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: `dup` is a fresh descriptor. On success fdopendir takes ownership
-    // of it (closedir closes it); on failure it stays ours and is closed here.
-    let dirp = unsafe { libc::fdopendir(dup) };
-    if dirp.is_null() {
-        let e = io::Error::last_os_error();
-        // SAFETY: fdopendir failed, so `dup` is still owned by us.
-        drop(unsafe { OwnedFd::from_raw_fd(dup) });
-        return Err(e);
-    }
-    let stream = DirStream(dirp);
-    let mut names = Vec::new();
-    loop {
-        clear_errno();
-        // SAFETY: `stream.0` is a valid DIR stream until DirStream is dropped.
-        let entry = unsafe { libc::readdir(stream.0) };
-        if entry.is_null() {
-            // NULL is the end of the stream unless errno was set.
-            let e = io::Error::last_os_error();
-            return match e.raw_os_error() {
-                Some(0) | None => Ok(names),
-                Some(_) => Err(e),
-            };
-        }
-        // SAFETY: readdir returned a valid dirent whose d_name is NUL-terminated;
-        // the name is copied before the next readdir call. d_name's declared
-        // length differs between platforms, so it is read as a C string only.
-        let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) };
-        if name.to_bytes() != b"." && name.to_bytes() != b".." {
-            names.push(name.to_owned());
-        }
-    }
-}
-
-/// Owns a `DIR*` from fdopendir and closes it (and its descriptor) on drop.
-struct DirStream(*mut libc::DIR);
-
-impl Drop for DirStream {
-    fn drop(&mut self) {
-        // SAFETY: the pointer came from a successful fdopendir and is closed once.
-        unsafe {
-            libc::closedir(self.0);
-        }
-    }
-}
-
-#[cfg(any(target_os = "linux", target_os = "android", target_os = "dragonfly"))]
-fn clear_errno() {
-    // SAFETY: __errno_location returns this thread's errno slot.
-    unsafe { *libc::__errno_location() = 0 }
-}
-
-#[cfg(any(target_vendor = "apple", target_os = "freebsd"))]
-fn clear_errno() {
-    // SAFETY: __error returns this thread's errno slot.
-    unsafe { *libc::__error() = 0 }
-}
-
-#[cfg(not(any(
-    target_os = "linux",
-    target_os = "android",
-    target_os = "dragonfly",
-    target_vendor = "apple",
-    target_os = "freebsd"
-)))]
-fn clear_errno() {
-    // Other Unix targets are not built; a NULL readdir is then read as the end
-    // of the stream only when errno happens to be zero.
 }
 
 #[cfg(test)]

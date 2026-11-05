@@ -33,7 +33,9 @@ use chatmail_config::UninstallArgs;
 use chatmail_types::{ChatmailError, Result};
 
 use super::context::CtlContext;
-use super::host_paths::{is_family_stem, is_named_for_madmail, normalize, system_dir_reason};
+use super::host_paths::{
+    is_family_stem, is_named_for_madmail, normalize, shown, system_dir_reason,
+};
 use super::output::CtlOut;
 use super::util;
 
@@ -440,9 +442,15 @@ fn current_binary_name() -> String {
 /// The state directory uninstall works on. A `state_dir` set in the config
 /// file is used only when the config file and every directory and link on its
 /// path pass [`Trust::root_or_caller`](super::secure_fs::Trust::root_or_caller)
-/// (owned by root, not group-writable unless the group is root, not
-/// world-writable unless a sticky directory); otherwise anyone who can edit
-/// that file could point uninstall at any directory. An ignored value is returned as a kept entry, and the
+/// (owned by root, not writable by a group other than root except a sticky
+/// directory or a well-known one such as `/var/log`, not world-writable unless
+/// a sticky directory) and the file has one hard link; otherwise anyone who
+/// can edit that file could point uninstall at any directory. The groups
+/// counted as the service's are those of every service account found, the
+/// group owning the config file's directory and the groups owning the state
+/// directories (the one the config file names and `--state-dir`). When an
+/// account exists but its groups cannot be read, the config file is not
+/// trusted. An ignored value is returned as a kept entry, and the
 /// `--state-dir` value is used instead.
 fn uninstall_state_dir(args: &Args, ctx: &CtlContext, primary: &str) -> (PathBuf, Option<Kept>) {
     let Some(from_config) = ctx.config.state_dir.clone() else {
@@ -452,7 +460,18 @@ fn uninstall_state_dir(args: &Args, ctx: &CtlContext, primary: &str) -> (PathBuf
     for name in [primary, DEFAULT_BINARY_NAME, "chatmail"] {
         push_unique_string(&mut users, name.to_string());
     }
-    match config_file_untrusted(&args.config, &groups_of(&users)) {
+    let groups = groups_of(&users).map(|mut groups| {
+        let config_dir = args.config.parent().unwrap_or(Path::new("/"));
+        for gid in owning_gids([config_dir, from_config.as_path(), args.state_dir.as_path()]) {
+            push_gid(&mut groups, gid);
+        }
+        groups
+    });
+    let untrusted = match groups {
+        Ok(groups) => config_file_untrusted(&args.config, &groups),
+        Err(why) => Some(why),
+    };
+    match untrusted {
         None => (from_config, None),
         Some(why) => {
             let kept = Kept {
@@ -502,22 +521,64 @@ fn unit_service_users() -> Vec<String> {
     users
 }
 
-/// Primary and supplementary groups of the accounts that exist among `users`.
+/// Primary and supplementary groups of the accounts that exist among `users`,
+/// or why they cannot be known: an account that exists but whose groups cannot
+/// be read.
 #[cfg(unix)]
-fn groups_of(users: &[String]) -> Vec<u32> {
+fn groups_of(users: &[String]) -> std::result::Result<Vec<u32>, String> {
+    let mut groups = Vec::new();
+    for user in users {
+        let found = super::secure_fs::account_groups_checked(user).map_err(|e| e.to_string())?;
+        for g in found.unwrap_or_default() {
+            push_gid(&mut groups, g);
+        }
+    }
+    Ok(groups)
+}
+
+#[cfg(not(unix))]
+fn groups_of(_users: &[String]) -> std::result::Result<Vec<u32>, String> {
+    Ok(Vec::new())
+}
+
+/// [`groups_of`] that skips an account whose groups cannot be read.
+#[cfg(unix)]
+fn groups_of_lossy(users: &[String]) -> Vec<u32> {
     let mut groups = Vec::new();
     for user in users {
         for g in super::secure_fs::account_groups(user) {
-            if !groups.contains(&g) {
-                groups.push(g);
-            }
+            push_gid(&mut groups, g);
         }
     }
     groups
 }
 
 #[cfg(not(unix))]
-fn groups_of(_users: &[String]) -> Vec<u32> {
+fn groups_of_lossy(_users: &[String]) -> Vec<u32> {
+    Vec::new()
+}
+
+fn push_gid(groups: &mut Vec<u32>, gid: u32) {
+    if gid != 0 && !groups.contains(&gid) {
+        groups.push(gid);
+    }
+}
+
+/// The group owning each of `paths` that exists (links followed), except root.
+#[cfg(unix)]
+fn owning_gids<'a>(paths: impl IntoIterator<Item = &'a Path>) -> Vec<u32> {
+    use std::os::unix::fs::MetadataExt;
+    let mut gids = Vec::new();
+    for path in paths {
+        if let Ok(m) = fs::metadata(path) {
+            push_gid(&mut gids, m.gid());
+        }
+    }
+    gids
+}
+
+#[cfg(not(unix))]
+fn owning_gids<'a>(_paths: impl IntoIterator<Item = &'a Path>) -> Vec<u32> {
     Vec::new()
 }
 
@@ -542,6 +603,11 @@ fn config_file_untrusted(path: &Path, groups: &[u32]) -> Option<String> {
         check_final: true,
     };
     match resolver.resolve(&absolute, Want::File) {
+        Ok(Resolved::Found(file)) if file.st.st_nlink > 1 => Some(format!(
+            "{} has {} hard links",
+            shown(&file.path),
+            file.st.st_nlink
+        )),
         Ok(Resolved::Found(_)) => None,
         Ok(Resolved::Controlled { component, reason }) => {
             Some(format!("{} is {reason}", component.display()))
@@ -691,7 +757,17 @@ fn detect_installation(
     for name in [primary, DEFAULT_BINARY_NAME] {
         push_unique_string(&mut accounts, name.to_string());
     }
-    plan.service_groups = groups_of(&accounts);
+    // A directory one of these groups can write is not trusted on the way to a
+    // path to remove: the groups of the accounts (those that can be read) and
+    // the groups owning the state directories.
+    let mut groups = groups_of(&accounts).unwrap_or_else(|why| {
+        println!("⚠️  {why}");
+        groups_of_lossy(&accounts)
+    });
+    for gid in owning_gids(plan.state_dirs.iter().map(PathBuf::as_path)) {
+        push_gid(&mut groups, gid);
+    }
+    plan.service_groups = groups;
 
     protect_preserved(&mut plan, flags.keep_data, flags.keep_config);
     // Only a note: the directory may still be found (and removed) another way.
@@ -1381,14 +1457,25 @@ enum Removed {
 /// the caller's own directories count as well). The last component is looked
 /// at through the opened parent and never followed: a link is removed itself,
 /// a file is unlinked through the parent descriptor, and a directory is
-/// removed with [`fs::remove_dir_all`], which does not follow links inside it.
-/// A missing path is not an error.
+/// removed with everything in it through descriptors from that parent down
+/// ([`secure_fs::remove_dir_tree`](super::secure_fs::remove_dir_tree)), so no
+/// path below the checked parent is resolved again. A missing path is not an
+/// error.
 #[cfg(unix)]
 fn remove_entry(path: &Path, groups: &[u32]) -> std::io::Result<Removed> {
+    remove_entry_trusted(
+        path,
+        &super::secure_fs::Trust::root_or_caller(groups.iter().copied()),
+    )
+}
+
+/// [`remove_entry`] with the trust rule given.
+#[cfg(unix)]
+fn remove_entry_trusted(path: &Path, trust: &super::secure_fs::Trust) -> std::io::Result<Removed> {
     use std::io::{Error, ErrorKind};
     use std::os::fd::AsRawFd;
 
-    use super::secure_fs::{self, Resolved, Resolver, Trust, Want};
+    use super::secure_fs::{self, Resolved, Resolver, Want};
 
     let path = normalize(path);
     let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
@@ -1397,9 +1484,8 @@ fn remove_entry(path: &Path, groups: &[u32]) -> std::io::Result<Removed> {
     if !path.is_absolute() {
         return Err(Error::new(ErrorKind::InvalidInput, "not an absolute path"));
     }
-    let trust = Trust::root_or_caller(groups.iter().copied());
     let resolver = Resolver {
-        trust: &trust,
+        trust,
         state_root: None,
         check_final: true,
     };
@@ -1424,13 +1510,15 @@ fn remove_entry(path: &Path, groups: &[u32]) -> std::io::Result<Removed> {
     };
     match secure_fs::kind(&st) {
         libc::S_IFDIR => {
-            // The parent passed the check, so nobody but root can replace this
-            // entry between the check and the removal.
-            fs::remove_dir_all(dir.path.join(name))?;
+            // Through descriptors from the checked parent down; the directory
+            // opened must be the one just looked at.
+            secure_fs::remove_dir_tree(dir.fd.as_raw_fd(), &cname, secure_fs::file_id(&st))?;
             Ok(Removed::Entry)
         }
         libc::S_IFLNK => {
-            let target = fs::read_link(dir.path.join(name)).unwrap_or_default();
+            let target = secure_fs::readlinkat(dir.fd.as_raw_fd(), &cname)
+                .map(PathBuf::from)
+                .unwrap_or_default();
             secure_fs::unlinkat(dir.fd.as_raw_fd(), &cname, false)?;
             Ok(Removed::Link(target))
         }
@@ -1832,9 +1920,15 @@ mod tests {
         assert_eq!(state_dir, cli);
         let kept = untrusted.unwrap();
         assert_eq!(kept.path, PathBuf::from("/var/lib/madmail-elsewhere"));
+        // The directory's group owns the config directory, so it counts as a
+        // service group (unless it is root's); the directory is also
+        // world-writable.
         assert!(
             kept.reason
-                .contains("world-writable without the sticky bit"),
+                .contains("open is group-writable by a group of the service account")
+                || kept
+                    .reason
+                    .contains("open is world-writable without the sticky bit"),
             "{}",
             kept.reason
         );
@@ -1976,26 +2070,69 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_parent_writable_by_a_system_group_does_not_block_removal() {
+    fn only_a_well_known_parent_writable_by_a_system_group_allows_removal() {
+        use super::super::secure_fs::Trust;
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        // Like Ubuntu's /var/log (root:syslog 0775): a group-writable parent
-        // whose group is not one of the service accounts' groups.
+        // Like Ubuntu's /var/log (root:syslog 0775): a group-writable parent.
         let base = tempfile::tempdir().unwrap();
         let logs = base.path().join("log");
-        fs::create_dir_all(logs.join("madmail")).unwrap();
+        fs::create_dir_all(logs.join("madmail/sub")).unwrap();
+        fs::write(logs.join("madmail/sub/file"), "x").unwrap();
         fs::set_permissions(&logs, fs::Permissions::from_mode(0o775)).unwrap();
-        let gid = fs::metadata(&logs).unwrap().gid();
-        // The same directory is refused when its group is the service's.
-        if gid != 0 {
-            let err = remove_path(&logs.join("madmail"), false, &[gid]).unwrap_err();
-            assert!(
-                err.to_string().contains("group of the service account"),
-                "{err}"
-            );
-            assert!(logs.join("madmail").is_dir());
+        let m = fs::metadata(&logs).unwrap();
+        let gid = m.gid();
+        if gid == 0 {
+            return;
         }
-        remove_path(&logs.join("madmail"), false, &[gid.wrapping_add(1)]).unwrap();
-        assert!(!logs.join("madmail").exists());
+        let target = logs.join("madmail");
+        // Any group-writable directory without the sticky bit is refused.
+        let err = remove_path(&target, false, &[gid.wrapping_add(1)]).unwrap_err();
+        assert!(err.to_string().contains("group other than root"), "{err}");
+        assert!(target.is_dir());
+        // A well-known one (here the test directory stands in for /var/log,
+        // by device and inode) passes, but not when its group is the service's.
+        let known = |groups: [u32; 1]| {
+            Trust::root_or_caller(groups).with_group_dirs(vec![(m.dev(), m.ino())])
+        };
+        let err = remove_entry_trusted(&target, &known([gid])).unwrap_err();
+        assert!(
+            err.to_string().contains("group of the service account"),
+            "{err}"
+        );
+        assert!(target.is_dir());
+        assert_eq!(
+            remove_entry_trusted(&target, &known([gid.wrapping_add(1)])).unwrap(),
+            Removed::Entry
+        );
+        assert!(!target.exists());
+        // A sticky group-writable directory is handled like /tmp.
+        fs::create_dir_all(logs.join("madmail")).unwrap();
+        fs::set_permissions(&logs, fs::Permissions::from_mode(0o1775)).unwrap();
+        remove_path(&target, false, &[gid.wrapping_add(1)]).unwrap();
+        assert!(!target.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hard_linked_or_group_writable_config_file_is_not_trusted() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let base = tempfile::tempdir().unwrap();
+        let config = base.path().join("madmail.conf");
+        fs::write(&config, "state_dir /var/lib/madmail-x\n").unwrap();
+        fs::set_permissions(&config, fs::Permissions::from_mode(0o640)).unwrap();
+        assert_eq!(config_file_untrusted(&config, &[]), None);
+        fs::hard_link(&config, base.path().join("other")).unwrap();
+        let why = config_file_untrusted(&config, &[]).unwrap();
+        assert!(why.contains("has 2 hard links"), "{why}");
+        fs::remove_file(base.path().join("other")).unwrap();
+        if fs::metadata(&config).unwrap().gid() != 0 {
+            fs::set_permissions(&config, fs::Permissions::from_mode(0o660)).unwrap();
+            let why = config_file_untrusted(&config, &[]).unwrap();
+            assert!(
+                why.contains("group-writable by a group other than root"),
+                "{why}"
+            );
+        }
     }
 
     #[cfg(unix)]
