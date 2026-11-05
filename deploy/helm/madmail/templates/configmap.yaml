@@ -22,7 +22,12 @@ data:
     else
       # --local: write only the config, TLS files and state; the image
       # already has the binary, and there is no service account or systemd.
-      # It also runs without root.
+      # It also runs without root and with a read-only root filesystem.
+      if ! mm install --help 2>/dev/null | grep -q -- '--local'; then
+        echo "bootstrap: this image's madmail has no 'install --local' (added in 2.41.0);" >&2
+        echo "bootstrap: set image.tag to a 2.41.0 or newer image, e.g. 2.41.0-unstable" >&2
+        exit 1
+      fi
       set -- install --simple --non-interactive --local \
         --config-dir /etc/madmail --state-dir /var/lib/madmail \
         --ip "$MADMAIL_PUBLIC_IP" --lang "$MADMAIL_LANG"

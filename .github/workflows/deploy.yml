@@ -156,3 +156,9 @@ jobs:
 
       - name: Run smoke test
         run: bash deploy/docker/smoke-test.sh madmail-local:smoke
+
+      # compose.yaml defaults to `latest`, which can be an older release.
+      - name: Run smoke test against the published latest image
+        run: |
+          docker pull ghcr.io/themadorg/madmail:latest
+          bash deploy/docker/smoke-test.sh ghcr.io/themadorg/madmail:latest

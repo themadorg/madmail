@@ -40,6 +40,7 @@ The bootstrap only installs when `madmail.conf` is missing from the config volum
 - Inbound TCP 25 from the internet if you want mail from other servers. Many clouds block it by default.
 - A `ReadWriteOnce` storage class.
 - Stable images (`latest`, `X.Y.Z`) are currently published for **linux/amd64** only. On arm64 nodes use an `X.Y.Z-unstable` tag or build the image yourself.
+- Madmail **2.41.0 or newer**: the non-root bootstrap uses `madmail install --local`. If the image is older, the `bootstrap` init container stops with a message saying so; set `image.tag` to a newer image (for example `2.41.0-unstable`) until a stable release with it is published.
 
 ## Quick start (IP relay)
 
@@ -224,7 +225,7 @@ See [`values.yaml`](../../deploy/helm/madmail/values.yaml) for every option with
 | `service.loadBalancerIP` | `""` | Static IP, normally equal to `madmail.publicIp`. |
 | `service.separateUdpService` | `false` | Put TURN on its own Service. |
 | `persistence.state.size` / `persistence.config.size` | `10Gi` / `1Gi` | PVC sizes; `existingClaim` reuses a PVC. |
-| `image.tag` | `""` | Madmail image version; empty = the chart's `appVersion` (the release it ships with). |
+| `image.tag` | `latest` | Madmail image version (2.41.0 or newer); pin `X.Y.Z` or `X.Y.Z-unstable` in production. |
 | `podSecurityContext` / `securityContext` | uid `999`, no capabilities | See [Security](#security). |
 
 ## Limitations

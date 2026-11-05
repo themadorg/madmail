@@ -740,7 +740,7 @@ Use `--user 999:988` only if host paths are owned by the `madmail` system user f
 
 ## Docker Compose example
 
-The repository ships a ready-to-use Compose project in [`deploy/docker/`](../../deploy/docker/). Its one-shot `bootstrap` service runs `madmail install` on the first `up` (only when `/etc/madmail/madmail.conf` does not exist yet), and `madmail` starts after it succeeds. `bootstrap` uses host networking so it can answer the Let's Encrypt HTTP-01 challenge on port 80 without clashing with `madmail` on later `up` runs. It runs `madmail install --simple --local`, which writes only `madmail.conf`, the TLS files and the state (the image already has the binary, and there is no service account or systemd unit):
+The repository ships a ready-to-use Compose project in [`deploy/docker/`](../../deploy/docker/). Its one-shot `bootstrap` service runs `madmail install` on the first `up` (only when `/etc/madmail/madmail.conf` does not exist yet), and `madmail` starts after it succeeds. `bootstrap` uses host networking so it can answer the Let's Encrypt HTTP-01 challenge on port 80 without clashing with `madmail` on later `up` runs. It runs `madmail install --simple --local`, which writes only `madmail.conf`, the TLS files and the state (the image already has the binary, and there is no service account or systemd unit). Images older than 2.41.0 have no `--local`; with them `bootstrap` runs `install --simple --skip-systemd --skip-user` instead:
 
 ```bash
 cd deploy/docker

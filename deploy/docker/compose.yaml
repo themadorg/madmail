@@ -69,11 +69,16 @@ services:
           own
           exit 0
         fi
-        # --local: write only the config, TLS files and state; the image
-        # already has the binary, and there is no service account or systemd.
-        set -- install --simple --non-interactive --local \
-          --config-dir /etc/madmail --state-dir /var/lib/madmail \
-          --ip "$$MADMAIL_PUBLIC_IP" --lang "$$MADMAIL_LANG"
+        # --local (Madmail 2.41+): write only the config, TLS files and
+        # state; the image already has the binary, and there is no service
+        # account or systemd. Older images only know the system install.
+        if /bin/madmail install --help 2>/dev/null | grep -q -- '--local'; then
+          set -- install --simple --non-interactive --local \
+            --config-dir /etc/madmail --state-dir /var/lib/madmail
+        else
+          set -- install --simple --non-interactive --skip-systemd --skip-user
+        fi
+        set -- "$$@" --ip "$$MADMAIL_PUBLIC_IP" --lang "$$MADMAIL_LANG"
         if [ -n "$$MADMAIL_DOMAIN" ]; then
           set -- "$$@" --domain "$$MADMAIL_DOMAIN" --hostname "$${MADMAIL_HOSTNAME:-$$MADMAIL_DOMAIN}"
         fi

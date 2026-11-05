@@ -6,11 +6,13 @@
 
 image:
   repository: ghcr.io/themadorg/madmail
-  # Empty = the chart's appVersion (the Madmail release this chart ships
-  # with). Stable images are tagged X.Y.Z and `latest`; testing builds are
-  # X.Y.Z-unstable. Stable images are currently published for linux/amd64
-  # only.
-  tag: ""
+  # `latest` is the newest stable release; testing builds are tagged
+  # X.Y.Z-unstable. Empty = appVersion. Stable images are currently published
+  # for linux/amd64 only. The chart needs Madmail 2.41.0 or newer
+  # (`install --local`, for the non-root pod); the bootstrap container stops
+  # with a message naming this when the image is older. Pin an immutable
+  # version in production.
+  tag: latest
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
