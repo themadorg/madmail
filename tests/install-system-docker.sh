@@ -205,6 +205,60 @@ pgish:pgish" ]]
 rm -r /srv/pgdata
 userdel pgish
 echo 'PASS: system, top-level, home, system-tree (such as /etc/systemd) and linked system directories and another account'"'"'s directory are refused as state directory before the account or any owner changes'
+# A root-owned directory that is not empty and not named for madmail may be
+# another program's (here dpkg's): refused before the account or any owner
+# changes, by install and by repair.
+sha256sum /etc/passwd /etc/group /etc/shadow > /tmp/denied-accounts.before
+dpkg_meta="$(stat -c '%u:%g:%a:%i' /var/lib/dpkg /var/lib/dpkg/info)"
+reject 'refusing to use state directory /var/lib/dpkg: it belongs to root, is not empty and is not named for madmail' \
+    /tmp/madmail install --simple --system --ip 127.0.0.1 --tls-mode self_signed \
+    --non-interactive --config-dir /var/xyzzy/etc/madmail --state-dir /var/lib/dpkg \
+    --binary-path /var/xyzzy/bin/madmail
+grep -q 'Use an empty directory or one named for madmail' /tmp/rejected.log
+reject 'it belongs to root, is not empty and is not named for madmail' \
+    /tmp/madmail install --user-only --config-dir /var/xyzzy/etc/madmail --state-dir /var/lib/dpkg
+[[ "$(stat -c '%u:%g:%a:%i' /var/lib/dpkg /var/lib/dpkg/info)" = "$dpkg_meta" ]]
+[[ -z "$(find /var/lib/dpkg -xdev -user madmail -print -quit)" ]]
+sha256sum -c /tmp/denied-accounts.before >/dev/null
+# A dangling operator link into a system tree is refused before the account is
+# changed or the directory it names is created.
+ln -s /etc/ssl/newstate /srv/m2
+reject 'refusing to use state directory /srv/m2: it resolves to /etc/ssl/newstate, a directory below /etc' \
+    /tmp/madmail install --simple --system --ip 127.0.0.1 --tls-mode self_signed \
+    --non-interactive --config-dir /var/xyzzy/etc/madmail --state-dir /srv/m2 \
+    --binary-path /var/xyzzy/bin/madmail
+reject 'it resolves to /etc/ssl/newstate' \
+    /tmp/madmail install --user-only --config-dir /var/xyzzy/etc/madmail --state-dir /srv/m2
+[[ ! -e /etc/ssl/newstate ]]
+rm /srv/m2
+sha256sum -c /tmp/denied-accounts.before >/dev/null
+[[ "$(getent passwd madmail | cut -d: -f6)" = /var/xyzzy/lib/madmail ]]
+# An account that exists only in NSS (here libnss-extrausers, standing in for
+# LDAP or sssd), which the static musl build's C library does not see: install
+# asks getent, so the directory of that account is refused as well.
+mkdir -p /var/lib/extrausers
+echo 'ldapuser:x:4242:4242:NSS-only user:/nonexistent:/usr/sbin/nologin' > /var/lib/extrausers/passwd
+echo 'ldapuser:x:4242:' > /var/lib/extrausers/group
+command cp -f /etc/nsswitch.conf /tmp/nsswitch.conf.saved
+sed -i -e 's/^passwd:.*/passwd: files extrausers/' -e 's/^group:.*/group: files extrausers/' /etc/nsswitch.conf
+[[ "$(getent passwd 4242 | cut -d: -f1)" = ldapuser ]] || fail 'the NSS module does not serve ldapuser'
+if grep -q '^ldapuser:' /etc/passwd; then fail 'ldapuser is in /etc/passwd'; fi
+install -d -o 4242 -g 4242 -m 700 /var/xyzzy/nss/state
+install -o 4242 -g 4242 -m 600 /dev/null /var/xyzzy/nss/state/ldapusers-file
+reject 'it belongs to account ldapuser (uid 4242)' /tmp/madmail install --simple --system \
+    --ip 127.0.0.1 --tls-mode self_signed --non-interactive --skip-systemd \
+    --config-dir /var/xyzzy/nss/etc/madmail --state-dir /var/xyzzy/nss/state \
+    --binary-path /var/xyzzy/nss/bin/madmail
+reject 'it belongs to account ldapuser (uid 4242)' /tmp/madmail install --user-only \
+    --config-dir /var/xyzzy/nss/etc/madmail --state-dir /var/xyzzy/nss/state
+[[ "$(stat -c '%u:%g' /var/xyzzy/nss/state /var/xyzzy/nss/state/ldapusers-file)" = "4242:4242
+4242:4242" ]]
+[[ ! -e /var/xyzzy/nss/etc && ! -e /var/xyzzy/nss/bin ]]
+sha256sum -c /tmp/denied-accounts.before >/dev/null
+[[ "$(getent passwd madmail | cut -d: -f6)" = /var/xyzzy/lib/madmail ]]
+command cp -f /tmp/nsswitch.conf.saved /etc/nsswitch.conf
+rm -r /var/xyzzy/nss /var/lib/extrausers
+echo 'PASS: a non-empty root-owned directory not named for madmail (/var/lib/dpkg), a dangling link into a system tree and a directory of an NSS-only account are refused as state directory before the account or any owner changes'
 
 # Independent skip flags still skip system steps while copying the requested binary.
 cp /tmp/madmail /tmp/skippedmail
@@ -354,7 +408,7 @@ mkdir -p /srv/op-shared
 printf 'x' > /srv/op-shared/fullchain.pem
 /tmp/madmail install --user-only "${repair_paths[@]}" \
     --cert-path /srv/op-shared/fullchain.pem > /tmp/user-shared-tls.log
-grep -qF "Skipping ownership of /srv/op-shared/fullchain.pem: /srv/op-shared/fullchain.pem belongs to uid 0 and is not in a directory dedicated to madmail or in /etc/letsencrypt/live or archive, so it may be another account's file. If it is your certificate or key, run: chown madmail:madmail /srv/op-shared/fullchain.pem" /tmp/user-shared-tls.log
+grep -qF "Skipping ownership of /srv/op-shared/fullchain.pem: /srv/op-shared/fullchain.pem belongs to uid 0 and is not in a directory dedicated to madmail or in /etc/letsencrypt/live or archive, so it may be another account's file. If it is your certificate or key, run: chown -h madmail:madmail /srv/op-shared/fullchain.pem" /tmp/user-shared-tls.log
 [[ "$(stat -c '%U:%G' /srv/op-shared/fullchain.pem)" = root:root ]]
 mkdir -p /etc/letsencrypt/archive/mx.test /etc/letsencrypt/live/mx.test
 printf 'x' > /etc/letsencrypt/archive/mx.test/fullchain1.pem
@@ -449,7 +503,7 @@ chown -R nobody:nogroup /var/xyzzy/lib/madmail/nobody-dir
 grep -qF '   ! Ownership of /var/xyzzy/lib/madmail/evil\nname left unchanged: belongs to uid 0' /tmp/user-escaped.log
 evil_q="\$'/var/xyzzy/lib/madmail/evil\\x0aname'"
 # The printed steps end with the command, so it can be copied as it is.
-grep -qxF "     If it is madmail's own file, stop the service (systemctl stop madmail) and every process of madmail (pkill -u madmail; ps -u madmail must then list none). Do not change the file if it has more than one hard link (stat -c %h ${evil_q} prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail ${evil_q}" /tmp/user-escaped.log
+grep -qxF "     If it is madmail's own file, stop the service (systemctl stop madmail) and every process of madmail: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1 madmail); where cron or at is installed, remove its jobs (crontab -r -u madmail; atq lists the jobs, atrm removes them); kill its processes (pkill -KILL -u madmail); ps -u madmail must then list none. When you are done, end the expiry again (usermod -e '' madmail); the service unit does not use PAM, so the service starts while its account is locked and expired. Do not change the file if it has more than one hard link (stat -c %h ${evil_q} prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail ${evil_q}" /tmp/user-escaped.log
 if grep -q '^name' /tmp/user-escaped.log; then fail "raw newline from a file name in the output"; fi
 grep -qF '   ! Ownership of /var/xyzzy/lib/madmail/nobody-dir left unchanged: belongs to uid 65534' /tmp/user-escaped.log
 grep -qF '     This directory was not entered: its contents were left unchanged and need manual inspection.' /tmp/user-escaped.log
@@ -507,11 +561,16 @@ reject "it belongs to account uidsquatter (uid $squat_uid)" \
 sha256sum -c /tmp/squat-passwd.before >/dev/null
 absent_user madmail
 [[ "$(stat -c '%u' /var/xyzzy/lib/madmail)" = "$squat_uid" ]]
-# The documented recovery: lock and stop the account that has the old uid (and
-# the service), give the directory itself to root, and run repair.
-# (The image has no procps: look for its processes in /proc instead of ps -u.)
-usermod -L uidsquatter
+# The documented recovery: lock and expire the account that has the old uid,
+# stop its processes (and the service), give the directory itself to root, and
+# run repair. (The image has no procps, cron or at: look for its processes in
+# /proc instead of ps -u.)
+usermod -L -e 1 uidsquatter
+[[ "$(getent shadow uidsquatter | cut -d: -f8)" = 1 ]]
 [[ -z "$(find /proc -mindepth 1 -maxdepth 1 -regex '/proc/[0-9]+' -user uidsquatter -print -quit)" ]]
+# A third account's directory in the tree, with a file of the old uid in it.
+install -d -o nobody -m 755 /var/xyzzy/lib/madmail/third
+install -o "$squat_uid" -m 600 /dev/null /var/xyzzy/lib/madmail/third/x
 chown -h root:root /var/xyzzy/lib/madmail
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-squatted.log
 [[ "$(id -u madmail)" != "$squat_uid" ]]
@@ -519,15 +578,17 @@ grep -q "^   ! Ownership of /var/xyzzy/lib/madmail/.* left unchanged: belongs to
 [[ "$(stat -c '%u' /var/xyzzy/lib/madmail/own-a)" = "$squat_uid" ]]
 [[ "$(stat -c '%U' /var/xyzzy/lib/madmail)" = madmail ]]
 # The printed steps also stop the account that now has that uid.
-grep -qF "and lock and stop every process of uidsquatter, the account that has uid $squat_uid (usermod -L uidsquatter; pkill -u uidsquatter; ps -u uidsquatter must then list none)" /tmp/user-squatted.log
+grep -qF "Do the same for uidsquatter, the account that has uid $squat_uid: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1 uidsquatter); where cron or at is installed, remove its jobs (crontab -r -u uidsquatter; atq lists the jobs, atrm removes them); kill its processes (pkill -KILL -u uidsquatter); ps -u uidsquatter must then list none. When you are done, end the expiry again (usermod -e '' madmail and usermod -e '' uidsquatter);" /tmp/user-squatted.log
 # The operator lists and checks the rest, then hands over directories and
-# single-link files; files with several links are checked one by one.
+# single-link files; files with several links are checked one by one. A
+# directory of a third account is not entered, as the walk does not enter it.
 find /var/xyzzy/lib/madmail -xdev -uid "$squat_uid" -ls > /tmp/squat-list.log
 grep -q 'own-a' /tmp/squat-list.log
-find /var/xyzzy/lib/madmail -xdev -uid "$squat_uid" \( -type d -o -type f -links 1 \) \
-    -exec chown -h madmail:madmail {} +
+find /var/xyzzy/lib/madmail -xdev \( -type d ! -uid 0 ! -uid "$squat_uid" ! -user madmail -prune \) \
+    -o -uid "$squat_uid" \( -type d -o -type f -links 1 \) -exec chown -h madmail:madmail {} +
 [[ "$(stat -c '%u:%h' /var/xyzzy/lib/madmail/own-a)" = "$squat_uid:2" ]]
-rm /var/xyzzy/lib/madmail/own-a /var/xyzzy/lib/madmail/own-b
+[[ "$(stat -c '%u' /var/xyzzy/lib/madmail/third/x)" = "$squat_uid" ]]
+rm -r /var/xyzzy/lib/madmail/own-a /var/xyzzy/lib/madmail/own-b /var/xyzzy/lib/madmail/third
 [[ -z "$(find /var/xyzzy/lib/madmail -xdev -uid "$squat_uid" \( -type d -o -type f -links 1 \) -print -quit)" ]]
 userdel uidsquatter
 # An operator link from the config directory to a TLS file in the state tree,
@@ -615,7 +676,7 @@ install -m 600 /var/xyzzy/etc/madmail/certs/privkey.pem "$S/opcerts/privkey.pem"
 /tmp/madmail "${dns_file_args[@]}" \
     --cert-path "$S/opcerts/fullchain.pem" --key-path "$S/opcerts/privkey.pem" > /tmp/in-tree-tls.log
 grep -q "Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account" /tmp/in-tree-tls.log
-grep -qxF "   ! Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account, so the state walk leaves it unchanged. If it is your certificate or key, stop the service (systemctl stop madmail) and every process of madmail (pkill -u madmail; ps -u madmail must then list none). Do not change the file if it has more than one hard link (stat -c %h $S/opcerts/privkey.pem prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail $S/opcerts/privkey.pem" /tmp/in-tree-tls.log
+grep -qxF "   ! Skipping ownership of $S/opcerts/privkey.pem: inside the state directory and belongs to uid 0, not to the service account, so the state walk leaves it unchanged. If it is your certificate or key, stop the service (systemctl stop madmail) and every process of madmail: lock and expire the account, so that cron and at, which check the account with PAM, start no job for it (usermod -L -e 1 madmail); where cron or at is installed, remove its jobs (crontab -r -u madmail; atq lists the jobs, atrm removes them); kill its processes (pkill -KILL -u madmail); ps -u madmail must then list none. When you are done, end the expiry again (usermod -e '' madmail); the service unit does not use PAM, so the service starts while its account is locked and expired. Do not change the file if it has more than one hard link (stat -c %h $S/opcerts/privkey.pem prints more than 1); one link does not prove that it is madmail's file, so compare its content with what madmail writes there, or remove it and let madmail create it again. To keep it as madmail's file, run: chown -h madmail:madmail $S/opcerts/privkey.pem" /tmp/in-tree-tls.log
 [[ "$(stat -c '%U:%G:%a' "$S/opcerts/privkey.pem")" = root:root:600 ]]
 [[ "$(stat -c '%U' "$S/opcerts")" = madmail ]]
 rm -r "$S/opcerts"
@@ -671,6 +732,7 @@ python3 - /tmp/uninstall-plan.json <<'PYJSON'
 import json, sys
 envelope = [json.loads(l) for l in open(sys.argv[1]) if l.startswith('{')][-1]
 left = {entry['path'] for entry in envelope['data']['left_in_place']}
+assert all(entry['path_shown'] == entry['path'] for entry in envelope['data']['left_in_place']), envelope
 assert {'/usr/local/etc', '/usr/local/etc/certs/fullchain.pem', '/usr/local/etc/certs/privkey.pem'} <= left, left
 PYJSON
 [[ -f /usr/local/etc/madmail.conf && -d /var/xyzzy/lib/madmail ]]
