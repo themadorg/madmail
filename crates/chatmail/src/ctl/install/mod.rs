@@ -37,6 +37,13 @@ use chatmail_db::{init_db_from_config, set_setting, settings_keys};
 use chatmail_types::{wrap_ip_domain, ChatmailError, Result};
 
 use self::config::{local_domains_for_ip, render_maddy_conf, InstallConfig};
+#[cfg(unix)]
+use self::system::SecureInstall;
+
+/// Without Unix there is no service account to guard against; this type has
+/// no values, so `Option<&SecureInstall>` is always `None` there.
+#[cfg(not(unix))]
+pub enum SecureInstall {}
 use super::docs;
 use super::language::validate_language_code;
 use super::output::CtlOut;
@@ -138,8 +145,9 @@ fn repair_installation(global: &Args, args: &InstallArgs) -> Result<()> {
             }
             if args.user_only {
                 system::create_service_user(&cfg, false, true)?;
-                system::setup_config_permissions(&cfg, false)?;
-                system::setup_permissions(&cfg, false)?;
+                let sec = SecureInstall::open(&cfg, false)?;
+                system::setup_config_permissions(&cfg, sec.as_ref())?;
+                system::setup_permissions(&cfg, sec.as_ref())?;
             } else {
                 system::validate_service_prerequisites(&cfg)?;
                 systemd::install_unit(&cfg)?;
@@ -225,9 +233,16 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         }
         system::create_service_user(&cfg, false, false)?;
     }
-    create_directories(&cfg)?;
-    generate_dkim_keys(&cfg);
-    if let Err(e) = setup_certificates(&cfg, args).await {
+    // From here on, root changes files for a system install only through this
+    // handle (checked resolution, descriptors, no links followed).
+    #[cfg(unix)]
+    let sec = SecureInstall::open(&cfg, true)?;
+    #[cfg(not(unix))]
+    let sec: Option<SecureInstall> = None;
+    let sec = sec.as_ref();
+    create_directories(&cfg, sec)?;
+    generate_dkim_keys(&cfg, sec);
+    if let Err(e) = setup_certificates(&cfg, args, sec).await {
         return Err(cert_step_failed(e));
     }
     if args.cert_only {
@@ -249,12 +264,17 @@ pub async fn install(global: &Args, args: &InstallArgs) -> Result<()> {
         return Ok(());
     }
     ensure_secrets(&mut cfg)?;
-    write_config(&cfg)?;
-    seed_install_language(&cfg).await?;
+    write_config(&cfg, sec)?;
     #[cfg(unix)]
     {
-        system::setup_config_permissions(&cfg, false)?;
-        system::setup_permissions(&cfg, false)?;
+        system::setup_config_permissions(&cfg, sec)?;
+        system::setup_permissions(&cfg, sec)?;
+    }
+    // After the walk: with a service account the database is opened as that
+    // account (see `seed_install_language`).
+    seed_install_language(&cfg, sec).await?;
+    #[cfg(unix)]
+    {
         system::install_binary(&cfg, false)?;
         if cfg.system_install {
             docs::install_cli_docs(&cfg.binary_name, false)?;
@@ -472,9 +492,20 @@ fn cert_step_failed(err: ChatmailError) -> ChatmailError {
     ChatmailError::config(format!("{msg}{note}"))
 }
 
-async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<()> {
+async fn setup_certificates(
+    cfg: &InstallConfig,
+    args: &InstallArgs,
+    sec: Option<&SecureInstall>,
+) -> Result<()> {
     if cfg.generate_certs {
         println!("Generating self-signed certificate…");
+        #[cfg(unix)]
+        if let Some(sec) = sec {
+            let (cert, key) = chatmail_acme::self_signed_pems(&cfg.primary_domain, &cfg.hostname)?;
+            sec.write_file(&cfg.cert_path, cert.as_bytes(), 0o640, None)?;
+            sec.write_file(&cfg.key_path, key.as_bytes(), 0o600, None)?;
+            return Ok(());
+        }
         generate_self_signed(
             &cfg.primary_domain,
             &cfg.hostname,
@@ -531,6 +562,11 @@ async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<(
             staging: false,
             skip_if_valid: false,
         };
+        #[cfg(unix)]
+        if let Some(sec) = sec {
+            return obtain_into_staging(cfg, opts, sec).await;
+        }
+        let _ = sec;
         obtain_certificate(&opts).await?;
     } else if cfg.tls_mode == "file" {
         if missing_pems {
@@ -547,7 +583,64 @@ async fn setup_certificates(cfg: &InstallConfig, args: &InstallArgs) -> Result<(
     Ok(())
 }
 
-fn generate_dkim_keys(cfg: &InstallConfig) {
+/// Obtain a certificate with the ACME client writing only into a private,
+/// root-owned staging directory, then store the results with
+/// [`SecureInstall::write_file`]: the client itself writes by path and follows
+/// links, so it never writes into the state tree or the TLS paths directly.
+/// The Let's Encrypt account (`autocert/le-account.json`) is copied in and out.
+#[cfg(unix)]
+async fn obtain_into_staging(
+    cfg: &InstallConfig,
+    mut opts: ObtainOptions,
+    sec: &SecureInstall,
+) -> Result<()> {
+    let staging = system::StagingDir::create()?;
+    let account = cfg.state_dir.join("autocert/le-account.json");
+    let staged_account = staging.path().join("autocert/le-account.json");
+    let io = |op: &str, path: &std::path::Path, e: std::io::Error| {
+        ChatmailError::config(format!("{op} {}: {e}", path.display()))
+    };
+    if let Some(bytes) = sec.read_file(&account, 1 << 20)? {
+        std::fs::create_dir_all(staging.path().join("autocert"))
+            .map_err(|e| io("mkdir", staging.path(), e))?;
+        std::fs::write(&staged_account, bytes).map_err(|e| io("write", &staged_account, e))?;
+    }
+    let cert = staging.path().join("certs/fullchain.pem");
+    let key = staging.path().join("certs/privkey.pem");
+    opts.state_dir = staging.path().to_path_buf();
+    opts.cert_path = Some(cert.clone());
+    opts.key_path = Some(key.clone());
+    obtain_certificate(&opts).await?;
+    let read = |path: &std::path::Path| std::fs::read(path).map_err(|e| io("read", path, e));
+    sec.write_file(&cfg.cert_path, &read(&cert)?, 0o640, None)?;
+    sec.write_file(&cfg.key_path, &read(&key)?, 0o600, None)?;
+    if staged_account.is_file() {
+        sec.write_file(&account, &read(&staged_account)?, 0o600, None)?;
+    }
+    Ok(())
+}
+
+/// With a service account the key files are created through
+/// [`SecureInstall`]: the private key with create-new (mode 0600; an existing
+/// one is read only when it is a regular file with one link), the `TXT` file by
+/// create-new-then-rename. Otherwise [`DkimSigner::load_or_create`] is used.
+///
+/// [`DkimSigner::load_or_create`]: chatmail_delivery::dkim::DkimSigner::load_or_create
+fn generate_dkim_keys(cfg: &InstallConfig, sec: Option<&SecureInstall>) {
+    use chatmail_delivery::dkim::{public_txt_path, DKIM_SELECTOR};
+    #[cfg(unix)]
+    if let Some(sec) = sec {
+        let txt = public_txt_path(&cfg.state_dir, DKIM_SELECTOR);
+        match secure_dkim_keys(cfg, sec) {
+            Ok(()) => println!(
+                "  DKIM:           selector '{DKIM_SELECTOR}' — publish TXT default._domainkey ({})\n                   madmail dkim show",
+                txt.display()
+            ),
+            Err(e) => println!("  DKIM:           skipped ({e})"),
+        }
+        return;
+    }
+    let _ = sec;
     match chatmail_delivery::dkim::DkimSigner::load_or_create(
         &cfg.state_dir,
         chatmail_delivery::dkim::DKIM_SELECTOR,
@@ -570,7 +663,47 @@ fn generate_dkim_keys(cfg: &InstallConfig) {
     }
 }
 
-fn create_directories(cfg: &InstallConfig) -> Result<()> {
+#[cfg(unix)]
+fn secure_dkim_keys(cfg: &InstallConfig, sec: &SecureInstall) -> Result<()> {
+    use chatmail_delivery::dkim::{
+        generate_private_key_pem, private_key_path, public_txt_from_private_pem, public_txt_path,
+        signing_domain, DKIM_SELECTOR,
+    };
+    let primary = &cfg.primary_domain;
+    if primary
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .find_map(signing_domain)
+        .is_none()
+    {
+        return Err(ChatmailError::config(format!(
+            "DKIM d= cannot be an IP literal ({primary}); publish a DNS name"
+        )));
+    }
+    let private = private_key_path(&cfg.state_dir, DKIM_SELECTOR);
+    let pem = match sec.read_file(&private, 1 << 20)? {
+        Some(bytes) => String::from_utf8(bytes)
+            .map_err(|_| ChatmailError::config(format!("{} is not UTF-8", private.display())))?,
+        None => {
+            let pem = generate_private_key_pem().map_err(ChatmailError::config)?;
+            if !sec.create_new_file(&private, pem.as_bytes(), 0o600)? {
+                return Err(ChatmailError::config(format!(
+                    "{} appeared while install was creating it",
+                    private.display()
+                )));
+            }
+            pem
+        }
+    };
+    let txt = public_txt_from_private_pem(&pem).map_err(ChatmailError::config)?;
+    sec.write_file(
+        &public_txt_path(&cfg.state_dir, DKIM_SELECTOR),
+        format!("{txt}\n").as_bytes(),
+        0o644,
+        None,
+    )
+}
+
+fn create_directories(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let config_dir = cfg
         .config_path
         .parent()
@@ -584,13 +717,24 @@ fn create_directories(cfg: &InstallConfig) -> Result<()> {
         config_dir,
         cfg.cert_path.parent().unwrap_or(config_dir),
     ] {
+        #[cfg(unix)]
+        if let Some(sec) = sec {
+            sec.ensure_dir(dir)?;
+            continue;
+        }
+        let _ = sec;
         std::fs::create_dir_all(dir)
             .map_err(|e| ChatmailError::config(format!("mkdir {}: {e}", dir.display())))?;
     }
     Ok(())
 }
 
-async fn seed_install_language(cfg: &InstallConfig) -> Result<()> {
+/// SQLite opens files by path and follows links, so with a service account
+/// the database is opened with the service account's effective uid, gid and
+/// groups ([`secure_fs::AsService`](super::secure_fs::AsService)): whatever a
+/// link planted in the state tree points at, the open can only reach what the
+/// service account could reach itself, and new database files belong to it.
+async fn seed_install_language(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let app_config = AppConfig {
         state_dir: Some(cfg.state_dir.clone()),
         language: Some(cfg.language.clone()),
@@ -598,26 +742,78 @@ async fn seed_install_language(cfg: &InstallConfig) -> Result<()> {
     };
 
     let database = effective_database_config(&cfg.state_dir, &app_config);
-    let pool = init_db_from_config(&database).await?;
-    set_setting(&pool, settings_keys::LANGUAGE, &cfg.language).await?;
+    #[cfg(unix)]
+    let identity = match sec {
+        Some(sec) => Some(
+            super::secure_fs::AsService::enter(sec.uid, sec.gid).map_err(|e| {
+                ChatmailError::config(format!("switch to the service account: {e}"))
+            })?,
+        ),
+        None => None,
+    };
+    #[cfg(not(unix))]
+    let _ = sec;
+    let seeded = async {
+        let pool = init_db_from_config(&database).await?;
+        let result = set_setting(&pool, settings_keys::LANGUAGE, &cfg.language).await;
+        // Close every connection before the identity changes back.
+        match &pool {
+            chatmail_db::DbPool::Sqlite(p) => p.close().await,
+            chatmail_db::DbPool::Postgres(p) => p.close().await,
+        }
+        result
+    }
+    .await;
+    #[cfg(unix)]
+    if let Some(identity) = identity {
+        identity
+            .leave()
+            .map_err(|e| ChatmailError::config(format!("switch back to root: {e}")))?;
+    }
+    seeded?;
     println!("✓ Seeded website language in database: {}", cfg.language);
     Ok(())
 }
 
-fn write_config(cfg: &InstallConfig) -> Result<()> {
+/// The config file holds `ss_password` and `turn_secret`, so it is created
+/// with mode 0640 from the start. With a service account it is written with
+/// [`SecureInstall::write_file`] (owner `root:gid` outside the state tree);
+/// otherwise it is opened with `O_NOFOLLOW` and keeps the caller as owner.
+fn write_config(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
     let text = render_maddy_conf(cfg);
+    #[cfg(unix)]
+    if let Some(sec) = sec {
+        sec.write_file(&cfg.config_path, text.as_bytes(), 0o640, Some((0, sec.gid)))?;
+        println!("✓ Wrote {}", cfg.config_path.display());
+        return Ok(());
+    }
+    let _ = sec;
     if let Some(parent) = cfg.config_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| ChatmailError::config(format!("mkdir {}: {e}", parent.display())))?;
     }
-    std::fs::write(&cfg.config_path, text)
-        .map_err(|e| ChatmailError::config(format!("write {}: {e}", cfg.config_path.display())))?;
+    let write_err = |e: std::io::Error| {
+        ChatmailError::config(format!("write {}: {e}", cfg.config_path.display()))
+    };
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&cfg.config_path, std::fs::Permissions::from_mode(0o644))
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o640)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&cfg.config_path)
+            .map_err(write_err)?;
+        // An existing file keeps its mode on open; set it on the descriptor.
+        file.set_permissions(std::fs::Permissions::from_mode(0o640))
             .map_err(|e| ChatmailError::config(format!("chmod config: {e}")))?;
+        file.write_all(text.as_bytes()).map_err(write_err)?;
     }
+    #[cfg(not(unix))]
+    std::fs::write(&cfg.config_path, text).map_err(write_err)?;
     println!("✓ Wrote {}", cfg.config_path.display());
     Ok(())
 }

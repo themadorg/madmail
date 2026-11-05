@@ -17,16 +17,20 @@
 
 //! System install steps (Madmail `install.go`: user, binary, permissions).
 
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
-use std::os::unix::fs::{chown, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::process::Command;
 
 use chatmail_types::{ChatmailError, Result};
 
 use super::chown_walk;
 use super::config::InstallConfig;
+use crate::ctl::host_paths;
+use crate::ctl::secure_fs::{self, file_id, FileId, Resolved, Resolver, Trust, Want};
 
 pub fn require_root_for_system_install(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
     if dry_run {
@@ -279,179 +283,501 @@ fn usermod_args(
     Ok(args)
 }
 
-/// TLS material and config must be readable by the service user.
+/// Root's handle on a system install that has a service account: the service
+/// identity, the trust rule built from it and the open state directory.
 ///
-/// Files inside the service-writable state tree are left to [`setup_permissions`]:
-/// the service account controls every name there, so a chown by path could be
-/// redirected through a link it planted or swapped in; the descriptor-based
-/// state walk gives those files `uid:gid` without following links. Files outside
-/// the tree (root-owned directories such as `/etc/madmail/certs` or an ACME
-/// client's live directory) are changed by path, following links: only root can
-/// change those directories, so a link there is the operator's choice.
-pub fn setup_config_permissions(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
-    if !cfg.system_install || cfg.skip_user {
-        return Ok(());
+/// Every file root creates or changes for the install goes through it:
+/// - paths are resolved with [`Resolver`] (no link is followed unless every
+///   component on the way is trusted, see [`secure_fs`]);
+/// - a path that reaches the state directory is handled below the opened state
+///   root with `O_NOFOLLOW` at every component, and files there are written by
+///   create-new-then-rename, so links and hard links the service planted are
+///   replaced, never written through;
+/// - owners and modes are changed with `fchown` / `fchmod` on a descriptor
+///   for the object that was checked.
+pub struct SecureInstall {
+    pub uid: u32,
+    pub gid: u32,
+    /// The state directory's owner before this run when it is neither root nor
+    /// `uid`: the previous service uid after the account was recreated.
+    pub old_uid: Option<u32>,
+    trust: Trust,
+    state_root: OwnedFd,
+    state_id: FileId,
+    primary: String,
+}
+
+impl SecureInstall {
+    /// `None` for installs without a managed service account (local installs
+    /// and `--skip-user`). `create` makes a missing state directory (and its
+    /// parents) in trusted directories.
+    pub fn open(cfg: &InstallConfig, create: bool) -> Result<Option<Self>> {
+        if !cfg.system_install || cfg.skip_user {
+            return Ok(None);
+        }
+        let (uid, gid) = lookup_uid_gid(&cfg.maddy_user)?;
+        let first = Trust::service(uid, gid, None);
+        let (_, st) = open_state_root(&cfg.state_dir, &first, create)?;
+        let old_uid = (st.st_uid != 0 && st.st_uid != uid).then_some(st.st_uid);
+        // Check the way to the state directory again with the old uid counted.
+        let trust = Trust::service(uid, gid, old_uid);
+        let (state_root, st) = open_state_root(&cfg.state_dir, &trust, false)?;
+        Ok(Some(Self {
+            uid,
+            gid,
+            old_uid,
+            trust,
+            state_root,
+            state_id: file_id(&st),
+            primary: cfg.binary_name.clone(),
+        }))
     }
 
-    let (uid, gid) = lookup_uid_gid(&cfg.maddy_user)?;
-
-    if dry_run {
-        return Ok(());
-    }
-
-    let tree = ServiceTree::new(&cfg.state_dir);
-    if let Some(conf) = cfg.config_path.parent() {
-        let _ = fs::create_dir_all(conf);
-        if !tree.contains(conf) {
-            chown(conf, Some(0), Some(gid)).ok();
+    fn resolver(&self, check_final: bool) -> Resolver<'_> {
+        Resolver {
+            trust: &self.trust,
+            state_root: Some(self.state_id),
+            check_final,
         }
     }
-    if tree.contains(&cfg.config_path) {
-        skip_note(&cfg.config_path);
-    } else if cfg.config_path.is_file() {
-        chown(&cfg.config_path, Some(0), Some(gid))
-            .map_err(|e| io_error("chown", &cfg.config_path, e))?;
-        fs::set_permissions(&cfg.config_path, fs::Permissions::from_mode(0o640))
-            .map_err(|e| io_error("chmod", &cfg.config_path, e))?;
+
+    /// Create the directory `path` (and missing parents) unless it exists.
+    pub fn ensure_dir(&self, path: &Path) -> Result<()> {
+        match self
+            .resolver(false)
+            .ensure_dir(path)
+            .map_err(|e| io_error("mkdir", path, e))?
+        {
+            Resolved::Found(_) => Ok(()),
+            Resolved::InTree(rest) => secure_fs::tree_open_dir(&self.state_root, &rest, true)
+                .map(drop)
+                .map_err(|e| in_tree_error("mkdir", path, &rest, e)),
+            Resolved::Controlled { component, reason } => {
+                Err(controlled_error("create", path, &component, reason))
+            }
+            Resolved::Missing { .. } => Err(io_error(
+                "mkdir",
+                path,
+                io::Error::from(io::ErrorKind::NotFound),
+            )),
+        }
     }
-    chown_tls_files(&tree, &cfg.cert_path, &cfg.key_path, uid, gid)?;
+
+    /// Write `data` to `path` with `mode`, replacing what is there (see
+    /// [`secure_fs::replace_file`]). Operator links on the way are followed
+    /// through the checked resolver. `owner` is applied outside the state tree;
+    /// inside it the state walk sets the owner.
+    pub fn write_file(
+        &self,
+        path: &Path,
+        data: &[u8],
+        mode: u32,
+        owner: Option<(u32, u32)>,
+    ) -> Result<()> {
+        self.place_file(path, data, mode, owner, false).map(drop)
+    }
+
+    /// Like [`Self::write_file`], but only when nothing exists at the final
+    /// location; returns false when something does.
+    pub fn create_new_file(&self, path: &Path, data: &[u8], mode: u32) -> Result<bool> {
+        self.place_file(path, data, mode, None, true)
+    }
+
+    fn place_file(
+        &self,
+        path: &Path,
+        data: &[u8],
+        mode: u32,
+        owner: Option<(u32, u32)>,
+        create_new: bool,
+    ) -> Result<bool> {
+        let write = |dir: RawFd, name: &OsStr, owner| {
+            if create_new {
+                secure_fs::create_new_file(dir, name, data, mode)
+            } else {
+                secure_fs::replace_file(dir, name, data, mode, owner).map(|()| true)
+            }
+        };
+        for _ in 0..2 {
+            match self
+                .resolver(false)
+                .resolve(path, Want::File)
+                .map_err(|e| io_error("resolve", path, e))?
+            {
+                Resolved::InTree(rest) => {
+                    let (dir, name) = secure_fs::split_file(&rest)
+                        .map_err(|e| in_tree_error("write", path, &rest, e))?;
+                    let fd = secure_fs::tree_open_dir(&self.state_root, &dir, true)
+                        .map_err(|e| in_tree_error("write", path, &rest, e))?;
+                    return write(fd.as_raw_fd(), &name, None)
+                        .map_err(|e| in_tree_error("write", path, &rest, e));
+                }
+                Resolved::Found(file) => {
+                    if create_new {
+                        return Ok(false);
+                    }
+                    // Replace the file where the operator's links lead; its
+                    // directory must itself be trusted.
+                    let parent = file.path.parent().unwrap_or(Path::new("/"));
+                    let name = file.path.file_name().unwrap_or_default().to_os_string();
+                    return match self
+                        .resolver(true)
+                        .resolve(parent, Want::Dir)
+                        .map_err(|e| io_error("resolve", parent, e))?
+                    {
+                        Resolved::Found(dir) => write(dir.fd.as_raw_fd(), &name, owner)
+                            .map_err(|e| io_error("write", &file.path, e)),
+                        Resolved::InTree(rest) => {
+                            let fd = secure_fs::tree_open_dir(&self.state_root, &rest, true)
+                                .map_err(|e| in_tree_error("write", path, &rest, e))?;
+                            write(fd.as_raw_fd(), &name, None)
+                                .map_err(|e| in_tree_error("write", path, &rest, e))
+                        }
+                        Resolved::Controlled { component, reason } => {
+                            Err(controlled_error("write", path, &component, reason))
+                        }
+                        Resolved::Missing { .. } => Err(io_error(
+                            "write",
+                            path,
+                            io::Error::from(io::ErrorKind::NotFound),
+                        )),
+                    };
+                }
+                Resolved::Missing { parent, name, rest } if rest.as_os_str().is_empty() => {
+                    // `parent` passed the trust check as an intermediate directory.
+                    return write(parent.fd.as_raw_fd(), &name, owner)
+                        .map_err(|e| io_error("write", path, e));
+                }
+                Resolved::Missing { .. } => {
+                    if let Some(parent) = path.parent() {
+                        self.ensure_dir(parent)?;
+                    }
+                }
+                Resolved::Controlled { component, reason } => {
+                    return Err(controlled_error("write", path, &component, reason));
+                }
+            }
+        }
+        Err(io_error(
+            "write",
+            path,
+            io::Error::from(io::ErrorKind::NotFound),
+        ))
+    }
+
+    /// Read a regular file with one link (at most `max` bytes); `None` when it
+    /// does not exist.
+    pub fn read_file(&self, path: &Path, max: usize) -> Result<Option<Vec<u8>>> {
+        let opened = match self
+            .resolver(false)
+            .resolve(path, Want::File)
+            .map_err(|e| io_error("resolve", path, e))?
+        {
+            Resolved::Missing { .. } => return Ok(None),
+            Resolved::Controlled { component, reason } => {
+                return Err(controlled_error("read", path, &component, reason))
+            }
+            Resolved::Found(file) => {
+                if file.st.st_nlink > 1 {
+                    return Err(io_error(
+                        "read",
+                        path,
+                        io::Error::new(io::ErrorKind::InvalidInput, "has several hard links"),
+                    ));
+                }
+                Some(file.fd)
+            }
+            Resolved::InTree(rest) => {
+                let (dir, name) = secure_fs::split_file(&rest)
+                    .map_err(|e| in_tree_error("read", path, &rest, e))?;
+                let fd = match secure_fs::tree_open_dir(&self.state_root, &dir, false) {
+                    Ok(fd) => fd,
+                    Err(e) if e.raw_os_error() == Some(libc::ENOENT) => return Ok(None),
+                    Err(e) => return Err(in_tree_error("read", path, &rest, e)),
+                };
+                secure_fs::open_single_link_file(fd.as_raw_fd(), &name)
+                    .map_err(|e| in_tree_error("read", path, &rest, e))?
+                    .map(|(fd, _)| fd)
+            }
+        };
+        match opened {
+            None => Ok(None),
+            Some(fd) => secure_fs::read_fd(&fd, max)
+                .map(Some)
+                .map_err(|e| io_error("read", path, e)),
+        }
+    }
+
+    /// Give the config file (which holds `ss_password` and `turn_secret`) mode
+    /// 0640: owned by `root:gid` outside the state tree, by `uid:gid` inside it
+    /// (the owner is set by the state walk). A config file reached through a
+    /// component the service account controls, outside the state tree, is an
+    /// error.
+    pub fn fix_config_file(&self, path: &Path) -> Result<()> {
+        match self
+            .resolver(true)
+            .resolve(path, Want::File)
+            .map_err(|e| io_error("resolve", path, e))?
+        {
+            Resolved::Missing { .. } => Ok(()),
+            Resolved::Controlled { component, reason } => Err(ChatmailError::config(format!(
+                "refusing to change config file {}: {} is {reason}, so the service account \
+                 could redirect a change made by path. Keep the config file in a root-owned \
+                 directory (or under --state-dir) and re-run",
+                path.display(),
+                component.display()
+            ))),
+            Resolved::Found(file) => {
+                if file.st.st_nlink > 1 {
+                    return Err(ChatmailError::config(format!(
+                        "refusing to change config file {}: it has {} hard links",
+                        path.display(),
+                        file.st.st_nlink
+                    )));
+                }
+                let fd = file.fd.as_raw_fd();
+                secure_fs::fchown(fd, 0, self.gid).map_err(|e| io_error("chown", path, e))?;
+                secure_fs::fchmod(fd, 0o640).map_err(|e| io_error("chmod", path, e))
+            }
+            Resolved::InTree(rest) => {
+                let (dir, name) = secure_fs::split_file(&rest)
+                    .map_err(|e| in_tree_error("chmod", path, &rest, e))?;
+                let dir = secure_fs::tree_open_dir(&self.state_root, &dir, false)
+                    .map_err(|e| in_tree_error("chmod", path, &rest, e))?;
+                let c_name = secure_fs::cstring(&name).map_err(|e| io_error("chmod", path, e))?;
+                let fd = secure_fs::openat(dir.as_raw_fd(), &c_name, secure_fs::FILE_FLAGS, 0)
+                    .map_err(|e| in_tree_error("chmod", path, &rest, e))?;
+                let st = secure_fs::fstat(fd.as_raw_fd()).map_err(|e| io_error("stat", path, e))?;
+                let action = chown_walk::decide(&st, self.old_uid.unwrap_or(0), self.uid);
+                if secure_fs::kind(&st) != libc::S_IFREG || action != chown_walk::Action::Chown {
+                    return Err(ChatmailError::config(format!(
+                        "refusing to change config file {}: not a regular file of the service \
+                         account with one link ({action:?})",
+                        path.display()
+                    )));
+                }
+                secure_fs::fchmod(fd.as_raw_fd(), 0o640).map_err(|e| io_error("chmod", path, e))
+            }
+        }
+    }
+
+    /// Give a TLS file to `uid:gid` through a descriptor, or say why not.
+    pub fn fix_tls_file(&self, path: &Path) -> Result<()> {
+        match self
+            .resolver(false)
+            .resolve(path, Want::File)
+            .map_err(|e| io_error("resolve", path, e))?
+        {
+            Resolved::Missing { .. } => {}
+            Resolved::InTree(_) => {
+                if fs::symlink_metadata(path).is_ok() {
+                    skip_note(
+                        path,
+                        "inside the service-writable state directory; the state walk sets \
+                         its owner without following links",
+                    );
+                }
+            }
+            Resolved::Controlled { component, reason } => skip_note(
+                path,
+                &format!(
+                    "{} is {reason}; the service account could redirect a change made by path",
+                    component.display()
+                ),
+            ),
+            Resolved::Found(file) => {
+                match chown_walk::decide(&file.st, self.old_uid.unwrap_or(0), self.uid) {
+                    chown_walk::Action::Chown => {
+                        secure_fs::fchown(file.fd.as_raw_fd(), self.uid, self.gid)
+                            .map_err(|e| io_error("chown", path, e))?;
+                    }
+                    other => skip_note(
+                        path,
+                        &format!(
+                            "{} ({other:?}); it may be a link to another account's file",
+                            file.path.display()
+                        ),
+                    ),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Re-own a config or certs directory as `root:gid` and clear its group
+    /// and other write bits, through its descriptor, when it is dedicated to
+    /// madmail ([`host_paths::is_dedicated_dir`]); otherwise leave it alone.
+    pub fn fix_dir(&self, dir: &Path) -> Result<()> {
+        match self
+            .resolver(true)
+            .resolve(dir, Want::Dir)
+            .map_err(|e| io_error("resolve", dir, e))?
+        {
+            Resolved::Missing { .. } | Resolved::InTree(_) => {}
+            Resolved::Controlled { component, reason } => skip_note(
+                dir,
+                &format!(
+                    "{} is {reason}; the service account could redirect a change made by path",
+                    component.display()
+                ),
+            ),
+            Resolved::Found(opened) if host_paths::is_dedicated_dir(dir, &self.primary) => {
+                let fd = opened.fd.as_raw_fd();
+                secure_fs::fchown(fd, 0, self.gid).map_err(|e| io_error("chown", dir, e))?;
+                secure_fs::fchmod(fd, secure_fs::perm_bits(&opened.st) & !0o022)
+                    .map_err(|e| io_error("chmod", dir, e))?;
+            }
+            Resolved::Found(_) => println!(
+                "   Leaving owner and mode of {} unchanged: not a directory dedicated to madmail",
+                dir.display()
+            ),
+        }
+        Ok(())
+    }
+
+    /// A new descriptor for the state directory, for the ownership walk.
+    fn state_root_fd(&self) -> io::Result<OwnedFd> {
+        self.state_root.try_clone()
+    }
+}
+
+/// A private directory (mode 0700, owned by root) in the system temporary
+/// directory, removed on drop. The temporary directory itself must pass the
+/// root-only trust check (root-owned; `/tmp` with its sticky bit passes), so
+/// no other account can rename or replace the staging directory.
+pub struct StagingDir {
+    path: std::path::PathBuf,
+}
+
+impl StagingDir {
+    pub fn create() -> Result<Self> {
+        use std::os::unix::fs::DirBuilderExt;
+        let base = std::env::temp_dir();
+        let trust = Trust::root_only();
+        let resolver = Resolver {
+            trust: &trust,
+            state_root: None,
+            check_final: true,
+        };
+        match resolver
+            .resolve(&base, Want::Dir)
+            .map_err(|e| io_error("resolve", &base, e))?
+        {
+            Resolved::Found(_) => {}
+            Resolved::Controlled { component, reason } => {
+                return Err(controlled_error(
+                    "stage files in",
+                    &base,
+                    &component,
+                    reason,
+                ))
+            }
+            _ => {
+                return Err(io_error(
+                    "resolve",
+                    &base,
+                    io::Error::from(io::ErrorKind::NotFound),
+                ))
+            }
+        }
+        for _ in 0..8 {
+            let mut bytes = [0u8; 8];
+            getrandom::fill(&mut bytes)
+                .map_err(|e| ChatmailError::config(format!("random name: {e}")))?;
+            let suffix: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+            let path = base.join(format!(".madmail-install-{suffix}"));
+            match fs::DirBuilder::new().mode(0o700).create(&path) {
+                Ok(()) => return Ok(Self { path }),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(io_error("mkdir", &path, e)),
+            }
+        }
+        Err(ChatmailError::config(
+            "could not create a staging directory for the certificate",
+        ))
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for StagingDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Resolve and open the state directory. Its own owner is not checked (it is
+/// the service account's), but every component on the way to it is.
+fn open_state_root(path: &Path, trust: &Trust, create: bool) -> Result<(OwnedFd, libc::stat)> {
+    let resolver = Resolver {
+        trust,
+        state_root: None,
+        check_final: false,
+    };
+    let resolved = if create {
+        resolver.ensure_dir(path)
+    } else {
+        resolver.resolve(path, Want::Dir)
+    }
+    .map_err(|e| io_error("open state directory", path, e))?;
+    match resolved {
+        Resolved::Found(dir) => Ok((dir.fd, dir.st)),
+        Resolved::Controlled { component, reason } => Err(ChatmailError::config(format!(
+            "refusing to use state directory {}: {} is {reason}, so the service account \
+             could swap the directory root works in. Use a state directory whose parent \
+             directories are owned by root",
+            path.display(),
+            component.display()
+        ))),
+        Resolved::Missing { .. } | Resolved::InTree(_) => Err(io_error(
+            "open state directory",
+            path,
+            io::Error::from(io::ErrorKind::NotFound),
+        )),
+    }
+}
+
+fn controlled_error(op: &str, path: &Path, component: &Path, reason: &str) -> ChatmailError {
+    ChatmailError::config(format!(
+        "refusing to {op} {} as root: {} is {reason}",
+        path.display(),
+        component.display()
+    ))
+}
+
+fn in_tree_error(op: &str, path: &Path, rest: &Path, e: io::Error) -> ChatmailError {
+    ChatmailError::config(format!(
+        "{op} {} (state directory entry {}): {e}; a link or non-directory inside the \
+         state directory is not followed",
+        path.display(),
+        rest.display()
+    ))
+}
+
+/// TLS material and config must be readable by the service user. See
+/// [`SecureInstall`] for how each path is checked and changed.
+pub fn setup_config_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
+    let Some(sec) = sec else {
+        return Ok(());
+    };
+    let conf_dir = cfg.config_path.parent();
+    if let Some(dir) = conf_dir {
+        sec.fix_dir(dir)?;
+    }
+    sec.fix_config_file(&cfg.config_path)?;
+    for path in [&cfg.cert_path, &cfg.key_path] {
+        sec.fix_tls_file(path)?;
+    }
+    if let Some(certs) = cfg.cert_path.parent().filter(|c| Some(*c) != conf_dir) {
+        sec.fix_dir(certs)?;
+    }
     Ok(())
 }
 
-/// Chown the cert and key outside the service tree; returns the paths skipped
-/// because they are inside it.
-fn chown_tls_files(
-    tree: &ServiceTree,
-    cert: &Path,
-    key: &Path,
-    uid: u32,
-    gid: u32,
-) -> Result<Vec<PathBuf>> {
-    let mut skipped = Vec::new();
-    for path in [cert, key] {
-        if tree.contains(path) {
-            if fs::symlink_metadata(path).is_ok() {
-                skip_note(path);
-            }
-            skipped.push(path.to_path_buf());
-        } else if path.is_file() {
-            chown(path, Some(uid), Some(gid)).map_err(|e| io_error("chown", path, e))?;
-        }
-    }
-    if let Some(certs) = cert.parent() {
-        if !tree.contains(certs) {
-            chown(certs, Some(0), Some(gid)).ok();
-        }
-    }
-    Ok(skipped)
-}
-
-fn skip_note(path: &Path) {
-    println!(
-        "   ! Skipping ownership of {}: inside the service-writable state directory; \
-         the state walk sets its owner without following links",
-        path.display()
-    );
-}
-
-/// The service-writable state tree, by its configured and its resolved path.
-struct ServiceTree<'a> {
-    state_dir: &'a Path,
-    canonical: Option<PathBuf>,
-}
-
-impl<'a> ServiceTree<'a> {
-    fn new(state_dir: &'a Path) -> Self {
-        Self {
-            state_dir,
-            canonical: fs::canonicalize(state_dir).ok(),
-        }
-    }
-
-    /// A path is in the tree when it is lexically below the state directory, or
-    /// when it or any of its ancestors resolves below the resolved state
-    /// directory, e.g. through an operator link into the tree. Checking every
-    /// ancestor matters: below a component that resolves into the tree, the
-    /// service account controls the rest of the path, including a final link
-    /// that would make the whole path resolve elsewhere (such as `/etc/shadow`).
-    ///
-    /// Resolving a whole ancestor only shows where the last hop ends, so each
-    /// link on the way is also followed one hop at a time: an operator link to
-    /// a file in the tree (`/etc/madmail/certs/fullchain.pem` pointing at
-    /// `<state>/certs/fullchain.pem`) is in the tree even after the service
-    /// account has replaced that file with a link out of it. At most
-    /// [`MAX_LINK_HOPS`] links are followed for one path.
-    ///
-    /// Resolving follows links, but only to decide that root must not touch the
-    /// path here, which is the safe direction.
-    fn contains(&self, path: &Path) -> bool {
-        let mut hops = MAX_LINK_HOPS;
-        self.contains_within(path, &mut hops)
-    }
-
-    fn contains_within(&self, path: &Path, hops: &mut usize) -> bool {
-        if self.lexically_inside(path) {
-            return true;
-        }
-        for ancestor in path.ancestors() {
-            if let Some(canonical) = &self.canonical {
-                if fs::canonicalize(ancestor).is_ok_and(|r| r.starts_with(canonical)) {
-                    return true;
-                }
-            }
-            let is_link = fs::symlink_metadata(ancestor).is_ok_and(|m| m.file_type().is_symlink());
-            if !is_link || *hops == 0 {
-                continue;
-            }
-            *hops -= 1;
-            let Ok(target) = fs::read_link(ancestor) else {
-                continue;
-            };
-            // A relative target is resolved against the link's directory; the
-            // part of `path` below the link follows the target.
-            let base = ancestor.parent().unwrap_or(Path::new("/"));
-            let mut next = base.join(target);
-            if let Ok(rest) = path.strip_prefix(ancestor) {
-                if !rest.as_os_str().is_empty() {
-                    next.push(rest);
-                }
-            }
-            if self.contains_within(&next, hops) {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Lexically below the configured or the resolved state directory, as
-    /// written or with `.` and `..` removed.
-    fn lexically_inside(&self, path: &Path) -> bool {
-        let normalized = lexical_normalize(path);
-        [path, normalized.as_path()].iter().any(|p| {
-            p.starts_with(self.state_dir)
-                || self.canonical.as_ref().is_some_and(|c| p.starts_with(c))
-        })
-    }
-}
-
-/// Links followed one hop at a time by [`ServiceTree::contains`] for one path,
-/// as for the kernel's own limit on nested links (`ELOOP`).
-const MAX_LINK_HOPS: usize = 40;
-
-/// Remove `.` and resolve `..` lexically (without looking at the file system).
-fn lexical_normalize(path: &Path) -> PathBuf {
-    use std::path::Component;
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
+fn skip_note(path: &Path, why: &str) {
+    println!("   ! Skipping ownership of {}: {why}", path.display());
 }
 
 /// A passwd home that resolves to the state directory is already correct, so it
@@ -520,30 +846,32 @@ pub fn install_binary(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn setup_permissions(cfg: &InstallConfig, dry_run: bool) -> Result<()> {
-    if !cfg.system_install || cfg.skip_user {
+/// Give the state tree to the service account with the descriptor walk (see
+/// [`chown_walk`]). The walk starts from the state directory opened by
+/// [`SecureInstall::open`], so an operator's link to a data volume was followed
+/// only through the checked resolver.
+pub fn setup_permissions(cfg: &InstallConfig, sec: Option<&SecureInstall>) -> Result<()> {
+    let Some(sec) = sec else {
         return Ok(());
-    }
-
-    let (uid, gid) = lookup_uid_gid(&cfg.maddy_user)?;
-
-    if dry_run {
-        println!(
-            "   Would chown -R {}:{} {}",
-            uid,
-            gid,
-            cfg.state_dir.display()
-        );
-        return Ok(());
-    }
-
+    };
     println!(
         "   Setting ownership {}:{} on {}",
         cfg.maddy_user,
-        cfg.maddy_user,
+        cfg.maddy_group,
         cfg.state_dir.display()
     );
-    chown_tree(&cfg.state_dir, uid, gid)?;
+    let fd = sec
+        .state_root_fd()
+        .map_err(|e| io_error("open", &cfg.state_dir, e))?;
+    let skipped = chown_walk::chown_tree_fd(fd, &cfg.state_dir, sec.uid, sec.gid)
+        .map_err(|e| io_error(e.op, &e.path, e.source))?;
+    for entry in skipped {
+        println!(
+            "   ! Ownership of {} left unchanged: {}",
+            entry.path.display(),
+            entry.reason
+        );
+    }
     println!("   ✓ Permissions set");
     Ok(())
 }
@@ -575,34 +903,6 @@ fn lookup_uid_gid(name: &str) -> Result<(u32, u32)> {
     Ok((uid, gid))
 }
 
-/// Recursively chown the service-writable state tree without following symlinks:
-/// the service account can plant links there and swap entries while root walks,
-/// so the walk works on file descriptors (see [`chown_walk`]). The root itself is
-/// chosen by the operator (e.g. a link to a data volume), so it is resolved once
-/// first; the resolved directory is then opened with `O_NOFOLLOW`, and the walk
-/// fails if it was replaced by a link in between.
-fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<()> {
-    let root = fs::canonicalize(root).map_err(|e| io_error("resolve", root, e))?;
-    if chown_walk::protected_hardlinks_disabled() {
-        println!(
-            "   ! fs.protected_hardlinks is 0: the service account can hard-link files it \
-             does not own into {}, and this walk would hand them over. Set \
-             fs.protected_hardlinks=1 (sysctl) and re-run if that may have happened",
-            root.display()
-        );
-    }
-    let skipped =
-        chown_walk::chown_tree(&root, uid, gid).map_err(|e| io_error(e.op, &e.path, e.source))?;
-    for entry in skipped {
-        println!(
-            "   ! Ownership of {} left unchanged: {}",
-            entry.path.display(),
-            entry.reason
-        );
-    }
-    Ok(())
-}
-
 fn io_error(op: &str, path: &Path, e: io::Error) -> ChatmailError {
     ChatmailError::config(format!("{op} {}: {e}", path.display()))
 }
@@ -626,6 +926,7 @@ fn effective_uid_is_root() -> bool {
 mod tests {
     use super::*;
     use std::os::unix::fs::{symlink, MetadataExt};
+    use std::path::PathBuf;
 
     #[test]
     fn usermod_keeps_matching_home_and_never_moves_into_existing_state() {
@@ -677,51 +978,253 @@ mod tests {
         );
     }
 
-    #[test]
-    fn chown_tree_never_follows_symlinks() {
-        let outside = tempfile::tempdir().unwrap();
-        let target_dir = outside.path().join("dir");
-        fs::create_dir(&target_dir).unwrap();
-        fs::write(target_dir.join("inner"), "x").unwrap();
-        let target_file = outside.path().join("file");
-        fs::write(&target_file, "x").unwrap();
+    /// No test file has this uid: a chown to it by a non-root caller fails
+    /// with EPERM, so a test that passes shows no chown was attempted.
+    const UNUSED_UID: u32 = 4_000_000_000;
 
-        let state = tempfile::tempdir().unwrap();
-        let root = state.path();
-        fs::create_dir(root.join("sub")).unwrap();
-        fs::write(root.join("sub/data"), "x").unwrap();
-        symlink(&target_dir, root.join("dir-link")).unwrap();
-        symlink(&target_file, root.join("file-link")).unwrap();
-        symlink(root.join("missing"), root.join("dangling")).unwrap();
+    /// A directory under the root-owned, sticky `/tmp`, by its canonical path.
+    fn base() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir_in("/tmp").unwrap();
+        let path = fs::canonicalize(dir.path()).unwrap();
+        (dir, path)
+    }
+
+    fn id(path: &Path) -> FileId {
+        let m = fs::symlink_metadata(path).unwrap();
+        (m.dev(), m.ino())
+    }
+
+    /// A handle as `SecureInstall::open` builds it, for a service account that
+    /// does not exist; `marked` objects count as owned by the service.
+    fn handle(state: &Path, old_uid: Option<u32>, marked: &[&Path]) -> SecureInstall {
+        let marked: Vec<FileId> = marked.iter().map(|p| id(p)).collect();
+        // The test's base directory is the caller's: open the state root
+        // without counting the caller as the old uid, as for a root-owned path.
+        let opening = Trust::service(UNUSED_UID, UNUSED_UID, None).with_marked(marked.clone());
+        let (state_root, st) = open_state_root(state, &opening, false).unwrap();
+        let trust = Trust::service(UNUSED_UID, UNUSED_UID, old_uid).with_marked(marked);
+        SecureInstall {
+            uid: UNUSED_UID,
+            gid: UNUSED_UID,
+            old_uid,
+            trust,
+            state_root,
+            state_id: file_id(&st),
+            primary: "madmail".into(),
+        }
+    }
+
+    #[test]
+    fn state_walk_from_the_resolved_root_never_follows_links() {
+        let (_b, b) = base();
+        let outside = b.join("outside");
+        fs::create_dir_all(outside.join("dir")).unwrap();
+        fs::write(outside.join("dir/inner"), "x").unwrap();
+        fs::write(outside.join("file"), "x").unwrap();
+        let state = b.join("data");
+        fs::create_dir_all(state.join("sub")).unwrap();
+        fs::write(state.join("sub/data"), "x").unwrap();
+        symlink(outside.join("dir"), state.join("dir-link")).unwrap();
+        symlink(outside.join("file"), state.join("file-link")).unwrap();
+        symlink(state.join("missing"), state.join("dangling")).unwrap();
+        // The operator's --state-dir is a link to the data directory.
+        symlink(&state, b.join("state-link")).unwrap();
+        let sec = handle(&b.join("state-link"), None, &[&state]);
 
         let owner = |path: &Path| {
             let m = fs::symlink_metadata(path).unwrap();
             (m.uid(), m.gid())
         };
-        let before = owner(&target_file);
-        // As root, use an otherwise unused owner so a followed link would be visible.
-        // Otherwise chown to self: following the dangling link would fail.
-        let (uid, gid) = if effective_uid_is_root() {
-            (4242, 4242)
-        } else {
-            owner(root)
-        };
-        chown_tree(root, uid, gid).unwrap();
+        let before = owner(&outside.join("file"));
+        // SAFETY: getuid/getgid have no preconditions.
+        let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
+        let skipped =
+            chown_walk::chown_tree_fd(sec.state_root_fd().unwrap(), &state, uid, gid).unwrap();
+        assert!(skipped.is_empty(), "{skipped:?}");
+        assert_eq!(owner(&state.join("sub/data")), (uid, gid));
+        assert_eq!(owner(&outside.join("file")), before);
+        assert_eq!(owner(&outside.join("dir/inner")), before);
 
-        assert_eq!(owner(&root.join("sub/data")), (uid, gid));
-        assert_eq!(owner(&target_file), before);
-        assert_eq!(owner(&target_dir), before);
-        assert_eq!(owner(&target_dir.join("inner")), before);
+        // A state directory reached through a service-controlled component is
+        // refused instead of opened.
+        let svc = b.join("svc");
+        fs::create_dir(&svc).unwrap();
+        symlink(&state, svc.join("state")).unwrap();
+        let trust = Trust::service(UNUSED_UID, UNUSED_UID, None).with_marked(vec![id(&svc)]);
+        let err = open_state_root(&svc.join("state"), &trust, false).unwrap_err();
+        assert!(
+            err.to_string().contains("refusing to use state directory"),
+            "{err}"
+        );
+    }
 
-        // An operator-chosen link to the state directory is resolved, not refused;
-        // links inside it are still skipped.
-        fs::write(root.join("sub/after-link"), "x").unwrap();
-        let linked_root = outside.path().join("state-link");
-        symlink(root, &linked_root).unwrap();
-        chown_tree(&linked_root, uid, gid).unwrap();
-        assert_eq!(owner(&root.join("sub/after-link")), (uid, gid));
-        assert_eq!(owner(&target_file), before);
-        assert_eq!(owner(&target_dir.join("inner")), before);
+    #[test]
+    fn tls_files_reached_through_the_service_tree_are_not_chowned() {
+        let (_b, b) = base();
+        let state = b.join("state");
+        let etc = b.join("etc");
+        fs::create_dir_all(state.join("certs")).unwrap();
+        fs::create_dir_all(&etc).unwrap();
+        let shadow = b.join("shadow");
+        fs::write(&shadow, "secret").unwrap();
+        let sec = handle(&state, None, &[&state]);
+        // A link the service planted in its tree, as a directory hop.
+        symlink(&b, state.join("tls")).unwrap();
+        sec.fix_tls_file(&state.join("tls/shadow")).unwrap();
+        // An operator link to an in-tree file the service replaced with a link
+        // out of the tree: the walk stops at the state root.
+        symlink(&shadow, state.join("certs/fullchain.pem")).unwrap();
+        symlink(state.join("certs/fullchain.pem"), etc.join("fullchain.pem")).unwrap();
+        sec.fix_tls_file(&etc.join("fullchain.pem")).unwrap();
+        // A link chain whose second hop is a service-owned directory outside
+        // the tree, ending at a file outside it.
+        let svc = b.join("svc");
+        fs::create_dir(&svc).unwrap();
+        symlink(&shadow, svc.join("hop")).unwrap();
+        symlink(svc.join("hop"), etc.join("chain.pem")).unwrap();
+        let sec2 = handle(&state, None, &[&state, &svc]);
+        sec2.fix_tls_file(&etc.join("chain.pem")).unwrap();
+        // UNUSED_UID shows that no chown was attempted; the file is untouched.
+        assert_eq!(fs::read_to_string(&shadow).unwrap(), "secret");
+    }
+
+    #[test]
+    fn tls_hard_links_are_chowned_only_when_they_belong_to_the_service() {
+        let (_b, b) = base();
+        let state = b.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let cert = b.join("fullchain.pem");
+        fs::write(&cert, "x").unwrap();
+        fs::hard_link(&cert, b.join("other-name")).unwrap();
+        // Owned by the caller, which is neither the service uid nor old_uid:
+        // a hard link to another account's file, refused without a chown.
+        let sec = handle(&state, None, &[&state]);
+        sec.fix_tls_file(&cert).unwrap();
+        // Once the other name is gone the file has one link and a chown (to
+        // UNUSED_UID) is attempted, which fails for a non-root caller. Files of
+        // the old service uid with several links are covered by
+        // `chown_walk::tests::decide_skips_links_and_foreign_hard_links_only`.
+        fs::remove_file(b.join("other-name")).unwrap();
+        // SAFETY: getuid has no preconditions.
+        if unsafe { libc::getuid() } != 0 {
+            let err = sec.fix_tls_file(&cert).unwrap_err().to_string();
+            assert!(err.contains("chown"), "{err}");
+        }
+    }
+
+    #[test]
+    fn writes_into_the_tree_replace_planted_links() {
+        let (_b, b) = base();
+        let state = b.join("state");
+        let etc = b.join("etc");
+        fs::create_dir_all(state.join("certs")).unwrap();
+        fs::create_dir_all(&etc).unwrap();
+        let victim = b.join("victim");
+        fs::write(&victim, "keep").unwrap();
+        let sec = handle(&state, None, &[&state]);
+        // Operator link /etc/.../fullchain.pem -> <state>/certs/fullchain.pem,
+        // which the service replaced with a link to the victim.
+        symlink(&victim, state.join("certs/fullchain.pem")).unwrap();
+        symlink(state.join("certs/fullchain.pem"), etc.join("fullchain.pem")).unwrap();
+        sec.write_file(&etc.join("fullchain.pem"), b"cert", 0o640, Some((0, 0)))
+            .unwrap();
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
+        assert_eq!(
+            fs::read_to_string(state.join("certs/fullchain.pem")).unwrap(),
+            "cert"
+        );
+        assert!(!fs::symlink_metadata(state.join("certs/fullchain.pem"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        // A planted directory link on the way is refused.
+        symlink(&b, state.join("dkim")).unwrap();
+        let err = sec
+            .write_file(&state.join("dkim/default.txt"), b"x", 0o644, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not followed"), "{err}");
+        assert!(!b.join("default.txt").exists());
+        // A new file outside the tree in a trusted directory; missing parents
+        // are created. The owner is only applied outside the tree, so use
+        // none here (a non-root caller cannot give files to root).
+        sec.write_file(&etc.join("new/madmail.conf"), b"conf", 0o640, None)
+            .unwrap();
+        let m = fs::metadata(etc.join("new/madmail.conf")).unwrap();
+        assert_eq!(m.permissions().mode() & 0o777, 0o640);
+        // create_new_file refuses an existing entry.
+        assert!(!sec
+            .create_new_file(&etc.join("new/madmail.conf"), b"x", 0o600)
+            .unwrap());
+        // read_file reads an in-tree file but not a planted link.
+        fs::write(state.join("acct.json"), "{}").unwrap();
+        assert_eq!(
+            sec.read_file(&state.join("acct.json"), 64)
+                .unwrap()
+                .unwrap(),
+            b"{}"
+        );
+        symlink(&victim, state.join("planted.json")).unwrap();
+        assert!(sec.read_file(&state.join("planted.json"), 64).is_err());
+        assert!(sec
+            .read_file(&state.join("absent.json"), 64)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn config_outside_the_tree_through_a_service_dir_is_refused() {
+        let (_b, b) = base();
+        let state = b.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let svc = b.join("svc-etc");
+        fs::create_dir(&svc).unwrap();
+        fs::write(svc.join("madmail.conf"), "x").unwrap();
+        let sec = handle(&state, None, &[&state, &svc]);
+        let err = sec
+            .fix_config_file(&svc.join("madmail.conf"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refusing to change config file"), "{err}");
+        // The same file inside the tree gets mode 0640 through a descriptor.
+        let conf = state.join("etc/madmail.conf");
+        fs::create_dir_all(state.join("etc")).unwrap();
+        fs::write(&conf, "x").unwrap();
+        fs::set_permissions(&conf, fs::Permissions::from_mode(0o644)).unwrap();
+        let sec = handle(&state, None, &[&state]);
+        sec.fix_config_file(&conf).unwrap();
+        assert_eq!(
+            fs::metadata(&conf).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        // A hard link to a foreign file at the config's name is not changed.
+        let victim = b.join("victim");
+        fs::write(&victim, "x").unwrap();
+        fs::set_permissions(&victim, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::remove_file(&conf).unwrap();
+        fs::hard_link(&victim, &conf).unwrap();
+        assert!(sec.fix_config_file(&conf).is_err());
+        assert_eq!(
+            fs::metadata(&victim).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+    }
+
+    #[test]
+    fn non_dedicated_dirs_are_left_alone() {
+        let (_b, b) = base();
+        let state = b.join("state");
+        fs::create_dir_all(&state).unwrap();
+        let shared = b.join("etc");
+        fs::create_dir(&shared).unwrap();
+        fs::set_permissions(&shared, fs::Permissions::from_mode(0o775)).unwrap();
+        let sec = handle(&state, None, &[&state]);
+        // UNUSED_UID: a chown attempt would fail, so Ok means it was skipped.
+        sec.fix_dir(&shared).unwrap();
+        assert_eq!(
+            fs::metadata(&shared).unwrap().permissions().mode() & 0o777,
+            0o775
+        );
     }
 
     /// A real directory and its canonical path (macOS tempdirs live behind /var).
@@ -729,80 +1232,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = fs::canonicalize(dir.path()).unwrap();
         (dir, path)
-    }
-
-    #[test]
-    fn tls_path_through_a_planted_link_in_the_state_dir_is_not_chowned() {
-        let (_state, state) = real_tempdir();
-        let (_outside, outside) = real_tempdir();
-        fs::write(outside.join("fullchain.pem"), "x").unwrap();
-        fs::write(outside.join("privkey.pem"), "x").unwrap();
-        // The service account links an intermediate component out of its tree.
-        symlink(&outside, state.join("tls")).unwrap();
-        let cert = state.join("tls/fullchain.pem");
-        let key = state.join("tls/privkey.pem");
-
-        let tree = ServiceTree::new(&state);
-        assert!(tree.contains(&cert) && tree.contains(&key));
-        assert!(tree.contains(&state.join("tls")));
-        let (uid, gid) = (fs::metadata(&outside).unwrap().uid(), 0);
-        // Chowning would fail for a non-root caller (gid 0) if it were attempted.
-        let skipped = chown_tls_files(&tree, &cert, &key, uid, gid).unwrap();
-        assert_eq!(skipped, vec![cert, key]);
-
-        // Paths outside the tree are not in it, even with the same file names.
-        assert!(!tree.contains(&outside.join("fullchain.pem")));
-    }
-
-    #[test]
-    fn canonical_tls_path_under_a_symlinked_state_root_is_in_the_tree() {
-        let (_data, data) = real_tempdir();
-        let (_links, links) = real_tempdir();
-        // The operator's --state-dir is a link to a data volume.
-        let state = links.join("state");
-        symlink(&data, &state).unwrap();
-        fs::create_dir(data.join("certs")).unwrap();
-        fs::write(data.join("certs/fullchain.pem"), "x").unwrap();
-
-        let tree = ServiceTree::new(&state);
-        // Written in canonical form, so lexically outside the configured path.
-        assert!(tree.contains(&data.join("certs/fullchain.pem")));
-        // A file that does not exist yet is judged by its resolved parent.
-        assert!(tree.contains(&data.join("certs/privkey.pem")));
-        // A path elsewhere that resolves into the tree through a link.
-        symlink(data.join("certs"), links.join("etc-certs")).unwrap();
-        assert!(tree.contains(&links.join("etc-certs/fullchain.pem")));
-        // The service account replaces the file with a link out of its tree: the
-        // whole path now resolves elsewhere, but its parent is still in the tree.
-        let (_outside, outside) = real_tempdir();
-        fs::write(outside.join("shadow"), "x").unwrap();
-        fs::remove_file(data.join("certs/fullchain.pem")).unwrap();
-        symlink(outside.join("shadow"), data.join("certs/fullchain.pem")).unwrap();
-        assert!(tree.contains(&links.join("etc-certs/fullchain.pem")));
-        assert!(!tree.contains(&links.join("other.pem")));
-        // A file-level operator link to a file in the tree, which the service
-        // account then replaced with a link out of it: resolving the whole path
-        // ends outside, but the first hop lands in the tree.
-        symlink(data.join("certs/fullchain.pem"), links.join("op-cert.pem")).unwrap();
-        assert_eq!(
-            fs::canonicalize(links.join("op-cert.pem")).unwrap(),
-            outside.join("shadow")
-        );
-        assert!(tree.contains(&links.join("op-cert.pem")));
-        // The same through a relative link and a configured (not resolved) path.
-        symlink("state/certs/fullchain.pem", links.join("op-rel.pem")).unwrap();
-        assert!(tree.contains(&links.join("op-rel.pem")));
-        // An operator link to a file outside the tree stays outside.
-        symlink(outside.join("shadow"), links.join("op-out.pem")).unwrap();
-        assert!(!tree.contains(&links.join("op-out.pem")));
-        // A link loop ends after the hop limit instead of recursing forever.
-        symlink(links.join("loop-b"), links.join("loop-a")).unwrap();
-        symlink(links.join("loop-a"), links.join("loop-b")).unwrap();
-        assert!(!tree.contains(&links.join("loop-a/x.pem")));
-        // A missing state directory has no resolved form; only lexical checks apply.
-        let missing = ServiceTree::new(Path::new("/nonexistent-madmail-state"));
-        assert!(missing.contains(Path::new("/nonexistent-madmail-state/certs/a.pem")));
-        assert!(!missing.contains(&data.join("certs/fullchain.pem")));
     }
 
     #[test]

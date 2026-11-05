@@ -22,24 +22,32 @@
 //! it can create, rename (including `renameat2(RENAME_EXCHANGE)` loops) and link
 //! anything there. A walk that uses path names checks one object and then changes
 //! another one, for example a directory swapped for a link to `/etc`. This walk
-//! therefore never resolves a path below the root:
+//! therefore never resolves a path below the root, and it checks and changes each
+//! object through one descriptor for that object:
 //!
+//! - the root is opened with `O_NOFOLLOW | O_DIRECTORY` (a root that is a link
+//!   is refused; the caller resolves an operator's link with the checked
+//!   resolver and passes the descriptor to [`chown_tree_fd`]). Its owner before
+//!   the walk is recorded as `old_uid`: the previous service uid when the
+//!   account was recreated with a new uid;
 //! - each directory is opened relative to its parent's descriptor with
 //!   `O_NOFOLLOW | O_DIRECTORY`, so a link swapped in fails to open (`ELOOP` or
 //!   `ENOTDIR`) instead of being followed, and is changed with `fchown` on the
-//!   opened descriptor;
-//! - each entry is classified with `fstatat(AT_SYMLINK_NOFOLLOW)`. Symbolic links
-//!   are skipped, as before; other entries are changed with
-//!   `fchownat(AT_SYMLINK_NOFOLLOW)`, which never follows a link even when the
-//!   entry was replaced by one after the check.
-//!
-//! Hard links are not distinguished from other files: the mail store
-//! (`chatmail-storage` `cas.rs` / `blob.rs`) hard-links every message into the
-//! maildirs, so a file with several names is normal there. This relies on the
-//! kernel refusing to let the service account create a hard link to a file it
-//! does not own (`fs.protected_hardlinks = 1` on Linux, the default on the
-//! major distributions); [`protected_hardlinks_disabled`] lets install warn
-//! when that protection is off.
+//!   opened descriptor (directories cannot be hard-linked);
+//! - every other entry is opened by itself and checked with `fstat` on that
+//!   descriptor before `fchown`: on Linux `openat(O_PATH | O_NOFOLLOW)` and
+//!   `fchownat(fd, "", AT_EMPTY_PATH)`; elsewhere regular files are opened with
+//!   `O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY` and changed with `fchown`,
+//!   and FIFOs, sockets and device files are left unchanged (they are not
+//!   opened);
+//! - [`decide`] skips a link, and skips a file with more than one hard link
+//!   whose owner is neither the service uid nor `old_uid`: that can only be a
+//!   link to a file of another account (for example `/etc/shadow` when
+//!   `fs.protected_hardlinks` is 0). The mail store (`chatmail-storage`
+//!   `cas.rs` / `blob.rs`) hard-links every message into the maildirs; those
+//!   files belong to the service (`uid` or `old_uid`), so they are changed. A
+//!   file with one link exists only in the tree and is changed whatever its
+//!   owner. Uid 0 is never taken as `old_uid`.
 //!
 //! An entry that changes or disappears during the walk is skipped with a
 //! warning; only problems with the root itself are hard failures. The walk is
@@ -53,12 +61,13 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+use crate::ctl::secure_fs::cstring;
+use crate::ctl::secure_fs::{fchown, fstat, fstatat_nofollow, kind, openat, DIR_FLAGS};
+
 /// Directory levels below the root that are still changed. Install-created
 /// state (databases, DKIM keys, mail directories) is a few levels deep.
 pub const MAX_DEPTH: usize = 64;
-
-const DIR_FLAGS: libc::c_int =
-    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
 
 /// A failure that stops the walk.
 #[derive(Debug)]
@@ -75,6 +84,41 @@ pub struct Skipped {
     pub reason: String,
 }
 
+/// What the walk does with one object, from its `fstat` data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    Chown,
+    /// A symbolic link: never followed or changed.
+    SkipLink,
+    /// A file with several hard links owned by another account.
+    SkipForeignHardLink {
+        owner: u32,
+        links: u64,
+    },
+}
+
+/// The ownership decision for an object below the root. `uid` is the service
+/// uid being applied and `old_uid` the root's owner before the walk; 0 never
+/// counts as a service uid.
+#[allow(clippy::unnecessary_cast)]
+pub fn decide(st: &libc::stat, old_uid: u32, uid: u32) -> Action {
+    match kind(st) {
+        libc::S_IFLNK => Action::SkipLink,
+        libc::S_IFDIR => Action::Chown,
+        _ => {
+            let service_owned = st.st_uid == uid || (old_uid != 0 && st.st_uid == old_uid);
+            if st.st_nlink > 1 && !service_owned {
+                Action::SkipForeignHardLink {
+                    owner: st.st_uid,
+                    links: st.st_nlink as u64,
+                }
+            } else {
+                Action::Chown
+            }
+        }
+    }
+}
+
 struct Frame {
     fd: OwnedFd,
     path: PathBuf,
@@ -83,23 +127,50 @@ struct Frame {
 }
 
 /// Change the owner of `root` and everything below it to `uid:gid` without
-/// following symbolic links. `root` is opened as given with `O_NOFOLLOW`, so the
-/// caller resolves an operator-chosen root link first.
+/// following symbolic links. `root` is opened as given with `O_NOFOLLOW`, so a
+/// root that is a link fails with `ELOOP`. Install opens the root with the
+/// checked resolver instead and calls [`chown_tree_fd`].
+#[cfg(test)]
 pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkError> {
+    let fail = |source| WalkError {
+        op: "open",
+        path: root.to_path_buf(),
+        source,
+    };
+    let c_root = cstring(root.as_os_str()).map_err(fail)?;
+    let fd = openat(libc::AT_FDCWD, &c_root, DIR_FLAGS, 0).map_err(fail)?;
+    chown_tree_fd(fd, root, uid, gid)
+}
+
+/// [`chown_tree`] for a root directory that is already open (with
+/// [`DIR_FLAGS`]); `root_path` is only used in messages.
+pub fn chown_tree_fd(
+    fd: OwnedFd,
+    root_path: &Path,
+    uid: u32,
+    gid: u32,
+) -> Result<Vec<Skipped>, WalkError> {
     let fail = |op, path: &Path, source| WalkError {
         op,
         path: path.to_path_buf(),
         source,
     };
-    let c_root = cstring(root.as_os_str()).map_err(|e| fail("open", root, e))?;
-    let fd = open_dir(None, &c_root).map_err(|e| fail("open", root, e))?;
-    fchown(&fd, uid, gid).map_err(|e| fail("chown", root, e))?;
-    let names = read_names(&fd).map_err(|e| fail("read_dir", root, e))?;
+    let root_st = fstat(fd.as_raw_fd()).map_err(|e| fail("stat", root_path, e))?;
+    if kind(&root_st) != libc::S_IFDIR {
+        return Err(fail(
+            "open",
+            root_path,
+            io::Error::from_raw_os_error(libc::ENOTDIR),
+        ));
+    }
+    let old_uid = root_st.st_uid;
+    fchown(fd.as_raw_fd(), uid, gid).map_err(|e| fail("chown", root_path, e))?;
+    let names = read_names(&fd).map_err(|e| fail("read_dir", root_path, e))?;
 
     let mut skipped = Vec::new();
     let mut stack = vec![Frame {
         fd,
-        path: root.to_path_buf(),
+        path: root_path.to_path_buf(),
         names: names.into_iter(),
         depth: 0,
     }];
@@ -123,7 +194,7 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
             }
             Err(e) => return Err(fail("stat", &path, e)),
         };
-        match st.st_mode & libc::S_IFMT {
+        match kind(&st) {
             // Links planted by the service account are never followed or changed.
             libc::S_IFLNK => {}
             libc::S_IFDIR => {
@@ -131,7 +202,7 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
                     skip(format!("deeper than {MAX_DEPTH} levels"));
                     continue;
                 }
-                let child = match open_dir(Some(frame.fd.as_raw_fd()), &name) {
+                let child = match openat(frame.fd.as_raw_fd(), &name, DIR_FLAGS, 0) {
                     Ok(fd) => fd,
                     Err(e) if changed_under_us(&e) => {
                         skip(format!("changed during the walk ({e})"));
@@ -139,7 +210,7 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
                     }
                     Err(e) => return Err(fail("open", &path, e)),
                 };
-                fchown(&child, uid, gid).map_err(|e| fail("chown", &path, e))?;
+                fchown(child.as_raw_fd(), uid, gid).map_err(|e| fail("chown", &path, e))?;
                 let names = match read_names(&child) {
                     Ok(names) => names,
                     Err(e) if changed_under_us(&e) => {
@@ -156,15 +227,12 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
                     depth,
                 });
             }
-            _ => {
-                // Hard links are changed like any other file: the mail store
-                // links every message into the maildirs, so after a uid change
-                // most files have several names and the old owner. See the
-                // module docs for why this relies on fs.protected_hardlinks.
-                match fchownat_nofollow(frame.fd.as_raw_fd(), &name, uid, gid) {
-                    Ok(()) => {}
+            entry_kind => {
+                match chown_entry(frame.fd.as_raw_fd(), &name, entry_kind, old_uid, uid, gid) {
+                    Ok(None) => {}
+                    Ok(Some(reason)) => skip(reason),
                     Err(e) if changed_under_us(&e) => {
-                        skip(format!("changed during the walk ({e})"));
+                        skip(format!("changed during the walk ({e})"))
                     }
                     Err(e) => return Err(fail("chown", &path, e)),
                 }
@@ -174,19 +242,76 @@ pub fn chown_tree(root: &Path, uid: u32, gid: u32) -> Result<Vec<Skipped>, WalkE
     Ok(skipped)
 }
 
-/// Whether the kernel lets users hard-link files they do not own, so the
-/// service account could link a root-owned file into its tree for the walk to
-/// hand over. Only Linux exposes the setting; elsewhere this returns false.
-pub fn protected_hardlinks_disabled() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        std::fs::read_to_string("/proc/sys/fs/protected_hardlinks")
-            .is_ok_and(|v| v.trim() == "0")
+fn skip_reason(action: Action) -> Option<String> {
+    match action {
+        Action::Chown | Action::SkipLink => None,
+        Action::SkipForeignHardLink { owner, links } => Some(format!(
+            "has {links} hard links and belongs to uid {owner}, not to the service account; \
+             it may be a link to a file outside the state directory"
+        )),
     }
-    #[cfg(not(target_os = "linux"))]
-    {
-        false
+}
+
+/// Check and change one non-directory entry through a descriptor for it.
+/// Returns why it was left unchanged, if it was.
+#[cfg(target_os = "linux")]
+fn chown_entry(
+    dir: RawFd,
+    name: &CStr,
+    _kind: libc::mode_t,
+    old_uid: u32,
+    uid: u32,
+    gid: u32,
+) -> io::Result<Option<String>> {
+    // O_PATH opens the entry itself (a link too) without reading it.
+    let fd = openat(
+        dir,
+        name,
+        libc::O_PATH | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        0,
+    )?;
+    let st = fstat(fd.as_raw_fd())?;
+    if kind(&st) == libc::S_IFDIR {
+        return Err(io::Error::from_raw_os_error(libc::ENOTDIR));
     }
+    let action = decide(&st, old_uid, uid);
+    if action == Action::Chown {
+        // SAFETY: `fd` is open; the empty path with AT_EMPTY_PATH names the
+        // object `fd` refers to.
+        let rc =
+            unsafe { libc::fchownat(fd.as_raw_fd(), c"".as_ptr(), uid, gid, libc::AT_EMPTY_PATH) };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(skip_reason(action))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn chown_entry(
+    dir: RawFd,
+    name: &CStr,
+    entry_kind: libc::mode_t,
+    old_uid: u32,
+    uid: u32,
+    gid: u32,
+) -> io::Result<Option<String>> {
+    if entry_kind != libc::S_IFREG {
+        // Without O_PATH, a FIFO, socket or device would have to be opened.
+        return Ok(Some(
+            "not a regular file, directory or link; left unchanged on this platform".into(),
+        ));
+    }
+    let fd = openat(dir, name, crate::ctl::secure_fs::FILE_FLAGS, 0)?;
+    let st = fstat(fd.as_raw_fd())?;
+    if kind(&st) != libc::S_IFREG {
+        return Err(io::Error::from_raw_os_error(libc::ENOENT));
+    }
+    let action = decide(&st, old_uid, uid);
+    if action == Action::Chown {
+        fchown(fd.as_raw_fd(), uid, gid)?;
+    }
+    Ok(skip_reason(action))
 }
 
 /// Errors that mean an entry was replaced or removed after it was listed.
@@ -195,53 +320,6 @@ fn changed_under_us(e: &io::Error) -> bool {
         e.raw_os_error(),
         Some(libc::ELOOP) | Some(libc::ENOTDIR) | Some(libc::ENOENT)
     )
-}
-
-fn cstring(s: &OsStr) -> io::Result<CString> {
-    CString::new(s.as_bytes()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))
-}
-
-/// Open a directory without following a link in its last component: relative
-/// to `parent` when given, otherwise `name` is a path.
-fn open_dir(parent: Option<RawFd>, name: &CStr) -> io::Result<OwnedFd> {
-    let base = parent.unwrap_or(libc::AT_FDCWD);
-    // SAFETY: `name` is a valid NUL-terminated string and `base` is either
-    // AT_FDCWD or a descriptor owned by the caller for the duration of the call.
-    let fd = unsafe { libc::openat(base, name.as_ptr(), DIR_FLAGS) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: `fd` was just returned by openat and is owned by nobody else.
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
-}
-
-fn fchown(fd: &OwnedFd, uid: u32, gid: u32) -> io::Result<()> {
-    // SAFETY: `fd` is an open descriptor for the duration of the call.
-    if unsafe { libc::fchown(fd.as_raw_fd(), uid, gid) } < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-fn fstatat_nofollow(dir: RawFd, name: &CStr) -> io::Result<libc::stat> {
-    // SAFETY: `stat` is plain old data; an all-zero value is valid and is
-    // overwritten by fstatat on success.
-    let mut st: libc::stat = unsafe { std::mem::zeroed() };
-    // SAFETY: `dir` is an open directory descriptor, `name` is NUL-terminated and
-    // `st` is a valid, writable `stat`.
-    if unsafe { libc::fstatat(dir, name.as_ptr(), &mut st, libc::AT_SYMLINK_NOFOLLOW) } < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(st)
-}
-
-fn fchownat_nofollow(dir: RawFd, name: &CStr, uid: u32, gid: u32) -> io::Result<()> {
-    // SAFETY: `dir` is an open directory descriptor and `name` is NUL-terminated.
-    let rc = unsafe { libc::fchownat(dir, name.as_ptr(), uid, gid, libc::AT_SYMLINK_NOFOLLOW) };
-    if rc < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
 }
 
 /// List the entries of the open directory `fd`, except `.` and `..`. The
@@ -332,6 +410,63 @@ mod tests {
         (m.uid(), m.gid())
     }
 
+    fn stat_of(kind: libc::mode_t, nlink: u32, uid: u32) -> libc::stat {
+        // SAFETY: zeroed `stat` is valid plain data.
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        st.st_mode = kind | 0o644;
+        st.st_nlink = nlink as _;
+        st.st_uid = uid;
+        st
+    }
+
+    #[test]
+    fn decide_skips_links_and_foreign_hard_links_only() {
+        let (old, new) = (980, 990);
+        // Hard-linked message files of the old or the new service uid are
+        // changed: the repair case after the account got a new uid.
+        assert_eq!(
+            decide(&stat_of(libc::S_IFREG, 2, old), old, new),
+            Action::Chown
+        );
+        assert_eq!(
+            decide(&stat_of(libc::S_IFREG, 3, new), old, new),
+            Action::Chown
+        );
+        // A hard link to a file of another account (root, another user).
+        for foreign in [0, 1000] {
+            assert_eq!(
+                decide(&stat_of(libc::S_IFREG, 2, foreign), old, new),
+                Action::SkipForeignHardLink {
+                    owner: foreign,
+                    links: 2
+                }
+            );
+        }
+        // Uid 0 is never the old service uid, even when the root was root-owned.
+        assert!(matches!(
+            decide(&stat_of(libc::S_IFREG, 2, 0), 0, new),
+            Action::SkipForeignHardLink { .. }
+        ));
+        // A single-link file exists only in the tree: changed whatever its owner.
+        assert_eq!(
+            decide(&stat_of(libc::S_IFREG, 1, 0), old, new),
+            Action::Chown
+        );
+        assert_eq!(
+            decide(&stat_of(libc::S_IFIFO, 1, 1000), old, new),
+            Action::Chown
+        );
+        // Directories have nlink >= 2 by nature and cannot be hard-linked.
+        assert_eq!(
+            decide(&stat_of(libc::S_IFDIR, 7, 0), old, new),
+            Action::Chown
+        );
+        assert_eq!(
+            decide(&stat_of(libc::S_IFLNK, 1, new), old, new),
+            Action::SkipLink
+        );
+    }
+
     #[test]
     fn walks_nested_tree_and_skips_links() {
         let state = tempfile::tempdir().unwrap();
@@ -351,9 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn hard_linked_files_are_changed_like_other_files() {
-        // The mail store links each message into the maildirs, so files with
-        // several names are normal and must not be skipped.
+    fn service_hard_links_are_changed_and_foreign_ones_skipped() {
         let state = tempfile::tempdir().unwrap();
         let root = state.path();
         fs::create_dir_all(root.join("blobs")).unwrap();
@@ -361,13 +494,20 @@ mod tests {
         fs::write(root.join("blobs/msg"), "x").unwrap();
         fs::hard_link(root.join("blobs/msg"), root.join("mail/new/msg")).unwrap();
         assert_eq!(
-            fs::symlink_metadata(root.join("blobs/msg")).unwrap().nlink(),
+            fs::symlink_metadata(root.join("blobs/msg"))
+                .unwrap()
+                .nlink(),
             2
         );
-        // As root (the Docker suite), hand the files to a new owner, as after the
-        // service account was recreated with another uid.
         // SAFETY: geteuid has no preconditions.
-        let (uid, gid) = if unsafe { libc::geteuid() } == 0 {
+        let as_root = unsafe { libc::geteuid() } == 0;
+        // The caller owns the root and the files: they are the old service uid.
+        // As root, give them to an old service uid first, then hand them to a
+        // new one, as after the service account was recreated with another uid.
+        let (uid, gid) = if as_root {
+            for p in ["", "blobs", "blobs/msg", "mail", "mail/new", "mail/new/msg"] {
+                std::os::unix::fs::chown(root.join(p), Some(4242), Some(4242)).unwrap();
+            }
             (4243, 4243)
         } else {
             owner(root)
@@ -376,6 +516,18 @@ mod tests {
         assert!(skipped.is_empty(), "{skipped:?}");
         assert_eq!(owner(&root.join("mail/new/msg")), (uid, gid));
         assert_eq!(owner(&root.join("blobs/msg")), (uid, gid));
+        // As a non-root caller the only foreign file available is a root-owned
+        // one, which cannot be hard-linked without privilege on most systems;
+        // the Docker suite covers it and `decide` covers the rule itself.
+        if as_root {
+            let outside = tempfile::tempdir().unwrap();
+            let victim = outside.path().join("victim");
+            fs::write(&victim, "x").unwrap();
+            fs::hard_link(&victim, root.join("planted")).unwrap();
+            let skipped = chown_tree(root, 4244, 4244).unwrap();
+            assert_eq!(skipped.len(), 1, "{skipped:?}");
+            assert_eq!(owner(&victim), (0, 0));
+        }
     }
 
     #[test]
@@ -416,15 +568,20 @@ mod tests {
     #[test]
     fn missing_entries_are_reported_not_fatal() {
         let state = tempfile::tempdir().unwrap();
-        let fd = open_dir(None, &cstring(state.path().as_os_str()).unwrap()).unwrap();
+        let c_root = cstring(state.path().as_os_str()).unwrap();
+        let fd = openat(libc::AT_FDCWD, &c_root, DIR_FLAGS, 0).unwrap();
         let name = CString::new("vanished").unwrap();
         let e = fstatat_nofollow(fd.as_raw_fd(), &name).unwrap_err();
         assert!(changed_under_us(&e));
+        let e = chown_entry(fd.as_raw_fd(), &name, libc::S_IFREG, 0, 0, 0).unwrap_err();
+        assert!(changed_under_us(&e), "{e:?}");
         fs::write(state.path().join("file"), "x").unwrap();
-        let e = open_dir(Some(fd.as_raw_fd()), &CString::new("file").unwrap()).unwrap_err();
+        let file = CString::new("file").unwrap();
+        let e = openat(fd.as_raw_fd(), &file, DIR_FLAGS, 0).unwrap_err();
         assert!(changed_under_us(&e), "{e:?}");
         symlink(state.path(), state.path().join("link")).unwrap();
-        let e = open_dir(Some(fd.as_raw_fd()), &CString::new("link").unwrap()).unwrap_err();
+        let link = CString::new("link").unwrap();
+        let e = openat(fd.as_raw_fd(), &link, DIR_FLAGS, 0).unwrap_err();
         assert!(changed_under_us(&e), "{e:?}");
     }
 
@@ -433,7 +590,8 @@ mod tests {
         let state = tempfile::tempdir().unwrap();
         fs::write(state.path().join("one"), "x").unwrap();
         fs::create_dir(state.path().join("two")).unwrap();
-        let fd = open_dir(None, &cstring(state.path().as_os_str()).unwrap()).unwrap();
+        let c_root = cstring(state.path().as_os_str()).unwrap();
+        let fd = openat(libc::AT_FDCWD, &c_root, DIR_FLAGS, 0).unwrap();
         let mut names: Vec<_> = read_names(&fd)
             .unwrap()
             .into_iter()
