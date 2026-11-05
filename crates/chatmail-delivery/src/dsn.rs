@@ -164,10 +164,11 @@ pub fn build_failure_report(
     let headers = original_headers(notice.original);
     // A delimiter line is exactly `--` plus the boundary, so a boundary that
     // occurs nowhere in the parts cannot be forged by a reason or header line,
-    // even one that starts with `--`. A random one is drawn until it is absent.
-    let boundary = (0..8)
-        .map(|_| format!("dsn{}", Uuid::new_v4().simple()))
-        .find(|b| !text.contains(b) && !diagnostic.contains(b) && !headers.contains(b))?;
+    // even one that starts with `--`. Every value placed in a part is checked.
+    let boundary = pick_boundary(
+        &[&text, domain, &recipient, status, &diagnostic, &headers],
+        (0..8).map(|_| format!("dsn{}", Uuid::new_v4().simple())),
+    )?;
     let from = format!("mailer-daemon@{domain}");
     let msg_id = format!("<dsn-{}@{domain}>", Uuid::new_v4().simple());
     let date = OffsetDateTime::now_utc()
@@ -209,6 +210,13 @@ pub fn build_failure_report(
     Some(raw.into_bytes())
 }
 
+/// The first candidate that occurs in none of `parts`, or `None` if all do.
+fn pick_boundary(parts: &[&str], candidates: impl IntoIterator<Item = String>) -> Option<String> {
+    candidates
+        .into_iter()
+        .find(|b| parts.iter().all(|part| !part.contains(b.as_str())))
+}
+
 /// Longest prefix of at most `max` bytes that ends on a UTF-8 char boundary.
 fn bounded(value: &str, max: usize) -> &str {
     if value.len() <= max {
@@ -224,7 +232,7 @@ fn bounded(value: &str, max: usize) -> &str {
 /// The reason as CRLF lines for the 8bit text part, at most `max` bytes.
 ///
 /// CRLF, a bare CR and a bare LF each end one line, so no bare CR or LF is
-/// left. Other control characters are dropped, and a line longer than the
+/// left. Tab is kept, other control characters are dropped, and a line longer than the
 /// RFC 5322 limit of 998 bytes is split. The cut at `max` falls between
 /// lines or on a char boundary inside one, never inside a CRLF pair.
 fn report_reason(reason: &str, max: usize) -> String {
@@ -521,6 +529,28 @@ mod tests {
                 assert_eq!(raw.get(i + 1), Some(&b'\n'), "bare CR at byte {i}");
             }
         }
+    }
+
+    #[test]
+    fn boundary_is_absent_from_every_part() {
+        let parts = [
+            "reason",
+            "example.org",
+            "b@other.org",
+            "5.7.1",
+            "diag",
+            "Subject: x\r\n",
+        ];
+        let pick =
+            |first: &str| pick_boundary(&parts, [first.to_string(), "fresh".to_string()]).unwrap();
+        assert_eq!(pick("example"), "fresh", "domain");
+        assert_eq!(pick("other"), "fresh", "recipient");
+        assert_eq!(pick("7.1"), "fresh", "status");
+        assert_eq!(pick("reason"), "fresh", "text");
+        assert_eq!(pick("diag"), "fresh", "diagnostic");
+        assert_eq!(pick("Subject"), "fresh", "headers");
+        assert_eq!(pick("unused"), "unused");
+        assert_eq!(pick_boundary(&parts, ["example".to_string()]), None);
     }
 
     fn assert_crlf_only(text: &str) {
