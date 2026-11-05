@@ -333,6 +333,21 @@ rm -r /var/xyzzy/lib/madmail/op-file /tmp/op-file.pem
 [[ "$(stat -c '%U:%G' /var/xyzzy/lib/madmail/nested/deeper)" = madmail:madmail ]]
 [[ "$(stat -c '%U' /var/xyzzy/lib/madmail/nested/deeper/planted-passwd)" = root ]]
 rm -r /var/xyzzy/lib/madmail/nested /var/xyzzy/lib/madmail/op-tls /tmp/op-tls
+# An operator's TLS file of another account outside a madmail directory is not
+# chowned: the command to run is printed. In the Let's Encrypt layout it is.
+mkdir -p /srv/op-shared
+printf 'x' > /srv/op-shared/fullchain.pem
+/tmp/madmail install --user-only "${repair_paths[@]}" \
+    --cert-path /srv/op-shared/fullchain.pem > /tmp/user-shared-tls.log
+grep -qF "Skipping ownership of /srv/op-shared/fullchain.pem: /srv/op-shared/fullchain.pem belongs to uid 0 and is not in a directory dedicated to madmail or in /etc/letsencrypt/live or archive, so it may be another account's file. If it is your certificate or key, run: chown madmail:madmail /srv/op-shared/fullchain.pem" /tmp/user-shared-tls.log
+[[ "$(stat -c '%U:%G' /srv/op-shared/fullchain.pem)" = root:root ]]
+mkdir -p /etc/letsencrypt/archive/mx.test /etc/letsencrypt/live/mx.test
+printf 'x' > /etc/letsencrypt/archive/mx.test/fullchain1.pem
+ln -s ../../archive/mx.test/fullchain1.pem /etc/letsencrypt/live/mx.test/fullchain.pem
+/tmp/madmail install --user-only "${repair_paths[@]}" \
+    --cert-path /etc/letsencrypt/live/mx.test/fullchain.pem > /tmp/user-le-tls.log
+[[ "$(stat -c '%U:%G' /etc/letsencrypt/archive/mx.test/fullchain1.pem)" = madmail:madmail ]]
+rm -r /srv/op-shared /etc/letsencrypt
 /tmp/madmail install --user-only "${repair_paths[@]}" > /tmp/user-repoint.log
 [[ "$(getent passwd madmail | cut -d: -f6)" = /var/xyzzy/lib/madmail ]]
 [[ "$(id -u madmail)" = "$repair_uid" ]]
@@ -593,7 +608,7 @@ reject 'does not exist, but state directory' /tmp/ghostmail install --simple --s
     --skip-systemd --ip 127.0.0.1 --tls-mode self_signed --config-dir /tmp/ghost-config \
     --state-dir /tmp/foreign-state --binary-path /tmp/ghost-bin
 [[ ! -e /tmp/ghost-config && ! -e /tmp/ghost-bin ]]
-echo 'PASS: state walk skips foreign files (hard-linked or renamed), planted links and files of a reused uid, follows a new service uid, never writes through an operator link into the tree, and --skip-user writes through descriptors'
+echo 'PASS: state walk skips foreign files (hard-linked or renamed), planted links and files of a reused uid, follows a new service uid, prints escaped names with quoted commands, does not enter another account'"'"'s directory, never writes through an operator link into the tree, chowns operator TLS files only in madmail or Let'"'"'s Encrypt directories, and --skip-user writes through descriptors'
 echo 'PASS: config hard-linked into the tree (before and during the walk) stays root:madmail 640, DKIM keys survive a failed run, root-owned in-tree TLS files are reported, and an in-tree config keeps the service owner with --skip-user'
 
 # Uninstall after an install with a shared --config-dir removes only the files
@@ -641,5 +656,27 @@ grep -q '^Left in place: /usr/local/etc/certs/fullchain.pem (TLS file' /tmp/unin
 absent_user madmail
 [[ -d /srv/shared-data ]]
 echo 'PASS: uninstall keeps a shared config directory and its other files and a shared state directory, removes the dedicated state directory'
+
+# A config directory inside the state directory goes with it: uninstall does
+# not remove it by path through the service-owned state directory, and does not
+# stop. With --keep-data it is listed as kept with the state directory.
+/tmp/madmail install --simple --system --ip 127.0.0.1 --tls-mode self_signed \
+    --non-interactive --config-dir /var/xyzzy/lib/madmail/etc --state-dir /var/xyzzy/lib/madmail \
+    --binary-path /var/xyzzy/bin/madmail > /tmp/in-tree-config-install.log
+[[ -f /var/xyzzy/lib/madmail/etc/madmail.conf ]]
+/tmp/madmail uninstall --dry-run --keep-data > /tmp/uninstall-in-tree-keep.log
+grep -qx 'Left in place: /var/xyzzy/lib/madmail/etc (inside state directory /var/xyzzy/lib/madmail, which --keep-data keeps)' /tmp/uninstall-in-tree-keep.log
+grep -qx 'Left in place: /var/xyzzy/lib/madmail/etc/madmail.conf (inside state directory /var/xyzzy/lib/madmail, which --keep-data keeps)' /tmp/uninstall-in-tree-keep.log
+if grep -q '^Config' /tmp/uninstall-in-tree-keep.log; then fail 'in-tree config planned for removal by path'; fi
+/tmp/madmail --json uninstall --force > /tmp/uninstall-in-tree.json
+python3 - /tmp/uninstall-in-tree.json <<'PYJSON'
+import json, sys
+envelope = [json.loads(l) for l in open(sys.argv[1]) if l.startswith('{')][-1]
+assert envelope['ok'] and envelope['data']['uninstalled'], envelope
+assert not [e for e in envelope['data']['left_in_place'] if e['path'].startswith('/var/xyzzy/lib/madmail')], envelope
+PYJSON
+[[ ! -e /var/xyzzy/lib/madmail && ! -e /etc/systemd/system/madmail.service ]]
+absent_user madmail
+echo 'PASS: uninstall removes a config directory inside the state directory with it, lists it as kept with --keep-data, and does not stop'
 echo 'PASS: complete Unix installer E2E matrix'
 INNER

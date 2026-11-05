@@ -1087,6 +1087,9 @@ fn physical(path: &Path) -> Option<PathBuf> {
 /// directory is kept. Repeats until nothing changes, since each downgrade adds
 /// a kept path.
 fn protect_preserved(plan: &mut UninstallPlan, keep_data: bool, keep_config: bool) {
+    if !keep_config {
+        prune_config_in_state_dirs(plan, keep_data);
+    }
     loop {
         let mut preserved: Vec<(PathBuf, &'static str)> = plan
             .kept
@@ -1192,10 +1195,12 @@ fn protect_preserved(plan: &mut UninstallPlan, keep_data: bool, keep_config: boo
 /// A config directory or file inside a state directory goes with that
 /// directory, so it gets no removal of its own: the path to it runs through a
 /// directory the service account owns, which is not trusted for a removal by
-/// path. Under `--keep-data` it is listed as kept with the state directory.
-/// Only a path that is inside the state directory both as written and with
-/// links resolved is dropped; any other is left to the removal step, which
-/// leaves it in place when the way to it is not trusted.
+/// path. A config path listed as kept there is dropped too, so it does not
+/// keep the state directory. Under `--keep-data` each is listed as kept with
+/// the state directory. Only a path that is inside the state directory both as
+/// written and with links resolved is dropped; any other is left to the
+/// removal step, which leaves it in place when the way to it is not trusted.
+/// [`protect_preserved`] runs this before and after its checks.
 fn prune_config_in_state_dirs(plan: &mut UninstallPlan, keep_data: bool) {
     let state_dirs = plan.state_dirs.clone();
     let inside = |path: &Path| state_dirs.iter().find(|d| contained(d, path)).cloned();
@@ -1209,6 +1214,18 @@ fn prune_config_in_state_dirs(plan: &mut UninstallPlan, keep_data: bool) {
             None => true,
         });
     }
+    plan.kept.retain(|k| {
+        if k.kind != KeptKind::Config {
+            return true;
+        }
+        match inside(&k.path) {
+            Some(dir) => {
+                moved.push((k.path.clone(), dir));
+                false
+            }
+            None => true,
+        }
+    });
     if keep_data {
         for (path, dir) in moved {
             add_kept(
@@ -2027,35 +2044,32 @@ mod tests {
         fs::create_dir_all(state_dir.join("messages")).unwrap();
         fs::write(config_dir.join("madmail.conf"), "x").unwrap();
 
-        // Also the case where both are the same directory: the config file is
-        // then inside the state directory that --keep-data keeps.
-        for state in [state_dir.clone(), config_dir.clone()] {
-            let mut plan = unit_plan(&[&config_dir.join("madmail.conf")], &[&state]);
-            plan_with(&mut plan, true, false);
-            assert!(plan.config_dirs.is_empty(), "{:?}", plan.config_dirs);
-            let kept = plan.kept.iter().find(|k| k.path == config_dir).unwrap();
-            assert_eq!(
-                kept.reason,
-                format!(
-                    "contains {}, which --keep-data keeps; only madmail.conf is removed",
-                    state.display()
-                )
-            );
-            if state == config_dir {
-                assert!(plan.config_files.is_empty(), "{:?}", plan.config_files);
-                let file = config_dir.join("madmail.conf");
-                let kept = plan.kept.iter().find(|k| k.path == file).unwrap();
-                assert_eq!(
-                    kept.reason,
-                    format!(
-                        "inside state directory {}, which --keep-data keeps",
-                        shown(&state)
-                    )
-                );
-            } else {
-                assert_eq!(plan.config_files, vec![config_dir.join("madmail.conf")]);
-            }
-        }
+        let mut plan = unit_plan(&[&config_dir.join("madmail.conf")], &[&state_dir]);
+        plan_with(&mut plan, true, false);
+        assert!(plan.config_dirs.is_empty(), "{:?}", plan.config_dirs);
+        assert_eq!(plan.config_files, vec![config_dir.join("madmail.conf")]);
+        let kept = plan.kept.iter().find(|k| k.path == config_dir).unwrap();
+        assert_eq!(
+            kept.reason,
+            format!(
+                "contains {}, which --keep-data keeps; only madmail.conf is removed",
+                state_dir.display()
+            )
+        );
+        // When both are the same directory, the config directory is inside
+        // the state directory that --keep-data keeps, and so stays whole.
+        let mut plan = unit_plan(&[&config_dir.join("madmail.conf")], &[&config_dir]);
+        plan_with(&mut plan, true, false);
+        assert!(plan.config_dirs.is_empty(), "{:?}", plan.config_dirs);
+        assert!(plan.config_files.is_empty(), "{:?}", plan.config_files);
+        let kept = plan.kept.iter().find(|k| k.path == config_dir).unwrap();
+        assert_eq!(
+            kept.reason,
+            format!(
+                "inside state directory {}, which --keep-data keeps",
+                shown(&config_dir)
+            )
+        );
 
         let mut plan = unit_plan(&[&config_dir.join("madmail.conf")], &[&state_dir]);
         plan_with(&mut plan, true, false);
@@ -2124,6 +2138,45 @@ mod tests {
                 shown(&state_dir)
             )
         );
+    }
+
+    #[test]
+    fn a_shared_config_dir_inside_the_state_dir_does_not_keep_it() {
+        // --config-dir <state>/etc: not named for madmail, so on its own only
+        // madmail.conf would be removed and the directory listed as kept.
+        let base = tempfile::tempdir().unwrap();
+        let state_dir = base.path().join("madmail");
+        let config_dir = state_dir.join("etc");
+        fs::create_dir_all(config_dir.join("certs")).unwrap();
+        fs::write(config_dir.join("madmail.conf"), "x").unwrap();
+        fs::write(config_dir.join("certs/privkey.pem"), "x").unwrap();
+        let config = config_dir.join("madmail.conf");
+
+        let mut plan = unit_plan(&[&config], &[&state_dir]);
+        plan_with(&mut plan, false, false);
+        assert_eq!(plan.state_dirs, vec![state_dir.clone()]);
+        assert!(plan.config_dirs.is_empty(), "{:?}", plan.config_dirs);
+        assert!(plan.config_files.is_empty(), "{:?}", plan.config_files);
+        assert!(plan.kept.is_empty(), "{:?}", plan.kept);
+
+        let mut plan = unit_plan(&[&config], &[&state_dir]);
+        plan_with(&mut plan, true, false);
+        assert!(plan.config_files.is_empty(), "{:?}", plan.config_files);
+        let why = format!(
+            "inside state directory {}, which --keep-data keeps",
+            shown(&state_dir)
+        );
+        for path in [
+            config_dir.clone(),
+            config.clone(),
+            config_dir.join("certs/privkey.pem"),
+        ] {
+            let kept = plan.kept.iter().find(|k| k.path == path).unwrap();
+            assert_eq!(
+                (kept.kind, kept.reason.as_str()),
+                (KeptKind::Config, why.as_str())
+            );
+        }
     }
 
     #[cfg(unix)]
