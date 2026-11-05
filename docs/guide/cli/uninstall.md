@@ -42,12 +42,20 @@ state directory in use: the `state_dir` of the config file uninstall reads
 `state_dir` from the config file is used only when these all hold:
 
 - the config file, and every directory and link on its path, is owned by root;
-- the config file is not group-writable unless its group is root;
-- no directory on the path is group-writable by a group of a service account
-  (the `User=` accounts of the units and the accounts named like the binary,
-  `madmail` or `chatmail`, with their supplementary groups). A directory
-  group-writable by another system group, such as `/var/log` on Ubuntu
-  (`root:syslog`, mode 0775), passes;
+- the config file has one hard link, and is not group-writable unless its group
+  is root;
+- no directory on the path is group-writable by a group of the service. These
+  groups are the primary and supplementary groups of the service accounts (the
+  `User=` accounts of the units and the accounts named like the binary,
+  `madmail` or `chatmail`), the group that owns the config file's directory, and
+  the group that owns the state directory (the one from the config file and the
+  one from `--state-dir`). When one of these accounts exists but its groups
+  cannot be read, the config file is not used;
+- no directory on the path is group-writable by any other group except root,
+  unless it has the sticky bit. Only `/var/log` and `/var/mail` (matched by
+  device and inode) may be group-writable by another system group, such as
+  `/var/log` on Ubuntu (`root:syslog`, mode 0775), and only when that group is
+  not a group of the service;
 - nothing on the path is world-writable (a directory with the sticky bit, such
   as `/tmp`, may be).
 
@@ -78,12 +86,19 @@ the directories listed below that are never removed as a whole.
 Some directories are never removed as a whole, whatever their source: `/`,
 `/etc`, `/usr`, `/usr/local`, `/usr/local/etc`, `/opt`, `/srv`, `/var`,
 `/var/lib`, `/var/log`, `/var/cache`, `/var/mail`, `/home`, `/root`, `/tmp` and
-other top-level system directories, every `/home/<name>`, and the home of root,
+other system directories, every directory directly under `/` (such as `/data` or
+`/madmail`), every `/home/<name>`, and the home of root,
 of each regular account (uid 1000 or more) in `/etc/passwd`, of `$HOME` and of the
 `sudo` caller. The service accounts being removed are excluded, because their
 home is the state directory. Both the path as written and its resolved form are
 checked. For a config file in such a directory (for example `/etc/madmail.conf`),
 only that file is removed.
+
+A config directory or file inside a state directory that is removed goes with
+that directory and gets no removal of its own. Under `--keep-data` it is left in
+place with the reason
+`inside state directory <path>, which --keep-data keeps`. Only a path that is
+inside the state directory both as written and with links resolved counts.
 
 `--keep-data` and `--keep-config` always hold. A directory that is, or contains,
 a path that stays (a path left in place, a state directory under `--keep-data`,
@@ -95,11 +110,15 @@ the state directory counts as being inside it. A path that cannot be resolved
 counts as inside.
 
 Before each removal, every directory and link on the way to the path must pass
-the same check as the config file above; otherwise uninstall stops with an error
-that names the failing component. The last component is not followed: a link is
-removed itself, not its target (the output says
+the same check as the config file above. When one does not, nothing is removed
+at that path, the output prints
+`⚠️  Left in place: <path> (<component> is <reason>; check it and remove the path yourself)`,
+and uninstall goes on with the next path. The path is listed again with the
+other paths left in place when uninstall finishes. The last component is not
+followed: a link is removed itself, not its target (the output says
 `Removed link <path> (its target <target> was left in place)`), and a directory is
-removed without following links inside it.
+removed through descriptors from its checked parent down, without following
+links inside it.
 
 `/run/<name>`, `/var/log/<name>` and `/var/cache/<name>` are removed for unit names
 and for the names of removed state directories that follow the naming rule above.
@@ -122,6 +141,7 @@ The plan, the final output (`Left in place: <path> (<reason>)`) and the JSON
 | Reason | Meaning |
 |--------|---------|
 | `well-known system directory` | A directory from the deny list, such as `/var/lib`. |
+| `top-level directory` | Any other direct child of `/`, such as `/data`. |
 | `user home directory` | `/home/<name>`, `/Users/<name>` or a real account's home. |
 | `shared directory, not named for madmail; remove it yourself` | A state directory that does not follow the naming rule. |
 | `<why>; only <binary>.conf is removed` | A config directory that is not removed as a whole; `<why>` is one of the two reasons above, `shared directory, not named for madmail`, or a `contains ...` reason below. |
@@ -131,6 +151,8 @@ The plan, the final output (`Left in place: <path> (<reason>)`) and the JSON
 | `contains <path>, which is left in place; remove the rest yourself` | A state, log, cache or runtime directory that contains a path left in place. |
 | `contains <path>, which --keep-config keeps; remove the rest yourself` | A state, log, cache or runtime directory that contains the config. |
 | `named by state_dir in <config>, which is not used: <why>` | `state_dir` from a config file that failed the check above. |
+| `inside state directory <path>, which --keep-data keeps` | A config directory or file inside a state directory kept by `--keep-data`. |
+| `<component> is <reason>; check it and remove the path yourself` | A path whose way runs through a directory or link that failed the check above. It is listed whatever `--keep-config` and `--keep-data` say. |
 
 For a config directory the `contains` reasons read
 `contains <path>, which is left in place` or

@@ -305,7 +305,9 @@ selects account/permission actions and leaves systemd actions false. See
 On Unix, a dry-run or completed uninstall returns its flags and the paths it left
 in place (`left_in_place`). The list holds the paths kept from the removal steps
 that run: config paths are listed unless `--keep-config` is given, and state paths
-unless `--keep-data` is given. It is empty when nothing was kept. See
+unless `--keep-data` is given. A path that a removal step left in place because a
+directory on its way failed the trust check is always listed. It is empty when
+nothing was kept. See
 [what is removed](uninstall.md#what-is-removed) and
 [the reasons](uninstall.md#reasons-for-paths-left-in-place). This is the result
 after an install with `--config-dir /usr/local/etc`:

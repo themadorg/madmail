@@ -441,12 +441,18 @@ directory in use, `/etc/madmail*` and `/etc/chatmail*`, `/var/lib/madmail*` and
 and `--config` path of every `madmail*`/`chatmail*` unit. The state directory in
 use is `state_dir` from the config file when the config file sets it, and
 `--state-dir` otherwise. `state_dir` from the config file is used only when the
-file and every directory and link on its path are owned by root, the file is not
-group-writable unless the group is root, no directory is writable by a group of a
-service account (the `User=` accounts of the units and the accounts named like
-the binary, `madmail` or `chatmail`, with their supplementary groups), and
-nothing is world-writable (a directory with the sticky bit, such as `/tmp`, may
-be); otherwise uninstall uses
+file and every directory and link on its path pass `Trust::root_or_caller` and
+the file has one hard link. That trust needs root as owner, refuses a file
+group-writable by a group other than root, and refuses a directory writable by
+a group of the service, writable by any other group except root without the
+sticky bit, or world-writable without the sticky bit. `/var/log` and `/var/mail`,
+matched by `(dev, ino)`, may be group-writable by a group that is not a group of
+the service. The groups of the service are the primary and supplementary groups
+of every account found (the `User=` accounts of the units and the accounts named
+like the binary, `madmail` or `chatmail`; read with `id -G`, and when an account
+exists but its groups cannot be read, the config file is not used), the group of
+the config file's directory and the groups of the state directories (from the
+config file and from `--state-dir`). Otherwise uninstall uses
 `--state-dir` and lists the ignored value as left in place, unless another source
 plans that directory for removal.
 
@@ -458,7 +464,8 @@ running binary's name, and it is not denied. From any other config directory onl
 but kept, since nothing records whether install generated them. Any other state
 directory is kept, also when it is given with `--state-dir`. Well-known system
 directories (`/`, `/etc`, `/usr`, `/usr/local`, `/usr/local/etc`, `/opt`, `/srv`,
-`/var`, `/var/lib`, `/home`, `/root`, `/tmp` and others), every `/home/<name>`, and
+`/var`, `/var/lib`, `/home`, `/root`, `/tmp` and others), every other direct child
+of `/` (`system_dir_reason`, shared with install), every `/home/<name>`, and
 the homes of root, regular accounts (uid 1000 or more except `nobody`), `$HOME` and
 `$SUDO_USER` are denied, checked both lexically and after resolution.
 
@@ -469,15 +476,26 @@ after resolving links in both (the longest existing prefix canonicalized), so a
 config directory that is a link into the state directory counts as inside it; a
 path that cannot be resolved counts as contained. Such a config directory loses
 only its config file; such a state, log, cache or runtime directory is kept.
+After that, `prune_config_in_state_dirs` drops every config directory and file
+that is inside a state directory both as written and after resolution: it goes
+with the state directory, and removing it by path would pass through the state
+directory, which the service account owns. Under `--keep-data` such a path is
+listed as kept (`inside state directory <path>, which --keep-data keeps`).
 Before each removal the parent of the path is resolved with the checked resolver
-under the same rule (a directory group-writable by a group outside the service
-accounts' groups, such as Ubuntu's `/var/log`, root:syslog 0775, passes); a path
-with a component that fails it is not removed, and uninstall stops with an error
-naming the component. The last
+under the same rule (Ubuntu's `/var/log`, root:syslog 0775, passes through the
+`(dev, ino)` allowance above); a path with a component that fails it is not
+removed: `remove_path` returns it as a `KeptKind::Refused` entry, the output
+prints `⚠️  Left in place: <path> (<component> is <reason>; check it and remove the path yourself)`,
+and the run goes on. Refused entries are shown at the end and in `left_in_place`
+whatever the keep flags. The last
 component is never followed: a link is removed itself (the output says
-`Removed link <path> (its target <target> was left in place)`), a file is unlinked through
-the parent's descriptor, and a directory is removed with `remove_dir_all`, which
-does not follow links inside it. `/run`, `/var/log` and `/var/cache` entries are
+`Removed link <path> (its target <target> was left in place)`, the target read
+with `readlinkat`), a file is unlinked through the parent's descriptor, and a
+directory is removed by `secure_fs::remove_dir_tree`: it opens each directory
+with `openat(O_NOFOLLOW | O_DIRECTORY)` relative to its parent, checks that the
+first one is the `(dev, ino)` just looked at, unlinks entries with `unlinkat`,
+re-lists a directory up to 8 times when entries keep appearing, and stops at a
+depth of 256. `/run`, `/var/log` and `/var/cache` entries are
 derived only from family names, and accounts are deleted with `userdel` without
 `-r`. The plan and, on Unix, the JSON result (`left_in_place`) list every path left
 in place with its reason.
