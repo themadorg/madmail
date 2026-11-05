@@ -24,6 +24,9 @@ FILES = (
     "Cargo.lock",
     "CHANGELOG.md",
 )
+# Optional: the Helm chart's version and appVersion follow the release version.
+HELM_CHART = "deploy/helm/madmail/Chart.yaml"
+CHART_FIELD = re.compile(r'(?m)^(version|appVersion):[ \t]*"?([^"\s#]*)"?[ \t]*$')
 REPOSITORY = "https://github.com/themadorg/madmail"
 
 
@@ -276,9 +279,33 @@ def verify_versions(root, packages):
         if len(entries) != 1:
             raise ReleaseError("Missing or ambiguous workspace lockfile package")
         values.append(entries[0]["version"])
+    chart = root / HELM_CHART
+    if chart.exists() or chart.is_symlink():
+        data[HELM_CHART] = read_file(root, HELM_CHART)
+        fields = chart_versions(data[HELM_CHART])
+        values.extend((fields["version"], fields["appVersion"]))
     if any(value != version for value in values):
         raise ReleaseError("Release manifests or workspace lockfile versions disagree")
     return version, data
+
+
+def chart_versions(text):
+    fields = {}
+    for match in CHART_FIELD.finditer(text):
+        if match[1] in fields:
+            raise ReleaseError(f"Duplicate {match[1]} in {HELM_CHART}")
+        fields[match[1]] = match[2]
+    if set(fields) != {"version", "appVersion"}:
+        raise ReleaseError(f"{HELM_CHART} needs top-level version and appVersion")
+    return fields
+
+
+def replace_chart_versions(text, version):
+    chart_versions(text)
+    return CHART_FIELD.sub(
+        lambda m: f'{m[1]}: "{version}"' if m[1] == "appVersion" else f"{m[1]}: {version}",
+        text,
+    )
 
 
 def planned_files(root, data, packages, version, notes):
@@ -314,6 +341,8 @@ def planned_files(root, data, packages, version, notes):
         data["Cargo.lock"],
     )
     updates["CHANGELOG.md"] = prepend_changelog(data["CHANGELOG.md"], version, notes)
+    if HELM_CHART in data:
+        updates[HELM_CHART] = replace_chart_versions(data[HELM_CHART], version)
     return updates
 
 

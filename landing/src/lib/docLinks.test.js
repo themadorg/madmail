@@ -34,6 +34,18 @@ test('Windows packaging links become GitHub blob URLs', () => {
 	assert.equal(resolveHref('../../../packaging/windows/README.md', ''), blob);
 });
 
+test('deploy links become GitHub blob URLs', () => {
+	const guide = 'content/docs/guide/kubernetes.md';
+	assert.equal(
+		resolveHref('../../deploy/helm/madmail/values.yaml', guide),
+		'https://github.com/themadorg/madmail/blob/main/deploy/helm/madmail/values.yaml'
+	);
+	assert.equal(
+		resolveHref('../../deploy/docker/', 'content/docs/guide/docker.md'),
+		'https://github.com/themadorg/madmail/blob/main/deploy/docker/'
+	);
+});
+
 test('user-guide links keep hashes and drop the .md suffix', () => {
 	assert.equal(
 		resolveHref('./17-customizing-html-pages.md#windows', USER_GUIDE),

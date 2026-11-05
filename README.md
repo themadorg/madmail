@@ -174,6 +174,8 @@ Documentation is organized by audience and purpose.
 ### Quick References
 
 - [Simple IP + ACME Installation](docs/install-simple-ip-acme.md) — IP-based install with Let's Encrypt TLS
+- [Docker & Docker Compose](docs/guide/docker.md) — Container image, `deploy/docker/compose.yaml`, TLS, ports
+- [Kubernetes (Helm)](docs/guide/kubernetes.md) — `deploy/helm/madmail` chart: StatefulSet, LoadBalancer or host networking, cert-manager
 - [Local Development Guide](docs/local-dev.md) — Developer setup, build, and testing workflow
 
 Documentation lives in the repository alongside the source code.

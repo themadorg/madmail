@@ -5,6 +5,7 @@ const REPO_ROOT_PREFIXES = new Set([
 	'assets',
 	'context',
 	'crates',
+	'deploy',
 	'external',
 	'packaging',
 	'scripts',
@@ -135,7 +136,7 @@ function normalizeMarkdownHref(href) {
 function repoPathFromHref(href) {
 	const cleaned = href.replace(/\\/g, '/');
 	const match = cleaned.match(
-		/(?:^|\/)((?:assets|context|crates|external|packaging|scripts|tests)\/\S+)$/
+		/(?:^|\/)((?:assets|context|crates|deploy|external|packaging|scripts|tests)\/\S+)$/
 	);
 	return match?.[1] ?? null;
 }

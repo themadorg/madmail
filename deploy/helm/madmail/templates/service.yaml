@@ -1,0 +1,84 @@
+{{- $s := .Values.service }}
+{{- $type := ternary "ClusterIP" $s.type .Values.hostNetwork }}
+{{- $all := include "madmail.ports" . | fromYamlArray }}
+{{- $tcp := list }}
+{{- $udp := list }}
+{{- range $all }}
+{{- if eq .protocol "UDP" }}{{ $udp = append $udp . }}{{ else }}{{ $tcp = append $tcp . }}{{ end }}
+{{- end }}
+{{- $services := list (dict "suffix" "" "ports" $all) }}
+{{- if $s.separateUdpService }}
+{{- $services = list (dict "suffix" "" "ports" $tcp) (dict "suffix" "-udp" "ports" $udp) }}
+{{- end }}
+{{- range $svc := $services }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "madmail.fullname" $ }}{{ $svc.suffix }}
+  labels:
+    {{- include "madmail.labels" $ | nindent 4 }}
+    {{- with $s.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $s.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $type }}
+  {{- if and (eq $type "LoadBalancer") $s.loadBalancerIP }}
+  loadBalancerIP: {{ $s.loadBalancerIP }}
+  {{- end }}
+  {{- if and (eq $type "LoadBalancer") $s.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml $s.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  {{- if and (has $type (list "LoadBalancer" "NodePort")) $s.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ $s.externalTrafficPolicy }}
+  {{- end }}
+  {{- with $s.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with $s.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if eq (include "madmail.tlsMode" $) "autocert" }}
+  # Route the first Let's Encrypt HTTP-01 challenge to the pod while the
+  # bootstrap init container runs (the pod is not Ready yet).
+  publishNotReadyAddresses: true
+  {{- end }}
+  selector:
+    {{- include "madmail.selectorLabels" $ | nindent 4 }}
+  ports:
+    {{- range $svc.ports }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .port }}
+      protocol: {{ .protocol }}
+    {{- end }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "madmail.fullname" . }}-headless
+  labels:
+    {{- include "madmail.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "madmail.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: smtp
+      port: 25
+      targetPort: 25
+      protocol: TCP
+    {{- if .Values.madmail.metrics.enabled }}
+    - name: metrics
+      port: {{ .Values.madmail.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+    {{- end }}
