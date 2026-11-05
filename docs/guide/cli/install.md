@@ -126,8 +126,9 @@ No `--simple`, `--non-interactive`, domain, IP or ACME options are needed.
   inside the state directory are never followed or chowned through: the state
   tree is walked by file descriptor, so an entry swapped for a link during the
   walk is skipped with a warning. A TLS or config path inside the state tree
-  (written below `--state-dir`, or with the path or one of its parent directories
-  resolving below it) is not chowned by path; the
+  (written below `--state-dir`, with the path or one of its parent directories
+  resolving below it, or reached through a link that points into it) is not
+  chowned by path; the
   walk gives it the service owner, and the output notes `Skipping ownership of
   <path>`. A symlinked state directory itself is resolved once. TLS paths outside
   the state tree, such as `/etc/madmail/certs` or an ACME client's live directory,

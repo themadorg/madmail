@@ -311,7 +311,9 @@ custom locations must be repeated. A cert, key, certs directory or config path i
 in the service tree when it is lexically below `--state-dir` or when it or any of
 its ancestors resolves below the resolved state directory (below such a component
 the service account controls the rest of the path, including a final link out of
-the tree); such paths are
+the tree). Links on the path are also followed one hop at a time (at most 40), so
+an operator link to a file in the tree stays in the tree after the service
+account replaces that file with a link out of it; such paths are
 not chowned by path, and the walk gives them the service owner. Paths outside the
 tree are in root-owned directories, so operator links there are followed. A passwd
 home that resolves to the same directory as `--state-dir` counts as equal to it. Systemd-only requires an existing config

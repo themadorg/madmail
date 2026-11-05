@@ -274,6 +274,17 @@ ln -s /var/xyzzy/lib/madmail/op-tls /tmp/op-tls
     --cert-path /tmp/op-tls/fullchain.pem > /tmp/user-op-tls.log
 grep -q 'Skipping ownership of /tmp/op-tls/fullchain.pem' /tmp/user-op-tls.log
 [[ "$(stat -c '%U:%G' /etc/shadow)" = "$shadow_owner" ]]
+# The same for a file-level operator link to a TLS file in the tree that the
+# service account replaced with a link out of it: resolving the whole path ends
+# at /etc/shadow, but the operator link's first hop lands in the tree.
+mkdir /var/xyzzy/lib/madmail/op-file
+ln -s /etc/shadow /var/xyzzy/lib/madmail/op-file/fullchain.pem
+ln -s /var/xyzzy/lib/madmail/op-file/fullchain.pem /tmp/op-file.pem
+/tmp/madmail install --user-only "${repair_paths[@]}" \
+    --cert-path /tmp/op-file.pem > /tmp/user-op-file.log
+grep -q 'Skipping ownership of /tmp/op-file.pem' /tmp/user-op-file.log
+[[ "$(stat -c '%U:%G' /etc/shadow)" = "$shadow_owner" ]]
+rm -r /var/xyzzy/lib/madmail/op-file /tmp/op-file.pem
 [[ "$(stat -c '%U:%G' /etc)" = root:root && "$(stat -c '%U' /etc/passwd)" = root ]]
 [[ "$(stat -c '%U:%G' /var/xyzzy/lib/madmail/nested/deeper)" = madmail:madmail ]]
 [[ "$(stat -c '%U' /var/xyzzy/lib/madmail/nested/deeper/planted-passwd)" = root ]]

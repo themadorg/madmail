@@ -374,18 +374,84 @@ impl<'a> ServiceTree<'a> {
     /// ancestor matters: below a component that resolves into the tree, the
     /// service account controls the rest of the path, including a final link
     /// that would make the whole path resolve elsewhere (such as `/etc/shadow`).
+    ///
+    /// Resolving a whole ancestor only shows where the last hop ends, so each
+    /// link on the way is also followed one hop at a time: an operator link to
+    /// a file in the tree (`/etc/madmail/certs/fullchain.pem` pointing at
+    /// `<state>/certs/fullchain.pem`) is in the tree even after the service
+    /// account has replaced that file with a link out of it. At most
+    /// [`MAX_LINK_HOPS`] links are followed for one path.
+    ///
     /// Resolving follows links, but only to decide that root must not touch the
     /// path here, which is the safe direction.
     fn contains(&self, path: &Path) -> bool {
-        if path.starts_with(self.state_dir) {
+        let mut hops = MAX_LINK_HOPS;
+        self.contains_within(path, &mut hops)
+    }
+
+    fn contains_within(&self, path: &Path, hops: &mut usize) -> bool {
+        if self.lexically_inside(path) {
             return true;
         }
-        let Some(canonical) = &self.canonical else {
-            return false;
-        };
-        path.ancestors()
-            .any(|p| fs::canonicalize(p).is_ok_and(|r| r.starts_with(canonical)))
+        for ancestor in path.ancestors() {
+            if let Some(canonical) = &self.canonical {
+                if fs::canonicalize(ancestor).is_ok_and(|r| r.starts_with(canonical)) {
+                    return true;
+                }
+            }
+            let is_link = fs::symlink_metadata(ancestor).is_ok_and(|m| m.file_type().is_symlink());
+            if !is_link || *hops == 0 {
+                continue;
+            }
+            *hops -= 1;
+            let Ok(target) = fs::read_link(ancestor) else {
+                continue;
+            };
+            // A relative target is resolved against the link's directory; the
+            // part of `path` below the link follows the target.
+            let base = ancestor.parent().unwrap_or(Path::new("/"));
+            let mut next = base.join(target);
+            if let Ok(rest) = path.strip_prefix(ancestor) {
+                if !rest.as_os_str().is_empty() {
+                    next.push(rest);
+                }
+            }
+            if self.contains_within(&next, hops) {
+                return true;
+            }
+        }
+        false
     }
+
+    /// Lexically below the configured or the resolved state directory, as
+    /// written or with `.` and `..` removed.
+    fn lexically_inside(&self, path: &Path) -> bool {
+        let normalized = lexical_normalize(path);
+        [path, normalized.as_path()].iter().any(|p| {
+            p.starts_with(self.state_dir)
+                || self.canonical.as_ref().is_some_and(|c| p.starts_with(c))
+        })
+    }
+}
+
+/// Links followed one hop at a time by [`ServiceTree::contains`] for one path,
+/// as for the kernel's own limit on nested links (`ELOOP`).
+const MAX_LINK_HOPS: usize = 40;
+
+/// Remove `.` and resolve `..` lexically (without looking at the file system).
+fn lexical_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// A passwd home that resolves to the state directory is already correct, so it
@@ -714,6 +780,25 @@ mod tests {
         symlink(outside.join("shadow"), data.join("certs/fullchain.pem")).unwrap();
         assert!(tree.contains(&links.join("etc-certs/fullchain.pem")));
         assert!(!tree.contains(&links.join("other.pem")));
+        // A file-level operator link to a file in the tree, which the service
+        // account then replaced with a link out of it: resolving the whole path
+        // ends outside, but the first hop lands in the tree.
+        symlink(data.join("certs/fullchain.pem"), links.join("op-cert.pem")).unwrap();
+        assert_eq!(
+            fs::canonicalize(links.join("op-cert.pem")).unwrap(),
+            outside.join("shadow")
+        );
+        assert!(tree.contains(&links.join("op-cert.pem")));
+        // The same through a relative link and a configured (not resolved) path.
+        symlink("state/certs/fullchain.pem", links.join("op-rel.pem")).unwrap();
+        assert!(tree.contains(&links.join("op-rel.pem")));
+        // An operator link to a file outside the tree stays outside.
+        symlink(outside.join("shadow"), links.join("op-out.pem")).unwrap();
+        assert!(!tree.contains(&links.join("op-out.pem")));
+        // A link loop ends after the hop limit instead of recursing forever.
+        symlink(links.join("loop-b"), links.join("loop-a")).unwrap();
+        symlink(links.join("loop-a"), links.join("loop-b")).unwrap();
+        assert!(!tree.contains(&links.join("loop-a/x.pem")));
         // A missing state directory has no resolved form; only lexical checks apply.
         let missing = ServiceTree::new(Path::new("/nonexistent-madmail-state"));
         assert!(missing.contains(Path::new("/nonexistent-madmail-state/certs/a.pem")));
