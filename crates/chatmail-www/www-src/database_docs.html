@@ -27,6 +27,15 @@
     <link rel="stylesheet" href="/main.css">
     <script src="/translations.js"></script>
     <script src="/main.js"></script>
+    <style>
+        [data-db-guide] .db-choices { margin: 20px 0; }
+        [data-db-guide] .db-choices[hidden] { display: none; }
+        [data-db-guide] .db-choices fieldset { border: 0; padding: 0; margin: 12px 0; }
+        [data-db-guide] .db-choices legend { margin-bottom: 8px; font-weight: 600; }
+        [data-db-guide] .db-choices button { margin: 0 0 6px 6px; }
+        [data-db-guide] .db-choices button[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); }
+        [data-db-guide] .db-choices button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+    </style>
 </head>
 
 <body>
@@ -144,29 +153,113 @@ madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail 
         <p>El servidor puede mantener en RAM una copia de credenciales y cuotas. Si cambia la base con la CLI mientras el demonio sigue en marcha, llame <code>POST /admin/cache/reload</code> o reinicie el servicio.</p>
     </div>
 
-    <div class="card card--wide" id="doc-content-fa" style="display:none;">
-        <h1>پیکربندی پایگاه داده</h1>
-        <p><strong>Madmail</strong> حساب‌ها، تنظیمات، سهمیه، توکن‌ها و فدراسیون را در <strong>یک</strong> پایگاه SQL نگه می‌دارد: <strong>SQLite</strong> (پیش‌فرض) یا <strong>PostgreSQL</strong>. متن نامه روی دیسک است (Maildir). صفحات اشتراک مخاطب <code>sharing.db</code> است (همیشه SQLite).</p>
+    <div class="card card--wide" id="doc-content-fa" data-db-guide style="display:none;">
+        <h1>نصب PostgreSQL و انتقال از SQLite</h1>
+        <p>Madmail از <strong>SQLite</strong> (پیش‌فرض) و <strong>PostgreSQL</strong> پشتیبانی می‌کند؛ <strong>MySQL فعلا پشتیبانی نمی‌شود</strong>. این راهنما برای Madmail v2 است؛ Madmail روی میزبان نصب است و PostgreSQL را روی همان سرور، با Docker یا به‌صورت مستقیم نصب می‌کنید.</p>
+        <p>حساب‌ها، تنظیمات و سهمیه‌ها در پایگاه دادهٔ برنامه ذخیره می‌شوند. نامه‌ها در Maildir و صفحه‌های اشتراک مخاطب در <code>sharing.db</code> می‌مانند.</p>
 
-        <div class="alert alert--warning">
-            <p><strong>MySQL پشتیبانی نمی‌شود.</strong> عوض کردن <code>driver</code> فایل SQLite را کپی نمی‌کند. بعد از ویرایش <code>driver</code> / <code>dsn</code> باید <strong>ری‌استارت</strong> کنید — <code>madmail reload</code> پایگاه را دوباره باز نمی‌کند.</p>
+        <h2>۱. نصب PostgreSQL: یکی از دو روش</h2>
+        <p>فقط یکی از روش‌های زیر را انتخاب کنید. رمزهای نمونه را با رمز تصادفی بلند از حروف و عدد عوض کنید تا نیاز به تغییر نقل‌قول‌های دستورها نباشد؛ رمز کاربر <code>madmail</code> باید در مرحله‌های بعد یکسان باشد.</p>
+
+
+        <div class="db-choices" data-db-choices hidden>
+            <fieldset>
+                <legend>سیستم‌عامل سرور</legend>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="os" data-value="debian" aria-pressed="true">Debian</button>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="os" data-value="ubuntu" aria-pressed="false">Ubuntu</button>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="os" data-value="fedora" aria-pressed="false">Fedora</button>
+            </fieldset>
+            <fieldset>
+                <legend>روش نصب PostgreSQL</legend>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="method" data-value="docker" aria-pressed="true">Docker</button>
+                <button type="button" class="btn btn--secondary btn--sm" data-db-choice="method" data-value="native" aria-pressed="false">مدیر بستهٔ سیستم‌عامل</button>
+            </fieldset>
         </div>
+        <section data-db-method="docker">
+        <h3>روش اول: Docker</h3>
+        <p>Docker باید نصب و فعال باشد و پورت ۵۴۳۲ میزبان آزاد باشد. این دستور PostgreSQL 17 را با فضای ذخیره‌سازی پایدار اجرا می‌کند؛ پورت ۵۴۳۲ فقط روی همین میزبان در دسترس است.</p>
+        <pre id="postgres-docker-install"><code>sudo docker volume create madmail-postgres-data
+sudo docker run -d --name madmail-postgres --restart unless-stopped \
+    -p 127.0.0.1:5432:5432 \
+    -e POSTGRES_PASSWORD=choose-postgres-secret \
+    -v madmail-postgres-data:/var/lib/postgresql/data \
+    postgres:17</code></pre>
+        <p>تا نمایش <code>accepting connections</code> صبر کنید و در صورت نیاز دوباره اجرا کنید:</p>
+        <pre id="postgres-docker-ready"><code>sudo docker exec madmail-postgres pg_isready -h 127.0.0.1 -U postgres</code></pre>
+        <p>داده‌ها در volume می‌مانند؛ آن را حذف نکنید و جداگانه از PostgreSQL پشتیبان بگیرید. برای این روش، به نصب PostgreSQL روی میزبان نیازی نیست.</p>
 
-        <h2>SQLite (پیش‌فرض)</h2>
-        <p><code>madmail install</code> همیشه <code>driver sqlite3</code> می‌نویسد.</p>
-        <pre><code>auth.pass_table local_authdb {
-    table sql_table {
-        driver sqlite3
-        dsn /var/lib/madmail/credentials.db
-        table_name passwords
-    }
-}</code></pre>
+        </section>
 
-        <h2>PostgreSQL (پایگاه خالی)</h2>
-        <p>یک پایگاه خالی بسازید. همان DSN را در <code>auth.pass_table</code> و <code>storage.imapsql</code> بگذارید و ری‌استارت کنید.</p>
-        <pre><code>CREATE USER madmail WITH PASSWORD 'choose-a-secret';
-CREATE DATABASE madmail OWNER madmail;</code></pre>
-        <pre><code>auth.pass_table local_authdb {
+        <section data-db-method="native">
+        <h3>نصب با مدیر بستهٔ سیستم‌عامل</h3>
+        <div data-db-os="debian ubuntu">
+        <p><strong>Debian / Ubuntu:</strong></p>
+        <pre id="postgres-debian-install"><code>sudo apt-get update
+sudo apt-get install -y postgresql postgresql-client
+sudo systemctl enable --now postgresql</code></pre>
+        </div>
+        <div data-db-os="fedora">
+        <p><strong>Fedora:</strong> مقداردهی اولیه را فقط برای نصب تازه اجرا کنید.</p>
+        <pre id="postgres-fedora-install"><code>sudo dnf install -y postgresql-server postgresql
+sudo postgresql-setup --initdb</code></pre>
+        <p>در Fedora، فایل <code>/var/lib/pgsql/data/pg_hba.conf</code> را باز کنید و روش احراز هویتِ خط موجود برای <code>127.0.0.1/32</code> را به شکل زیر تغییر دهید:</p>
+        <pre id="postgres-fedora-auth"><code>host    all    all    127.0.0.1/32    scram-sha-256</code></pre>
+        <pre id="postgres-fedora-start"><code>sudo systemctl enable --now postgresql</code></pre>
+
+        </div>
+        </section>
+
+        <p class="text-sm text-muted">راهنمای رسمی: <a href="https://hub.docker.com/_/postgres">PostgreSQL در Docker</a> · <a href="https://developer.fedoraproject.org/tech/database/postgresql/about.html">PostgreSQL در Fedora</a></p>
+
+        <h2>۲. ساخت کاربر و پایگاه داده</h2>
+        <p>با توجه به روش نصب، یکی از دستورهای زیر را اجرا کنید:</p>
+        <div data-db-method="native">
+        <p><strong>نصب مستقیم:</strong></p>
+        <pre id="postgres-native-psql"><code>sudo -u postgres psql -v ON_ERROR_STOP=1</code></pre>
+        </div>
+        <div data-db-method="docker">
+        <p><strong>Docker:</strong></p>
+        <pre id="postgres-docker-psql"><code>sudo docker exec -it madmail-postgres psql -U postgres -v ON_ERROR_STOP=1</code></pre>
+        </div>
+        <p>سپس این دستورهای SQL را وارد کنید؛ <code>choose-a-secret</code> رمز کاربر Madmail است:</p>
+        <pre id="postgres-create-database"><code>CREATE USER madmail WITH PASSWORD 'choose-a-secret';
+CREATE DATABASE madmail OWNER madmail;
+\q</code></pre>
+        <p>اتصال و رمز را بررسی کنید؛ رمز کاربر Madmail را هنگام درخواست وارد کنید.</p>
+        <div data-db-method="native">
+        <p><strong>نصب مستقیم:</strong></p>
+        <pre id="postgres-native-connect"><code>psql -h 127.0.0.1 -U madmail -d madmail -W -c 'SELECT current_user, current_database();'</code></pre>
+        </div>
+        <div data-db-method="docker">
+        <p><strong>Docker:</strong></p>
+        <pre id="postgres-docker-connect"><code>sudo docker exec -it madmail-postgres psql -h 127.0.0.1 -U madmail -d madmail -W -c 'SELECT current_user, current_database();'</code></pre>
+        </div>
+        <p>از اینجا به بعد، تنظیمات و فرمان‌های انتقال برای هر دو روش یکسان است.</p>
+
+        <h2>۳. توقف و پشتیبان‌گیری</h2>
+        <p>Madmail باید از قبل نصب شده باشد. مسیرهای زیر پیش‌فرض‌اند؛ اگر <code>state_dir</code> یا مسیر پیکربندی شما متفاوت است، مسیرهای نمونه را تغییر دهید. ابتدا سرویس را متوقف کنید و از پوشهٔ داده‌ها و فایل پیکربندی پشتیبان بگیرید.</p>
+        <pre id="madmail-backup"><code>sudo systemctl stop madmail
+sudo tar -czf /root/madmail-before-postgres.tar.gz /etc/madmail /var/lib/madmail</code></pre>
+        <p>این فرمان فقط دو مسیر نوشته‌شده را پشتیبان می‌گیرد. اگر فایل SQLite یا داده‌های شما جای دیگری است، مسیر آن‌ها را هم اضافه کنید. پشتیبان را در جای امن نگه دارید و برای هر انتقال نامی متفاوت بگذارید.</p>
+
+        <h2>۴. انتقال داده‌های SQLite</h2>
+        <p>برای نصب تازه، این مرحله را رد کنید. برای سرور موجود، در تنظیمات فعلی مسیر <code>dsn</code> را در <code>auth.pass_table</code> ← <code>table sql_table</code> پیدا کنید؛ در مثال زیر <code>/var/lib/madmail/credentials.db</code> است.</p>
+        <pre id="madmail-migrate"><code>sudo madmail --config /etc/madmail/madmail.conf db sqlite-to-postgres \
+    --sqlite /var/lib/madmail/credentials.db \
+    --dsn 'host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable' --dry-run
+
+sudo madmail --config /etc/madmail/madmail.conf db sqlite-to-postgres \
+    --sqlite /var/lib/madmail/credentials.db \
+    --dsn 'host=127.0.0.1 port=5432 user=madmail password=choose-a-secret dbname=madmail sslmode=disable' -y</code></pre>
+        <p><code>--dry-run</code> فقط ردیف‌های SQLite را می‌شمارد و اتصال به PostgreSQL را بررسی نمی‌کند. فرمان دوم ساختار جدول‌ها را می‌سازد و داده‌ها را کپی می‌کند. تعداد ردیف‌های مبدأ و کپی‌شده را در خروجی مقایسه کنید.</p>
+        <div class="alert alert--warning">
+            <p>از یک پایگاه دادهٔ تازه و خالی استفاده کنید. اگر ابزار خطای پر بودن مقصد را داد، پایگاه تازه‌ای بسازید. <code>--force</code> داده‌های قبلیِ جدول‌های قابل انتقال را از مقصد پاک می‌کند؛ برای این راهنما از آن استفاده نکنید.</p>
+        </div>
+        <p>ابزار داخلی Madmail ساختار جدول‌ها را می‌شناسد؛ نیازی به <code>pgloader</code> نیست. Maildir، صف ارسال، <code>admin_token</code> و <code>sharing.db</code> کپی نمی‌شوند و در همان پوشه می‌مانند. فایل تنظیمات هم خودکار تغییر نمی‌کند.</p>
+
+        <h2>۵. تغییر تنظیمات</h2>
+        <p>در <code>/etc/madmail/madmail.conf</code>، مقدار <code>driver</code> و <code>dsn</code> را در <strong>هر دو بلوک موجود</strong> مثل زیر تغییر دهید؛ بقیهٔ گزینه‌ها را نگه دارید و بلوک تکراری نسازید.</p>
+        <pre id="madmail-postgres-config"><code>auth.pass_table local_authdb {
     auto_create yes
     jit_domain $(primary_domain)
     table sql_table {
@@ -184,14 +277,17 @@ storage.imapsql local_mailboxes {
     default_quota 1G
     appendlimit 100M
 }</code></pre>
+        <p>در v2، هر دو بخش از یک پایگاه داده استفاده می‌کنند. نمونهٔ <code>sslmode=disable</code> فقط برای اتصال محلی این راهنماست؛ برای سرور راه دور TLS را تنظیم کنید. رمز داخل DSN در فایل تنظیمات و تاریخچهٔ فرمان‌ها دیده می‌شود؛ دسترسی به آن‌ها را محدود کنید.</p>
 
-        <h2>کپی SQLite به PostgreSQL</h2>
-        <pre><code>madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' --dry-run
-madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail sslmode=disable' -y</code></pre>
-        <p>اول سرویس را متوقف کنید. فقط جداول برنامه کپی می‌شوند. بعد <code>driver postgres</code> را بگذارید و سرویس را روشن کنید. اگر Postgres از قبل رمز عبور داشته باشد <code>--force</code> لازم است.</p>
+        <h2>۶. راه‌اندازی و بررسی</h2>
+        <pre id="madmail-start"><code>sudo systemctl start madmail
+sudo systemctl status madmail --no-pager
+sudo madmail --config /etc/madmail/madmail.conf accounts status</code></pre>
+        <p>تعداد حساب‌ها را بررسی کنید و با یک حساب قبلی وارد برنامهٔ ایمیل شوید. در صورت خطا، گزارش سرویس را ببینید:</p>
+        <pre><code>sudo journalctl -u madmail -n 50 --no-pager</code></pre>
+        <p>در نصب تازه، اولین اجرا جدول‌ها را خودکار می‌سازد. تغییر <code>driver</code> به‌تنهایی داده‌ها را منتقل نمی‌کند و <code>madmail reload</code> هم اتصال پایگاه داده را عوض نمی‌کند؛ سرویس باید دوباره راه‌اندازی شود.</p>
+        <p>اگر انتقال ناموفق بود، سرویس را متوقف نگه دارید و تنظیمات قبلی SQLite را برگردانید. تا پایان بررسی، فایل SQLite و نسخهٔ پشتیبان را حذف نکنید. اگر داده‌های جدیدی در PostgreSQL ثبت شود، بازگشت به SQLite آن‌ها را منتقل نمی‌کند.</p>
 
-        <h2>کش حافظه در برابر دیتابیس روی دیسک</h2>
-        <p>سرور ممکن است اعتبارنامه و سهمیه را در RAM نگه دارد. اگر با CLI در حال اجرا دیتابیس را عوض کردید، <code>POST /admin/cache/reload</code> بزنید یا سرویس را ری‌استارت کنید.</p>
     </div>
 
     <script>
@@ -205,6 +301,33 @@ madmail db sqlite-to-postgres --dsn 'host=127.0.0.1 user=madmail dbname=madmail 
                 document.getElementById('doc-content-es').style.display = '';
             }
         };
+    </script>
+    <script>
+        (function () {
+            const guide = document.querySelector('[data-db-guide]');
+            if (!guide) return;
+            const selection = { os: 'debian', method: 'docker' };
+            const buttons = guide.querySelectorAll('[data-db-choice]');
+            function update() {
+                buttons.forEach(function (button) {
+                    button.setAttribute('aria-pressed', String(selection[button.dataset.dbChoice] === button.dataset.value));
+                });
+                guide.querySelectorAll('[data-db-method]').forEach(function (panel) {
+                    panel.hidden = panel.dataset.dbMethod !== selection.method;
+                });
+                guide.querySelectorAll('[data-db-os]').forEach(function (panel) {
+                    panel.hidden = !panel.dataset.dbOs.split(' ').includes(selection.os);
+                });
+            }
+            buttons.forEach(function (button) {
+                button.addEventListener('click', function () {
+                    selection[button.dataset.dbChoice] = button.dataset.value;
+                    update();
+                });
+            });
+            update();
+            guide.querySelector('[data-db-choices]').hidden = false;
+        })();
     </script>
 </body>
 

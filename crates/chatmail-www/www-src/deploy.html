@@ -54,7 +54,7 @@
 
         <h3 class="mt-lg" data-i18n="deploy_install_title">Installation command (first time):</h3>
         <p data-i18n="deploy_install_desc">The command below is designed for simple installation that only needs an IP and open ports:</p>
-        <div class="code-block">wget http://{{.PublicIP}}/madmail && chmod +x madmail && sudo ./madmail install --simple && sudo systemctl start madmail</div>
+        <div class="code-block" id="deploy-install-command">wget https://{{.WebDomain}}/madmail && chmod +x madmail && sudo ./madmail install --simple && sudo systemctl start madmail</div>
 
         <p data-i18n="deploy_install_note">When running the above command, you will be asked some questions. For example on this server, I entered the server IP for both options:</p>
         <div class="code-block">Primary domain (e.g., example.org) [example.org]: {{.PublicIP}}
@@ -70,13 +70,13 @@ sudo ./madmail install --simple --lang en    # English (default)</div>
 
         <h3 class="mt-lg" data-i18n="deploy_update_title">Update command:</h3>
         <p data-i18n="deploy_update_desc">To update an existing server, use this command:</p>
-        <div class="code-block">sudo madmail update http://{{.PublicIP}}/madmail</div>
-        <p class="text-sm text-muted" data-i18n="deploy_update_note">This command downloads the binary (max 100MB), verifies its digital signature, stops the service, replaces the binary, and restarts automatically. Works with both HTTP and HTTPS URLs.</p>
+        <div class="code-block" id="deploy-update-command">sudo madmail update https://{{.WebDomain}}/madmail</div>
+        <p class="text-sm text-muted" data-i18n="deploy_update_note">This command downloads the binary (max 100MB), verifies its digital signature, stops the service, replaces the binary, and restarts automatically. Use an HTTPS download URL.</p>
 
         <div class="alert alert--danger mt-lg">
             <strong data-i18n="deploy_important_title">Very important notes:</strong>
             <ul>
-                <li data-i18n-html="deploy_important_ip">In the commands above, this server's IP is used. You can use any other Madmail server's IP to download the file.</li>
+                <li data-i18n-html="deploy_important_ip">The commands use this website’s HTTPS URL. You can also use another Madmail server’s HTTPS download URL.</li>
                 <li data-i18n-html="deploy_important_ports">Make sure ports <strong>HTTP (80)</strong>, <strong>SMTP (25)</strong>, and <strong>IMAP (143/993)</strong> are open on your server's firewall.</li>
                 <li data-i18n-html="deploy_important_config">After installation, the config file is located at <code>/etc/maddy/maddy.conf</code>. You can edit this file to change settings.</li>
             </ul>
@@ -99,6 +99,12 @@ sudo ./madmail install --simple --lang en    # English (default)</div>
 
     <script>
         window.onload = function() {
+            const download = new URL('/madmail', window.location.href);
+            download.protocol = 'https:';
+            document.getElementById('deploy-install-command').textContent =
+                'wget ' + download.href + ' && chmod +x madmail && sudo ./madmail install --simple && sudo systemctl start madmail';
+            document.getElementById('deploy-update-command').textContent =
+                'sudo madmail update ' + download.href;
             applyTranslations("{{.Language}}");
             document.title = t('nav_deploy') + ' — {{.MailDomain}}';
         };

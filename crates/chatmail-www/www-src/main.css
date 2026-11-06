@@ -20,6 +20,7 @@
 /* ── Color System ── */
 
 :root {
+  color-scheme: light dark;
   --background: #ffffff;
   --foreground: #0a0a0a;
   --card: #ffffff;
@@ -136,6 +137,8 @@ pre {
   padding: 14px;
   border-radius: 0.375rem;
   overflow-x: auto;
+  scrollbar-color: var(--muted) var(--code-bg);
+  scrollbar-width: thin;
   direction: ltr;
   text-align: left;
   border: 1px solid var(--card-border);

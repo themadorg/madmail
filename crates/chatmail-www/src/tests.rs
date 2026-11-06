@@ -1280,3 +1280,50 @@ async fn ipv6_existing_bare_account_is_shared_by_page_new_and_login() {
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().all(|(user, _)| user.ends_with("@2001:db8::1")));
 }
+
+#[tokio::test]
+async fn documentation_follows_admin_language_even_with_reader_query() {
+    use axum::body::{to_bytes, Body};
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    for language in ["fa", "en", "ru", "es"] {
+        set_setting(&pool, settings_keys::LANGUAGE, language)
+            .await
+            .unwrap();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let router = crate::www_router(crate::WwwState::new(
+            pool.clone(),
+            app,
+            AppConfig::default(),
+            dir.path(),
+        ));
+        for uri in [
+            "/docs/database",
+            "/docs/database?lang=en",
+            "/docs/database?lang=fa",
+            "/docs/",
+        ] {
+            let response = router
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let html = String::from_utf8(
+                to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap()
+                    .to_vec(),
+            )
+            .unwrap();
+            assert!(
+                html.contains(&format!("lang=\"{language}\"")),
+                "{uri}: {language}"
+            );
+            assert!(!html.contains("document-languages"));
+        }
+    }
+}
