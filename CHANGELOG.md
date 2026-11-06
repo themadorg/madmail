@@ -1,3 +1,9 @@
+# [2.44.1](https://github.com/themadorg/madmail/compare/v2.44.0-unstable...v2.44.1-unstable) (2026-11-06)
+
+### Bug Fixes
+
+* **landing:** add agent discovery response headers via Cloudflare ([dafa8da](https://github.com/themadorg/madmail/commit/dafa8da64c215d79066ff2ae1bff8ef0e769cd98))
+
 # [2.44.0](https://github.com/themadorg/madmail/compare/v2.43.0-unstable...v2.44.0-unstable) (2026-11-06)
 
 ### Features
