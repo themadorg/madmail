@@ -1,3 +1,16 @@
+# [2.44.0](https://github.com/themadorg/madmail/compare/v2.43.0-unstable...v2.44.0-unstable) (2026-11-06)
+
+### Features
+
+* **www:** filter Persian database guide by OS and install method ([7683460](https://github.com/themadorg/madmail/commit/768346042b0923b5a6c800e6543941653d23f9df))
+* **www:** switch documentation between available languages ([8690245](https://github.com/themadorg/madmail/commit/869024587d97916566b19a7b9008dfa3572e9f8a))
+
+### Bug Fixes
+
+* **www:** follow admin language for documentation ([2f58441](https://github.com/themadorg/madmail/commit/2f5844194f5473faccdb9d24c3bb566e46dbd6eb))
+* **www:** match scrollbars to the page theme ([6fead80](https://github.com/themadorg/madmail/commit/6fead80df9b5b06127e87d0ad8b1aaff3eb71309))
+* **www:** use complete HTTPS URLs in deployment commands ([9dede08](https://github.com/themadorg/madmail/commit/9dede088212686c74728ccb49b8792b8103f3b79))
+
 # [2.43.0](https://github.com/themadorg/madmail/compare/v2.42.0-unstable...v2.43.0-unstable) (2026-11-05)
 
 ### Features
