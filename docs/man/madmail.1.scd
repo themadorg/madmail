@@ -138,6 +138,15 @@ Extended documentation:
 	when required — the default *amd64* build is not universal).
 	After replace, may prompt to convert custom *www_dir* Go templates
 	to Minijinja (see *html\-migrate*).
+	Also points a legacy *maddy* command and unit at the stable binary.
+
+*legacy\-migrate*
+	Point an existing *maddy* command and systemd unit at the active
+	*madmail* binary. *upgrade* and *update* do this themselves.
+	Use this once when an older updater left *maddy.service* on the
+	previous executable. Config, state, and accounts stay in place.
+	Requires root on Linux. Refuses when more than one Madmail install
+	is exposed as a service, or when *ExecStart* is not a single command.
 
 *reload*
 	Apply database configuration overrides and restart via the admin API.

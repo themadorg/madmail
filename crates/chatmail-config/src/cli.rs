@@ -76,6 +76,14 @@ pub enum Command {
         #[arg(long = "accept-unsafe-https")]
         accept_unsafe_https: bool,
     },
+    /// Point a legacy `maddy` command and systemd unit at the active `madmail` binary.
+    ///
+    /// One-time entry for an install whose older `maddy upgrade` stored the new
+    /// release at `/usr/local/bin/madmail` and left `maddy.service` on the old
+    /// executable. `upgrade` and `update` do this themselves when the new binary
+    /// is the program that runs them.
+    #[command(name = "legacy-migrate")]
+    LegacyMigrate,
     /// Manage versioned installs under the platform install root (`/opt/madmail` or `%ProgramFiles%\\Madmail`).
     #[command(subcommand)]
     Versions(VersionsCommand),
@@ -1155,6 +1163,12 @@ fn clear_install_path_flag_bleed(cli: &mut Cli) {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn legacy_migrate_parses_without_arguments() {
+        let cli = Cli::try_parse_from(["madmail", "legacy-migrate"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::LegacyMigrate)));
+    }
 
     #[test]
     fn upgrade_and_update_accept_url_or_path() {

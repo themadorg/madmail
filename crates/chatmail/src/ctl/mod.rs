@@ -39,6 +39,7 @@ mod html;
 mod install;
 mod iroh;
 mod language;
+mod legacy_migrate;
 mod message_size;
 mod monitor;
 mod openrelay;
