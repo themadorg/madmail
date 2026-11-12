@@ -53,6 +53,8 @@ pub struct Roots {
 #[derive(Clone, Debug)]
 pub struct UpgradeHooks {
     pub units: Vec<String>,
+    /// Units whose program path is still the old executable.
+    pub legacy_units: Vec<String>,
     pub plan: Option<Plan>,
 }
 
@@ -66,9 +68,47 @@ impl UpgradeHooks {
     pub fn empty() -> Self {
         Self {
             units: Vec::new(),
+            legacy_units: Vec::new(),
             plan: None,
         }
     }
+}
+
+/// Question shown by `upgrade` and `update` before a leftover `maddy` service is rewritten.
+pub fn legacy_switch_prompt(legacy_units: &[String]) -> String {
+    if legacy_units.is_empty() {
+        return "We found a maddy command that appears to be from an older version. \
+                Would you like to update it to the new madmail setup?"
+            .to_string();
+    }
+    let named_maddy = legacy_units.iter().any(|name| {
+        name == "maddy" || name == "maddy.service" || name.strip_suffix(".service") == Some("maddy")
+    });
+    if named_maddy && legacy_units.len() == 1 {
+        return "We found a service named maddy that appears to be from an older version. \
+                Would you like to update it to the new madmail setup?"
+            .to_string();
+    }
+    let listed = legacy_units.join(", ");
+    if named_maddy {
+        format!(
+            "We found a service named maddy ({listed}) that appears to be from an older version. \
+             Would you like to update it to the new madmail setup?"
+        )
+    } else {
+        format!(
+            "We found a service ({listed}) that appears to be from an older version. \
+             Would you like to update it to the new madmail setup?"
+        )
+    }
+}
+
+/// Drop the legacy rewrite. Units that already use the stable binary stay.
+/// A host whose only unit is the old one keeps that unit running.
+pub fn decline_legacy_switch(hooks: &mut UpgradeHooks) {
+    let legacy: std::collections::BTreeSet<String> = hooks.legacy_units.drain(..).collect();
+    hooks.units.retain(|name| !legacy.contains(name));
+    hooks.plan = None;
 }
 
 /// File edits and command paths to retarget. Does not include the stable entry.
@@ -114,6 +154,7 @@ enum PreviousEntry {
 struct Inspection {
     action: Action,
     units: Vec<String>,
+    legacy_units: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -192,10 +233,12 @@ pub fn plan_for_upgrade(stable: &Path) -> Result<UpgradeHooks> {
             Action::Refuse(message) => Err(ChatmailError::config(message)),
             Action::AlreadyCanonical => Ok(UpgradeHooks {
                 units: inspection.units,
+                legacy_units: inspection.legacy_units,
                 plan: None,
             }),
             Action::Migrate(plan) => Ok(UpgradeHooks {
                 units: inspection.units,
+                legacy_units: inspection.legacy_units,
                 plan: Some(plan),
             }),
         }
@@ -516,6 +559,7 @@ fn decide(roots: &Roots, stable: &Path, identify: impl Fn(&Path) -> bool) -> Res
                 unit.name
             )),
             units: Vec::new(),
+            legacy_units: Vec::new(),
         });
     }
 
@@ -536,6 +580,7 @@ fn decide(roots: &Roots, stable: &Path, identify: impl Fn(&Path) -> bool) -> Res
         return Ok(Inspection {
             action: Action::Refuse(conflict_message(&groups)),
             units: Vec::new(),
+            legacy_units: Vec::new(),
         });
     }
 
@@ -552,6 +597,7 @@ fn decide(roots: &Roots, stable: &Path, identify: impl Fn(&Path) -> bool) -> Res
                 "refusing to migrate: {names} all start this install from the old executable. Disable the extra unit and run madmail legacy-migrate again."
             )),
             units: Vec::new(),
+            legacy_units: Vec::new(),
         });
     }
 
@@ -568,16 +614,23 @@ fn decide(roots: &Roots, stable: &Path, identify: impl Fn(&Path) -> bool) -> Res
     }
     push_compat_command(&mut retarget, roots, stable, &identify);
 
+    let legacy_units = units
+        .iter()
+        .filter(|unit| !unit.uses_stable)
+        .map(|unit| unit.name.clone())
+        .collect();
     let names = units.iter().map(|unit| unit.name.clone()).collect();
     if edits.is_empty() && retarget.is_empty() {
         Ok(Inspection {
             action: Action::AlreadyCanonical,
             units: names,
+            legacy_units,
         })
     } else {
         Ok(Inspection {
             action: Action::Migrate(Plan { edits, retarget }),
             units: names,
+            legacy_units,
         })
     }
 }
@@ -1784,5 +1837,46 @@ mod tests {
             Action::Refuse(message) => assert!(message.contains("more than one ExecStart")),
             other => panic!("expected refuse, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn legacy_switch_prompt_names_the_maddy_service() {
+        let prompt = legacy_switch_prompt(&["maddy.service".to_string()]);
+        assert_eq!(
+            prompt,
+            "We found a service named maddy that appears to be from an older version. \
+             Would you like to update it to the new madmail setup?"
+        );
+    }
+
+    #[test]
+    fn declining_drops_the_legacy_unit_and_keeps_a_canonical_one() {
+        let mut hooks = UpgradeHooks {
+            units: vec!["madmail.service".into(), "maddy.service".into()],
+            legacy_units: vec!["maddy.service".into()],
+            plan: Some(Plan {
+                edits: Vec::new(),
+                retarget: vec![PathBuf::from("/usr/local/bin/maddy")],
+            }),
+        };
+        decline_legacy_switch(&mut hooks);
+        assert!(hooks.plan.is_none());
+        assert!(hooks.legacy_units.is_empty());
+        assert_eq!(hooks.units, vec!["madmail.service".to_string()]);
+    }
+
+    #[test]
+    fn declining_the_only_legacy_unit_leaves_nothing_to_restart() {
+        let mut hooks = UpgradeHooks {
+            units: vec!["maddy.service".into()],
+            legacy_units: vec!["maddy.service".into()],
+            plan: Some(Plan {
+                edits: Vec::new(),
+                retarget: Vec::new(),
+            }),
+        };
+        decline_legacy_switch(&mut hooks);
+        assert!(hooks.units.is_empty());
+        assert!(hooks.plan.is_none());
     }
 }

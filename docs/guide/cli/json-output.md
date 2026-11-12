@@ -201,7 +201,7 @@ One envelope per sample (newline-delimited when `--count` is not 1):
 }
 ```
 
-`upgrade` and `update` keep this envelope. Legacy path changes are reported on stderr.
+`upgrade` and `update` keep this envelope. Legacy path changes are reported on stderr. `--json` switches a leftover `maddy` service without asking. The question is only shown on a terminal.
 
 ### `legacy-migrate`
 

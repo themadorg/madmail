@@ -74,7 +74,7 @@ madmail upgrade --accept-unsafe-https https://self-signed.example/madmail
 
 ## Legacy maddy command and service
 
-A versioned upgrade activates `/usr/local/bin/madmail`. When `maddy.service` or `/usr/local/bin/maddy` still runs an older Madmail build, the same upgrade rewrites that program path to the stable entry. `--config`, the state directory, accounts, and the rest of `ExecStart` stay as they are.
+A versioned upgrade activates `/usr/local/bin/madmail`. When `maddy.service` or `/usr/local/bin/maddy` still runs an older Madmail build, `upgrade` and `update` ask before rewriting that program path to the stable entry. The question is `[y/N]`. Answering no leaves the old command and service in place and warns that they can conflict with the new binary. The new release is still installed. `madmail legacy-migrate` switches the service later. `--json`, or a session with no terminal, switches the leftover service without asking. `--config`, the state directory, accounts, and the rest of `ExecStart` stay as they are.
 
 The layout is inspected before services stop. Two Madmail installs with different config or state, or an `ExecStart` that is not a single command, abort the upgrade with the current service still running. After restart, the service main process has to be the new binary. A process that is still the old file restores the unit, the `maddy` command, and the previous version pointer.
 

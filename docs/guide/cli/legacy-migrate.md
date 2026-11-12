@@ -2,7 +2,7 @@
 
 Point an existing `maddy` command and systemd unit at the active `madmail` binary.
 
-`upgrade` and `update` do this themselves. This command is the one-time entry for a host whose older `maddy upgrade` already stored the new release at `/usr/local/bin/madmail` and left `maddy.service` executing the previous file.
+`upgrade` and `update` do this themselves. On a terminal they ask first. Answering no leaves the old service in place. This command is the one-time entry for a host whose older `maddy upgrade` already stored the new release at `/usr/local/bin/madmail` and left `maddy.service` executing the previous file, and for an operator who skipped the question.
 
 ## Synopsis
 

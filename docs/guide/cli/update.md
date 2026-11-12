@@ -1,6 +1,6 @@
 # `update`
 
-Alias for [`upgrade`](upgrade.md). Accepts the same signed local path or URL.
+Alias for [`upgrade`](upgrade.md). Accepts the same signed local path or URL. On a terminal, both names ask before switching a leftover `maddy` service. `--json` and a non-terminal session switch that service without asking.
 
 
 ## Synopsis

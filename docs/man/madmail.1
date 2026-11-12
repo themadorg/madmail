@@ -152,13 +152,16 @@ Use the same Linux release variant you installed (\fB-legacy\fR / \fB-musl\fR
 when required — the default \fBamd64\fR build is not universal).\&
 After replace, may prompt to convert custom \fBwww_dir\fR Go templates
 to Minijinja (see \fBhtml-migrate\fR).\&
-Also points a legacy \fBmaddy\fR command and unit at the stable binary.\&
+On a terminal, asks before pointing a legacy \fBmaddy\fR command and unit
+at the stable binary.\& Answering no leaves that service in place.\&
+\fB--json\fR and a non-terminal session switch it without asking.\&
 .PP
 .RE
 \fBlegacy-migrate\fR
 .RS 4
 Point an existing \fBmaddy\fR command and systemd unit at the active
-\fBmadmail\fR binary.\& \fBupgrade\fR and \fBupdate\fR do this themselves.\&
+\fBmadmail\fR binary.\& \fBupgrade\fR and \fBupdate\fR do this themselves after
+asking on a terminal.\&
 Use this once when an older updater left \fBmaddy.\&service\fR on the
 previous executable.\& Config, state, and accounts stay in place.\&
 Requires root on Linux.\& Refuses when more than one Madmail install

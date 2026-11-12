@@ -891,12 +891,42 @@ fn rollback_on_broken_install(
     )))
 }
 
-fn service_units_for_upgrade(hooks: &UpgradeHooks) -> Vec<String> {
-    if hooks.units.is_empty() {
-        vec![systemd_service_name()]
-    } else {
+fn service_units_for_upgrade(hooks: &UpgradeHooks, declined: bool) -> Vec<String> {
+    if !hooks.units.is_empty() {
         hooks.units.clone()
+    } else if declined {
+        // The only service was the leftover maddy unit. Leave it running.
+        Vec::new()
+    } else {
+        vec![systemd_service_name()]
     }
+}
+
+/// `upgrade` and `update` share this path. A terminal answers `[y/N]` before a
+/// leftover `maddy` service is rewritten. `--json` and a non-terminal keep the
+/// switch, because nobody is there to answer.
+///
+/// Returns true when the operator declined. The plan is then cleared.
+fn maybe_ask_legacy_switch(hooks: &mut UpgradeHooks, args: &Args) -> Result<bool> {
+    if hooks.plan.is_none() {
+        return Ok(false);
+    }
+    use std::io::IsTerminal;
+    if args.json || !std::io::stdin().is_terminal() {
+        eprintln!(
+            "ℹ️ No terminal to ask about the leftover maddy service. Switching it to the active madmail binary."
+        );
+        return Ok(false);
+    }
+    let prompt = legacy_install::legacy_switch_prompt(&hooks.legacy_units);
+    if crate::ctl::util::confirm(&prompt, false)? {
+        return Ok(false);
+    }
+    legacy_install::decline_legacy_switch(hooks);
+    eprintln!(
+        "⚠️ Skipping the maddy service update. The old maddy binary and service can conflict with the new madmail binary. Run `sudo madmail legacy-migrate` when you want the service switched."
+    );
+    Ok(true)
 }
 
 fn stop_upgrade_units(units: &[String]) {
@@ -1075,8 +1105,9 @@ fn finish_versioned_upgrade(
 
     // Refuse while the current service is still running. A bad layout must not
     // stop the mail server or flip the version pointer.
-    let hooks = legacy_install::plan_for_upgrade(stable)?;
-    let units = service_units_for_upgrade(&hooks);
+    let mut hooks = legacy_install::plan_for_upgrade(stable)?;
+    let declined = maybe_ask_legacy_switch(&mut hooks, args)?;
+    let units = service_units_for_upgrade(&hooks, declined);
 
     eprintln!(
         "🚀 Versioned activate: {} (stable entry {})",
@@ -1374,14 +1405,15 @@ fn perform_upgrade_legacy_inplace(new_bin_path: &Path, vroot: &Path, args: &Args
     let real_bin_path = legacy_upgrade_replace_target(&current_bin, vroot, &stable)?;
 
     let migrate = real_bin_path == stable;
-    let hooks = if migrate {
+    let mut hooks = if migrate {
         // Refuse before the backup or the service stop.
         legacy_install::plan_for_upgrade(&stable)?
     } else {
         UpgradeHooks::empty()
     };
+    let declined = maybe_ask_legacy_switch(&mut hooks, args)?;
     let units = if migrate {
-        service_units_for_upgrade(&hooks)
+        service_units_for_upgrade(&hooks, declined)
     } else {
         vec![systemd_service_name()]
     };
@@ -1872,6 +1904,12 @@ mod tests {
         assert!(check_supported_url_archive("https://example.com/madmail").is_ok());
         assert!(check_supported_url_archive("https://example.com/a.tar.gz").is_ok());
         assert!(check_supported_url_archive("https://example.com/a.tgz#frag").is_ok());
+    }
+
+    #[test]
+    fn a_declined_legacy_switch_does_not_guess_a_unit_to_restart() {
+        let hooks = UpgradeHooks::empty();
+        assert!(service_units_for_upgrade(&hooks, true).is_empty());
     }
 
     #[test]
