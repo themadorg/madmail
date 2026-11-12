@@ -301,7 +301,7 @@ Prefer versioned install over “overwrite file + `*.prev`”. After the first s
 | Single installed `madmail.exe` (Windows) | Copy into `versions\<oldver>\madmail.exe`, establish stable `bin\` or service path |
 | `*.prev` sibling | Import as `versions/<prevver>/` if version parseable; else `versions/prev-import-<ts>/` |
 | Already under platform install root version tree | No-op migrate; continue versioned flow |
-| Service still points at old path | Prefer updating only the stable entry target; rewrite service ImagePath/unit only if needed |
+| Service still points at old path | On a terminal, `upgrade` and `update` ask before rewriting the program path to the stable entry (an `/etc` drop-in when the unit lives under `/lib` or `/usr/lib`). Answering no leaves the old service running and warns that it can conflict with the new binary. `--json` and a non-terminal session switch it without asking. Keep `--config`, state, and the rest of `ExecStart`. Point an existing `maddy` command at the stable entry unless that directory entry is inside `versions/`. Refuse, with services still running, when two units disagree on config or state or `ExecStart` is not a single command. After restart the main process must be the activated binary; otherwise restore the unit, the `maddy` command, and the previous version pointer. `madmail legacy-migrate` is the one-time form when the new binary is already at the stable path, or when the question was skipped. |
 
 ---
 

@@ -26,6 +26,8 @@ use std::time::Duration;
 
 use chatmail_config::Args;
 use chatmail_types::{ChatmailError, Result};
+
+use crate::legacy_install::{self, Applied, UpgradeHooks};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
@@ -868,28 +870,162 @@ fn restore_backup(backup: &Path, current: &Path) -> Result<()> {
 fn rollback_on_broken_install(
     real_bin_path: &Path,
     backup: &Path,
-    service: &str,
+    units: &[String],
     reason: &str,
 ) -> Result<()> {
     eprintln!("⚠️ {reason}");
     restore_backup(backup, real_bin_path)?;
     eprintln!("▶️ Restarting services with the restored binary...");
-    if !systemctl_succeeded(&["start", service]) {
+    if !start_upgrade_units(units) {
         eprintln!(
-            "⚠️ Warning: failed to start {service} after rollback; try: systemctl start {service}"
+            "⚠️ Warning: failed to start {} after rollback; try: systemctl start {}",
+            units.join(" "),
+            units.join(" ")
         );
     }
-    let iroh_unit = PathBuf::from("/etc/systemd/system/iroh-relay.service");
-    if iroh_unit.is_file() && !systemctl_succeeded(&["start", "iroh-relay.service"]) {
-        eprintln!(
-            "⚠️ Warning: failed to start iroh-relay.service after rollback; try: systemctl start iroh-relay.service"
-        );
-    }
+    start_iroh_if_present();
     Err(ChatmailError::config(format!(
         "upgrade rolled back: {reason}\n\
          Previous binary restored from {}.\n{VARIANT_HINT}",
         backup.display()
     )))
+}
+
+fn service_units_for_upgrade(hooks: &UpgradeHooks, declined: bool) -> Vec<String> {
+    if !hooks.units.is_empty() {
+        hooks.units.clone()
+    } else if declined {
+        // The only service was the leftover maddy unit. Leave it running.
+        Vec::new()
+    } else {
+        vec![systemd_service_name()]
+    }
+}
+
+/// `upgrade` and `update` share this path. A terminal answers `[y/N]` before a
+/// leftover `maddy` service is rewritten. `--json` and a non-terminal keep the
+/// switch, because nobody is there to answer.
+///
+/// Returns true when the operator declined. The plan is then cleared.
+fn maybe_ask_legacy_switch(hooks: &mut UpgradeHooks, args: &Args) -> Result<bool> {
+    if hooks.plan.is_none() {
+        return Ok(false);
+    }
+    use std::io::IsTerminal;
+    if args.json || !std::io::stdin().is_terminal() {
+        eprintln!(
+            "ℹ️ No terminal to ask about the leftover maddy service. Switching it to the active madmail binary."
+        );
+        return Ok(false);
+    }
+    let prompt = legacy_install::legacy_switch_prompt(&hooks.legacy_units);
+    if crate::ctl::util::confirm(&prompt, false)? {
+        return Ok(false);
+    }
+    legacy_install::decline_legacy_switch(hooks);
+    eprintln!(
+        "⚠️ Skipping the maddy service update. The old maddy binary and service can conflict with the new madmail binary. Run `sudo madmail legacy-migrate` when you want the service switched."
+    );
+    Ok(true)
+}
+
+fn stop_upgrade_units(units: &[String]) {
+    for unit in units {
+        run_systemctl(&["stop", unit]);
+    }
+    run_systemctl(&["stop", "iroh-relay.service"]);
+    thread::sleep(Duration::from_secs(1));
+}
+
+fn start_upgrade_units(units: &[String]) -> bool {
+    units
+        .iter()
+        .all(|unit| systemctl_succeeded(&["start", unit]))
+}
+
+fn start_iroh_if_present() {
+    let iroh_unit = PathBuf::from("/etc/systemd/system/iroh-relay.service");
+    if iroh_unit.is_file() && !systemctl_succeeded(&["start", "iroh-relay.service"]) {
+        eprintln!(
+            "⚠️ Warning: failed to start iroh-relay.service; try: systemctl start iroh-relay.service"
+        );
+    }
+}
+
+fn undo_legacy_edits(applied: Option<&Applied>, edited_units: bool) {
+    let Some(applied) = applied else {
+        return;
+    };
+    if legacy_install::restore(applied).is_err() {
+        eprintln!("⚠️ Warning: could not restore the previous maddy command or unit file");
+    }
+    if edited_units {
+        let _ = legacy_install::daemon_reload();
+    }
+}
+
+enum AfterStart {
+    Healthy,
+    /// No usable PID, and no unit file was edited. Keep the existing smoke policy.
+    Unconfirmed,
+    Rollback(String),
+}
+
+/// Decide whether the restarted service is actually the new binary.
+///
+/// A unit-file edit that does not come up is rolled back. A live process whose
+/// executable is a different file is always rolled back. A missing PID with no
+/// unit edit stays on the smoke check (a config or port problem must not undo
+/// a good binary, and must not undo a compat symlink either).
+fn assess_after_start(
+    units: &[String],
+    expected: &Path,
+    strict: bool,
+    started: bool,
+) -> AfterStart {
+    let mut mismatches = Vec::new();
+    let mut not_running = Vec::new();
+    let mut unknown = Vec::new();
+    for unit in units {
+        match legacy_install::check_service(unit, expected) {
+            legacy_install::RunningCheck::Matches(_) => {}
+            legacy_install::RunningCheck::NotRunning => not_running.push(unit.clone()),
+            legacy_install::RunningCheck::Mismatch(path) => mismatches.push(format!(
+                "{unit} is running {} instead of {}",
+                path.display(),
+                expected.display()
+            )),
+            legacy_install::RunningCheck::Unknown(err) => unknown.push(format!("{unit}: {err}")),
+        }
+    }
+    if !mismatches.is_empty() {
+        return AfterStart::Rollback(mismatches.join("; "));
+    }
+    if strict && !started {
+        return AfterStart::Rollback(format!(
+            "{} did not start on {}",
+            units.join(", "),
+            expected.display()
+        ));
+    }
+    if strict && !not_running.is_empty() {
+        return AfterStart::Rollback(format!(
+            "{} is not running {}",
+            not_running.join(", "),
+            expected.display()
+        ));
+    }
+    if started && !unknown.is_empty() && not_running.is_empty() {
+        eprintln!(
+            "⚠️ Warning: could not confirm the running executable ({}).",
+            unknown.join("; ")
+        );
+    }
+    if !started || !not_running.is_empty() {
+        AfterStart::Unconfirmed
+    } else {
+        AfterStart::Healthy
+    }
 }
 
 /// Upgrade: verify signature, preflight, install, activate, start.
@@ -967,71 +1103,115 @@ fn finish_versioned_upgrade(
 
     let installed_bin = version_binary_path(vroot, version_id);
 
+    // Refuse while the current service is still running. A bad layout must not
+    // stop the mail server or flip the version pointer.
+    let mut hooks = legacy_install::plan_for_upgrade(stable)?;
+    let declined = maybe_ask_legacy_switch(&mut hooks, args)?;
+    let units = service_units_for_upgrade(&hooks, declined);
+
     eprintln!(
         "🚀 Versioned activate: {} (stable entry {})",
         installed_bin.display(),
         stable.display()
     );
 
-    let service = systemd_service_name();
     eprintln!("⏹️ Stopping services...");
-    run_systemctl(&["stop", &service]);
-    run_systemctl(&["stop", "iroh-relay.service"]);
-    thread::sleep(Duration::from_secs(1));
+    stop_upgrade_units(&units);
 
     eprintln!("🔗 Switching active version to {version_id}...");
     let prev = match activate_versioned_install(version_id, vroot, stable) {
         Ok(prev) => prev,
         Err(e) => {
             eprintln!("▶️ Starting services after failed activate...");
-            let _ = systemctl_succeeded(&["start", &service]);
+            let _ = start_upgrade_units(&units);
+            start_iroh_if_present();
             return Err(ChatmailError::config(format!(
                 "upgrade rolled back: {e}\n{VARIANT_HINT}"
             )));
         }
     };
 
+    let mut applied = None;
+    if let Some(plan) = &hooks.plan {
+        match legacy_install::apply(plan, stable) {
+            Ok(done) => {
+                if !plan.edits.is_empty() && legacy_install::daemon_reload().is_err() {
+                    undo_legacy_edits(Some(&done), true);
+                    let restore_note = restore_previous_active(vroot, prev.as_deref(), stable);
+                    eprintln!("▶️ Starting services after failed unit update...");
+                    let _ = start_upgrade_units(&units);
+                    start_iroh_if_present();
+                    return Err(ChatmailError::config(format!(
+                        "upgrade rolled back: systemctl daemon-reload failed\n\
+                         {restore_note}\n{VARIANT_HINT}"
+                    )));
+                }
+                applied = Some(done);
+            }
+            Err(err) => {
+                let restore_note = restore_previous_active(vroot, prev.as_deref(), stable);
+                eprintln!("▶️ Starting services after failed maddy path update...");
+                let _ = start_upgrade_units(&units);
+                start_iroh_if_present();
+                return Err(ChatmailError::config(format!(
+                    "upgrade rolled back: {err}\n{restore_note}\n{VARIANT_HINT}"
+                )));
+            }
+        }
+    }
+
     run_post_upgrade_www_migrate(&installed_bin, args);
 
     eprintln!("▶️ Starting services...");
-    let started = systemctl_succeeded(&["start", &service]);
-    if !started {
-        if preflight_new_binary(&installed_bin, BinaryExecLocation::Installed).is_err() {
-            let restore_note = restore_previous_active(vroot, prev.as_deref(), stable);
-            let _ = systemctl_succeeded(&["start", &service]);
-            return Err(ChatmailError::config(format!(
-                "upgrade rolled back: failed to start {service} and binary fails smoke check\n\
-                 {restore_note}\n{VARIANT_HINT}"
-            )));
-        }
-        eprintln!(
-            "⚠️ Warning: failed to start {service}; the new binary passed smoke checks. \
-             Try: systemctl start {service}  (and inspect journalctl -u {service}). \
-             Previous version pointer: {:?}.",
-            prev
-        );
-    } else {
+    let started = start_upgrade_units(&units);
+    if started {
         thread::sleep(Duration::from_secs(1));
-        if !systemctl_succeeded(&["is-active", "--quiet", &service])
-            && preflight_new_binary(&installed_bin, BinaryExecLocation::Installed).is_err()
-        {
+    }
+    let strict = hooks.changes_units();
+    let unit_label = units.join(", ");
+    match assess_after_start(&units, &installed_bin, strict, started) {
+        AfterStart::Rollback(reason) => {
+            undo_legacy_edits(applied.as_ref(), strict);
             let restore_note = restore_previous_active(vroot, prev.as_deref(), stable);
-            let _ = systemctl_succeeded(&["start", &service]);
+            eprintln!("▶️ Restarting services with the previous version...");
+            let _ = start_upgrade_units(&units);
+            start_iroh_if_present();
             return Err(ChatmailError::config(format!(
-                "upgrade rolled back: {service} is not active and installed binary fails smoke check\n\
-                 {restore_note}\n{VARIANT_HINT}"
+                "upgrade rolled back: {reason}\n{restore_note}\n{VARIANT_HINT}"
             )));
         }
+        AfterStart::Unconfirmed => {
+            if preflight_new_binary(&installed_bin, BinaryExecLocation::Installed).is_err() {
+                undo_legacy_edits(applied.as_ref(), strict);
+                let restore_note = restore_previous_active(vroot, prev.as_deref(), stable);
+                let _ = start_upgrade_units(&units);
+                start_iroh_if_present();
+                return Err(ChatmailError::config(format!(
+                    "upgrade rolled back: {unit_label} is not active and installed binary fails smoke check\n\
+                     {restore_note}\n{VARIANT_HINT}"
+                )));
+            }
+            if !started {
+                eprintln!(
+                    "⚠️ Warning: failed to start {unit_label}; the new binary passed smoke checks. \
+                     Try: systemctl start {unit_label}  (and inspect journalctl -u {unit_label}). \
+                     Previous version pointer: {:?}.",
+                    prev
+                );
+            }
+        }
+        AfterStart::Healthy => {}
     }
 
-    let iroh_unit = PathBuf::from("/etc/systemd/system/iroh-relay.service");
-    if iroh_unit.is_file() && !systemctl_succeeded(&["start", "iroh-relay.service"]) {
-        eprintln!(
-            "⚠️ Warning: failed to start iroh-relay.service; try: systemctl start iroh-relay.service"
-        );
-    }
+    start_iroh_if_present();
 
     refresh_cli_docs_after_upgrade();
+    if applied.is_some() {
+        eprintln!(
+            "🔗 The maddy command and service now use {}.",
+            stable.display()
+        );
+    }
     eprintln!(
         "🎉 Upgrade complete. Active version {version_id} (previous: {:?}).",
         prev
@@ -1214,11 +1394,30 @@ fn replace_path_entry_without_following(new_bin: &Path, dest: &Path) -> Result<(
 /// Legacy single-file replace used when the version tree is not writable.
 ///
 /// Refuses to write into `{install_root}/versions/**` (would clobber archives).
+///
+/// The legacy path switch runs only when the replaced file *is* the stable
+/// `/usr/local/bin/madmail` entry. Replacing `/usr/local/bin/maddy` itself must
+/// not then turn that path into a symlink (that would delete the new bytes).
 fn perform_upgrade_legacy_inplace(new_bin_path: &Path, vroot: &Path, args: &Args) -> Result<()> {
     let current_bin = std::env::current_exe()
         .map_err(|e| ChatmailError::config(format!("failed to get current executable: {e}")))?;
     let stable = crate::version_manager::default_stable_binary_path();
     let real_bin_path = legacy_upgrade_replace_target(&current_bin, vroot, &stable)?;
+
+    let migrate = real_bin_path == stable;
+    let mut hooks = if migrate {
+        // Refuse before the backup or the service stop.
+        legacy_install::plan_for_upgrade(&stable)?
+    } else {
+        UpgradeHooks::empty()
+    };
+    let declined = maybe_ask_legacy_switch(&mut hooks, args)?;
+    let units = if migrate {
+        service_units_for_upgrade(&hooks, declined)
+    } else {
+        vec![systemd_service_name()]
+    };
+    let unit_label = units.join(", ");
 
     eprintln!(
         "🚀 Target binary (legacy in-place): {}",
@@ -1229,18 +1428,16 @@ fn perform_upgrade_legacy_inplace(new_bin_path: &Path, vroot: &Path, args: &Args
     // When real_bin_path is a symlink, copy follows the target for backup contents.
     let backup = backup_current_binary(&real_bin_path)?;
 
-    let service = systemd_service_name();
     eprintln!("⏹️ Stopping services...");
-    run_systemctl(&["stop", &service]);
-    run_systemctl(&["stop", "iroh-relay.service"]);
-    thread::sleep(Duration::from_secs(1));
+    stop_upgrade_units(&units);
 
     eprintln!("🔄 Replacing binary...");
     // Never write through a symlink into versions/<old>/ — unlink the PATH entry
     // first when needed (see replace_path_entry_without_following).
     if let Err(e) = replace_path_entry_without_following(new_bin_path, &real_bin_path) {
         eprintln!("▶️ Starting services after failed replace...");
-        let _ = systemctl_succeeded(&["start", &service]);
+        let _ = start_upgrade_units(&units);
+        start_iroh_if_present();
         return Err(e);
     }
     heal_live_exec_paths(&[real_bin_path.as_path()]);
@@ -1251,9 +1448,35 @@ fn perform_upgrade_legacy_inplace(new_bin_path: &Path, vroot: &Path, args: &Args
         return rollback_on_broken_install(
             &real_bin_path,
             &backup,
-            &service,
+            &units,
             &format!("installed binary failed smoke check: {e}"),
         );
+    }
+
+    let mut applied = None;
+    if let Some(plan) = &hooks.plan {
+        match legacy_install::apply(plan, &stable) {
+            Ok(done) => {
+                if !plan.edits.is_empty() && legacy_install::daemon_reload().is_err() {
+                    undo_legacy_edits(Some(&done), true);
+                    return rollback_on_broken_install(
+                        &real_bin_path,
+                        &backup,
+                        &units,
+                        "systemctl daemon-reload failed",
+                    );
+                }
+                applied = Some(done);
+            }
+            Err(err) => {
+                return rollback_on_broken_install(
+                    &real_bin_path,
+                    &backup,
+                    &units,
+                    &format!("failed to switch the maddy command and service: {err}"),
+                );
+            }
+        }
     }
 
     // Run post-upgrade hooks from the *new* binary so first upgrades that ship
@@ -1261,50 +1484,86 @@ fn perform_upgrade_legacy_inplace(new_bin_path: &Path, vroot: &Path, args: &Args
     run_post_upgrade_www_migrate(&real_bin_path, args);
 
     eprintln!("▶️ Starting services...");
-    let started = systemctl_succeeded(&["start", &service]);
-    if !started {
+    let started = start_upgrade_units(&units);
+    let strict = hooks.changes_units();
+    if migrate {
+        if started {
+            thread::sleep(Duration::from_secs(1));
+        }
+        match assess_after_start(&units, &real_bin_path, strict, started) {
+            AfterStart::Rollback(reason) => {
+                undo_legacy_edits(applied.as_ref(), strict);
+                return rollback_on_broken_install(&real_bin_path, &backup, &units, &reason);
+            }
+            AfterStart::Unconfirmed => {
+                if preflight_new_binary(&real_bin_path, BinaryExecLocation::Installed).is_err() {
+                    undo_legacy_edits(applied.as_ref(), strict);
+                    return rollback_on_broken_install(
+                        &real_bin_path,
+                        &backup,
+                        &units,
+                        &format!(
+                            "{unit_label} is not active and installed binary fails smoke check"
+                        ),
+                    );
+                }
+                if !started {
+                    eprintln!(
+                        "⚠️ Warning: failed to start {unit_label}; the new binary passed smoke checks. \
+                         Try: systemctl start {unit_label}  (and inspect journalctl -u {unit_label}). \
+                         Previous binary kept at {}.",
+                        backup.display()
+                    );
+                }
+            }
+            AfterStart::Healthy => {}
+        }
+    } else if !started {
         // Service unit failed — only roll back if the binary itself is broken.
         // Config/port issues must not undo a good ABI-compatible upgrade.
         if preflight_new_binary(&real_bin_path, BinaryExecLocation::Installed).is_err() {
             return rollback_on_broken_install(
                 &real_bin_path,
                 &backup,
-                &service,
+                &units,
                 &format!(
-                    "failed to start {service} and installed binary no longer passes smoke check"
+                    "failed to start {unit_label} and installed binary no longer passes smoke check"
                 ),
             );
         }
         eprintln!(
-            "⚠️ Warning: failed to start {service}; the new binary passed smoke checks. \
-             Try: systemctl start {service}  (and inspect journalctl -u {service}). \
+            "⚠️ Warning: failed to start {unit_label}; the new binary passed smoke checks. \
+             Try: systemctl start {unit_label}  (and inspect journalctl -u {unit_label}). \
              Previous binary kept at {}.",
             backup.display()
         );
     } else {
         // Catch crash-loops where systemctl start returns success then the unit dies.
         thread::sleep(Duration::from_secs(1));
-        if !systemctl_succeeded(&["is-active", "--quiet", &service])
+        if !units
+            .iter()
+            .all(|unit| systemctl_succeeded(&["is-active", "--quiet", unit]))
             && preflight_new_binary(&real_bin_path, BinaryExecLocation::Installed).is_err()
         {
             return rollback_on_broken_install(
                 &real_bin_path,
                 &backup,
-                &service,
-                &format!("{service} is not active and installed binary fails smoke check"),
+                &units,
+                &format!("{unit_label} is not active and installed binary fails smoke check"),
             );
         }
     }
 
-    let iroh_unit = PathBuf::from("/etc/systemd/system/iroh-relay.service");
-    if iroh_unit.is_file() && !systemctl_succeeded(&["start", "iroh-relay.service"]) {
-        eprintln!(
-            "⚠️ Warning: failed to start iroh-relay.service; try: systemctl start iroh-relay.service"
-        );
-    }
+    start_iroh_if_present();
 
     refresh_cli_docs_after_upgrade();
 
+    if applied.is_some() {
+        eprintln!(
+            "🔗 The maddy command and service now use {}.",
+            stable.display()
+        );
+    }
     eprintln!(
         "🎉 Upgrade complete. (previous binary kept at {} for manual rollback if needed)",
         backup.display()
@@ -1645,6 +1904,12 @@ mod tests {
         assert!(check_supported_url_archive("https://example.com/madmail").is_ok());
         assert!(check_supported_url_archive("https://example.com/a.tar.gz").is_ok());
         assert!(check_supported_url_archive("https://example.com/a.tgz#frag").is_ok());
+    }
+
+    #[test]
+    fn a_declined_legacy_switch_does_not_guess_a_unit_to_restart() {
+        let hooks = UpgradeHooks::empty();
+        assert!(service_units_for_upgrade(&hooks, true).is_empty());
     }
 
     #[test]

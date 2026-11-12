@@ -48,6 +48,8 @@ pub enum Command {
     ///
     /// Pass `latest` to download the current GitHub Releases asset for this host
     /// (full signature, size, and preflight checks — same as an explicit URL).
+    /// `update` is an alias. On a terminal, both ask before switching a leftover
+    /// `maddy` service to the new binary.
     Upgrade {
         /// Path to signed binary, `http(s)://` URL, or the keyword `latest` (GitHub Releases).
         #[arg(value_name = "PATH_OR_URL")]
@@ -60,7 +62,7 @@ pub enum Command {
         #[arg(long = "accept-unsafe-https")]
         accept_unsafe_https: bool,
     },
-    /// Replace this executable from a signed local file or URL (alias for `upgrade`).
+    /// Alias for `upgrade`. On a terminal, both ask before switching a leftover `maddy` service.
     ///
     /// `madmail update latest` fetches the latest GitHub release for this OS/arch with
     /// mandatory Ed25519 verification (TLS relax does not skip signatures).
@@ -76,6 +78,14 @@ pub enum Command {
         #[arg(long = "accept-unsafe-https")]
         accept_unsafe_https: bool,
     },
+    /// Point a legacy `maddy` command and systemd unit at the active `madmail` binary.
+    ///
+    /// One-time entry for an install whose older `maddy upgrade` stored the new
+    /// release at `/usr/local/bin/madmail` and left `maddy.service` on the old
+    /// executable, or when `upgrade` / `update` was told to leave that service
+    /// in place. On a terminal those commands ask first.
+    #[command(name = "legacy-migrate")]
+    LegacyMigrate,
     /// Manage versioned installs under the platform install root (`/opt/madmail` or `%ProgramFiles%\\Madmail`).
     #[command(subcommand)]
     Versions(VersionsCommand),
@@ -1155,6 +1165,12 @@ fn clear_install_path_flag_bleed(cli: &mut Cli) {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn legacy_migrate_parses_without_arguments() {
+        let cli = Cli::try_parse_from(["madmail", "legacy-migrate"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::LegacyMigrate)));
+    }
 
     #[test]
     fn upgrade_and_update_accept_url_or_path() {
