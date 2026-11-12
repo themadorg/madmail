@@ -21,6 +21,11 @@
 //! `/usr/local/bin/maddy` and `maddy.service` keep executing the old file after a
 //! successful upgrade (issue #244). This module rewrites only the executable path.
 //! Config, state, accounts, and the rest of the unit stay where they are.
+//!
+//! On Windows the systemd helpers stay in the crate so the command can report that
+//! this switch is for Linux. Their bodies are unused there.
+
+#![cfg_attr(windows, allow(dead_code))]
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
