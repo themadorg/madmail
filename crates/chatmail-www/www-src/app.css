@@ -27,6 +27,31 @@
 
 /* ---- CSS Variables (Dark Mode = default) ---- */
 :root {
+  --dc-success-bg: #22c55e;
+  --dc-subscribed-fill: 10%;
+  --dc-spin-ring: color-mix(in srgb, var(--dc-primary) 20%, transparent);
+  --dc-btn-glow: rgba(21, 155, 107, 0.3);
+  --dc-insecure: #facc15;
+  --dc-counter: #159b6b;
+  --dc-identity: #159b6b;
+  --dc-grad-to: #6c5ce7;
+  --dc-grad-from: #159b6b;
+  --dc-subscribed-badge-fill: 12%;
+  --dc-on-joining: #eab308;
+  --dc-joining-fill: 10%;
+  --dc-on-owner: #6c5ce7;
+  --dc-owner-fill: 15%;
+  --dc-joining: #eab308;
+  --dc-owner: #6c5ce7;
+  --dc-subscribed: #00ced1;
+  --dc-live: #6c5ce7;
+  --dc-control: #159b6b;
+  --dc-focus: #159b6b;
+  --dc-on-brand: #ffffff;
+  --dc-success: #4ade80;
+  --dc-brand-hover: #0f7d56;
+  --dc-brand: #159b6b;
+  --dc-danger: #ef4444;
   --dc-primary: #159b6b;
   --dc-primary-hover: #0f7d56;
   --dc-primary-light: rgba(21, 155, 107, 0.15);
