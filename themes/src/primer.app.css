@@ -1,0 +1,466 @@
+/*
+ * Copyright (C) 2026 themadorg
+ * Copyright (C) 2026 lebavard
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+/*
+ * Madmail flavour: primer
+ *
+ * Palette, surface ramps and component treatments: lebavard.
+ *   Follows GitHub's Primer design system: its published tokens and, for most elements,
+ *   its rules -- across all variants, not the palette alone.
+ *
+ * Built on the upstream Madmail stylesheet by themadorg (licence above);
+ * structural corrections and the theme-switching scaffold by lebavard.
+ *
+ * Same licence: AGPL-3.0-or-later.
+ */
+
+/**
+ * app.css — Delta Chat Web styles
+ *
+ * Design system with CSS custom properties for dark/light mode.
+ * All theming goes through `--dc-*` variables so Tailwind utilities
+ * and custom classes both reference the same tokens.
+ */
+
+/* ---- CSS Variables (Dark Mode = default) ---- */
+:root {
+  --dc-splash-noise: 0.07;
+  color-scheme: dark;
+  --dc-toggle-knob-hover: #539cf9;
+  --dc-toggle-knob: var(--dc-control);
+  --dc-chan-sub-sel: color-mix(in srgb, var(--dc-subscribed) var(--dc-chan-sel-fill), transparent);
+  --dc-chan-owner-sel: color-mix(in srgb, var(--dc-owner) var(--dc-chan-sel-fill), transparent);
+  --dc-chan-sub-accent: var(--dc-subscribed);
+  --dc-chan-owner-accent: var(--dc-owner);
+  /* Selected chat and channel rows. Same strength as the site's --alert-fill. */
+  --dc-chan-sel-fill: 10%;
+  --dc-selected-bg: color-mix(in srgb, var(--dc-control) var(--dc-chan-sel-fill), transparent);
+  --dc-composebar-bg: #151b23;
+  --dc-contactbar-bg: #151b23;
+  --dc-namebar-bg: #151b23;
+  --dc-header-bg: #010409;
+  --dc-invite-bg: #0d1117;
+  --dc-well: #0d1117;
+  --dc-btn-border: #1f232826;
+  --dc-brand-hover: #29903b;
+  --dc-secondary-fg: var(--dc-muted);
+  --dc-success-bg: #3fb950;
+  --dc-subscribed-fill: 15%;
+  --dc-spin-ring: color-mix(in srgb, var(--dc-primary) 20%, transparent);
+  --dc-btn-glow: color-mix(in srgb, var(--dc-primary) 30%, transparent);
+  --dc-insecure: #f85149;
+  --dc-counter: #4493f8;
+  --dc-identity: #4493f8;
+  --dc-grad-to: #1f6feb;
+  --dc-grad-from: #238636;
+  --dc-subscribed-badge-fill: 15%;
+  --dc-on-joining: #d29922;
+  --dc-joining-fill: 15%;
+  --dc-on-owner: #d29922;
+  --dc-owner-fill: 15%;
+  --dc-joining: #d29922;
+  --dc-owner: #d29922;
+  --dc-subscribed: #4493f8;
+  --dc-live: #d29922;
+  --dc-success: #3fb950;
+  --dc-danger: #f85149;
+  --dc-on-brand: #f0f6fc;
+  --dc-brand: #238636;
+  --dc-control: #4493f8;
+  --dc-primary: #1f6feb;
+  --dc-primary-hover: #2e78ec;
+  --dc-primary-light: color-mix(in srgb, var(--dc-primary) 15%, transparent);
+  --dc-accent: #4493f8;
+
+  /* Dark mode surfaces */
+  --dc-bg: #0d1117;
+  --dc-surface: #0d1117;
+  --dc-surface-2: #151b23;
+  --dc-surface-3: #212830;
+  --dc-border: #3d444d;
+  --dc-text: #f0f6fc;
+  --dc-text-secondary: #9198a1;
+  --dc-muted: #656c76;
+
+  /* Scrollbar */
+  --dc-scrollbar: #9198a1;
+  --dc-scrollbar-hover: var(--dc-text);
+
+  /* Shadows */
+  --dc-shadow: rgba(0, 0, 0, 0.4);
+  --dc-shadow-primary: color-mix(in srgb, var(--dc-primary) 15%, transparent);
+
+  /* Message bubbles */
+  --dc-bubble-out: var(--dc-primary);
+  --dc-bubble-out-text: #ffffff;
+  --dc-bubble-in: var(--dc-surface-2);
+  --dc-bubble-in-text: var(--dc-text);
+  --dc-bubble-in-border: var(--dc-border);
+
+  /* Reactions */
+  --dc-reaction-active-bg: color-mix(in srgb, var(--dc-primary) 30%, transparent);
+  --dc-reaction-active-border: color-mix(in srgb, var(--dc-primary) 60%, transparent);
+  --dc-reaction-bg: rgba(13, 17, 23, 0.9);
+
+  /* Emoji picker */
+  --dc-emoji-picker-theme: dark;
+
+  /* Overlay */
+  --dc-overlay: rgba(0, 0, 0, 0.4);
+}
+
+/* ---- Light Mode ---- */
+.light {
+  --dc-splash-noise: 0;
+  color-scheme: light;
+  --dc-toggle-knob-hover: #0964d0;
+  --dc-toggle-knob: var(--dc-control);
+  --dc-chan-sub-sel: color-mix(in srgb, var(--dc-subscribed) var(--dc-chan-sel-fill), transparent);
+  --dc-chan-owner-sel: color-mix(in srgb, var(--dc-owner) var(--dc-chan-sel-fill), transparent);
+  --dc-chan-sub-accent: var(--dc-subscribed);
+  --dc-chan-owner-accent: var(--dc-owner);
+  --dc-selected-bg: color-mix(in srgb, var(--dc-control) var(--dc-chan-sel-fill), transparent);
+  --dc-contactbar-bg: #f6f8fa;
+  --dc-composebar-bg: #f6f8fa;
+  --dc-namebar-bg: #f6f8fa;
+  --dc-well: #ffffff;
+  --dc-invite-bg: #ffffff;
+  --dc-header-bg: #f6f8fa;
+  --dc-btn-border: #1f232826;
+  --dc-primary-hover: #0965d1;
+  --dc-brand-hover: #1c8139;
+  --dc-secondary-fg: var(--dc-muted);
+  --dc-success-bg: #1a7f37;
+  --dc-insecure: #cf222e;
+  --dc-counter: #0969da;
+  --dc-identity: #0969da;
+  --dc-on-joining: #d29922;
+  --dc-on-owner: #d29922;
+  --dc-joining: #d29922;
+  --dc-owner: #d29922;
+  --dc-subscribed: #0969da;
+  --dc-live: #d29922;
+  --dc-success: #57ab5a;
+  --dc-danger: #cf222e;
+  --dc-on-brand: #ffffff;
+  --dc-brand: #1f883d;
+  --dc-control: #0969da;
+  --dc-accent: #0969da;
+  --dc-primary: #0969da;
+  --dc-bg: #ffffff;
+  --dc-surface: #ffffff;
+  --dc-surface-2: #f6f8fa;
+  --dc-surface-3: #eff2f5;
+  --dc-border: #d1d9e0;
+  --dc-text: #1f2328;
+  --dc-text-secondary: #59636e;
+  --dc-muted: #818b98;
+
+  --dc-scrollbar: #59636e;
+  --dc-scrollbar-hover: var(--dc-text);
+
+  --dc-shadow: rgba(31, 35, 40, 0.08);
+  --dc-shadow-primary: color-mix(in srgb, var(--dc-primary) 10%, transparent);
+
+  --dc-bubble-out: var(--dc-primary);
+  --dc-bubble-out-text: #ffffff;
+  --dc-bubble-in: #ffffff;
+  --dc-bubble-in-text: var(--dc-text);
+  --dc-bubble-in-border: var(--dc-border);
+
+  --dc-reaction-active-bg: color-mix(in srgb, var(--dc-primary) 15%, transparent);
+  --dc-reaction-active-border: color-mix(in srgb, var(--dc-primary) 40%, transparent);
+  --dc-reaction-bg: rgba(255, 255, 255, 0.95);
+
+  --dc-emoji-picker-theme: light;
+
+  --dc-overlay: rgba(31, 35, 40, 0.2);
+}
+
+/* ---- Base ---- */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+[x-cloak] {
+  display: none !important;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--dc-bg);
+  color: var(--dc-text);
+}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--dc-scrollbar);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dc-scrollbar-hover);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dc-scrollbar) transparent;
+}
+
+/* ---- Animations ---- */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fade {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.animate-slide {
+  animation: slideIn 0.3s ease;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* ---- Message Bubble ---- */
+.msg-bubble {
+  max-width: 80%;
+  word-break: break-word;
+}
+
+/* ---- Lucide Icons ---- */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.icon svg {
+  width: 1em;
+  height: 1em;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.icon-sm svg {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-md svg {
+  width: 18px;
+  height: 18px;
+}
+
+.icon-lg svg {
+  width: 24px;
+  height: 24px;
+}
+
+.icon-xl svg {
+  width: 40px;
+  height: 40px;
+}
+
+/* ---- Theme Toggle ---- */
+.theme-toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--dc-surface-2);
+  border: 1px solid var(--dc-border);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  padding: 0;
+  outline: none;
+}
+
+.theme-toggle:hover {
+  border-color: var(--dc-primary);
+}
+
+.theme-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dc-toggle-knob, var(--dc-primary));
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.light .theme-toggle-knob {
+  transform: translateX(20px);
+}
+
+.theme-toggle-knob svg {
+  width: 12px;
+  height: 12px;
+  stroke: white;
+  stroke-width: 2.5;
+  fill: none;
+}
+
+/* ---- Compose area ---- */
+.compose-input {
+  background: var(--dc-surface-2);
+  border: 1px solid var(--dc-border);
+  color: var(--dc-text);
+}
+
+.compose-input:focus {
+  border-color: var(--dc-primary);
+  box-shadow: 0 0 0 3px var(--dc-shadow-primary);
+  outline: none;
+}
+
+.compose-input::placeholder {
+  color: var(--dc-muted);
+}
+
+/* ---- Context Menu ---- */
+.context-menu {
+  background: var(--dc-surface);
+  border: 1px solid var(--dc-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px var(--dc-shadow);
+  min-width: 180px;
+  padding: 6px 0;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 16px;
+  font-size: 14px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--dc-text);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.context-menu-item:hover {
+  background: var(--dc-surface-2);
+}
+
+.context-menu-item.danger {
+  color: #ef4444;
+}
+
+.context-menu-item.danger-strong {
+  color: #dc2626;
+}
+
+.context-menu-item.muted {
+  color: var(--dc-muted);
+}
+
+/* ---- Info Panel Cards ---- */
+.info-card {
+  background: var(--dc-surface-2);
+  border: 1px solid var(--dc-border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+
+/* input focus is neutral, not the accent - buttons keep --dc-control */
+.compose-input:focus {
+  border-color: var(--dc-primary);
+  box-shadow: 0 0 0 1px var(--dc-primary);
+}
+
+/* text entry is a well, and hover borders use --dc-control */
+.compose-input {
+  background: var(--dc-bg);
+}
+
+.theme-toggle:hover {
+  border-color: var(--dc-control);
+}
+
+/* primer: primary buttons carry GitHub's faint dark edge */
+.bg-dc-brand,
+.bg-dc-primary {
+  border: 1px solid var(--dc-btn-border);
+}
+
+/* primer: the message field is its own well */
+.compose-input {
+  background: var(--dc-well);
+}
+
+.theme-toggle:hover .theme-toggle-knob {
+  background: var(--dc-toggle-knob-hover, var(--dc-toggle-knob, var(--dc-primary)));
+}
+
+/* splash: imperceptible dither so tile seams have something to hide behind */
+.splash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--dc-splash-noise, 0.035);
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27140%27%20height%3D%27140%27%3E%3Cfilter%20id%3D%27n%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.9%27%20numOctaves%3D%273%27%20stitchTiles%3D%27stitch%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27140%27%20height%3D%27140%27%20filter%3D%27url%28%2523n%29%27%2F%3E%3C%2Fsvg%3E");
+}

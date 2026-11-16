@@ -1,0 +1,9 @@
+# Local artefacts, none of which are part of the theme set:
+#   .active / .installed  the switcher's record of what it last installed
+#   www.*                 captured markup trees used when developing locally
+#   main.css.* app.css.*  individual variant files kept outside src/
+.active
+.installed
+www.*
+main.css.*
+app.css.*

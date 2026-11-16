@@ -1,0 +1,142 @@
+#!/bin/sh
+# Madmail theme switcher. Composes any of the variants from the flavour
+# sources in src/ and installs them into the served tree.
+#
+# Paths come from the environment, defaulting to a standard install:
+#   MADMAIL_THEMES_DIR  where src/ and compose live. Defaults to this script's
+#                       own directory, resolved through symlinks.
+#   MADMAIL_WWW         the served tree. Defaults to madmail's default www_dir.
+set -e
+SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
+DIR=${MADMAIL_THEMES_DIR:-$(dirname "$SELF")}
+WWW=${MADMAIL_WWW:-/var/lib/madmail/www}
+MARK="$DIR/.active"
+REC="$DIR/.installed"
+STAGE=${TMPDIR:-/tmp}/madmail-switch-stage
+
+FAMILIES="millennium frontier primer"
+SIMPLE="dark dark-soft light light-soft"
+COMBO="dark-mix dark-mix-light dark-soft-mix dark-soft-mix-light light-mix light-soft-mix"
+
+composable() {
+  for fam in $FAMILIES; do
+    for sfx in $SIMPLE $COMBO; do
+      [ "$1" = "$fam-$sfx" ] && return 0
+    done
+  done
+  return 1
+}
+
+list() {
+  echo "  simple - app matches site:"
+  for fam in $FAMILIES; do for s in $SIMPLE; do printf '    %s\n' "$fam-$s"; done; done
+  echo "  combinations - app differs from site:"
+  for fam in $FAMILIES; do for s in $COMBO; do printf '    %s\n' "$fam-$s"; done; done
+  _hdr=
+  for f in "$DIR"/main.css.*; do
+    [ -f "$f" ] || continue
+    [ -n "$_hdr" ] || { echo "  retained baseline files:"; _hdr=1; }
+    printf '    %s\n' "${f##*main.css.}"
+  done
+  _hdr=
+  for d in "$DIR"/www.*; do
+    [ -d "$d" ] || continue
+    [ "$d" != "$DIR/www.themed" ] || continue
+    [ -n "$_hdr" ] || { echo "  full trees:"; _hdr=1; }
+    printf '    %s\n' "${d##*www.}"
+  done
+}
+
+verify() {
+  n=$1
+  rec_kind=""; rec_var=""; rec_main=""; rec_app=""
+  [ -f "$REC" ] && read rec_kind rec_var rec_main rec_app < "$REC"
+  if [ -d "$DIR/www.$n" ]; then
+    if diff -rq "$DIR/www.$n" "$WWW" >/dev/null 2>&1
+    then echo verified; else echo "STALE - live tree differs"; fi
+    return
+  fi
+  if composable "$n" && [ "$rec_kind:$rec_var" != "file:$n" ]; then
+    mkdir -p "$STAGE"
+    if ! "$DIR/compose" "$n" "$STAGE/$n" >"$STAGE/err.txt" 2>&1; then
+      msg=$(head -1 "$STAGE/err.txt")
+      tamper=""
+      if [ "$rec_var" = "$n" ]; then
+        if [ "$rec_main" = "$(sha256sum < "$WWW/main.css" | cut -d' ' -f1)" ] \
+           && [ "$rec_app" = "$(sha256sum < "$WWW/app.css" | cut -d' ' -f1)" ]
+        then tamper=" (live tree still matches the recorded install)"
+        else tamper=" (live tree has ALSO changed since install)"; fi
+      fi
+      echo "CANNOT VERIFY - compose failed: $msg$tamper"
+      return
+    fi
+    ok=1
+    cmp -s "$STAGE/$n/main.css" "$WWW/main.css" || ok=0
+    cmp -s "$STAGE/$n/app.css"  "$WWW/app.css"  || ok=0
+    if [ -d "$DIR/www.themed" ]; then
+      diff -rq -x main.css -x app.css "$DIR/www.themed" "$WWW" >/dev/null 2>&1 || ok=0
+    fi
+    if [ "$ok" = 1 ]; then echo verified; else echo "STALE - live files differ from src/"; fi
+    return
+  fi
+  src="$DIR"
+  if [ ! -f "$src/main.css.$n" ]; then echo "unknown variant"; return; fi
+  ok=1
+  cmp -s "$src/main.css.$n" "$WWW/main.css" || ok=0
+  if [ -f "$src/app.css.$n" ]; then
+    cmp -s "$src/app.css.$n" "$WWW/app.css" || ok=0
+  else
+    cmp -s "$DIR/www.themed/app.css" "$WWW/app.css" || ok=0
+  fi
+  diff -rq -x main.css -x app.css "$DIR/www.themed" "$WWW" >/dev/null 2>&1 || ok=0
+  if [ "$ok" = 1 ]; then echo verified; else echo "STALE - live files differ"; fi
+}
+
+record() {  # record <kind> <variant>
+  printf '%s %s %s %s\n' "$1" "$2" \
+    "$(sha256sum < "$WWW/main.css" | cut -d' ' -f1)" \
+    "$(sha256sum < "$WWW/app.css"  | cut -d' ' -f1)" > "$REC"
+}
+
+if [ -z "$1" ]; then
+  if [ -f "$MARK" ]; then a=$(cat "$MARK"); echo "active:  $a  [$(verify "$a")]"
+  else echo "active:  unknown (no marker)"; fi
+  # Whether 127.0.0.1 returns the same resource a visitor gets depends on Host
+  # routing, ports and any proxy in front, so probing it cannot be made
+  # reliable. verify() above compares the served files against the sources,
+  # which is the part that is actually knowable here.
+  echo "www_dir: $WWW"
+  echo; echo "variants:"; list; exit 0
+fi
+
+want=$1
+
+if composable "$want"; then
+  mkdir -p "$STAGE"
+  if ! "$DIR/compose" "$want" "$STAGE/$want"; then
+    echo "refusing to install: compose failed"; exit 1
+  fi
+  # www.themed is a locally captured markup tree. It is absent from a plain
+  # checkout, where the served tree already carries the markup, so the copy is
+  # skipped rather than attempted and failing.
+  if [ -d "$DIR/www.themed" ]; then cp -a "$DIR/www.themed/." "$WWW/"; fi
+  cp "$STAGE/$want/main.css" "$WWW/main.css"
+  cp "$STAGE/$want/app.css"  "$WWW/app.css"
+elif [ -d "$DIR/www.$want" ] && [ "$want" != themed ]; then
+  cp -a "$DIR/www.$want/." "$WWW/"
+elif [ -f "$DIR/main.css.$want" ]; then
+  if grep -nE ':[[:space:]]*__' "$DIR/main.css.$want"; then
+    echo "refusing - unfilled placeholders above"; exit 1
+  fi
+  cp -a "$DIR/www.themed/." "$WWW/"
+  cp "$DIR/main.css.$want" "$WWW/main.css"
+  [ -f "$DIR/app.css.$want" ] && cp "$DIR/app.css.$want" "$WWW/app.css"
+else
+  echo "no such variant: $want"; echo; list; exit 1
+fi
+
+echo "$want" > "$MARK"
+if composable "$want"; then record composed "$want"
+elif [ -d "$DIR/www.$want" ]; then record tree "$want"
+else record file "$want"; fi
+echo "active: $want   [$(verify "$want")]   (hard-refresh: Ctrl+Shift+R)"
