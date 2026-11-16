@@ -318,7 +318,7 @@
         </aside>
 
         <!-- Chat Area -->
-        <main class="flex-1 flex flex-col" style="background: var(--dc-bg)">
+        <main class="flex-1 min-w-0 flex flex-col" style="background: var(--dc-bg)">
           <!-- No contact or channel selected -->
           <div x-show="!selectedContact && !selectedChannel" class="flex-1 flex items-center justify-center" style="color: var(--dc-muted)">
             <div class="text-center">
@@ -511,7 +511,7 @@
                        :style="msg.reactions && Object.keys(msg.reactions).length > 0 ? 'margin-bottom:18px' : 'margin-bottom:6px'">
                     <div class="relative max-w-[80%]">
                       <div class="msg-bubble rounded-2xl text-sm overflow-hidden relative group min-w-[80px]"
-                           :style="(msg.outgoing
+                           :style="'max-width:100%;' + (msg.outgoing
                              ? 'background:var(--dc-bubble-out);color:var(--dc-bubble-out-text);border-bottom-right-radius:6px'
                              : 'background:var(--dc-bubble-in);color:var(--dc-bubble-in-text);border:1px solid var(--dc-bubble-in-border);border-bottom-left-radius:6px')
                              + (msg.imageData ? ';max-width:280px' : '')"
