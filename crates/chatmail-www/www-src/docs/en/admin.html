@@ -51,9 +51,9 @@
         <p>This guide explains how to manage user quotas and view server statistics using <code>madmail</code> commands.</p>
 
         <div class="info-note"
-            style="background: color-mix(in srgb, var(--link) 5%, transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
+            style="background: color-mix(in srgb, var(--link) var(--alert-fill, 5%), transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
             <strong>💡 Tip:</strong> All these operations can also be performed through the <a href="/docs/api"
-                style="color: var(--link);">Web Admin Interface</a> at <code>/admin/</code>
+                style="color: var(--note-link, var(--link));">Web Admin Interface</a> at <code>/admin/</code>
             — no command line required.
         </div>
 
@@ -256,7 +256,7 @@ madmail accounts ban user@example.com ["reason"] [--yes]</div>
                 <li><strong>Configuration:</strong> SMTP hostname, TURN realm/secret/relay IP/TTL, Iroh relay URL,
                     Shadowsocks cipher/password</li>
             </ul>
-            <p>To manage these settings, use the <a href="/docs/api" style="color: var(--link);">Admin API</a>.
+            <p>To manage these settings, use the <a href="/docs/api" style="color: var(--note-link, var(--link));">Admin API</a>.
                 The relevant endpoints are documented in the "Port Settings" and "Configuration Settings" sections of the API docs.</p>
         </div>
 

@@ -438,22 +438,22 @@ input:focus {
 .is-ltr .alert { text-align: left; }
 
 .alert--info {
-  background: color-mix(in srgb, var(--link) 6%, transparent);
+  background: color-mix(in srgb, var(--link) var(--alert-fill, 6%), transparent);
   border-inline-start: 2px solid var(--link);
 }
 
 .alert--danger {
-  background: color-mix(in srgb, var(--destructive) 6%, transparent);
+  background: color-mix(in srgb, var(--destructive) var(--alert-fill, 6%), transparent);
   border-inline-start: 2px solid var(--destructive);
 }
 
 .alert--warning {
-  background: color-mix(in srgb, var(--warning) 6%, transparent);
+  background: color-mix(in srgb, var(--warning) var(--alert-fill, 6%), transparent);
   border-inline-start: 2px solid var(--warning);
 }
 
 .alert--success {
-  background: color-mix(in srgb, var(--success) 6%, transparent);
+  background: color-mix(in srgb, var(--success) var(--alert-fill, 6%), transparent);
   border-inline-start: 2px solid var(--success);
 }
 

@@ -51,9 +51,9 @@
         <p>Esta guía explica cómo gestionar cuotas de usuario y ver estadísticas del servidor con los comandos <code>madmail</code>.</p>
 
         <div class="info-note"
-            style="background: color-mix(in srgb, var(--link) 5%, transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
+            style="background: color-mix(in srgb, var(--link) var(--alert-fill, 5%), transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
             <strong>💡 Consejo:</strong> todas estas operaciones también están disponibles en la <a href="/docs/api"
-                style="color: var(--link);">interfaz web de administración</a> en <code>/admin/</code>
+                style="color: var(--note-link, var(--link));">interfaz web de administración</a> en <code>/admin/</code>
             — no hace falta usar la línea de órdenes.
         </div>
 
@@ -256,7 +256,7 @@ madmail accounts ban usuario@example.com ["motivo"] [--yes]</div>
                 <li><strong>Configuración:</strong> hostname SMTP, realm/secret/IP/TTL de TURN, URL del relé Iroh,
                     cifrado y contraseña de Shadowsocks</li>
             </ul>
-            <p>Use la <a href="/docs/api" style="color: var(--link);">Admin API</a>.
+            <p>Use la <a href="/docs/api" style="color: var(--note-link, var(--link));">Admin API</a>.
                 Los extremos están en las secciones «Port Settings» y «Configuration Settings» de la documentación de la API.</p>
         </div>
 

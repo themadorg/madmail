@@ -51,9 +51,9 @@
         <p>Это руководство объясняет управление квотами пользователей и просмотр статистики сервера с помощью команд <code>madmail</code>.</p>
 
         <div class="info-note"
-            style="background: color-mix(in srgb, var(--link) 5%, transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
+            style="background: color-mix(in srgb, var(--link) var(--alert-fill, 5%), transparent); border: 1px solid color-mix(in srgb, var(--link) 20%, transparent); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px;">
             <strong>💡 Подсказка:</strong> Все эти операции также можно выполнить через <a href="/docs/api"
-                style="color: var(--link);">Веб-панель администратора</a> по адресу <code>/admin/</code>
+                style="color: var(--note-link, var(--link));">Веб-панель администратора</a> по адресу <code>/admin/</code>
             — без командной строки.
         </div>
 
@@ -256,7 +256,7 @@ madmail accounts ban user@example.com ["причина"] [--yes]</div>
                 <li><strong>Конфигурация:</strong> SMTP hostname, TURN realm/secret/relay IP/TTL, Iroh relay URL,
                     Shadowsocks cipher/password</li>
             </ul>
-            <p>Для управления этими настройками используйте <a href="/docs/api" style="color: var(--link);">Admin API</a>.
+            <p>Для управления этими настройками используйте <a href="/docs/api" style="color: var(--note-link, var(--link));">Admin API</a>.
                 Соответствующие конечные точки описаны в разделах «Настройки портов» и «Настройки конфигурации» документации API.</p>
         </div>
 

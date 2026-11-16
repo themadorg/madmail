@@ -87,10 +87,10 @@
         }
 
         .note-box { padding: 15px; margin: 20px 0; border-radius: 4px; }
-        .note-info { background: color-mix(in srgb, var(--link) 8%, transparent); border-left: 4px solid var(--link); }
-        .note-security { background: color-mix(in srgb, var(--success) 8%, transparent); border-left: 4px solid var(--success); }
-        .note-warning { background: color-mix(in srgb, var(--warning) 8%, transparent); border-left: 4px solid var(--warning); }
-        .note-danger { background: color-mix(in srgb, var(--destructive) 8%, transparent); border-left: 4px solid var(--destructive); }
+        .note-info { background: color-mix(in srgb, var(--link) var(--alert-fill, 8%), transparent); border-left: 4px solid var(--link); }
+        .note-security { background: color-mix(in srgb, var(--success) var(--alert-fill, 8%), transparent); border-left: 4px solid var(--success); }
+        .note-warning { background: color-mix(in srgb, var(--warning) var(--alert-fill, 8%), transparent); border-left: 4px solid var(--warning); }
+        .note-danger { background: color-mix(in srgb, var(--destructive) var(--alert-fill, 8%), transparent); border-left: 4px solid var(--destructive); }
 
         [dir="rtl"] .note-info, [dir="rtl"] .note-security, [dir="rtl"] .note-warning, [dir="rtl"] .note-danger {
             border-left: none; border-right: 4px solid;
@@ -148,7 +148,7 @@
 
     <div class="doc-container" id="api-docs-root"></div>
 
-    <footer style="text-align: center; margin: 40px; color: #888; font-size: 0.8em;">
+    <footer style="text-align: center; margin: 40px; color: var(--muted); font-size: 0.8em;">
         {{.Version}}
     </footer>
 
