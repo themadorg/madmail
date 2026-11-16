@@ -101,11 +101,11 @@ h3 {
 a {
   text-decoration: none;
   color: var(--link);
-  transition: opacity 0.2s;
 }
 
 a:hover {
-  opacity: 0.85;
+  /* Underline only. The 0.85 wash blended --link toward the backdrop and
+     took contrast from 5.17:1 to 3.98:1 light, 5.41:1 to 4.17:1 dark. */
   text-decoration: underline;
 }
 
