@@ -467,6 +467,7 @@ function app() {
       this.selectedContact = null; // deselect contact
       channel.unread = 0;
       this.saveState();
+      this.$nextTick(() => this.scrollToBottom());
     },
 
     /**
@@ -1785,6 +1786,9 @@ function app() {
             if (ch && this.selectedChannel?.id !== matchedChannelId) {
               ch.unread = (ch.unread || 0) + 1;
             }
+            if (this.selectedChannel?.id === matchedChannelId) {
+              this.$nextTick(() => this.scrollToBottom());
+            }
             this.toast('info', `New message in #${ch?.name || 'channel'}`);
           } else if (this.selectedContact?.email === peerEmail) {
             this.$nextTick(() => this.scrollToBottom());
@@ -1968,7 +1972,9 @@ function app() {
 
     // ---- Utilities ----
     scrollToBottom() {
-      const el = this.$refs.chatArea;
+      // The contact view and the channel view are separate elements and
+      // only one is mounted at a time, so take whichever is present.
+      const el = this.$refs.chatArea || this.$refs.channelArea;
       if (el) el.scrollTop = el.scrollHeight;
     },
 

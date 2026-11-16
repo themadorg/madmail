@@ -402,7 +402,7 @@
               </div>
 
               <!-- Channel Messages -->
-              <div class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
+              <div x-ref="channelArea" class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
                 <!-- Joining Loader -->
                 <div x-show="selectedChannel.status === 'joining'" 
                      class="flex flex-col items-center justify-center p-20 text-center animate-fade">
