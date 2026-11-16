@@ -124,6 +124,23 @@
 
 <div x-data="app()" x-init="init()" class="h-full flex flex-col">
 
+  <!-- Work-in-progress notice, every load, no storage -->
+  <div x-data="{ show: false, armed: false }"
+       x-effect="if (state !== 'init' && !armed) { armed = true; setTimeout(function () { show = true; }, 500); }"
+       x-show="show && state !== 'init'" x-transition.opacity.duration.250ms x-cloak
+       class="fixed inset-0 z-[100] flex items-center justify-center p-6"
+       style="background: var(--dc-overlay)">
+    <div class="max-w-sm w-full rounded-2xl border shadow-2xl p-6 text-center animate-fade"
+         style="background: var(--dc-surface); border-color: var(--dc-border); color: var(--dc-text)">
+      <p class="text-base font-semibold mb-1">Work In Progress</p>
+      <p class="text-sm mb-5" style="color: var(--dc-muted)">App for testing only.</p>
+      <button @click="show = false"
+              class="px-4 py-2 bg-dc-primary hover:bg-dc-primary-hover text-white text-sm font-semibold rounded-xl transition-all">
+        Continue
+      </button>
+    </div>
+  </div>
+
   <!-- ===== INITIALIZATION OVERLAY ===== -->
   <div x-show="state === 'init'" x-cloak
        class="splash fixed inset-0 z-50 flex items-center justify-center" style="background: var(--dc-splash-bg, var(--dc-bg))">
