@@ -65,7 +65,7 @@
             margin: 10px 0;
             word-break: break-all;
             white-space: pre-wrap;
-            border: 1px dashed #444;
+            border: 1px dashed var(--card-border);
             color: #ddd;
             line-height: 1.6;
         }
@@ -116,23 +116,23 @@
         }
 
         .code-header {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--code-header-bg, rgba(255, 255, 255, 0.1));
             color: var(--link);
             padding: 5px 15px;
             font-size: 0.8em;
             font-family: monospace;
             border-top-left-radius: 6px;
             border-top-right-radius: 6px;
-            border: 1px dashed #444;
+            border: 1px dashed var(--card-border);
             border-bottom: none;
             display: inline-block;
         }
 
         .one-liner {
             direction: ltr;
-            background: #101010;
-            border: 1px solid rgba(0, 210, 255, 0.3);
-            color: #00d2ff;
+            background: var(--code-bg);
+            border: 1px solid var(--link);
+            color: var(--link);
             padding: 15px;
             border-radius: 8px;
             font-family: monospace;
