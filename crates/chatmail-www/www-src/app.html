@@ -76,9 +76,31 @@
 
   <!-- App Styles -->
   <link rel="stylesheet" href="app.css">
+<script>
+(function () {
+  // Set <html class="light"> before first paint, so a light session does not flash
+  // dark while Alpine is still deferred. Precedence matches the x-data on <body>:
+  // a stored choice, then --dc-default-mode, then dark. Alpine's :class binding is
+  // on <body> and cannot reach <html>, so the x-init watch below keeps both this
+  // and color-scheme in sync on every toggle - change one, change the other.
+  // color-scheme is set here because app.css declares none, and without it the
+  // browser picks scrollbars and form controls by OS preference, not by mode.
+  var stored = null;
+  try { stored = localStorage.getItem('madmail-theme'); } catch (e) {}
+  var decl = '';
+  try { decl = (getComputedStyle(document.documentElement)
+                 .getPropertyValue('--dc-default-mode') || '').trim(); } catch (e) {}
+  var dark = stored ? stored === 'dark' : decl !== 'light';
+  document.documentElement.classList.toggle('light', !dark);
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+})();
+</script>
 </head>
 
-<body class="dark bg-dc-dark text-dc-text font-sans h-screen overflow-hidden" x-data="{ darkMode: true }"
+<!-- The active mode lives on <html>, written in two places: the head script above
+     for the first paint, and the x-init watch here for every change after it. -->
+<body class="dark bg-dc-dark text-dc-text font-sans h-screen overflow-hidden" x-data="{ darkMode: (function () { try { var s = localStorage.getItem('madmail-theme'); if (s) return s === 'dark'; } catch (e) {} return (getComputedStyle(document.documentElement).getPropertyValue('--dc-default-mode') || '').trim() !== 'light'; })() }"
+      x-init="$watch('darkMode', function (v) { try { localStorage.setItem('madmail-theme', v ? 'dark' : 'light'); } catch (e) {} document.documentElement.classList.toggle('light', !v); document.documentElement.style.colorScheme = v ? 'dark' : 'light'; })"
       :class="darkMode ? 'dark' : 'light'">
 
 <div x-data="app()" x-init="init()" class="h-full flex flex-col">

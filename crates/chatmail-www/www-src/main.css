@@ -38,8 +38,11 @@
   --overlay: rgba(0, 0, 0, 0.5);
 }
 
+/* Dark mode applies when the browser prefers it, unless a theme or the visitor
+   has chosen otherwise. The class set by the inline head script always wins; the
+   media query keeps dark mode working with JavaScript disabled. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light):not(.dark) {
     --background: #09090b;
     --foreground: #fafafa;
     --card: #09090b;
@@ -56,6 +59,24 @@
     --ring: #3b82f6;
     --overlay: rgba(0, 0, 0, 0.7);
   }
+}
+
+:root.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #09090b;
+  --card-border: #27272a;
+  --muted: #a1a1aa;
+  --primary: #fafafa;
+  --primary-foreground: #171717;
+  --secondary-border: #27272a;
+  --link: #3b82f6;
+  --code-bg: #18181b;
+  --destructive: #dc2626;
+  --warning: #d97706;
+  --success: #16a34a;
+  --ring: #3b82f6;
+  --overlay: rgba(0, 0, 0, 0.7);
 }
 
 /* ── Reset & Base ── */
@@ -613,4 +634,66 @@ input:focus {
   .card {
     padding: 16px;
   }
+}
+
+/* ── Theme toggle ──
+   The control the inline head script drives. Styled from existing variables so it
+   renders correctly against any palette, including the default. */
+
+.theme-toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  padding: 0;
+  outline: none;
+  vertical-align: middle;
+}
+
+.theme-toggle:hover {
+  border-color: var(--btn-secondary-border-hover, var(--primary));
+}
+
+.theme-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--toggle-knob, var(--primary));
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateX(20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:root.dark .theme-toggle-knob {
+  transform: translateX(0);
+}
+
+.theme-toggle-knob svg {
+  width: 12px;
+  height: 12px;
+  stroke: var(--primary-foreground, white);
+  stroke-width: 2.5;
+  fill: none;
+}
+
+.theme-toggle:hover .theme-toggle-knob {
+  background: var(--toggle-knob-hover, var(--toggle-knob, var(--primary)));
+}
+
+.theme-toggle .tt-moon { display: none; }
+:root.dark .theme-toggle .tt-moon { display: block; }
+:root.dark .theme-toggle .tt-sun { display: none; }
+
+.navbar__menu li:has(.theme-toggle),
+#menu li:has(.theme-toggle) {
+  margin-inline-start: 9px;
 }

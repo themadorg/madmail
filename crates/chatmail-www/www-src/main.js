@@ -17,6 +17,30 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
+/* Theme bootstrap. Runs at parse time, before the body paints, so a page whose
+ * stylesheet declares --default-mode does not flash the other mode first.
+ * main.css is linked ahead of this script on every page that loads it.
+ *
+ * Four pages - docker_docs.html, relay_docs.html and their fa counterparts -
+ * do not load main.js at all and carry an inline copy of this block instead. */
+(function () {
+  var stored = null;
+  try { stored = localStorage.getItem('madmail-theme'); } catch (e) {}
+  var decl = '';
+  try { decl = (getComputedStyle(document.documentElement)
+                 .getPropertyValue('--default-mode') || '').trim(); } catch (e) {}
+  var dark = stored ? stored === 'dark'
+           : decl   ? decl === 'dark'
+                    : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.classList.toggle('dark', dark);
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  window.toggleTheme = function () {
+    var d = document.documentElement.classList.toggle('dark');
+    document.documentElement.style.colorScheme = d ? 'dark' : 'light';
+    try { localStorage.setItem('madmail-theme', d ? 'dark' : 'light'); } catch (e) {}
+  };
+})();
+
 /* ── Navbar toggle ── */
 
 function toggleNav() {
