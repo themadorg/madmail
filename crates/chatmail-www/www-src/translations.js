@@ -29,6 +29,7 @@ var TRANSLATIONS = {
         nav_security: "Security",
         nav_deploy: "Deploy",
         nav_docs: "Docs",
+        nav_app: "App",
         nav_menu_label: "Menu",
         // Index page
         index_title: "Chat Server",
@@ -210,6 +211,7 @@ var TRANSLATIONS = {
         nav_security: "امنیت",
         nav_deploy: "راه‌اندازی",
         nav_docs: "مستندات",
+        nav_app: "برنامه",
         nav_menu_label: "منو",
         index_title: "سرور چت",
         index_subtitle: "این یک سرور اختصاصی برای استفاده از <strong>دلتاچت</strong> است.",
@@ -377,6 +379,7 @@ var TRANSLATIONS = {
         nav_security: "Безопасность",
         nav_deploy: "Установка",
         nav_docs: "Документация",
+        nav_app: "Приложение",
         nav_menu_label: "Меню",
         index_title: "Чат-сервер",
         index_subtitle: "Это выделенный сервер для использования с <strong>DeltaChat</strong>.",

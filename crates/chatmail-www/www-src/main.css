@@ -221,6 +221,20 @@ pre code {
   text-decoration: none;
 }
 
+/* The web client is served at /app.html but is not advertised: this nav item
+   stays hidden unless a stylesheet opts in by declaring --nav-app-display. */
+.navbar__menu li.nav-app-item {
+  display: var(--nav-app-display, none);
+}
+
+.navbar__menu li a.nav-accent {
+  color: var(--nav-accent, var(--link));
+}
+
+.navbar__menu li a.nav-accent:hover {
+  color: var(--nav-accent-hover, var(--foreground));
+}
+
 @media (max-width: 600px) {
   .navbar {
     flex-wrap: wrap;
