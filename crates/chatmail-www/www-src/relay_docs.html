@@ -163,13 +163,13 @@
         }
 
         .status-yes {
-            background: rgba(0, 200, 80, 0.15);
-            color: #00c850;
+            background: color-mix(in srgb, var(--success) var(--pill-fill, 15%), transparent);
+            color: var(--pill-fg, var(--success));
         }
 
         .status-no {
-            background: rgba(255, 80, 80, 0.15);
-            color: #ff5050;
+            background: color-mix(in srgb, var(--destructive) var(--pill-fill, 15%), transparent);
+            color: var(--pill-fg, var(--destructive));
         }
 
         .status-na {
