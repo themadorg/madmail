@@ -1,0 +1,3 @@
+interface:
+  display_name: "Madmail Bug Issue"
+  short_description: "Research and file Madmail bugs with gh CLI"
