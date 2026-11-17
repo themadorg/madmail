@@ -24,7 +24,7 @@ pub fn confirm(prompt: &str, skip: bool) -> Result<bool> {
         return Ok(true);
     }
     eprint!("{prompt} [y/N] ");
-    io::stdout().flush().ok();
+    let _ = io::stderr().flush();
     let mut line = String::new();
     io::stdin().read_line(&mut line)?;
     Ok(matches!(

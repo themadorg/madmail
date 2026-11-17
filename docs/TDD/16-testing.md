@@ -80,7 +80,7 @@ Replicate and extend the existing Python test suite (`tests/deltachat-test/`).
 7. **Federation** (cross-server, port blocking analysis)
 8. No-Logging verification (`journalctl` check)
 9. Large file transfers + quota
-10. Binary upgrade mechanism (signature verification)
+10. Binary upgrade mechanism (signature verification). Legacy `maddy` name and unit migration is unit-tested in `crates/chatmail/src/legacy_install.rs` and does not start IMAP or SMTP.
 11. JIT registration
 12. IMAP IDLE responsiveness
 13. Concurrent profiles

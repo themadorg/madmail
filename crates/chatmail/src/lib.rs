@@ -19,6 +19,7 @@ pub mod admin;
 pub mod boot;
 pub mod ctl;
 pub mod iroh_boot;
+pub mod legacy_install;
 pub mod logging;
 #[cfg(feature = "pprof")]
 pub mod profiling;

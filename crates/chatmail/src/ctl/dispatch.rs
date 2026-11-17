@@ -22,10 +22,10 @@ use chatmail_db::settings_keys;
 
 use super::{
     accounts, admin_token, admin_web, blocklist_cmd, certificate, db, delete_cmd, dkim, docs,
-    endpoint_cache, federation, firewall_cmd, html, install, iroh, language, message_size, monitor,
-    openrelay, port, proxy, push, queue_cmd, registration, registration_tokens, reload,
-    service_cmd, service_toggle, shared_port, sharing, status_cmd, tasks, uninstall, version,
-    versions_cmd, webmail_cors,
+    endpoint_cache, federation, firewall_cmd, html, install, iroh, language, legacy_migrate,
+    message_size, monitor, openrelay, port, proxy, push, queue_cmd, registration,
+    registration_tokens, reload, service_cmd, service_toggle, shared_port, sharing, status_cmd,
+    tasks, uninstall, version, versions_cmd, webmail_cors,
 };
 
 pub async fn dispatch(cli: &Cli) -> Result<()> {
@@ -51,6 +51,12 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
             })
             .await
             .map_err(|e| ChatmailError::config(format!("upgrade task failed: {e}")))?
+        }
+        Some(Command::LegacyMigrate) => {
+            let args = cli.args.clone();
+            tokio::task::spawn_blocking(move || legacy_migrate::legacy_migrate(&args))
+                .await
+                .map_err(|e| ChatmailError::config(format!("legacy-migrate task failed: {e}")))?
         }
         Some(Command::AdminToken { raw, no_qr }) => {
             admin_token::admin_token(&cli.args, *raw, *no_qr).await
@@ -178,7 +184,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
          Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, openrelay, language, \
          html-export, html-serve, html-migrate, webimap, websmtp, websocket-bridge, webmail-cors, push, federation, registration-tokens, sharing, \
-         monitor, status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, dkim, db, reload, message-size, tasks, queue, versions, completion"
+         monitor, status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, dkim, db, reload, message-size, tasks, queue, versions, legacy-migrate, completion"
     )))
 }
 
@@ -187,6 +193,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Run => "run",
         Command::Upgrade { .. } => "upgrade",
         Command::Update { .. } => "update",
+        Command::LegacyMigrate => "legacy-migrate",
         Command::Versions(_) => "versions",
         Command::AdminToken { .. } => "admin-token",
         Command::AdminWeb { .. } => "admin-web",

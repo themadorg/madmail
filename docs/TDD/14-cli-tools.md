@@ -56,6 +56,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `install` | [install.md](../guide/cli/install.md) | `install/` | **done** |
 | `uninstall` | [uninstall.md](../guide/cli/uninstall.md) | `uninstall.rs` | **done** |
 | `upgrade` / `update` | [upgrade.md](../guide/cli/upgrade.md) | `upgrade.rs` | **done** |
+| `legacy-migrate` | [legacy-migrate.md](../guide/cli/legacy-migrate.md) | `legacy_migrate.rs`, `legacy_install.rs` | **done** |
 | `version` | [version.md](../guide/cli/version.md) | `version.rs` | **done** |
 | `reload` | [reload.md](../guide/cli/reload.md) | `reload.rs` | **done** |
 | `status` | [status.md](../guide/cli/status.md) | `status_cmd.rs` | **done** |
@@ -112,6 +113,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `install` | [install.md](../guide/cli/install.md) | `ctl/install.go` | **done** (non-interactive + `--simple`; no DNS-01) |
 | `uninstall` | [uninstall.md](../guide/cli/uninstall.md) | `ctl/uninstall.go` | **done** |
 | `upgrade` / `update` | [upgrade.md](../guide/cli/upgrade.md) | `ctl/upgrade.go` | **done** |
+| `legacy-migrate` | [legacy-migrate.md](../guide/cli/legacy-migrate.md) | — (v2; #244) | **done** (`ctl/legacy_migrate.rs`, `legacy_install.rs`) |
 | `version` | [version.md](../guide/cli/version.md) | `maddy.go` | **done** |
 | `reload` | [reload.md](../guide/cli/reload.md) | `ctl/reload_config.go` | **done** |
 | `status` | [status.md](../guide/cli/status.md) | `ctl/online.go` | **done** (`--details`) |
@@ -227,7 +229,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 
 - Binary name **`chatmail`** in development; production installs use **`madmail`** (`cli.rs` `name = "madmail"`).
 - **`--json`** on all ctl commands (see [`json-output.md`](../guide/cli/json-output.md)).
-- **`upgrade` / `update`:** HTTP(S) download (100 MB cap); `.tar.gz` / `.tgz` URLs extract the binary first, then signed replace.
+- **`upgrade` / `update`:** HTTP(S) download (100 MB cap); `.tar.gz` / `.tgz` URLs extract the binary first, then signed replace. The two names are aliases. On a terminal, both ask before pointing a legacy `maddy` unit or command at the stable binary. Answering no leaves that service in place and warns of a conflict. `--json` and a non-terminal session switch it without asking. `legacy-migrate` is the one-time form when an older updater already left the service on the previous executable, or when the question was skipped.
 - **`certificate autocert`:** writes `tls_mode autocert` + `acme_email` to config; optional immediate `get` ([`certificate-autocert-enable.md`](../guide/cli/certificate-autocert-enable.md)).
 - **`federation dismiss`:** silent-dismiss cache (`chatmail-state::silent_dismiss`) — extra vs base Madmail CLI surface.
 - **`federation transport`:** allow or block outbound HTTPS, plain HTTP, and SMTP (`__FEDERATION_TRANSPORT_*__`). Unset stays allowed. `--domain` writes `__FEDERATION_TRANSPORT_DOMAINS__` (JSON). A missing transport in that object inherits the global mode.
