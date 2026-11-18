@@ -140,7 +140,7 @@
         }
 
         .status-yes { background: color-mix(in srgb, var(--success) var(--pill-fill, 15%), transparent); color: var(--pill-fg, var(--success)); }
-        .status-no { background: color-mix(in srgb, var(--destructive) var(--pill-fill, 15%), transparent); color: var(--pill-fg, var(--destructive)); }
+        .status-no { background: color-mix(in srgb, var(--destructive) 15%, transparent); color: var(--destructive); }
         .status-na { background: transparent; color: var(--muted); }
 
         .mode-card {
@@ -207,8 +207,8 @@
         }
 
         .badge-advanced {
-            background: color-mix(in srgb, var(--warning) var(--pill-fill, 15%), transparent);
-            color: var(--pill-fg, var(--warning));
+            background: color-mix(in srgb, var(--warning) 15%, transparent);
+            color: var(--warning);
         }
     </style>
     <script src="/main.js"></script>
