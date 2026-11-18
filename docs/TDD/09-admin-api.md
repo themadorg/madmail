@@ -52,6 +52,7 @@ Madmail-compatible JSON-RPC admin API. Full operator reference: [`context/madmai
 | `/admin/services/auto_purge_seen` | GET, POST | Implemented (`__AUTO_PURGE_SEEN__`, default disabled) |
 | `/admin/services/webimap` | GET, POST | Implemented (`__WEBIMAP_ENABLED__`, default disabled) |
 | `/admin/services/websmtp` | GET, POST | Implemented (`__WEBSMTP_ENABLED__`, default disabled) |
+| `/admin/services/contact_sharing` | GET, POST | `__CONTACT_SHARING_ENABLED__` overrides file `enable_contact_sharing` (default off when unset). GET returns `status`, `enabled`, `source` (`database` or `config`), `config_enabled`, `reload_required: false`, and `file_change_requires_restart` (true only while `source` is `config`). POST `{"action":"enable"}` or `{"action":"disable"}` applies on the next HTTP request. Editing the file, with no saved row, needs a process restart. Does not delete `sharing.db`. Bearer auth is the existing admin gate |
 | `/admin/services/push` | GET, POST | Implemented — `__PUSH_MODE__` (`auto`/`on`/`off`, **default `off`**); POSTs device tokens to `notifications.delta.chat` when enabled; GET returns `successful_notifications`, `consecutive_failures`; POST `enable`/`disable`/`auto` → soft reload. See [23-push-notifications.md](23-push-notifications.md) |
 | `/admin/settings/federation` | GET, POST | Implemented — includes `max_federation_size`, `federation_size_effective`, `transports` (`{ "https", "http", "smtp" }` = `allow` \| `block`, stored mode). POST accepts `transports` and `domain`, and checks the whole body (`policy` is `ACCEPT` or `REJECT`, every mode, `domain`, and for a `domain` update the stored overrides row) before it saves anything, so a 400 saves nothing |
 | `/admin/federation/rules` | GET, POST, DELETE | Implemented |
@@ -261,6 +262,7 @@ Push UI: overview card + services row — toggle (`auto`/`disable`), successful-
 | `/admin/services/push` | `madmail push` | [push.md](../guide/cli/push.md) |
 | `/admin/services/webimap` | `madmail webimap` | [webimap.md](../guide/cli/webimap.md) |
 | `/admin/services/websmtp` | `madmail websmtp` | [websmtp.md](../guide/cli/websmtp.md) |
+| `/admin/services/contact_sharing` | `madmail sharing status\|enable\|disable` | [sharing.md](../guide/cli/sharing.md) |
 | `/admin/services/admin_web` | `madmail admin-web` | [admin-web.md](../guide/cli/admin-web.md) |
 | `/admin/settings/*` ports | `madmail port` | [port.md](../guide/cli/port.md) |
 | Message size settings | `madmail message-size` | [message-size.md](../guide/cli/message-size.md) |

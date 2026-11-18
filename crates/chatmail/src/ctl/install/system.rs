@@ -684,8 +684,8 @@ impl SecureInstall {
                 {
                     None => None,
                     Some((_, st))
-                        if !self.is_service_uid(st.st_uid)
-                            && !(st.st_uid == 0 && !self.manage_ownership) =>
+                        if (self.manage_ownership || st.st_uid != 0)
+                            && !self.is_service_uid(st.st_uid) =>
                     {
                         return Err(ChatmailError::config(format!(
                             "refusing to read {} as root: it belongs to uid {}, not to the \

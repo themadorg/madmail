@@ -173,7 +173,7 @@ Separate SQLite file (`{state_dir}/sharing.db`) — not in `chatmail.db`. Manage
 | `name` | TEXT |
 | `created_at` | TEXT |
 
-CLI: `madmail sharing` (create/list/delete). Admin HTTP `/admin/shares` not yet implemented.
+CLI: `madmail sharing` (create/list/edit/reserve/remove). The public on/off switch is not a column here. It is `__CONTACT_SHARING_ENABLED__` in the main `settings` table, falling back to config `enable_contact_sharing` when that row is absent. Disabling public pages does not delete this file. Admin RPC: `GET`/`POST /admin/services/contact_sharing`. Per-link admin HTTP `/admin/shares` is not implemented.
 
 ## Not replicated (Madmail-only)
 

@@ -628,3 +628,119 @@ fn e2e_federation_transport_domain_override_json() {
     assert_eq!(envelope["data"]["overrides"][0]["domain"], "evil.test");
     assert_eq!(envelope["data"]["overrides"][0]["smtp"], "block");
 }
+
+#[test]
+fn e2e_sharing_service_toggle_json() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = dir.path().to_string_lossy().to_string();
+    let base = state_argv(&state);
+
+    let out = chatmail()
+        .args(base.clone())
+        .args(["sharing", "status"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("Contact sharing: disabled"));
+    assert!(text.contains("no database override"));
+    assert!(text.contains("Editing the file needs a restart."));
+    assert!(!text.contains("No restart required."));
+
+    let out = chatmail()
+        .args(base.clone())
+        .args(["sharing", "status", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("sharing status JSON");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "sharing status");
+    assert_eq!(envelope["data"]["enabled"], false);
+    assert_eq!(envelope["data"]["source"], "config");
+    assert_eq!(envelope["data"]["config_enabled"], false);
+    assert_eq!(envelope["data"]["reload_required"], false);
+    assert_eq!(envelope["data"]["file_change_requires_restart"], true);
+
+    let out = chatmail()
+        .args(base.clone())
+        .args(["sharing", "enable", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("sharing enable JSON");
+    assert_eq!(envelope["command"], "sharing enable");
+    assert_eq!(envelope["data"]["enabled"], true);
+    assert_eq!(envelope["data"]["source"], "database");
+    assert_eq!(envelope["data"]["reload_required"], false);
+    assert_eq!(envelope["data"]["file_change_requires_restart"], false);
+    assert!(envelope["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("enabled"));
+
+    let out = chatmail()
+        .args(base.clone())
+        .args(["sharing", "disable", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("sharing disable JSON");
+    assert_eq!(envelope["command"], "sharing disable");
+    assert_eq!(envelope["data"]["enabled"], false);
+    assert_eq!(envelope["data"]["source"], "database");
+    assert_eq!(envelope["message"], "Contact sharing disabled");
+
+    chatmail()
+        .args(base.clone())
+        .args([
+            "sharing",
+            "create",
+            "bob",
+            "https://i.delta.chat/#ABCDEF",
+            "Bob",
+        ])
+        .assert()
+        .success();
+    chatmail()
+        .args(base)
+        .args(["sharing", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bob"));
+    assert!(dir.path().join("sharing.db").is_file());
+
+    let configured = TempDir::new().expect("tempdir");
+    let state = configured.path().to_string_lossy().to_string();
+    let conf = configured.path().join("share.conf");
+    std::fs::write(&conf, "chatmail {\n enable_contact_sharing true\n}\n").unwrap();
+    let out = chatmail()
+        .args([
+            "--state-dir",
+            state.as_str(),
+            "--config",
+            conf.to_str().unwrap(),
+            "sharing",
+            "status",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let envelope: Value = serde_json::from_slice(&out).expect("config fallback JSON");
+    assert_eq!(envelope["data"]["enabled"], true);
+    assert_eq!(envelope["data"]["source"], "config");
+    assert_eq!(envelope["data"]["config_enabled"], true);
+    assert_eq!(envelope["data"]["reload_required"], false);
+    assert_eq!(envelope["data"]["file_change_requires_restart"], true);
+}

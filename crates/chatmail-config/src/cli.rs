@@ -863,6 +863,16 @@ pub enum SharingCommand {
         #[arg(value_name = "NEW_NAME")]
         name: Option<String>,
     },
+    /// Show whether public contact sharing is enabled.
+    ///
+    /// A saved setting overrides `enable_contact_sharing` and applies on the
+    /// next HTTP request. With no saved setting, the running server keeps the
+    /// file value from startup. Editing the file needs a restart.
+    Status,
+    /// Enable public contact sharing. Saved links stay in `sharing.db`.
+    Enable,
+    /// Disable public contact sharing without deleting saved links.
+    Disable,
 }
 
 /// `chatmail uninstall` flags (Madmail `ctl/uninstall.go`).

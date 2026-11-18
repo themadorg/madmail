@@ -1394,6 +1394,129 @@ async fn websocket_bridge_config_fallback_and_api_override() {
     }
 }
 
+#[tokio::test]
+async fn contact_sharing_config_fallback_api_override_and_auth() {
+    let token = "secret-token-01234567890123456789012345678901";
+    for configured in [false, true] {
+        let cfg = AppConfig {
+            enable_contact_sharing: configured,
+            ..Default::default()
+        };
+        let (st, _dir) = test_state(token, cfg).await;
+        let (_, body) =
+            resources::dispatch(&st, "GET", "/admin/services/contact_sharing", &json!({}))
+                .await
+                .unwrap();
+        let body = body.unwrap();
+        let expected = if configured { "enabled" } else { "disabled" };
+        assert_eq!(body["status"], expected);
+        assert_eq!(body["enabled"], configured);
+        assert_eq!(body["source"], "config");
+        assert_eq!(body["config_enabled"], configured);
+        assert_eq!(body["reload_required"], false);
+        assert_eq!(body["file_change_requires_restart"], true);
+
+        let denied = admin_rpc(&st, None, "POST", "enable").await;
+        assert_eq!(denied["status"], 401);
+        assert_eq!(denied["error"], "unauthorized");
+        assert!(
+            chatmail_db::get_setting(&st.pool, settings_keys::CONTACT_SHARING_ENABLED)
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        let wrong = admin_rpc(&st, Some("Bearer wrong-token"), "POST", "enable").await;
+        assert_eq!(wrong["status"], 401);
+        assert!(
+            chatmail_db::get_setting(&st.pool, settings_keys::CONTACT_SHARING_ENABLED)
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        let disabled = admin_rpc(&st, Some(&format!("Bearer {token}")), "POST", "disable").await;
+        assert_eq!(disabled["status"], 200);
+        assert_eq!(disabled["body"]["status"], "disabled");
+        assert_eq!(disabled["body"]["source"], "database");
+        assert_eq!(disabled["body"]["config_enabled"], configured);
+        assert_eq!(disabled["body"]["reload_required"], false);
+        assert_eq!(disabled["body"]["file_change_requires_restart"], false);
+        assert_eq!(disabled["resource"], "/admin/services/contact_sharing");
+
+        let (_, snapshot) = resources::dispatch(&st, "GET", "/admin/settings", &json!({}))
+            .await
+            .unwrap();
+        assert_eq!(snapshot.unwrap()["contact_sharing_enabled"], "disabled");
+
+        resources::dispatch(
+            &st,
+            "POST",
+            "/admin/services/contact_sharing",
+            &json!({"action":"enable"}),
+        )
+        .await
+        .unwrap();
+        let (_, body) =
+            resources::dispatch(&st, "GET", "/admin/services/contact_sharing", &json!({}))
+                .await
+                .unwrap();
+        let body = body.unwrap();
+        assert_eq!(body["status"], "enabled");
+        assert_eq!(body["source"], "database");
+        assert_eq!(body["config_enabled"], configured);
+
+        let err = resources::dispatch(
+            &st,
+            "POST",
+            "/admin/services/contact_sharing",
+            &json!({"action":"invalid"}),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.0, 400);
+        let err = resources::dispatch(&st, "DELETE", "/admin/services/contact_sharing", &json!({}))
+            .await
+            .unwrap_err();
+        assert_eq!(err.0, 405);
+    }
+}
+
+async fn admin_rpc(
+    st: &AdminState,
+    authorization: Option<&str>,
+    method: &str,
+    action: &str,
+) -> serde_json::Value {
+    use axum::response::IntoResponse;
+
+    let mut headers = serde_json::Map::new();
+    if let Some(authorization) = authorization {
+        headers.insert(
+            "Authorization".into(),
+            serde_json::Value::String(authorization.to_string()),
+        );
+    }
+    let raw = serde_json::to_vec(&json!({
+        "method": method,
+        "resource": "/admin/services/contact_sharing",
+        "headers": headers,
+        "body": {"action": action},
+    }))
+    .unwrap();
+    let response = crate::handler::admin_handler(
+        axum::extract::State(st.clone()),
+        axum::http::HeaderMap::new(),
+        axum::body::Bytes::from(raw),
+    )
+    .await
+    .into_response();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
 /// `is_set` reports a stored row only; a protected value with no row is not "set".
 #[tokio::test]
 async fn protected_setting_without_row_is_not_reported_as_set() {

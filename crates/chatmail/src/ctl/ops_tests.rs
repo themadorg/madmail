@@ -407,6 +407,86 @@ async fn dispatch_sharing_create_and_remove() {
 }
 
 #[tokio::test]
+async fn dispatch_sharing_service_toggle_keeps_links() {
+    let (dir, _args, _db, pool) = setup_ctl_env().await;
+    let sharing_db = dir.path().join("sharing.db");
+
+    dispatch(&parse_cli(dir.path(), &["sharing", "status"]))
+        .await
+        .unwrap();
+    assert!(get_setting(&pool, settings_keys::CONTACT_SHARING_ENABLED)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(!sharing_db.exists());
+
+    dispatch(&parse_cli(dir.path(), &["sharing", "enable"]))
+        .await
+        .unwrap();
+    assert!(
+        get_bool_setting(&pool, settings_keys::CONTACT_SHARING_ENABLED, false)
+            .await
+            .unwrap()
+    );
+    assert!(!sharing_db.exists(), "enable must not create sharing.db");
+
+    dispatch(&parse_cli(dir.path(), &["sharing", "disable"]))
+        .await
+        .unwrap();
+    assert!(
+        !get_bool_setting(&pool, settings_keys::CONTACT_SHARING_ENABLED, true)
+            .await
+            .unwrap()
+    );
+
+    dispatch(&parse_cli(
+        dir.path(),
+        &[
+            "sharing",
+            "create",
+            "bob",
+            "https://i.delta.chat/#ABCDEF",
+            "Bob",
+        ],
+    ))
+    .await
+    .unwrap();
+    assert!(sharing_db.is_file());
+    let links = init_sharing_db(&sharing_db).await.unwrap();
+    assert_eq!(list_sharing_contacts(&links).await.unwrap().len(), 1);
+
+    dispatch(&parse_cli(dir.path(), &["sharing", "list"]))
+        .await
+        .unwrap();
+    assert!(
+        !get_bool_setting(&pool, settings_keys::CONTACT_SHARING_ENABLED, true)
+            .await
+            .unwrap()
+    );
+    assert_eq!(list_sharing_contacts(&links).await.unwrap().len(), 1);
+
+    let conf = dir.path().join("share.conf");
+    std::fs::write(&conf, "chatmail {\n enable_contact_sharing true\n}\n").unwrap();
+    chatmail_db::delete_setting(&pool, settings_keys::CONTACT_SHARING_ENABLED)
+        .await
+        .unwrap();
+    dispatch(&parse_cli_with_config(
+        dir.path(),
+        &conf,
+        &["sharing", "status"],
+    ))
+    .await
+    .unwrap();
+    assert!(
+        get_setting(&pool, settings_keys::CONTACT_SHARING_ENABLED)
+            .await
+            .unwrap()
+            .is_none(),
+        "status must not write a fallback row"
+    );
+}
+
+#[tokio::test]
 async fn dispatch_iroh_not_configured_status_and_enable_guard() {
     let (dir, _args, _db, pool) = setup_ctl_env().await;
 
@@ -899,6 +979,21 @@ fn cli_language_and_registration_parse() {
     assert!(matches!(
         cli.command,
         Some(Command::Sharing(SharingCommand::List))
+    ));
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["sharing", "status"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Sharing(SharingCommand::Status))
+    ));
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["sharing", "enable"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Sharing(SharingCommand::Enable))
+    ));
+    let cli = parse_cli(std::path::Path::new("/tmp"), &["sharing", "disable"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Sharing(SharingCommand::Disable))
     ));
 
     let cli = Cli::try_parse_from(["chatmail", "status", "--details"]).unwrap();

@@ -205,10 +205,13 @@ Outbound federation DKIM (selector `default`): print `d=`, key paths, and the TX
 ### [`sharing`](sharing.md)
 
 - [`create`](sharing-create.md)
+- [`disable`](sharing-disable.md)
 - [`edit`](sharing-edit.md)
+- [`enable`](sharing-enable.md)
 - [`list`](sharing-list.md)
 - [`remove`](sharing-remove.md)
 - [`reserve`](sharing-reserve.md)
+- [`status`](sharing-status.md)
 
 ### [`queue`](queue.md)
 
