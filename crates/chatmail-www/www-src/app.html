@@ -34,8 +34,8 @@
         extend: {
           colors: {
             dc: {
-              primary: 'var(--dc-primary)',
-              'primary-hover': 'var(--dc-primary-hover)',
+              primary: '#159b6b',
+              'primary-hover': '#0f7d56',
               dark: 'var(--dc-bg)',
               surface: 'var(--dc-surface)',
               'surface-2': 'var(--dc-surface-2)',
@@ -43,26 +43,7 @@
               border: 'var(--dc-border)',
               text: 'var(--dc-text)',
               muted: 'var(--dc-muted)',
-              accent: 'var(--dc-accent)',
-              'brand': 'var(--dc-brand)',
-              'brand-hover': 'var(--dc-brand-hover)',
-              'on-brand': 'var(--dc-on-brand)',
-              'live': 'var(--dc-live)',
-              'joining': 'var(--dc-joining)',
-              'grad-from': 'var(--dc-grad-from)',
-              'grad-to': 'var(--dc-grad-to)',
-              'identity': 'var(--dc-identity)',
-              'identity-tint': 'color-mix(in srgb, var(--dc-identity) 20%, transparent)',
-              'insecure': 'var(--dc-insecure)',
-              'counter': 'var(--dc-counter)',
-              'counter-tint': 'color-mix(in srgb, var(--dc-counter) 10%, transparent)',
-              'joining-tint': 'color-mix(in srgb, var(--dc-joining) 10%, transparent)',
-              'success': 'var(--dc-success)',
-              'accent-tint': 'color-mix(in srgb, var(--dc-accent) 20%, transparent)',
-              'primary-tint': 'color-mix(in srgb, var(--dc-primary) 10%, transparent)',
-              'success-tint': 'color-mix(in srgb, var(--dc-success-bg) 20%, transparent)',
-              'success-glow': 'color-mix(in srgb, var(--dc-success) 50%, transparent)',
-              danger: 'var(--dc-danger)',
+              accent: '#6c5ce7',
             }
           },
           fontFamily: {
@@ -95,59 +76,20 @@
 
   <!-- App Styles -->
   <link rel="stylesheet" href="app.css">
-<script>
-(function () {
-  // Set <html class="light"> before first paint, so a light session does not flash
-  // dark while Alpine is still deferred. Precedence matches the x-data on <body>:
-  // a stored choice, then --dc-default-mode, then dark. Alpine's :class binding is
-  // on <body> and cannot reach <html>, so the x-init watch below keeps both this
-  // and color-scheme in sync on every toggle - change one, change the other.
-  // color-scheme is set here because app.css declares none, and without it the
-  // browser picks scrollbars and form controls by OS preference, not by mode.
-  var stored = null;
-  try { stored = localStorage.getItem('madmail-theme'); } catch (e) {}
-  var decl = '';
-  try { decl = (getComputedStyle(document.documentElement)
-                 .getPropertyValue('--dc-default-mode') || '').trim(); } catch (e) {}
-  var dark = stored ? stored === 'dark' : decl !== 'light';
-  document.documentElement.classList.toggle('light', !dark);
-  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-})();
-</script>
 </head>
 
-<!-- The active mode lives on <html>, written in two places: the head script above
-     for the first paint, and the x-init watch here for every change after it. -->
-<body class="dark bg-dc-dark text-dc-text font-sans h-screen overflow-hidden" x-data="{ darkMode: (function () { try { var s = localStorage.getItem('madmail-theme'); if (s) return s === 'dark'; } catch (e) {} return (getComputedStyle(document.documentElement).getPropertyValue('--dc-default-mode') || '').trim() !== 'light'; })() }"
-      x-init="$watch('darkMode', function (v) { try { localStorage.setItem('madmail-theme', v ? 'dark' : 'light'); } catch (e) {} document.documentElement.classList.toggle('light', !v); document.documentElement.style.colorScheme = v ? 'dark' : 'light'; })"
+<body class="dark bg-dc-dark text-dc-text font-sans h-screen overflow-hidden" x-data="{ darkMode: true }"
       :class="darkMode ? 'dark' : 'light'">
 
 <div x-data="app()" x-init="init()" class="h-full flex flex-col">
 
-  <!-- Work-in-progress notice, every load, no storage -->
-  <div x-data="{ show: false, armed: false }"
-       x-effect="if (state !== 'init' && !armed) { armed = true; setTimeout(function () { show = true; }, 500); }"
-       x-show="show && state !== 'init'" x-transition.opacity.duration.250ms x-cloak
-       class="fixed inset-0 z-[100] flex items-center justify-center p-6"
-       style="background: var(--dc-overlay)">
-    <div class="max-w-sm w-full rounded-2xl border shadow-2xl p-6 text-center animate-fade"
-         style="background: var(--dc-surface); border-color: var(--dc-border); color: var(--dc-text)">
-      <p class="text-base font-semibold mb-1">Work In Progress</p>
-      <p class="text-sm mb-5" style="color: var(--dc-muted)">App for testing only.</p>
-      <button @click="show = false"
-              class="px-4 py-2 bg-dc-primary hover:bg-dc-primary-hover text-white text-sm font-semibold rounded-xl transition-all">
-        Continue
-      </button>
-    </div>
-  </div>
-
   <!-- ===== INITIALIZATION OVERLAY ===== -->
   <div x-show="state === 'init'" x-cloak
-       class="splash fixed inset-0 z-50 flex items-center justify-center" style="background: var(--dc-splash-bg, var(--dc-bg))">
+       class="fixed inset-0 z-50 flex items-center justify-center" style="background: var(--dc-bg)">
     <div class="text-center animate-fade">
       <div class="w-16 h-16 border-4 border-t-transparent rounded-full animate-spin mx-auto mb-6"
-           style="border-color: var(--dc-splash-ring, var(--dc-border)); border-top-color: var(--dc-primary)"></div>
-      <h1 class="text-2xl font-bold bg-gradient-to-r from-dc-grad-from to-dc-grad-to bg-clip-text text-transparent mb-2">
+           style="border-color: var(--dc-border); border-top-color: var(--dc-primary)"></div>
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-dc-primary to-dc-accent bg-clip-text text-transparent mb-2">
         Delta Chat Web
       </h1>
       <p class="text-dc-muted text-sm" x-text="initStatus">Connecting...</p>
@@ -159,7 +101,7 @@
        class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: var(--dc-bg)">
     <div class="border rounded-2xl p-8 w-full max-w-md shadow-2xl animate-fade"
          style="background: var(--dc-surface); border-color: var(--dc-border); box-shadow: 0 25px 50px var(--dc-shadow)">
-      <h1 class="text-2xl font-bold bg-gradient-to-r from-dc-grad-from to-dc-grad-to bg-clip-text text-transparent mb-1">
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-dc-primary to-dc-accent bg-clip-text text-transparent mb-1">
         Delta Chat Web
       </h1>
       <p class="text-dc-muted text-sm mb-6">End-to-end encrypted messaging via WebIMAP/SMTP</p>
@@ -174,7 +116,7 @@
                 class="w-full py-3 bg-dc-primary hover:bg-dc-primary-hover text-white font-semibold rounded-lg
                        transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg
                        disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0"
-                style="--tw-shadow-color: var(--dc-btn-glow)">
+                style="--tw-shadow-color: rgba(21,155,107,0.3)">
           <span x-show="!connecting">Connect & Auto-Register</span>
           <span x-show="connecting" class="flex items-center justify-center gap-2">
             <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"/></svg>
@@ -192,13 +134,13 @@
 
       <!-- Top Bar -->
       <header class="border-b px-5 py-3 flex items-center gap-4 shrink-0"
-              style="background: var(--dc-header-bg, var(--dc-surface)); border-color: var(--dc-border)">
+              style="background: var(--dc-surface); border-color: var(--dc-border)">
         <div class="relative cursor-pointer" @click="$refs.avatarInput.click()">
           <template x-if="profileImageB64">
             <img :src="profileImageB64" class="w-9 h-9 rounded-full object-cover border-2 border-dc-primary">
           </template>
           <template x-if="!profileImageB64">
-            <div class="w-9 h-9 rounded-full bg-dc-identity-tint flex items-center justify-center text-dc-identity font-bold text-sm" x-text="(displayName || credentials.email || '?')[0].toUpperCase()"></div>
+            <div class="w-9 h-9 rounded-full bg-dc-primary/20 flex items-center justify-center text-dc-primary font-bold text-sm" x-text="(displayName || credentials.email || '?')[0].toUpperCase()"></div>
           </template>
           <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center icon icon-sm"
                style="background: var(--dc-surface); border: 1px solid var(--dc-border)">
@@ -214,7 +156,7 @@
           <span class="text-[10px] font-mono" style="color: var(--dc-muted)" x-text="credentials.email"></span>
         </div>
         <div class="flex items-center gap-2 ml-auto">
-          <div class="w-2 h-2 rounded-full bg-dc-success shadow-lg shadow-dc-success-glow"></div>
+          <div class="w-2 h-2 rounded-full bg-green-400 shadow-lg shadow-green-400/50"></div>
         </div>
 
         <!-- Theme Toggle -->
@@ -232,7 +174,7 @@
         <button @click="showInfo = !showInfo"
                 class="flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-lg border transition-all icon"
                 style="color: var(--dc-muted); border-color: var(--dc-border)"
-                onmouseover="this.style.borderColor='var(--dc-secondary-border-hover, var(--dc-control))';this.style.color='var(--dc-text)'"
+                onmouseover="this.style.borderColor='var(--dc-primary)';this.style.color='var(--dc-text)'"
                 onmouseout="this.style.borderColor='var(--dc-border)';this.style.color='var(--dc-muted)'">
           <i data-lucide="info" style="width:14px;height:14px"></i>
           <span>Info</span>
@@ -244,13 +186,13 @@
         <!-- Sidebar: Contacts -->
         <aside class="w-72 border-r flex flex-col shrink-0"
                style="background: var(--dc-surface); border-color: var(--dc-border)">
-          <div class="p-4" style="background: var(--dc-contactbar-bg, transparent); border-bottom: 1px solid var(--dc-border)">
+          <div class="p-4" style="border-bottom: 1px solid var(--dc-border)">
             <h2 class="text-xs font-semibold uppercase tracking-widest mb-3" style="color: var(--dc-muted)">Contacts</h2>
             <div class="flex gap-2 mb-2">
               <input x-model="newContactAddr" type="text" placeholder="user@server.com or QR URI"
                      @keydown.enter="addContactOrScan()"
                      class="compose-input flex-1 px-3 py-2 rounded-lg text-xs">
-              <button @click="addContactOrScan()" class="px-3 py-2 bg-dc-brand text-dc-on-brand text-xs rounded-lg hover:bg-dc-brand-hover transition-all flex items-center gap-1"
+              <button @click="addContactOrScan()" class="px-3 py-2 bg-dc-primary text-white text-xs rounded-lg hover:bg-dc-primary-hover transition-all flex items-center gap-1"
                       title="Add contact or scan SecureJoin QR">
                 <i data-lucide="user-plus" style="width:14px;height:14px"></i>
               </button>
@@ -260,22 +202,22 @@
           <div class="flex-1 overflow-y-auto p-2">
             <template x-for="contact in contacts" :key="contact.email">
               <div @click="selectContact(contact)"
-                   :class="{'border-l-2 border-dc-identity': selectedContact?.email === contact.email,
+                   :class="{'border-l-2 border-dc-primary': selectedContact?.email === contact.email,
                             'border-l-2 border-transparent': selectedContact?.email !== contact.email}"
-                   :style="selectedContact?.email === contact.email ? 'background: var(--dc-selected-bg, var(--dc-surface-3))' : ''"
+                   :style="selectedContact?.email === contact.email ? 'background: var(--dc-surface-3)' : ''"
                    class="px-3 py-3 rounded-r-lg cursor-pointer transition-all mb-1"
-                   onmouseover="if(!this.classList.contains('border-dc-identity'))this.style.background='var(--dc-row-hover-bg, var(--dc-surface-2))'"
-                   onmouseout="if(!this.classList.contains('border-dc-identity'))this.style.background=''">
+                   onmouseover="if(!this.classList.contains('border-dc-primary'))this.style.background='var(--dc-surface-2)'"
+                   onmouseout="if(!this.classList.contains('border-dc-primary'))this.style.background=''">
                 <div class="flex items-center gap-3">
                   <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0"
-                       :class="contact.verified ? 'bg-dc-success-tint text-dc-success' : 'bg-dc-identity-tint text-dc-identity'"
+                       :class="contact.verified ? 'bg-green-500/20 text-green-400' : 'bg-dc-primary/20 text-dc-primary'"
                        x-text="contact.email[0].toUpperCase()"></div>
                   <div class="min-w-0">
                     <p class="text-sm font-medium truncate flex items-center gap-1" x-text="contact.email"
                        style="color: var(--dc-text)">
                     </p>
                     <p class="text-xs truncate" style="color: var(--dc-muted)">
-                      <span x-show="contact.verified" class="text-dc-success inline-flex items-center gap-0.5">
+                      <span x-show="contact.verified" class="text-green-400 inline-flex items-center gap-0.5">
                         <i data-lucide="shield-check" style="width:10px;height:10px"></i> verified ·
                       </span>
                       <span x-text="contact.lastMsg || 'No messages yet'"></span>
@@ -329,18 +271,18 @@
               <!-- Channel List -->
               <template x-for="channel in channels" :key="channel.id">
                 <div @click="selectChannel(channel)"
-                     :class="{'border-l-2 border-dc-identity': selectedChannel?.id === channel.id,
+                     :class="{'border-l-2 border-dc-accent': selectedChannel?.id === channel.id,
                               'border-l-2 border-transparent': selectedChannel?.id !== channel.id}"
-                     :style="selectedChannel?.id === channel.id ? (isChannelOwner(channel) ? 'background: var(--dc-chan-owner-sel, var(--dc-selected-bg, var(--dc-surface-3))); border-color: var(--dc-chan-owner-accent, var(--dc-identity))' : 'background: var(--dc-chan-sub-sel, var(--dc-selected-bg, var(--dc-surface-3))); border-color: var(--dc-chan-sub-accent, var(--dc-identity))') : ''"
+                     :style="selectedChannel?.id === channel.id ? 'background: var(--dc-surface-3)' : ''"
                      class="px-3 py-2.5 rounded-r-lg cursor-pointer transition-all mb-1 group"
-                     onmouseover="if(!this.classList.contains('border-dc-identity'))this.style.background='var(--dc-row-hover-bg, var(--dc-surface-2))'"
-                     onmouseout="if(!this.classList.contains('border-dc-identity'))this.style.background=''">
+                     onmouseover="if(!this.classList.contains('border-dc-accent'))this.style.background='var(--dc-surface-2)'"
+                     onmouseout="if(!this.classList.contains('border-dc-accent'))this.style.background=''">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                         :class="channel.status === 'joining' ? 'animate-pulse' : ''"
+                         :class="channel.status === 'joining' ? 'bg-yellow-500/10 text-yellow-500 animate-pulse' : ''"
                          :style="channel.status !== 'joining' ? (isChannelOwner(channel)
-                            ? 'background: color-mix(in srgb, var(--dc-owner) var(--dc-owner-fill), transparent); color: var(--dc-on-owner)'
-                            : 'background: color-mix(in srgb, var(--dc-subscribed) var(--dc-subscribed-fill), transparent); color: var(--dc-subscribed)') : 'background: color-mix(in srgb, var(--dc-joining) var(--dc-joining-fill), transparent); color: var(--dc-on-joining)'">
+                            ? 'background: rgba(108,92,231,0.15); color: #6c5ce7'
+                            : 'background: rgba(0,206,209,0.10); color: #00ced1') : ''">
                       <template x-if="channel.status === 'joining'">
                         <i data-lucide="refresh-cw" class="animate-spin" style="width:14px;height:14px"></i>
                       </template>
@@ -363,7 +305,7 @@
                     </div>
                     <span x-show="channel.unread > 0"
                           class="ml-auto text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                          style="background: var(--dc-accent)"
+                          style="background: #6c5ce7"
                           x-text="channel.unread"></span>
                   </div>
                 </div>
@@ -376,7 +318,7 @@
         </aside>
 
         <!-- Chat Area -->
-        <main class="flex-1 min-w-0 flex flex-col" style="background: var(--dc-bg)">
+        <main class="flex-1 flex flex-col" style="background: var(--dc-bg)">
           <!-- No contact or channel selected -->
           <div x-show="!selectedContact && !selectedChannel" class="flex-1 flex items-center justify-center" style="color: var(--dc-muted)">
             <div class="text-center">
@@ -396,9 +338,9 @@
             <div class="flex flex-col h-full">
               <!-- Channel header -->
               <div class="border-b px-5 py-3 flex items-center gap-3 shrink-0"
-                   style="background: var(--dc-namebar-bg, var(--dc-surface)); border-color: var(--dc-border)">
+                   style="background: var(--dc-surface); border-color: var(--dc-border)">
                 <div class="w-8 h-8 rounded-lg flex items-center justify-center"
-                     :style="isChannelOwner(selectedChannel) ? 'background: color-mix(in srgb, var(--dc-owner) var(--dc-owner-fill), transparent); color: var(--dc-on-owner)' : 'background: color-mix(in srgb, var(--dc-subscribed) var(--dc-subscribed-fill), transparent); color: var(--dc-subscribed)'">
+                     style="background: rgba(108,92,231,0.15); color: #6c5ce7">
                   <i data-lucide="hash" style="width:16px;height:16px"></i>
                 </div>
                 <div class="flex-1 min-w-0">
@@ -407,10 +349,10 @@
                     <!-- Role badge -->
                     <span x-show="isChannelOwner(selectedChannel)"
                           class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
-                          style="background: color-mix(in srgb, var(--dc-owner) var(--dc-owner-fill), transparent); color: var(--dc-on-owner)">Owner</span>
+                          style="background: rgba(108,92,231,0.15); color: #6c5ce7">Owner</span>
                     <span x-show="!isChannelOwner(selectedChannel)"
                           class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
-                          style="background: color-mix(in srgb, var(--dc-subscribed) var(--dc-subscribed-badge-fill), transparent); color: var(--dc-subscribed)">Subscribed</span>
+                          style="background: rgba(0,206,209,0.12); color: #00ced1">Subscribed</span>
                   </div>
                   <p class="text-[10px] truncate" style="color: var(--dc-muted)"
                      x-text="(selectedChannel.members || []).length + ' members · Created by ' + (selectedChannel.createdBy || 'you')"></p>
@@ -420,16 +362,14 @@
                   <button x-show="isChannelOwner(selectedChannel)"
                           @click="navigator.clipboard.writeText(selectedChannel.inviteUri); toast('success', 'Invite link copied!')"
                           class="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border transition-all"
-                          style="color: var(--dc-secondary-fg, var(--dc-accent)); border-color: var(--dc-border)"
-                          onmouseover="this.style.borderColor='var(--dc-secondary-border-hover, var(--dc-control))';this.style.color='var(--dc-text)'"
-                          onmouseout="this.style.borderColor='var(--dc-border)';this.style.color='var(--dc-secondary-fg, var(--dc-accent))'"
+                          style="color: var(--dc-accent); border-color: var(--dc-border)"
                           title="Copy invite link">
                     <i data-lucide="link" style="width:12px;height:12px"></i>
                     <span>Invite</span>
                   </button>
                   <button @click="deleteChannel(selectedChannel)"
                           class="transition-colors icon" style="color: var(--dc-muted)"
-                          onmouseover="this.style.color='var(--dc-danger)'"
+                          onmouseover="this.style.color='#ef4444'"
                           onmouseout="this.style.color='var(--dc-muted)'"
                           title="Delete channel">
                     <i data-lucide="trash-2" style="width:16px;height:16px"></i>
@@ -439,7 +379,7 @@
 
               <!-- Channel invite info banner (owners only) -->
               <div x-show="isChannelOwner(selectedChannel)"
-                   class="px-5 py-3 flex items-center gap-3" style="background: var(--dc-invite-bg, var(--dc-surface-2)); border-bottom: 1px solid var(--dc-border)">
+                   class="px-5 py-3 flex items-center gap-3" style="background: var(--dc-surface-2); border-bottom: 1px solid var(--dc-border)">
                 <i data-lucide="qr-code" style="width:16px;height:16px;color:var(--dc-accent);stroke:currentColor;fill:none"></i>
                 <div class="flex-1 min-w-0">
                   <p class="text-xs font-medium" style="color: var(--dc-text)">Channel Invite Link</p>
@@ -447,14 +387,14 @@
                 </div>
                 <button @click="navigator.clipboard.writeText(selectedChannel.inviteUri); toast('success', 'Copied!')"
                         class="text-xs px-2 py-1 rounded transition-all"
-                        style="color: var(--dc-invite-copy-fg, var(--dc-accent)); background: var(--dc-surface-3)">
+                        style="color: var(--dc-primary); background: var(--dc-surface-3)">
                   <i data-lucide="copy" style="width:12px;height:12px"></i>
                 </button>
               </div>
 
               <!-- Subscriber read-only notice -->
               <div x-show="!isChannelOwner(selectedChannel) && selectedChannel.status === 'joined'"
-                   class="px-5 py-2.5 flex items-center gap-2" style="background: var(--dc-invite-bg, var(--dc-surface-2)); border-bottom: 1px solid var(--dc-border)">
+                   class="px-5 py-2.5 flex items-center gap-2" style="background: var(--dc-surface-2); border-bottom: 1px solid var(--dc-border)">
                 <i data-lucide="lock" style="width:14px;height:14px;color:var(--dc-muted)"></i>
                 <p class="text-xs" style="color: var(--dc-muted)">
                   You are subscribed. Only the owner can send messages.
@@ -462,12 +402,12 @@
               </div>
 
               <!-- Channel Messages -->
-              <div x-ref="channelArea" class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
+              <div class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
                 <!-- Joining Loader -->
                 <div x-show="selectedChannel.status === 'joining'" 
                      class="flex flex-col items-center justify-center p-20 text-center animate-fade">
                   <div class="relative mb-6">
-                    <div class="w-20 h-20 border-4 rounded-full animate-spin" style="border-color: var(--dc-spin-ring); border-top-color: var(--dc-primary)"></div>
+                    <div class="w-20 h-20 border-4 border-dc-primary/20 border-t-dc-primary rounded-full animate-spin"></div>
                     <div class="absolute inset-0 flex items-center justify-center">
                       <i data-lucide="shield" style="width:30px;height:30px;color:var(--dc-primary)"></i>
                     </div>
@@ -507,7 +447,7 @@
 
               <!-- Channel Compose: ONLY for owners (OutBroadcast) -->
               <div x-show="isChannelOwner(selectedChannel)"
-                   class="border-t shrink-0" style="background: var(--dc-composebar-bg, var(--dc-surface)); border-color: var(--dc-border)">
+                   class="border-t shrink-0" style="background: var(--dc-surface); border-color: var(--dc-border)">
                 <div class="flex gap-2 p-3 items-center">
                   <input x-model="composeText" @keydown.enter="sendMessage()" type="text"
                          :placeholder="'Broadcast to #' + selectedChannel.name + '...'"
@@ -531,19 +471,19 @@
             <div class="flex flex-col h-full">
               <!-- Chat header -->
               <div class="border-b px-5 py-3 flex items-center gap-3 shrink-0"
-                   style="background: var(--dc-namebar-bg, var(--dc-surface)); border-color: var(--dc-border)">
-                <div class="w-8 h-8 rounded-full bg-dc-identity-tint flex items-center justify-center text-dc-identity font-bold text-sm"
+                   style="background: var(--dc-surface); border-color: var(--dc-border)">
+                <div class="w-8 h-8 rounded-full bg-dc-primary/20 flex items-center justify-center text-dc-primary font-bold text-sm"
                      x-text="selectedContact.email[0].toUpperCase()"></div>
                 <div>
                   <p class="text-sm font-medium" x-text="selectedContact.email" style="color: var(--dc-text)"></p>
                   <p class="text-xs flex items-center gap-1" style="color: var(--dc-muted)">
-                    <span x-show="selectedContact.verified" class="text-dc-success inline-flex items-center gap-0.5">
+                    <span x-show="selectedContact.verified" class="text-green-400 inline-flex items-center gap-0.5">
                       <i data-lucide="shield-check" style="width:10px;height:10px"></i> Verified
                     </span>
                     <span x-show="selectedContact.pgpKey" class="text-dc-accent inline-flex items-center gap-0.5">
                       <i data-lucide="lock" style="width:10px;height:10px;stroke:currentColor;fill:none"></i> Encrypted
                     </span>
-                    <span x-show="!selectedContact.pgpKey" class="text-dc-insecure inline-flex items-center gap-0.5">
+                    <span x-show="!selectedContact.pgpKey" class="text-yellow-400 inline-flex items-center gap-0.5">
                       <i data-lucide="alert-triangle" style="width:10px;height:10px;stroke:currentColor;fill:none"></i> No key (cleartext)
                     </span>
                   </p>
@@ -551,13 +491,13 @@
                 <div class="ml-auto flex items-center gap-3">
                   <button @click="deleteChat(selectedContact)"
                           class="transition-colors icon" style="color: var(--dc-muted)"
-                          onmouseover="this.style.color='var(--dc-danger)'"
+                          onmouseover="this.style.color='#ef4444'"
                           onmouseout="this.style.color='var(--dc-muted)'"
                           title="Delete chat">
                     <i data-lucide="trash-2" style="width:16px;height:16px"></i>
                   </button>
                   <div x-show="polling" class="flex items-center gap-2">
-                    <div class="w-1.5 h-1.5 bg-dc-live rounded-full animate-pulse-dot"></div>
+                    <div class="w-1.5 h-1.5 bg-dc-accent rounded-full animate-pulse-dot"></div>
                     <span class="text-[10px]" style="color: var(--dc-muted)">listening</span>
                   </div>
                 </div>
@@ -571,7 +511,7 @@
                        :style="msg.reactions && Object.keys(msg.reactions).length > 0 ? 'margin-bottom:18px' : 'margin-bottom:6px'">
                     <div class="relative max-w-[80%]">
                       <div class="msg-bubble rounded-2xl text-sm overflow-hidden relative group min-w-[80px]"
-                           :style="'max-width:100%;' + (msg.outgoing
+                           :style="(msg.outgoing
                              ? 'background:var(--dc-bubble-out);color:var(--dc-bubble-out-text);border-bottom-right-radius:6px'
                              : 'background:var(--dc-bubble-in);color:var(--dc-bubble-in-text);border:1px solid var(--dc-bubble-in-border);border-bottom-left-radius:6px')
                              + (msg.imageData ? ';max-width:280px' : '')"
@@ -671,7 +611,7 @@
               <!-- Compose -->
               <div x-show="!selectedChannel || (selectedChannel && isChannelOwner(selectedChannel))"
                    class="border-t shrink-0 p-3" 
-                   style="background: var(--dc-composebar-bg, var(--dc-surface)); border-color: var(--dc-border)">
+                   style="background: var(--dc-surface); border-color: var(--dc-border)">
                 <!-- Image preview strip -->
                 <div x-show="composeImage" class="px-4 pt-3 pb-1">
                   <div class="relative inline-block">
@@ -729,12 +669,12 @@
           <div class="mb-6 flex flex-col gap-2">
             <button @click="showLogs = true; debugLogs = AppLog.getLogs()" 
                     class="w-full flex items-center gap-2 p-3 rounded-xl border transition-all text-sm font-medium"
-                    style="border-color: var(--dc-border); background: var(--dc-surface-2); color: var(--dc-secondary-fg, var(--dc-muted))"
-                    onmouseover="this.style.borderColor='var(--dc-control)';this.style.color='var(--dc-text)'"
-                    onmouseout="this.style.borderColor='var(--dc-border)';this.style.color='var(--dc-secondary-fg, var(--dc-muted))'">
-                <i data-lucide="terminal" style="width:18px;height:18px;color:var(--dc-accent)"></i>
+                    style="border-color: var(--dc-border); background: var(--dc-surface-2); color: var(--dc-text)"
+                    onmouseover="this.style.borderColor='var(--dc-primary)';this.style.background='var(--dc-surface-3)'"
+                    onmouseout="this.style.borderColor='var(--dc-border)';this.style.background='var(--dc-surface-2)'">
+                <i data-lucide="terminal" style="width:18px;height:18px;color:var(--dc-primary)"></i>
                 View System Logs
-                <div class="ml-auto bg-dc-counter-tint text-dc-counter text-[10px] px-2 py-0.5 rounded-full" x-text="debugLogs.length"></div>
+                <div class="ml-auto bg-dc-primary/10 text-dc-primary text-[10px] px-2 py-0.5 rounded-full" x-text="debugLogs.length"></div>
             </button>
           </div>
 
@@ -771,7 +711,7 @@
                 <i data-lucide="qr-code" style="width:12px;height:12px;stroke:currentColor;fill:none"></i> SecureJoin QR
               </h3>
               <p style="color: var(--dc-muted)" class="mb-2">Share this with another Delta Chat user to verify each other:</p>
-              <div class="bg-white p-3 rounded-xl" x-show="qrDataUrl" style="border: 1px solid var(--dc-text)">
+              <div class="bg-white p-3 rounded-xl" x-show="qrDataUrl">
                 <img :src="qrDataUrl" class="w-full" alt="SecureJoin QR Code">
               </div>
               <p class="font-mono text-[9px] mt-2 break-all" style="color: var(--dc-muted)" x-text="securejoinUri"></p>
@@ -803,11 +743,11 @@
          style="background: var(--dc-surface); border-color: var(--dc-border)">
       <div class="px-6 py-4 border-b flex items-center justify-between" style="border-color: var(--dc-border)">
         <div class="flex items-center gap-2">
-          <i data-lucide="terminal" style="width:18px;height:18px;color:var(--dc-accent)"></i>
+          <i data-lucide="terminal" style="width:18px;height:18px;color:var(--dc-primary)"></i>
           <h2 class="text-lg font-bold" style="color: var(--dc-text)">System Debug Logs</h2>
         </div>
         <div class="flex items-center gap-2">
-          <button @click="copyLogs()" class="px-3 py-1.5 bg-dc-brand text-dc-on-brand text-xs rounded-lg hover:bg-dc-brand-hover flex items-center gap-1.5 transition-all">
+          <button @click="copyLogs()" class="px-3 py-1.5 bg-dc-primary text-white text-xs rounded-lg hover:bg-dc-primary-hover flex items-center gap-1.5 transition-all">
             <i data-lucide="copy" style="width:14px;height:14px"></i>
             Copy To Clipboard
           </button>
