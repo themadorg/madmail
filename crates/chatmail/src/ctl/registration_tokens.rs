@@ -329,13 +329,13 @@ async fn delete_token(args: &Args, pool: &DbPool, token: &str) -> Result<()> {
                 .await?
                 .rows_affected()
         }
-        chatmail_db::pool::DbConnection::Postgres(p) => {
-            sqlx::query(&pg_sql("DELETE FROM registration_tokens WHERE token = ?"))
-                .bind(token)
-                .execute(p)
-                .await?
-                .rows_affected()
-        }
+        chatmail_db::pool::DbConnection::Postgres(p) => sqlx::query(sqlx::AssertSqlSafe(pg_sql(
+            "DELETE FROM registration_tokens WHERE token = ?",
+        )))
+        .bind(token)
+        .execute(p)
+        .await?
+        .rows_affected(),
     };
     if affected == 0 {
         return Err(ChatmailError::config(format!("token not found: {token}")));

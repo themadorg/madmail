@@ -133,7 +133,7 @@ macro_rules! db_fetch_optional {
     ($pool:expr, $ty:ty, $sql:expr $(, $bind:expr)*) => {{
         match ($pool).connection() {
             $crate::pool::DbConnection::Sqlite(__p) => {
-                sqlx::query_as::<_, $ty>($sql)
+                sqlx::query_as::<_, $ty>(sqlx::AssertSqlSafe(($sql).to_string()))
                     $(.bind($bind))*
                     .fetch_optional(__p)
                     .await
@@ -141,7 +141,7 @@ macro_rules! db_fetch_optional {
             }
             $crate::pool::DbConnection::Postgres(__p) => {
                 let __pg_sql = $crate::pool::pg_sql($sql);
-                sqlx::query_as::<_, $ty>(&__pg_sql)
+                sqlx::query_as::<_, $ty>(sqlx::AssertSqlSafe(__pg_sql))
                     $(.bind($bind))*
                     .fetch_optional(__p)
                     .await
@@ -157,7 +157,7 @@ macro_rules! db_fetch_one {
     ($pool:expr, $ty:ty, $sql:expr $(, $bind:expr)*) => {{
         match ($pool).connection() {
             $crate::pool::DbConnection::Sqlite(__p) => {
-                sqlx::query_as::<_, $ty>($sql)
+                sqlx::query_as::<_, $ty>(sqlx::AssertSqlSafe(($sql).to_string()))
                     $(.bind($bind))*
                     .fetch_one(__p)
                     .await
@@ -165,7 +165,7 @@ macro_rules! db_fetch_one {
             }
             $crate::pool::DbConnection::Postgres(__p) => {
                 let __pg_sql = $crate::pool::pg_sql($sql);
-                sqlx::query_as::<_, $ty>(&__pg_sql)
+                sqlx::query_as::<_, $ty>(sqlx::AssertSqlSafe(__pg_sql))
                     $(.bind($bind))*
                     .fetch_one(__p)
                     .await
@@ -181,7 +181,7 @@ macro_rules! db_fetch_all {
     ($pool:expr, $ty:ty, $sql:expr $(, $bind:expr)*) => {{
         match ($pool).connection() {
             $crate::pool::DbConnection::Sqlite(__p) => {
-                sqlx::query_as::<_, $ty>($sql)
+                sqlx::query_as::<_, $ty>(sqlx::AssertSqlSafe(($sql).to_string()))
                     $(.bind($bind))*
                     .fetch_all(__p)
                     .await
@@ -189,7 +189,7 @@ macro_rules! db_fetch_all {
             }
             $crate::pool::DbConnection::Postgres(__p) => {
                 let __pg_sql = $crate::pool::pg_sql($sql);
-                sqlx::query_as::<_, $ty>(&__pg_sql)
+                sqlx::query_as::<_, $ty>(sqlx::AssertSqlSafe(__pg_sql))
                     $(.bind($bind))*
                     .fetch_all(__p)
                     .await
@@ -213,7 +213,7 @@ macro_rules! db_execute {
     ($pool:expr, $sql:expr $(, $bind:expr)*) => {{
         match ($pool).connection() {
             $crate::pool::DbConnection::Sqlite(__p) => {
-                sqlx::query($sql)
+                sqlx::query(sqlx::AssertSqlSafe(($sql).to_string()))
                     $(.bind($bind))*
                     .execute(__p)
                     .await
@@ -221,7 +221,7 @@ macro_rules! db_execute {
             }
             $crate::pool::DbConnection::Postgres(__p) => {
                 let __pg_sql = $crate::pool::pg_sql($sql);
-                sqlx::query(&__pg_sql)
+                sqlx::query(sqlx::AssertSqlSafe(__pg_sql))
                     $(.bind($bind))*
                     .execute(__p)
                     .await
@@ -417,13 +417,13 @@ async fn apply_legacy_schema_tables(pool: &DbPool) -> Result<()> {
     for sql in stmts {
         match pool.connection() {
             crate::pool::DbConnection::Sqlite(p) => {
-                sqlx::query(sql)
+                sqlx::query(*sql)
                     .execute(p)
                     .await
                     .map_err(ChatmailError::from)?;
             }
             crate::pool::DbConnection::Postgres(p) => {
-                sqlx::query(sql)
+                sqlx::query(*sql)
                     .execute(p)
                     .await
                     .map_err(ChatmailError::from)?;

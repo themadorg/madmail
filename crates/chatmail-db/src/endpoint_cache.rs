@@ -113,13 +113,13 @@ pub async fn remove_endpoint_override(pool: &DbPool, lookup_key: &str) -> Result
                 .await?
                 .rows_affected()
         }
-        crate::pool::DbConnection::Postgres(p) => {
-            sqlx::query(&pg_sql("DELETE FROM dns_overrides WHERE lookup_key = ?"))
-                .bind(lookup_key)
-                .execute(p)
-                .await?
-                .rows_affected()
-        }
+        crate::pool::DbConnection::Postgres(p) => sqlx::query(sqlx::AssertSqlSafe(pg_sql(
+            "DELETE FROM dns_overrides WHERE lookup_key = ?",
+        )))
+        .bind(lookup_key)
+        .execute(p)
+        .await?
+        .rows_affected(),
     };
     Ok(affected > 0)
 }

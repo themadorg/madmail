@@ -168,11 +168,13 @@ impl FederationPolicyCache {
                     > 0
             }
             chatmail_db::pool::DbConnection::Postgres(p) => {
-                sqlx::query(&pg_sql("DELETE FROM federation_rules WHERE domain = ?"))
-                    .bind(&domain)
-                    .execute(p)
-                    .await?
-                    .rows_affected()
+                sqlx::query(sqlx::AssertSqlSafe(pg_sql(
+                    "DELETE FROM federation_rules WHERE domain = ?",
+                )))
+                .bind(&domain)
+                .execute(p)
+                .await?
+                .rows_affected()
                     > 0
             }
         };

@@ -182,10 +182,10 @@ async fn consume_registration_token(pool: &DbPool, token: &str) -> Result<bool> 
         .execute(p)
         .await?
         .rows_affected(),
-        crate::pool::DbConnection::Postgres(p) => sqlx::query(&pg_sql(
+        crate::pool::DbConnection::Postgres(p) => sqlx::query(sqlx::AssertSqlSafe(pg_sql(
             "UPDATE registration_tokens SET used_count = used_count + 1
                  WHERE token = ? AND used_count < max_uses",
-        ))
+        )))
         .bind(token.trim())
         .execute(p)
         .await?
