@@ -32,11 +32,16 @@
   var dark = stored ? stored === 'dark'
            : decl   ? decl === 'dark'
                     : window.matchMedia('(prefers-color-scheme: dark)').matches;
-  document.documentElement.classList.toggle('dark', dark);
-  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  function apply(d) {
+    var root = document.documentElement;
+    root.classList.toggle('dark', d);
+    root.classList.toggle('light', !d);
+    root.style.colorScheme = d ? 'dark' : 'light';
+  }
+  apply(dark);
   window.toggleTheme = function () {
-    var d = document.documentElement.classList.toggle('dark');
-    document.documentElement.style.colorScheme = d ? 'dark' : 'light';
+    var d = !document.documentElement.classList.contains('dark');
+    apply(d);
     try { localStorage.setItem('madmail-theme', d ? 'dark' : 'light'); } catch (e) {}
   };
 })();
