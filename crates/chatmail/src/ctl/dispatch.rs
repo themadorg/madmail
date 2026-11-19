@@ -21,9 +21,9 @@ use chatmail_types::{ChatmailError, Result};
 use chatmail_db::settings_keys;
 
 use super::{
-    accounts, admin_token, admin_web, blocklist_cmd, certificate, db, delete_cmd, dkim, docs,
-    endpoint_cache, federation, firewall_cmd, html, install, iroh, language, message_size, monitor,
-    openrelay, port, proxy, push, queue_cmd, registration, registration_tokens, reload,
+    accounts, admin_api, admin_token, admin_web, blocklist_cmd, certificate, db, delete_cmd, dkim,
+    docs, endpoint_cache, federation, firewall_cmd, html, install, iroh, language, message_size,
+    monitor, openrelay, port, proxy, push, queue_cmd, registration, registration_tokens, reload,
     service_cmd, service_toggle, shared_port, sharing, status_cmd, tasks, uninstall, version,
     versions_cmd, webmail_cors,
 };
@@ -55,6 +55,7 @@ pub async fn dispatch(cli: &Cli) -> Result<()> {
         Some(Command::AdminToken { raw, no_qr }) => {
             admin_token::admin_token(&cli.args, *raw, *no_qr).await
         }
+        Some(Command::AdminApi { cmd }) => admin_api::admin_api(&cli.args, cmd).await,
         Some(Command::AdminWeb { cmd }) => admin_web::admin_web(&cli.args, cmd).await,
         Some(Command::Version) => version::print_version(&cli.args),
         Some(Command::Install(args)) => install::install(&cli.args, args.as_ref()).await,
@@ -175,7 +176,7 @@ fn not_implemented(cmd: &Command) -> Result<()> {
     Err(ChatmailError::config(format!(
         "'madmail {name}' is not implemented in madmail-v2 yet.\n\
          See docs/TDD/14-cli-tools.md and context/madmail/docs/chatmail/commands.md.\n\
-         Implemented: run, upgrade, update, version, admin-token, admin-web, install, certificate, \
+         Implemented: run, upgrade, update, version, admin-token, admin-api, admin-web, install, certificate, \
          accounts, ban-list, blocklist, create-user, delete, registration, openrelay, language, \
          html-export, html-serve, html-migrate, webimap, websmtp, websocket-bridge, webmail-cors, push, federation, registration-tokens, sharing, \
          monitor, status, uninstall, service, firewall, endpoint-cache, port, proxy, iroh, dkim, db, reload, message-size, tasks, queue, versions, completion"
@@ -189,6 +190,7 @@ fn command_name(cmd: &Command) -> &'static str {
         Command::Update { .. } => "update",
         Command::Versions(_) => "versions",
         Command::AdminToken { .. } => "admin-token",
+        Command::AdminApi { .. } => "admin-api",
         Command::AdminWeb { .. } => "admin-web",
         Command::Version => "version",
         Command::Accounts { .. } => "accounts",

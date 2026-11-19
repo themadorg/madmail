@@ -22,7 +22,7 @@ use std::sync::Arc;
 use chatmail_config::AppConfig;
 use chatmail_config::{DEFAULT_MAX_FEDERATION_BYTES, DEFAULT_MAX_MESSAGE_BYTES};
 use chatmail_db::{
-    get_bool_setting, init_memory_db, message_stats_snapshot, record_smtp_accepted,
+    get_bool_setting, get_setting, init_memory_db, message_stats_snapshot, record_smtp_accepted,
     seed_install_defaults, settings_keys,
 };
 use chatmail_push::{push_stats_snapshot, record_successful_delivery};
@@ -993,6 +993,84 @@ async fn p9_admin_web_path_set_enables_and_reloads() {
             .await
             .unwrap()
     );
+}
+
+#[tokio::test]
+async fn admin_path_set_persists_and_asks_for_an_http_remount() {
+    let pool = init_memory_db().await.unwrap();
+    seed_install_defaults(&pool).await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let app = Arc::new(AppState::with_quota_and_message_limit(
+        dir.path(),
+        chatmail_config::DEFAULT_QUOTA_BYTES,
+        &AppConfig::default(),
+        pool.clone(),
+    ));
+    app.hydrate(&pool, &AppConfig::default()).await.unwrap();
+    let (reload_tx, mut reload_rx) = mpsc::channel::<ReloadRequest>(2);
+    tokio::spawn(async move {
+        while let Some(req) = reload_rx.recv().await {
+            assert_eq!(req.scope, ReloadScope::HttpRoutes);
+            if let Some(done) = req.done {
+                let _ = done.send(Ok(()));
+            }
+        }
+    });
+    let st = AdminState::new(
+        pool.clone(),
+        app,
+        AppConfig::default(),
+        dir.path().to_path_buf(),
+        "example.org".into(),
+        "secret-token-01234567890123456789012345678901".into(),
+        Some(reload_tx),
+    );
+
+    let (_, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/admin_path",
+        &json!({ "action": "set", "value": "/api/secret" }),
+    )
+    .await
+    .unwrap();
+    let body = body.unwrap();
+    assert_eq!(
+        body.get("value").and_then(|v| v.as_str()),
+        Some("/api/secret")
+    );
+    assert_eq!(body.get("applied").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        body.get("restart_required").and_then(|v| v.as_bool()),
+        Some(false)
+    );
+    assert_eq!(
+        get_setting(&pool, settings_keys::ADMIN_PATH)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("/api/secret")
+    );
+
+    let (_, body) = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/admin_path",
+        &json!({ "action": "reset" }),
+    )
+    .await
+    .unwrap();
+    let body = body.unwrap();
+    assert_eq!(
+        body.get("value").and_then(|v| v.as_str()),
+        Some("/api/admin")
+    );
+    assert_eq!(body.get("is_set").and_then(|v| v.as_bool()), Some(false));
+    assert_eq!(body.get("applied").and_then(|v| v.as_bool()), Some(true));
+    assert!(get_setting(&pool, settings_keys::ADMIN_PATH)
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]

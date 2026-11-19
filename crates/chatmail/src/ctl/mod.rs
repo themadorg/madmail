@@ -19,6 +19,7 @@
 
 mod account_ops;
 mod accounts;
+mod admin_api;
 mod admin_login_qr;
 mod admin_token;
 mod admin_url;

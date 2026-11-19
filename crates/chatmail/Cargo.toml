@@ -73,6 +73,9 @@ windows-service = "0.7"
 
 [dev-dependencies]
 assert_cmd = "2"
+chatmail-db = { workspace = true }
+serde_json = { workspace = true }
+tower = { workspace = true }
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
 chatmail-config = { workspace = true }
 chatmail-storage = { workspace = true }
