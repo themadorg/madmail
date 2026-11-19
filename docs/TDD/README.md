@@ -20,7 +20,7 @@ Twenty-three library crates under `crates/` plus integration tests in `tests/`. 
 | `chatmail-imap` | [03](03-imap-server.md), [23](23-push-notifications.md) |
 | `chatmail-fed` / `chatmail-delivery` | [07](07-federation.md) |
 | `chatmail-push` | [23](23-push-notifications.md) |
-| `chatmail-www` | [10](10-webimap.md) |
+| `chatmail-www` | [10](10-webimap.md), [27](27-website-theming.md) |
 | `chatmail-admin` / `chatmail-admin-web` | [09](09-admin-api.md) |
 | `chatmail-turn` / `chatmail-iroh` / `chatmail-shadowsocks` | [11](11-proxy-services.md), [20](20-deltachat-calls.md) |
 | `chatmail-tls` / `chatmail-acme` | [19](19-certificates.md) |
@@ -57,6 +57,7 @@ Twenty-three library crates under `crates/` plus integration tests in `tests/`. 
 | `24-version-manager.md` | **Plan:** versioned binaries (`/opt/madmail` Unix, `%ProgramFiles%\Madmail` Windows), stable PATH entry, upgrade/rollback |
 | `25-operator-webhooks.md` | Admin-only account/quota event delivery, HMAC, bounded retries |
 | [`26-websocket-mail-bridge.md`](26-websocket-mail-bridge.md) | Raw IMAP/SMTP over WSS, controls and resource limits |
+| [`27-website-theming.md`](27-website-theming.md) | Public website colour mode, palettes, the switcher |
 
 ## RFC reference library
 
