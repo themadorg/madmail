@@ -757,7 +757,8 @@ select {
 }
 
 .mode-button:hover {
-  background: var(--code-bg);
+  background: var(--mode-hover-bg, transparent);
+  border-color: var(--btn-secondary-border-hover, var(--primary));
   color: var(--foreground);
 }
 

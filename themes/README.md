@@ -140,6 +140,11 @@ this layout it is one file.
   belongs only on pills whose hue is too light to carry its own label — in
   millennium, the chartreuse ones. A pill that reads well in its own colour
   keeps it.
+- **The colour-mode control takes no hover fill by default.** The site's
+  secondary buttons shift their border and text rather than filling, and the
+  control follows that. `--mode-hover-bg` exists for a palette that wants a
+  fill instead, and defaults to `transparent`, so declaring nothing keeps the
+  site's own convention.
 - **Two more site hooks sit behind fallbacks.** `--note-link` colours links
   inside note boxes, where the body link colour can be unreadable against a
   tinted fill, and `--code-header-bg` the code-box headers on the Docker pages.
