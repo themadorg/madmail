@@ -145,9 +145,16 @@ this layout it is one file.
   control follows that. `--mode-hover-bg` exists for a palette that wants a
   fill instead, and defaults to `transparent`, so declaring nothing keeps the
   site's own convention.
-- **Two more site hooks sit behind fallbacks.** `--note-link` colours links
+- **Several site hooks sit behind fallbacks.** `--note-link` colours links
   inside note boxes, where the body link colour can be unreadable against a
-  tinted fill, and `--code-header-bg` the code-box headers on the Docker pages.
+  tinted fill. `--code-header-bg` paints the code-block title bars; every
+  palette here sets it to `var(--code-bg)` so a bar matches the block it
+  labels. `--surface-border`, `--surface-sunken`, `--surface-raised` and
+  `--surface-header` override four classes of hardcoded surface on the older
+  documentation pages: borders, code wells, lifted panels and table header
+  bands. No palette here declares those four, because their fallbacks are the
+  original literals and those read correctly — declare one if yours wants a
+  different light treatment.
 - **Header colour is separate from `--muted`.** `--nav-link` paints the nav
   links and the mobile menu toggle. Moving it leaves the footer, form labels,
   doc-list descriptions and `.text-muted` alone, which `--muted` still owns.
