@@ -34,16 +34,11 @@
 
 :root {
   color-scheme: light;
-  --toggle-knob-hover: var(--nav-accent-hover);
-  --toggle-knob: var(--link);
   --note-link: var(--link);
-  --nav-app-display: list-item;
   --input-bg: #ffffff;
   --btn-primary-border: #1f232826;
   --code-header-bg: #f6f8fa;
   --table-header-bg: #e6eaef;
-  --nav-accent-hover: #0964d0;
-  --nav-accent: #0969da;
   --btn-secondary-fg: var(--muted);
   --btn-secondary-border: var(--card-border);
   --btn-secondary-fg-hover: var(--foreground);
@@ -79,8 +74,6 @@
   --alert-info-bg: #4493f81a;
   --alert-warning-bg: #bb800926;
   --btn-primary-border: #1f232826;
-  --nav-accent-hover: #539cf9;
-  --nav-accent: #4493f8;
   --btn-primary-bg: var(--primary);
   --btn-secondary-border-hover: #4493f8;
     --background: #0d1117;
@@ -721,16 +714,6 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 1px var(--ring);
 }
 
-/* header App link: per-theme accent */
-.navbar__menu li a.nav-accent {
-  color: var(--nav-accent);
-  opacity: 1;
-}
-.navbar__menu li a.nav-accent:hover {
-  color: var(--nav-accent-hover);
-  opacity: 1;
-}
-
 /* one-liner: dark border and tab, not the link blue */
 .one-liner {
   --link: var(--foreground);
@@ -752,12 +735,6 @@ input[type="url"],
 textarea,
 select {
   background: var(--input-bg);
-}
-
-/* App link: hidden until the web client supports sign-in.
-   Set --nav-app-display: list-item on :root to enable. */
-.navbar__menu li.nav-app-item {
-  display: var(--nav-app-display, none);
 }
 
 /* ── Colour mode control ──

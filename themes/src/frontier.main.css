@@ -39,10 +39,7 @@
   --input-bg: #f4f6f7;
   --table-header-bg: #f4f6f7;
   --note-link: var(--link);
-  --nav-app-display: list-item;
   --btn-primary-border: #1f232826;
-  --nav-accent-hover: #f30c0c;
-  --nav-accent: #eb1414;
   --btn-secondary-fg: #888888;
   --btn-secondary-border: var(--card-border);
   --btn-secondary-fg-hover: var(--foreground);
@@ -79,10 +76,7 @@
     --input-bg: #0f1415;
     --table-header-bg: #0f1415;
   --note-link: var(--link);
-  --nav-app-display: list-item;
   --btn-primary-border: #1f232826;
-  --nav-accent-hover: #f30c0c;
-  --nav-accent: #eb1414;
   --btn-secondary-fg: var(--muted);
   --btn-secondary-border: var(--card-border);
   --btn-secondary-fg-hover: var(--foreground);
@@ -759,25 +753,9 @@ body h3 {
   opacity: 1;
 }
 
-/* header App link: per-theme accent */
-.navbar__menu li a.nav-accent {
-  color: var(--nav-accent);
-  opacity: 1;
-}
-.navbar__menu li a.nav-accent:hover {
-  color: var(--nav-accent-hover);
-  opacity: 1;
-}
-
 /* primary buttons carry a faint dark edge */
 .btn--primary {
   border: 1px solid var(--btn-primary-border);
-}
-
-/* App link: hidden until the web client supports sign-in.
-   Set --nav-app-display: list-item on :root to enable. */
-.navbar__menu li.nav-app-item {
-  display: var(--nav-app-display, none);
 }
 
 /* ── Colour mode control ──

@@ -31,17 +31,12 @@
 /* ── Color System ── */
 :root {
   --note-link: var(--link);
-  --toggle-knob: var(--link);
-  --toggle-knob-hover: var(--nav-accent-hover);
-  --nav-app-display: list-item;
   --pill-fg: #0d1117;
   --pill-fill: 40%;
   --input-ring: #818b98;
   --input-bg: #ffffff;
   --table-header-bg: #e6eaef;
   --btn-primary-border: #1f232826;
-  --nav-accent-hover: #0046ff;
-  --nav-accent: #0051ff;
   --focus-glow: #818b98;
   --focus-glow-mix: 14%;
   --btn-secondary-fg: var(--muted);
@@ -87,8 +82,6 @@
   --input-bg: #212830;
   --table-header-bg: #2a313c;
     --btn-primary-border: #1f232826;
-    --nav-accent-hover: #5785ff;
-    --nav-accent: #5c8cff;
     --focus-glow: #9198a1;
     --focus-glow-mix: 18%;
     --btn-secondary-fg: var(--muted);
@@ -759,25 +752,9 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-glow) var(--focus-glow-mix, 25%), transparent);
 }
 
-/* header App link: per-theme accent */
-.navbar__menu li a.nav-accent {
-  color: var(--nav-accent);
-  opacity: 1;
-}
-.navbar__menu li a.nav-accent:hover {
-  color: var(--nav-accent-hover);
-  opacity: 1;
-}
-
 /* primary buttons carry a faint dark edge */
 .btn--primary {
   border: 1px solid var(--btn-primary-border);
-}
-
-/* App link: hidden until the web client supports sign-in.
-   Set --nav-app-display: list-item on :root to enable. */
-.navbar__menu li.nav-app-item {
-  display: var(--nav-app-display, none);
 }
 
 /* ── Colour mode control ──
