@@ -1,9 +1,5 @@
-# Local artefacts, none of which are part of the theme set:
-#   .active / .installed  the switcher's record of what it last installed
-#   www.*                 captured markup trees used when developing locally
-#   main.css.* app.css.*  individual variant files kept outside src/
+# Local artefacts, not part of the theme set:
+#   .installed  the switcher's record of what it last installed
+#   .active     the same, from older versions of the switcher
 .active
 .installed
-www.*
-main.css.*
-app.css.*

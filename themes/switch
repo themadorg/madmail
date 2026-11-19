@@ -1,142 +1,111 @@
 #!/bin/sh
-# Madmail theme switcher. Composes any of the variants from the flavour
-# sources in src/ and installs them into the served tree.
+# Madmail theme switcher. Installs one of the palettes in src/ into the served
+# tree, optionally pinning a default colour mode.
 #
 # Paths come from the environment, defaulting to a standard install:
-#   MADMAIL_THEMES_DIR  where src/ and compose live. Defaults to this script's
-#                       own directory, resolved through symlinks.
+#   MADMAIL_THEMES_DIR  where src/ lives. Defaults to this script's own
+#                       directory, resolved through symlinks.
 #   MADMAIL_WWW         the served tree. Defaults to madmail's default www_dir.
 set -e
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 DIR=${MADMAIL_THEMES_DIR:-$(dirname "$SELF")}
+SRC="$DIR/src"
 WWW=${MADMAIL_WWW:-/var/lib/madmail/www}
-MARK="$DIR/.active"
 REC="$DIR/.installed"
-STAGE=${TMPDIR:-/tmp}/madmail-switch-stage
 
-FAMILIES="millennium frontier primer"
-SIMPLE="dark dark-soft light light-soft"
-COMBO="dark-mix dark-mix-light dark-soft-mix dark-soft-mix-light light-mix light-soft-mix"
+usage() { echo "usage: ${0##*/} [<palette> [--default-mode light|dark]]"; }
 
-composable() {
-  for fam in $FAMILIES; do
-    for sfx in $SIMPLE $COMBO; do
-      [ "$1" = "$fam-$sfx" ] && return 0
-    done
-  done
-  return 1
-}
+known() { [ -f "$SRC/$1.main.css" ]; }
 
 list() {
-  echo "  simple - app matches site:"
-  for fam in $FAMILIES; do for s in $SIMPLE; do printf '    %s\n' "$fam-$s"; done; done
-  echo "  combinations - app differs from site:"
-  for fam in $FAMILIES; do for s in $COMBO; do printf '    %s\n' "$fam-$s"; done; done
-  _hdr=
-  for f in "$DIR"/main.css.*; do
+  for f in "$SRC"/*.main.css; do
     [ -f "$f" ] || continue
-    [ -n "$_hdr" ] || { echo "  retained baseline files:"; _hdr=1; }
-    printf '    %s\n' "${f##*main.css.}"
+    n=${f##*/}; printf '    %s\n' "${n%.main.css}"
   done
-  _hdr=
-  for d in "$DIR"/www.*; do
-    [ -d "$d" ] || continue
-    [ "$d" != "$DIR/www.themed" ] || continue
-    [ -n "$_hdr" ] || { echo "  full trees:"; _hdr=1; }
-    printf '    %s\n' "${d##*www.}"
-  done
+}
+
+# The stylesheet a palette installs as: the source, plus one --default-mode
+# declaration in :root when a mode was asked for. Install and verification both
+# go through here, so the served file and the expected file cannot be produced
+# by different logic.
+emit() {
+  if [ -n "$2" ]; then
+    awk -v m="$2" '
+      { print }
+      $1 == ":root" && $2 == "{" && NF == 2 && !d { print "  --default-mode: " m ";"; d = 1 }
+    ' "$1"
+  else
+    cat "$1"
+  fi
 }
 
 verify() {
-  n=$1
-  rec_kind=""; rec_var=""; rec_main=""; rec_app=""
-  [ -f "$REC" ] && read rec_kind rec_var rec_main rec_app < "$REC"
-  if [ -d "$DIR/www.$n" ]; then
-    if diff -rq "$DIR/www.$n" "$WWW" >/dev/null 2>&1
-    then echo verified; else echo "STALE - live tree differs"; fi
+  n=$1; mode=$2
+  known "$n" || { echo "unknown palette"; return; }
+  [ -f "$WWW/main.css" ] || { echo "STALE - no main.css in $WWW"; return; }
+  if emit "$SRC/$n.main.css" "$mode" | cmp -s - "$WWW/main.css"; then
+    echo verified; return
+  fi
+  # The exact comparison above is the verdict. This one only refines the
+  # message: with our own mode declaration set aside, is the palette intact?
+  if sed '/^  --default-mode:/d' "$WWW/main.css" | cmp -s - "$SRC/$n.main.css"; then
+    live=$(sed -n 's/^  --default-mode:[[:space:]]*\([a-z]*\);.*/\1/p' "$WWW/main.css" | head -1)
+    echo "STALE - palette matches, default-mode is ${live:-none}, recorded ${mode:-none}"
     return
   fi
-  if composable "$n" && [ "$rec_kind:$rec_var" != "file:$n" ]; then
-    mkdir -p "$STAGE"
-    if ! "$DIR/compose" "$n" "$STAGE/$n" >"$STAGE/err.txt" 2>&1; then
-      msg=$(head -1 "$STAGE/err.txt")
-      tamper=""
-      if [ "$rec_var" = "$n" ]; then
-        if [ "$rec_main" = "$(sha256sum < "$WWW/main.css" | cut -d' ' -f1)" ] \
-           && [ "$rec_app" = "$(sha256sum < "$WWW/app.css" | cut -d' ' -f1)" ]
-        then tamper=" (live tree still matches the recorded install)"
-        else tamper=" (live tree has ALSO changed since install)"; fi
-      fi
-      echo "CANNOT VERIFY - compose failed: $msg$tamper"
-      return
-    fi
-    ok=1
-    cmp -s "$STAGE/$n/main.css" "$WWW/main.css" || ok=0
-    cmp -s "$STAGE/$n/app.css"  "$WWW/app.css"  || ok=0
-    if [ -d "$DIR/www.themed" ]; then
-      diff -rq -x main.css -x app.css "$DIR/www.themed" "$WWW" >/dev/null 2>&1 || ok=0
-    fi
-    if [ "$ok" = 1 ]; then echo verified; else echo "STALE - live files differ from src/"; fi
-    return
-  fi
-  src="$DIR"
-  if [ ! -f "$src/main.css.$n" ]; then echo "unknown variant"; return; fi
-  ok=1
-  cmp -s "$src/main.css.$n" "$WWW/main.css" || ok=0
-  if [ -f "$src/app.css.$n" ]; then
-    cmp -s "$src/app.css.$n" "$WWW/app.css" || ok=0
-  else
-    cmp -s "$DIR/www.themed/app.css" "$WWW/app.css" || ok=0
-  fi
-  diff -rq -x main.css -x app.css "$DIR/www.themed" "$WWW" >/dev/null 2>&1 || ok=0
-  if [ "$ok" = 1 ]; then echo verified; else echo "STALE - live files differ"; fi
-}
-
-record() {  # record <kind> <variant>
-  printf '%s %s %s %s\n' "$1" "$2" \
-    "$(sha256sum < "$WWW/main.css" | cut -d' ' -f1)" \
-    "$(sha256sum < "$WWW/app.css"  | cut -d' ' -f1)" > "$REC"
+  echo "STALE - main.css differs from src/$n.main.css"
 }
 
 if [ -z "$1" ]; then
-  if [ -f "$MARK" ]; then a=$(cat "$MARK"); echo "active:  $a  [$(verify "$a")]"
-  else echo "active:  unknown (no marker)"; fi
+  var=""; mode=""; rest=""
+  [ -f "$REC" ] && read -r var mode rest < "$REC"
+  case $mode in light|dark) ;; *) mode="" ;; esac
+  if [ -n "$var" ]; then
+    echo "active:  $var${mode:+ (default-mode: $mode)}  [$(verify "$var" "$mode")]"
+  else
+    echo "active:  nothing recorded"
+  fi
   # Whether 127.0.0.1 returns the same resource a visitor gets depends on Host
   # routing, ports and any proxy in front, so probing it cannot be made
-  # reliable. verify() above compares the served files against the sources,
+  # reliable. verify() above compares the served file against the source,
   # which is the part that is actually knowable here.
   echo "www_dir: $WWW"
-  echo; echo "variants:"; list; exit 0
+  echo; echo "palettes:"; list
+  exit 0
 fi
 
-want=$1
+want=$1; mode=""; shift
+while [ $# -gt 0 ]; do
+  case $1 in
+    --default-mode)
+      shift
+      case $1 in
+        light|dark) mode=$1 ;;
+        *) echo "--default-mode takes light or dark"; exit 1 ;;
+      esac
+      ;;
+    *) usage; exit 1 ;;
+  esac
+  shift
+done
 
-if composable "$want"; then
-  mkdir -p "$STAGE"
-  if ! "$DIR/compose" "$want" "$STAGE/$want"; then
-    echo "refusing to install: compose failed"; exit 1
-  fi
-  # www.themed is a locally captured markup tree. It is absent from a plain
-  # checkout, where the served tree already carries the markup, so the copy is
-  # skipped rather than attempted and failing.
-  if [ -d "$DIR/www.themed" ]; then cp -a "$DIR/www.themed/." "$WWW/"; fi
-  cp "$STAGE/$want/main.css" "$WWW/main.css"
-  cp "$STAGE/$want/app.css"  "$WWW/app.css"
-elif [ -d "$DIR/www.$want" ] && [ "$want" != themed ]; then
-  cp -a "$DIR/www.$want/." "$WWW/"
-elif [ -f "$DIR/main.css.$want" ]; then
-  if grep -nE ':[[:space:]]*__' "$DIR/main.css.$want"; then
-    echo "refusing - unfilled placeholders above"; exit 1
-  fi
-  cp -a "$DIR/www.themed/." "$WWW/"
-  cp "$DIR/main.css.$want" "$WWW/main.css"
-  [ -f "$DIR/app.css.$want" ] && cp "$DIR/app.css.$want" "$WWW/app.css"
-else
-  echo "no such variant: $want"; echo; list; exit 1
+known "$want" || { echo "no such palette: $want"; echo; echo "palettes:"; list; exit 1; }
+src="$SRC/$want.main.css"
+
+if grep -nE ':[[:space:]]*__' "$src"; then
+  echo "refusing - unfilled placeholders above"; exit 1
 fi
+if grep -n -- '--default-mode' "$src"; then
+  echo "refusing - the palette declares --default-mode itself; --default-mode sets it"; exit 1
+fi
+[ -d "$WWW" ] || { echo "no served tree at $WWW"; exit 1; }
 
-echo "$want" > "$MARK"
-if composable "$want"; then record composed "$want"
-elif [ -d "$DIR/www.$want" ]; then record tree "$want"
-else record file "$want"; fi
-echo "active: $want   [$(verify "$want")]   (hard-refresh: Ctrl+Shift+R)"
+tmp=$(mktemp "$WWW/.main.css.XXXXXX") || { echo "cannot write to $WWW"; exit 1; }
+trap 'rm -f "$tmp"' EXIT INT TERM
+emit "$src" "$mode" > "$tmp"
+chmod 644 "$tmp"
+mv "$tmp" "$WWW/main.css"
+trap - EXIT INT TERM
+
+printf '%s %s\n' "$want" "$mode" > "$REC"
+echo "active: $want${mode:+ (default-mode: $mode)}   [$(verify "$want" "$mode")]"
