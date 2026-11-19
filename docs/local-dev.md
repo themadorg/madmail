@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Rust stable (≥ 1.75)
+- Rust stable (≥ 1.94)
 - `sqlite3` CLI (optional, for inspecting DB)
 
 ## Build

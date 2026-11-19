@@ -105,9 +105,9 @@ impl FederationSilentDismissCache {
                     > 0
             }
             chatmail_db::pool::DbConnection::Postgres(p) => {
-                sqlx::query(&pg_sql(
+                sqlx::query(sqlx::AssertSqlSafe(pg_sql(
                     "DELETE FROM federation_silent_dismiss WHERE domain = ?",
-                ))
+                )))
                 .bind(&domain)
                 .execute(p)
                 .await?
