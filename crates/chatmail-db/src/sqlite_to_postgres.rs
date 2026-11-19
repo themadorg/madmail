@@ -177,7 +177,7 @@ pub async fn copy_sqlite_to_postgres(
 
     if opts.force {
         for name in COPY_TABLES.iter().rev() {
-            sqlx::query(&format!("DELETE FROM {name}"))
+            sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {name}")))
                 .execute(&mut *tx)
                 .await
                 .map_err(ChatmailError::from)?;
@@ -244,11 +244,11 @@ fn pg_pool(pool: &DbPool) -> Result<&PgPool> {
 async fn count_rows(pool: &DbPool, table: &str) -> Result<u64> {
     let sql = format!("SELECT COUNT(*) FROM {table}");
     let n: i64 = match pool.connection() {
-        crate::pool::DbConnection::Sqlite(p) => sqlx::query_scalar(&sql)
+        crate::pool::DbConnection::Sqlite(p) => sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
             .fetch_one(p)
             .await
             .map_err(ChatmailError::from)?,
-        crate::pool::DbConnection::Postgres(p) => sqlx::query_scalar(&sql)
+        crate::pool::DbConnection::Postgres(p) => sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
             .fetch_one(p)
             .await
             .map_err(ChatmailError::from)?,
@@ -257,7 +257,7 @@ async fn count_rows(pool: &DbPool, table: &str) -> Result<u64> {
 }
 
 async fn count_pg(conn: &mut PgConnection, table: &str) -> Result<u64> {
-    let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+    let n: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM {table}")))
         .fetch_one(&mut *conn)
         .await
         .map_err(ChatmailError::from)?;
@@ -860,7 +860,7 @@ mod tests {
             let crate::pool::DbConnection::Postgres(pg) = admin.connection() else {
                 panic!("admin DSN is not Postgres");
             };
-            sqlx::query(&format!("CREATE DATABASE {dbname}"))
+            sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {dbname}")))
                 .execute(pg)
                 .await
                 .unwrap_or_else(|e| panic!("CREATE DATABASE {dbname}: {e}"));
@@ -882,10 +882,10 @@ mod tests {
 
         async fn drop(self) {
             if let crate::pool::DbConnection::Postgres(pg) = self.admin.connection() {
-                let _ = sqlx::query(&format!(
+                let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
                     "DROP DATABASE IF EXISTS {} WITH (FORCE)",
                     self.dbname
-                ))
+                )))
                 .execute(pg)
                 .await;
             }
