@@ -85,7 +85,7 @@ async fn apply_path(
             .as_deref()
             .unwrap_or(DEFAULT_ADMIN_PATH);
         let fallback = chatmail_config::settings_policy::validate("admin_path", fallback)?;
-        let web = web_path(ctx, &pool).await?;
+        let web = web_path(ctx, pool).await?;
         if chatmail_config::settings_policy::admin_paths_overlap(&fallback, &web) {
             return Err(ChatmailError::config(
                 "reset would overlap the admin API and web paths",
