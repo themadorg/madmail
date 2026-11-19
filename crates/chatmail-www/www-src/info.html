@@ -79,7 +79,7 @@
         </div>
 
         {{if .V2rayNGConfigWS}}
-        <div style="margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+        <div style="margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--surface-border, rgba(255,255,255,0.1));">
             <strong data-i18n="info_proxy_v2ray_ws">2. For v2rayNG — WebSocket mode:</strong>
             <p class="text-sm" style="margin-top: 0.3rem;">
                 <span data-i18n="info_proxy_v2ray_ws_desc">Copy these settings to v2rayNG:</span><br>
@@ -92,7 +92,7 @@
         {{end}}
 
         {{if .V2rayNGConfigGRPC}}
-        <div style="margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+        <div style="margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--surface-border, rgba(255,255,255,0.1));">
             <strong data-i18n="info_proxy_v2ray_grpc">3. For v2rayNG — gRPC+TLS mode:</strong>
             <p class="text-sm" style="margin-top: 0.3rem;">
                 <span data-i18n-html="info_proxy_v2ray_grpc_desc">This version encrypts traffic inside gRPC+TLS (similar to HTTPS traffic).</span><br>
