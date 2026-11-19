@@ -1327,3 +1327,42 @@ async fn documentation_follows_admin_language_even_with_reader_query() {
         }
     }
 }
+
+#[test]
+fn every_page_declares_the_favicon_and_the_colour_mode_control() {
+    let mut checked = 0;
+    for path in crate::assets::WwwAssets::iter() {
+        if !path.ends_with(".html") {
+            continue;
+        }
+        // app.html is the web client's own page, with its own head and control.
+        if path == "app.html" {
+            continue;
+        }
+        let file = crate::assets::WwwAssets::get(&path).expect("embedded page");
+        let src = String::from_utf8_lossy(&file.data);
+        assert!(
+            src.contains("rel=\"icon\""),
+            "{} does not declare a favicon",
+            path
+        );
+        assert!(
+            src.contains("class=\"mode-button\""),
+            "{} does not carry the colour mode control",
+            path
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no embedded pages were checked");
+}
+
+#[test]
+fn logo_begins_with_its_xml_declaration() {
+    let file = crate::assets::WwwAssets::get("logo.svg").expect("logo.svg is embedded");
+    let src = String::from_utf8_lossy(&file.data);
+    assert!(
+        src.starts_with("<?xml"),
+        "an XML declaration must be the first thing in the document; with anything \
+         before it browsers reject the file and the favicon silently fails to render"
+    );
+}
