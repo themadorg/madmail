@@ -24,26 +24,52 @@
  * Four pages - docker_docs.html, relay_docs.html and their fa counterparts -
  * do not load main.js at all and carry an inline copy of this block instead. */
 (function () {
-  var stored = null;
-  try { stored = localStorage.getItem('madmail-theme'); } catch (e) {}
-  var decl = '';
-  try { decl = (getComputedStyle(document.documentElement)
-                 .getPropertyValue('--default-mode') || '').trim(); } catch (e) {}
-  var dark = stored ? stored === 'dark'
-           : decl   ? decl === 'dark'
-                    : window.matchMedia('(prefers-color-scheme: dark)').matches;
-  function apply(d) {
-    var root = document.documentElement;
-    root.classList.toggle('dark', d);
-    root.classList.toggle('light', !d);
-    root.style.colorScheme = d ? 'dark' : 'light';
+  var MODES = ['system', 'dark', 'light'];
+  var LABEL = { system: 'Auto', dark: 'Dark', light: 'Light' };
+  var root = document.documentElement;
+
+  function stored() {
+    var v = null;
+    try { v = localStorage.getItem('madmail-theme'); } catch (e) {}
+    if (MODES.indexOf(v) !== -1) return v;
+    try { if (localStorage.getItem('madmail-light') === 'true') return 'light'; } catch (e) {}
+    return null;
   }
-  apply(dark);
-  window.toggleTheme = function () {
-    var d = !document.documentElement.classList.contains('dark');
-    apply(d);
-    try { localStorage.setItem('madmail-theme', d ? 'dark' : 'light'); } catch (e) {}
+
+  function declared() {
+    var d = '';
+    try { d = (getComputedStyle(root).getPropertyValue('--default-mode') || '').trim(); } catch (e) {}
+    return d === 'dark' || d === 'light' ? d : null;
+  }
+
+  function prefersDark() {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  var mode = stored() || declared() || 'system';
+
+  function apply() {
+    var dark = mode === 'dark' || (mode === 'system' && prefersDark());
+    root.classList.toggle('dark', dark);
+    root.classList.toggle('light', !dark);
+    root.dataset.mode = mode;
+    root.style.colorScheme = dark ? 'dark' : 'light';
+    var b = document.querySelector('.mode-button');
+    if (b) {
+      b.title = LABEL[mode];
+      b.setAttribute('aria-label', 'Color theme: ' + LABEL[mode]);
+    }
+  }
+  apply();
+  document.addEventListener('DOMContentLoaded', apply);
+
+  window.cycleTheme = function () {
+    mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
+    apply();
+    try { localStorage.setItem('madmail-theme', mode); } catch (e) {}
   };
+
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', apply);
 })();
 
 /* ── Navbar toggle ── */

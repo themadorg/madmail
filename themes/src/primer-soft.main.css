@@ -760,56 +760,53 @@ select {
   display: var(--nav-app-display, none);
 }
 
-/* ---- Theme toggle (ported from the app, same control) ---- */
-.theme-toggle {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  border-radius: 12px;
-  background: var(--card);
-  border: 1px solid var(--card-border);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  padding: 0;
-  outline: none;
-  vertical-align: middle;
-}
-.theme-toggle:hover {
-  border-color: var(--btn-secondary-border-hover);
-}
-.theme-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--toggle-knob, var(--primary));
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  transform: translateX(20px);
-  display: flex;
+/* ── Colour mode control ──
+   Cycles automatic, dark, light. The icon shows the current state rather than
+   the next one: in automatic neither mode is pinned, so it draws both. Styled
+   from existing variables so it renders against any palette. */
+
+.mode-button {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-:root.dark .theme-toggle-knob {
-  transform: translateX(0);
-}
-.theme-toggle-knob svg {
-  width: 12px;
-  height: 12px;
-  stroke: var(--toggle-knob-fg, white);
-  stroke-width: 2.5;
-  fill: none;
-}
-.theme-toggle .tt-moon { display: none; }
-:root.dark .theme-toggle .tt-moon { display: block; }
-:root.dark .theme-toggle .tt-sun { display: none; }
-
-.theme-toggle:hover .theme-toggle-knob {
-  background: var(--toggle-knob-hover, var(--toggle-knob, var(--primary)));
+  padding: 6px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
 }
 
-/* toggle sits where a link's text would, not where its box does */
-.navbar__menu li:has(.theme-toggle) {
-  margin-inline-start: 9px;
+.mode-button:hover {
+  background: var(--code-bg);
+  color: var(--foreground);
+}
+
+.mode-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.mode-button svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.mode-button .mi-dark,
+.mode-button .mi-light { display: none; }
+:root[data-mode="dark"] .mode-button .mi-auto { display: none; }
+:root[data-mode="dark"] .mode-button .mi-dark { display: block; }
+:root[data-mode="light"] .mode-button .mi-auto { display: none; }
+:root[data-mode="light"] .mode-button .mi-light { display: block; }
+
+/* The control sits where a link's text would, not where its box does. The
+   links carry horizontal padding, and the button's border makes its edge read
+   harder than the old pill's rounded end, so this is tuned by eye rather than
+   set to the list's own gap. */
+.navbar__menu li:has(.mode-button),
+#menu li:has(.mode-button) {
+  margin-inline-start: 12px;
 }
