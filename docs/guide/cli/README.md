@@ -107,6 +107,10 @@ Live connection and throughput stats; metrics are disabled by default in new ins
 ### [`admin-token`](admin-token.md)
 
 
+### [`admin-api`](admin-api.md)
+
+- [`path`](admin-api-path.md)
+
 ### [`admin-web`](admin-web.md)
 
 - [`disable`](admin-web-disable.md)

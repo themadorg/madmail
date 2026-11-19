@@ -384,6 +384,21 @@ On Windows the result has no `left_in_place` and no `found`: a dry run returns
 }
 ```
 
+### `admin-api path`
+
+```json
+{
+  "ok": true,
+  "command": "admin-api path",
+  "data": {
+    "path": "/api/admin",
+    "api_url": "https://your-server/api/admin"
+  }
+}
+```
+
+A set or reset uses the same `command` and adds `message`. `data.reset` is `true` after `--reset`. `data.applied` is true only when a remount was accepted. `data.restart_required` is the opposite. `data.diagnostic` is optional and is present when a candidate refused the remount; the command still exits 0 and keeps the saved path.
+
 ### `admin-web status`
 
 ```json

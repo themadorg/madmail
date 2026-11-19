@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "madmail" "1" "2026-10-17" "2.36.0" "User Commands"
+.TH "madmail" "1" "2026-11-19" "2.44.2" "User Commands"
 .PP
 .SH NAME
 .PP
@@ -86,7 +86,7 @@ a path that resolves to one of these, a directory of root or of a uid
 without an account name that is not empty and whose physical path is
 not named for madmail (such as /var/lib/dpkg; not with \fB--skip-user\fR),
 unless it holds only lost+found or the root-owned marker file
-\&.madmail-state that install creates in a state directory it creates,
+madmail-state that install creates in a state directory it creates,
 or a directory of another named account.\& Account names
 are looked up with the C library and then with \fBgetent passwd\fR, so
 accounts from LDAP or sssd count too; \fBgetent\fR cannot tell a directory
@@ -581,6 +581,12 @@ madmail dkim status
 .PP
 .RE
 .SH OPERATOR WEBHOOKS
+.PP
+Show or move the admin API mount with \fBmadmail admin-api path\fR.\&
+\fB--reset\fR deletes the database override.\& A running server is asked to
+remount at the path that is still mounted, then at the built-in path.\&
+A refused remount keeps the saved path and the command still succeeds.\&
+A file or environment \fBadmin_path\fR protects the value.\&
 .PP
 Enable the embedded dashboard with \fBmadmail admin-web enable\fR and apply
 HTTP route changes with \fBmadmail reload\fR.\& In Services, configure Operator

@@ -244,4 +244,179 @@ mod configuration_tests {
         .is_none());
         task.abort();
     }
+
+    // This service swaps the router and then signals done. The production
+    // supervisor acknowledges the reload and only then restarts listeners
+    // (supervisor.rs). `applied: true` on a real server means the remount was
+    // accepted, not that the new path was probed and found reachable.
+    #[tokio::test]
+    async fn saving_admin_path_through_the_old_route_moves_the_live_router() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use axum::ServiceExt as _;
+        use std::convert::Infallible;
+        use std::task::{Context, Poll};
+        use tower::Service;
+        use tower::ServiceExt as _;
+
+        #[derive(Clone)]
+        struct Swap(Arc<tokio::sync::RwLock<Router>>);
+
+        impl Service<Request<Body>> for Swap {
+            type Response = axum::response::Response;
+            type Error = Infallible;
+            type Future = std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = std::result::Result<Self::Response, Self::Error>,
+                        > + Send,
+                >,
+            >;
+
+            fn poll_ready(
+                &mut self,
+                _cx: &mut Context<'_>,
+            ) -> Poll<std::result::Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, req: Request<Body>) -> Self::Future {
+                let routers = Arc::clone(&self.0);
+                Box::pin(async move {
+                    let router = routers.read().await.clone();
+                    Ok(router.oneshot(req).await.unwrap_or_else(|err| match err {}))
+                })
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let cfg = AppConfig::default();
+        let reload_cfg = cfg.clone();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let (reload_tx, mut reload_rx) = tokio::sync::mpsc::channel(2);
+        let rebuild_tx = reload_tx.clone();
+        let initial = build_admin_router(
+            &cfg,
+            dir.path(),
+            token,
+            pool.clone(),
+            Arc::clone(&app),
+            Some(reload_tx),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let slot = Arc::new(tokio::sync::RwLock::new(initial));
+        let rebuild = Arc::clone(&slot);
+        let rebuild_pool = pool.clone();
+        let rebuild_app = Arc::clone(&app);
+        let rebuild_dir = dir.path().to_path_buf();
+        tokio::spawn(async move {
+            while let Some(req) = reload_rx.recv().await {
+                let next = build_admin_router(
+                    &reload_cfg,
+                    &rebuild_dir,
+                    token,
+                    rebuild_pool.clone(),
+                    Arc::clone(&rebuild_app),
+                    Some(rebuild_tx.clone()),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                *rebuild.write().await = next;
+                if let Some(done) = req.done {
+                    let _ = done.send(Ok(()));
+                }
+            }
+        });
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, Swap(slot).into_make_service())
+                .await
+                .unwrap();
+        });
+        let client = reqwest::Client::new();
+        let auth = format!("Bearer {token}");
+        let saved: serde_json::Value = client
+            .post(format!("http://{addr}/api/admin"))
+            .json(&serde_json::json!({
+                "method": "POST",
+                "resource": "/admin/settings/admin_path",
+                "headers": { "Authorization": auth },
+                "body": { "action": "set", "value": "/api/secret" }
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(saved["status"], 200, "{saved}");
+        assert_eq!(saved["body"]["value"], "/api/secret");
+        assert_eq!(saved["body"]["applied"], true, "{saved}");
+
+        let authed: serde_json::Value = client
+            .post(format!("http://{addr}/api/secret"))
+            .json(&serde_json::json!({
+                "method": "GET",
+                "resource": "/admin/settings",
+                "headers": { "Authorization": auth }
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(authed["status"], 200, "{authed}");
+        let old = client
+            .post(format!("http://{addr}/api/admin"))
+            .json(&serde_json::json!({
+                "method": "GET",
+                "resource": "/admin/settings",
+                "headers": { "Authorization": auth }
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(old.status(), reqwest::StatusCode::NOT_FOUND);
+
+        let reset: serde_json::Value = client
+            .post(format!("http://{addr}/api/secret"))
+            .json(&serde_json::json!({
+                "method": "POST",
+                "resource": "/admin/settings/admin_path",
+                "headers": { "Authorization": auth },
+                "body": { "action": "reset" }
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(reset["status"], 200, "{reset}");
+        assert_eq!(reset["body"]["value"], "/api/admin");
+        assert_eq!(reset["body"]["applied"], true, "{reset}");
+        let home: serde_json::Value = client
+            .post(format!("http://{addr}/api/admin"))
+            .json(&serde_json::json!({
+                "method": "GET",
+                "resource": "/admin/settings",
+                "headers": { "Authorization": auth }
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(home["status"], 200, "{home}");
+        task.abort();
+    }
 }

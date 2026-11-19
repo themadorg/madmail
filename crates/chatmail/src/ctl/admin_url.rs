@@ -43,18 +43,7 @@ pub fn build_admin_url(config: &AppConfig, settings: &HashMap<String, String>) -
     let http_port = listen_port(config.http_listen.as_deref()).unwrap_or_else(|| "80".into());
     let https_port = listen_port(config.http_tls_listen.as_deref()).unwrap_or(https_port);
 
-    let admin_path = settings
-        .get(ADMIN_PATH)
-        .filter(|s| !s.is_empty())
-        .cloned()
-        .or_else(|| config.admin_path.clone())
-        .unwrap_or_else(|| "/api/admin".into());
-
-    let path = if admin_path.starts_with('/') {
-        admin_path
-    } else {
-        format!("/{admin_path}")
-    };
+    let path = effective_admin_path(config, settings);
 
     // Local dev: HTTP listener on a non-443 port (e.g. 8080) — show http URL for admin-token / UI.
     if https_port == "443" && http_port != "80" && http_port != "443" {
@@ -68,13 +57,34 @@ pub fn build_admin_url(config: &AppConfig, settings: &HashMap<String, String>) -
     }
 }
 
-/// Public site base URL (HTTPS or local HTTP) for probing admin-web paths.
+/// Public site origin (HTTPS or local HTTP) for the admin-web dashboard.
+///
+/// The admin API path is removed even when it is not the built-in `/api/admin`,
+/// so a dashboard link stays `https://host/admin/` after the API moves.
 pub fn build_site_base_url(config: &AppConfig, settings: &HashMap<String, String>) -> String {
     let admin = build_admin_url(config, settings);
-    if let Some((base, _)) = admin.rsplit_once("/api/admin") {
-        return base.to_string();
-    }
+    let path = effective_admin_path(config, settings);
+    let path = path.trim_end_matches('/');
+    let admin = admin.trim_end_matches('/');
     admin
+        .strip_suffix(path)
+        .unwrap_or(admin)
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn effective_admin_path(config: &AppConfig, settings: &HashMap<String, String>) -> String {
+    let admin_path = settings
+        .get(ADMIN_PATH)
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .or_else(|| config.admin_path.clone())
+        .unwrap_or_else(|| "/api/admin".into());
+    if admin_path.starts_with('/') {
+        admin_path
+    } else {
+        format!("/{admin_path}")
+    }
 }
 
 fn listen_port(addr: Option<&str>) -> Option<String> {
@@ -106,5 +116,30 @@ mod tests {
         cfg.http_listen = Some("0.0.0.0:8080".into());
         let url = build_admin_url(&cfg, &HashMap::new());
         assert_eq!(url, "http://127.0.0.1:8080/api/admin");
+    }
+
+    #[test]
+    fn site_base_strips_a_custom_admin_api_path() {
+        let mut cfg = AppConfig::default();
+        cfg.hostname = Some("mail.example".into());
+        let mut settings = HashMap::new();
+        settings.insert(ADMIN_PATH.to_string(), "/api/offline".into());
+        assert_eq!(
+            build_admin_url(&cfg, &settings),
+            "https://mail.example/api/offline"
+        );
+        assert_eq!(build_site_base_url(&cfg, &settings), "https://mail.example");
+        let site = build_site_base_url(&cfg, &settings);
+        let web = format!("{}/admin/", site.trim_end_matches('/'));
+        assert_eq!(web, "https://mail.example/admin/");
+    }
+
+    #[test]
+    fn site_base_keeps_the_default_origin() {
+        let cfg = AppConfig::default();
+        assert_eq!(
+            build_site_base_url(&cfg, &HashMap::new()),
+            "https://your-server"
+        );
     }
 }

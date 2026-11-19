@@ -89,6 +89,12 @@ pub enum Command {
         #[arg(long)]
         no_qr: bool,
     },
+    /// Show, set, or reset the admin API path.
+    #[command(name = "admin-api")]
+    AdminApi {
+        #[command(subcommand)]
+        cmd: AdminApiCommand,
+    },
     /// Configure the embedded admin web dashboard.
     ///
     /// Account/quota webhooks are configured in Services > Operator webhooks,
@@ -1077,6 +1083,19 @@ pub enum BlocklistCommand {
 }
 
 #[derive(Debug, Subcommand, Clone)]
+pub enum AdminApiCommand {
+    /// Set, show, or reset the path where the admin API is mounted.
+    Path {
+        /// New path, such as `/api/secret`. Omit to print the current path.
+        #[arg(value_name = "PATH")]
+        path: Option<String>,
+        /// Delete the database override and return to the file or default path.
+        #[arg(long)]
+        reset: bool,
+    },
+}
+
+#[derive(Debug, Subcommand, Clone)]
 pub enum AdminWebCommand {
     /// Show admin web dashboard status.
     Status,
@@ -1276,6 +1295,27 @@ mod tests {
 
         let cli = Cli::try_parse_from(["chatmail", "run"]).expect("run subcommand");
         assert!(matches!(cli.command, Some(Command::Run)));
+    }
+
+    #[test]
+    fn admin_api_path_parses() {
+        let cli = Cli::try_parse_from(["chatmail", "admin-api", "path", "/api/secret"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::AdminApi {
+                cmd: AdminApiCommand::Path { path: Some(path), reset: false }
+            }) if path == "/api/secret"
+        ));
+        let cli = Cli::try_parse_from(["chatmail", "admin-api", "path", "--reset"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::AdminApi {
+                cmd: AdminApiCommand::Path {
+                    path: None,
+                    reset: true
+                }
+            })
+        ));
     }
 
     #[test]

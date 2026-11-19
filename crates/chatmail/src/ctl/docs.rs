@@ -271,6 +271,16 @@ mod tests {
     }
 
     #[test]
+    fn bash_completion_includes_admin_api_path() {
+        let script = bash_completion("madmail").unwrap();
+        assert!(
+            script.contains("admin-api"),
+            "bash completion should include admin-api"
+        );
+        assert!(script.contains("path"));
+    }
+
+    #[test]
     fn bash_completion_includes_queue_subcommand() {
         let script = bash_completion("madmail").unwrap();
         assert!(

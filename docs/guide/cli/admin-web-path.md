@@ -28,6 +28,8 @@ madmail admin-web path --reset
 
 Pass a path argument to set, or `--reset` to revert to `/admin`.
 
+Setting a path also enables a dashboard that is currently disabled. That side effect is unchanged. `admin-web disable` turns it off again and does not ask you to open the disabled page.
+
 After changes, run `madmail reload` (or restart) to apply.
 
 ## JSON output (`--json`)

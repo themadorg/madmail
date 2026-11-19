@@ -437,6 +437,12 @@ Print the DKIM TXT to publish at *default.\_domainkey*, then verify DNS:
 
 # OPERATOR WEBHOOKS
 
+Show or move the admin API mount with *madmail admin-api path*.
+*--reset* deletes the database override. A running server is asked to
+remount at the path that is still mounted, then at the built-in path.
+A refused remount keeps the saved path and the command still succeeds.
+A file or environment *admin_path* protects the value.
+
 Enable the embedded dashboard with *madmail admin-web enable* and apply
 HTTP route changes with *madmail reload*. In Services, configure Operator
 webhooks, save, and send a test. The service is disabled by default.
