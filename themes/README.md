@@ -120,8 +120,8 @@ stylesheet.
 Only building one mode is fine — take primer's palette block for the mode you
 are not theming, so the control still leads somewhere reasonable.
 
-A palette matching Madmail's own purple would be a natural addition, and on
-this layout it is one file.
+Madmail's own surfaces would each be one file here: the black and white the
+site defaults to, and the purple that runs through the admin panel.
 
 ## Conventions worth keeping
 
