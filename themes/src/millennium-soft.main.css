@@ -36,6 +36,7 @@
   --input-ring: #818b98;
   --input-bg: #ffffff;
   --table-header-bg: #e6eaef;
+  --code-header-bg: var(--code-bg);
   --btn-primary-border: #1f232826;
   --focus-glow: #818b98;
   --focus-glow-mix: 14%;

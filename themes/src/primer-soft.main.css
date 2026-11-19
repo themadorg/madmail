@@ -37,7 +37,7 @@
   --note-link: var(--link);
   --input-bg: #ffffff;
   --btn-primary-border: #1f232826;
-  --code-header-bg: #f6f8fa;
+  --code-header-bg: var(--code-bg);
   --table-header-bg: #e6eaef;
   --btn-secondary-fg: var(--muted);
   --btn-secondary-border: var(--card-border);

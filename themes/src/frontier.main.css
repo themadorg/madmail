@@ -38,6 +38,7 @@
   --focus-glow: #e8eeef;
   --input-bg: #f4f6f7;
   --table-header-bg: #f4f6f7;
+  --code-header-bg: var(--code-bg);
   --note-link: var(--link);
   --btn-primary-border: #1f232826;
   --btn-secondary-fg: #888888;
