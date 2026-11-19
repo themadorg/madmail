@@ -93,6 +93,10 @@ The switcher only ever writes `main.css` inside the served tree, so restoring th
 | Every page declares a favicon and carries the control | `crates/chatmail-www/src/tests.rs` |
 | `logo.svg` begins with its XML declaration | `crates/chatmail-www/src/tests.rs` |
 | Switcher install, verification, guards, temporary files | `scripts/test_theme_switch.py` |
+| The bootstrap is identical in all five copies | `crates/chatmail-www/src/tests.rs` |
+| The bootstrap applies both `.dark` and `.light` | `crates/chatmail-www/src/tests.rs` |
+
+**Outstanding:** the bootstrap's behaviour is not executed by any test. The repository has no JavaScript test harness — `landing/` has its own, but that is a separate application — so mode resolution, the legacy-key migration and the live media-query response are verified by hand rather than in CI. The tests above pin the bootstrap's shape and the copies' agreement, not what it does.
 
 See [16-testing.md](16-testing.md).
 

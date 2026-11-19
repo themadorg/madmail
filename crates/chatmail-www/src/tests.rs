@@ -1366,3 +1366,58 @@ fn logo_begins_with_its_xml_declaration() {
          before it browsers reject the file and the favicon silently fails to render"
     );
 }
+
+#[test]
+fn the_colour_mode_bootstrap_is_identical_in_every_copy() {
+    const OPEN: &str = "\n(function () {\n";
+    const CLOSE: &str = "\n})();\n";
+    const COPIES: [&str; 5] = [
+        "main.js",
+        "docker_docs.html",
+        "relay_docs.html",
+        "docs/fa/docker.html",
+        "docs/fa/relay.html",
+    ];
+    let mut first: Option<String> = None;
+    for path in COPIES {
+        let file = crate::assets::WwwAssets::get(path).expect("embedded copy");
+        let src = String::from_utf8_lossy(&file.data).into_owned();
+        assert_eq!(
+            src.matches(OPEN).count(),
+            1,
+            "{} does not contain exactly one bootstrap",
+            path
+        );
+        let start = src.find(OPEN).expect("bootstrap start");
+        let end = src[start..].find(CLOSE).expect("bootstrap end") + start + CLOSE.len();
+        let block = src[start..end].to_string();
+        match &first {
+            None => first = Some(block),
+            Some(expected) => assert_eq!(
+                expected, &block,
+                "{} has drifted from the copy in main.js",
+                path
+            ),
+        }
+    }
+}
+
+#[test]
+fn the_colour_mode_bootstrap_sets_both_classes() {
+    let file = crate::assets::WwwAssets::get("main.js").expect("main.js is embedded");
+    let src = String::from_utf8_lossy(&file.data);
+    for needle in [
+        "classList.toggle('dark'",
+        "classList.toggle('light'",
+        "madmail-light",
+        "prefers-color-scheme: dark",
+        "--default-mode",
+    ] {
+        assert!(
+            src.contains(needle),
+            "the bootstrap no longer contains {}; selecting light stops working \
+             if .light is not applied alongside .dark",
+            needle
+        );
+    }
+}

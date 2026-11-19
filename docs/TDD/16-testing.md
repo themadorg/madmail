@@ -642,4 +642,10 @@ reported distinguishably from a mode difference, both refusal guards, and no
 temporary file surviving a successful install. CI runs it through
 `python3 -m unittest discover -s scripts -p 'test_*.py'`.
 
+Two further tests pin the colour-mode bootstrap: that `main.js` and the four
+inline copies carry an identical block, and that it applies `.light` alongside
+`.dark`. Neither executes the logic — there is no JavaScript test harness in
+this repository — so mode resolution, the legacy-key migration and the live
+media-query response remain verified by hand. That gap is outstanding.
+
 Design: [27-website-theming.md](27-website-theming.md).
