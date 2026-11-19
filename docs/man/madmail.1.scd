@@ -207,7 +207,10 @@ Extended documentation:
 	Outbound delivery DNS override cache.
 
 *sharing*
-	Delta Chat contact share links.
+	Delta Chat contact share links. *status*, *enable*, and *disable*
+	switch the public pages. A saved setting overrides the config file and
+	applies on the next HTTP request. A file-only change needs a restart.
+	Saved links stay in *sharing.db*.
 
 *message\-size*
 	View or set maximum message size limits.

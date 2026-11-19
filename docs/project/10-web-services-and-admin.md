@@ -17,7 +17,7 @@ This is the "face" of a chatmail server for browsers and lightweight clients.
 - `/docs/*` — multi-language documentation (en, fa, ru, es, ...)
 - `/webimap/*` + `GET /webimap/ws` — REST + WebSocket subset of IMAP for browser / desktop clients
 - `/websmtp/send` — lightweight message submission (used by some web clients)
-- `/share` and `/inv/*` — contact sharing and invite links
+- `/share` and `/inv/*` — contact sharing and invite links. Public `/share` and slug pages follow `__CONTACT_SHARING_ENABLED__`, then the `enable_contact_sharing` value captured at process start. A CLI or Admin API change applies on the next request. Editing the file, with no saved row, needs a restart. `sharing.db` stays when the pages are off.
 - `/madmail` — download the current server binary (useful for bootstrap)
 - `/app` — Delta Chat app download links
 

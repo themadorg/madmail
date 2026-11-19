@@ -140,7 +140,7 @@ async fn doc_lang(st: &WwwState, name: &str, headers: &HeaderMap) -> Response {
 }
 
 pub async fn share_get(State(st): State<WwwState>, headers: HeaderMap) -> impl IntoResponse {
-    if st.sharing.is_none() {
+    if !st.contact_sharing_enabled().await || st.sharing.is_none() {
         return StatusCode::NOT_FOUND.into_response();
     }
     render_template(&st, "contact_share.html", None, client_host(&headers)).await
@@ -151,6 +151,9 @@ pub async fn share_post(
     headers: HeaderMap,
     axum::Form(form): axum::Form<ShareForm>,
 ) -> impl IntoResponse {
+    if !st.contact_sharing_enabled().await {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let Some(sharing) = st.sharing.as_ref() else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -714,6 +717,9 @@ fn plain_error(status: StatusCode, message: &str) -> Response {
 
 async fn lookup_shared_contact(st: &WwwState, path: &str) -> Option<CustomFields> {
     if path.contains('.') || path.contains('/') || is_reserved_slug(path) {
+        return None;
+    }
+    if !st.contact_sharing_enabled().await {
         return None;
     }
     let sharing = st.sharing.as_ref()?;

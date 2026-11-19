@@ -141,6 +141,21 @@ pub async fn all_settings(st: &AdminState, method: &str) -> AdminResult {
         }),
     );
     body.insert(
+        "contact_sharing_enabled".into(),
+        json!(if get_bool_setting(
+            pool,
+            settings_keys::CONTACT_SHARING_ENABLED,
+            st.file_config.enable_contact_sharing
+        )
+        .await
+        .map_err(db_err)?
+        {
+            "enabled"
+        } else {
+            "disabled"
+        }),
+    );
+    body.insert(
         "webimap_enabled".into(),
         json!(get_toggle_disabled_default(pool, settings_keys::WEBIMAP_ENABLED).await?),
     );

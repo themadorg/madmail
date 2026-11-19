@@ -75,7 +75,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `federation` | [federation.md](../guide/cli/federation.md) | `federation.rs` | **done** (+ `dismiss`, `undismiss`, `dismiss-list`, `dismiss-flush`, `transport`) |
 | `dkim` | [dkim.md](../guide/cli/dkim.md) | `dkim.rs` | **done** (`show` / `check` / `status`; `{state}/dkim/default.{private,txt}`) |
 | `endpoint-cache` / `dns-cache` | [endpoint-cache.md](../guide/cli/endpoint-cache.md) | `endpoint_cache.rs` | **done** |
-| `sharing` | [sharing.md](../guide/cli/sharing.md) | `sharing.rs` | **done** |
+| `sharing` | [sharing.md](../guide/cli/sharing.md) | `sharing.rs` | **done** (`status` / `enable` / `disable` on `__CONTACT_SHARING_ENABLED__`; link commands unchanged) |
 | `port` | [port.md](../guide/cli/port.md) | `port.rs` | **done** |
 | `message-size` | [message-size.md](../guide/cli/message-size.md) | `message_size.rs` | **done** |
 | `language` | [language.md](../guide/cli/language.md) | `language.rs` | **done** |

@@ -80,3 +80,5 @@ Special UX: `admin_path` and `ss_password` have dice buttons for random values.
 - Point `smtp_hostname` at the real public name clients should use
 - Change `admin_path` / `admin_web_path` to obscure operator endpoints (expect reload)
 The WebSocket mail bridge is disabled by default. Its toggle applies to new connections immediately. See [operator/client instructions](../guide/cli/websocket-bridge.md); browser origins must be explicitly allowlisted.
+
+Contact sharing uses the same GET/POST shape. A saved value overrides `enable_contact_sharing` in the config file and applies on the next request. `reload_required` is false. `file_change_requires_restart` is true only while no saved row exists: editing the file then needs a process restart, and `madmail reload` does not reread it. Disabling does not delete `sharing.db`. The embedded admin web does not show this switch yet; call `/admin/services/contact_sharing` or `madmail sharing`. See [the operator command](../guide/cli/sharing.md).

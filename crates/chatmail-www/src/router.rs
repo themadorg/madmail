@@ -22,7 +22,7 @@ use std::sync::{Arc, RwLock};
 use axum::routing::{delete, get, post};
 use axum::Router;
 use chatmail_config::AppConfig;
-use chatmail_db::DbPool;
+use chatmail_db::{get_bool_setting, settings_keys, DbPool};
 use chatmail_state::AppState;
 
 use crate::assets::{embedded_asset_bytes, external_asset_bytes, preload_embedded_www};
@@ -48,7 +48,8 @@ pub struct WwwState {
     /// Embedded static assets preloaded into RAM (`www_dir` unset only).
     asset_cache: Arc<RwLock<HashMap<String, Arc<[u8]>>>>,
     pub state_dir: PathBuf,
-    /// Lazy `{state_dir}/sharing.db` pool when `enable_contact_sharing` is set.
+    /// Lazy `{state_dir}/sharing.db` pool. Public routes still check the
+    /// effective contact-sharing flag before opening it.
     pub sharing: Option<Arc<SharingStore>>,
 }
 
@@ -73,14 +74,12 @@ impl WwwState {
             preload_embedded_www(&asset_cache);
             tracing::debug!("www: default site from embedded RAM (no www_dir)");
         }
-        let sharing = if config.enable_contact_sharing {
-            Some(SharingStore::new(
-                &state_dir,
-                config.sharing_db_path(&state_dir),
-            ))
-        } else {
-            None
-        };
+        // Always attach the store. `SharingStore::new` does not create the
+        // file; public handlers open it only when contact sharing is on.
+        let sharing = Some(SharingStore::new(
+            &state_dir,
+            config.sharing_db_path(&state_dir),
+        ));
         Self {
             pool,
             app,
@@ -119,6 +118,20 @@ impl WwwState {
     /// Exported tree via `html-export` / `html-serve` (live disk reload).
     pub fn uses_external_www(&self) -> bool {
         self.www_dir.is_some()
+    }
+
+    /// Whether public `/share` and contact slug pages are on.
+    ///
+    /// `__CONTACT_SHARING_ENABLED__` wins over `enable_contact_sharing`.
+    /// No row keeps the config value. A settings read error closes the pages.
+    pub async fn contact_sharing_enabled(&self) -> bool {
+        get_bool_setting(
+            &self.pool,
+            settings_keys::CONTACT_SHARING_ENABLED,
+            self.config.enable_contact_sharing,
+        )
+        .await
+        .unwrap_or(false)
     }
 }
 
