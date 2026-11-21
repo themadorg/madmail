@@ -1,0 +1,119 @@
+#!/bin/sh
+# Madmail theme switcher. Installs one of the palettes in src/ into the served
+# tree, optionally pinning a default colour mode.
+#
+# Paths come from the environment, defaulting to a standard install:
+#   MADMAIL_THEMES_DIR  where src/ lives. Defaults to this script's own
+#                       directory, resolved through symlinks.
+#   MADMAIL_WWW         the served tree. Defaults to madmail's default www_dir.
+set -e
+SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
+DIR=${MADMAIL_THEMES_DIR:-$(dirname "$SELF")}
+SRC="$DIR/src"
+WWW=${MADMAIL_WWW:-/var/lib/madmail/www}
+REC="$DIR/.installed"
+
+usage() { echo "usage: ${0##*/} [<palette> [--default-mode light|dark]]"; }
+
+known() { [ -f "$SRC/$1.main.css" ]; }
+
+list() {
+  for f in "$SRC"/*.main.css; do
+    [ -f "$f" ] || continue
+    n=${f##*/}; printf '    %s\n' "${n%.main.css}"
+  done
+}
+
+# The stylesheet a palette installs as: the source, plus one --default-mode
+# declaration in :root when a mode was asked for. Install and verification both
+# go through here, so the served file and the expected file cannot be produced
+# by different logic.
+emit() {
+  if [ -n "$2" ]; then
+    awk -v m="$2" '
+      { print }
+      $1 == ":root" && $2 == "{" && NF == 2 && !d { print "  --default-mode: " m ";"; d = 1 }
+    ' "$1"
+  else
+    cat "$1"
+  fi
+}
+
+verify() {
+  n=$1; mode=$2
+  known "$n" || { echo "unknown palette"; return; }
+  [ -f "$WWW/main.css" ] || { echo "STALE - no main.css in $WWW"; return; }
+  if emit "$SRC/$n.main.css" "$mode" | cmp -s - "$WWW/main.css"; then
+    echo verified; return
+  fi
+  # The exact comparison above is the verdict. This one only refines the
+  # message: with our own mode declaration set aside, is the palette intact?
+  if sed '/^  --default-mode:/d' "$WWW/main.css" | cmp -s - "$SRC/$n.main.css"; then
+    live=$(sed -n 's/^  --default-mode:[[:space:]]*\([a-z]*\);.*/\1/p' "$WWW/main.css" | head -1)
+    echo "STALE - palette matches, default-mode is ${live:-none}, recorded ${mode:-none}"
+    return
+  fi
+  echo "STALE - main.css differs from src/$n.main.css"
+}
+
+if [ -z "$1" ]; then
+  var=""; mode=""; rest=""
+  [ -f "$REC" ] && read -r var mode rest < "$REC"
+  case $mode in light|dark) ;; *) mode="" ;; esac
+  if [ -n "$var" ]; then
+    echo "active:  $var${mode:+ (default-mode: $mode)}  [$(verify "$var" "$mode")]"
+  else
+    echo "active:  nothing recorded"
+  fi
+  # Whether 127.0.0.1 returns the same resource a visitor gets depends on Host
+  # routing, ports and any proxy in front, so probing it cannot be made
+  # reliable. verify() above compares the served file against the source,
+  # which is the part that is actually knowable here.
+  echo "www_dir: $WWW"
+  echo; echo "palettes:"; list
+  exit 0
+fi
+
+want=$1; mode=""; shift
+while [ $# -gt 0 ]; do
+  case $1 in
+    --default-mode)
+      shift
+      case $1 in
+        light|dark) mode=$1 ;;
+        *) echo "--default-mode takes light or dark"; exit 1 ;;
+      esac
+      ;;
+    *) usage; exit 1 ;;
+  esac
+  shift
+done
+
+case $want in
+  ''|*[!a-z0-9-]*)
+    echo "palette names use lowercase letters, digits and hyphens only"; exit 1 ;;
+esac
+known "$want" || { echo "no such palette: $want"; echo; echo "palettes:"; list; exit 1; }
+src="$SRC/$want.main.css"
+
+if grep -nE ':[[:space:]]*__' "$src"; then
+  echo "refusing - unfilled placeholders above"; exit 1
+fi
+if grep -n -- '--default-mode' "$src"; then
+  echo "refusing - the palette declares --default-mode itself; --default-mode sets it"; exit 1
+fi
+[ -d "$WWW" ] || { echo "no served tree at $WWW"; exit 1; }
+if [ -h "$WWW/main.css" ] || { [ -e "$WWW/main.css" ] && [ ! -f "$WWW/main.css" ]; }; then
+  echo "refusing - $WWW/main.css is not a regular file"; exit 1
+fi
+
+tmp=$(mktemp "$WWW/.main.css.XXXXXX") || { echo "cannot write to $WWW"; exit 1; }
+trap 'rm -f "$tmp"' EXIT INT TERM
+emit "$src" "$mode" > "$tmp"
+chmod 644 "$tmp"
+mv "$tmp" "$WWW/main.css"
+[ -f "$WWW/main.css" ] || { echo "install failed - $WWW/main.css is not a regular file"; exit 1; }
+trap - EXIT INT TERM
+
+printf '%s %s\n' "$want" "$mode" > "$REC"
+echo "active: $want${mode:+ (default-mode: $mode)}   [$(verify "$want" "$mode")]"

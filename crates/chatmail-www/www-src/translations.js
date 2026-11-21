@@ -105,7 +105,6 @@ var TRANSLATIONS = {
         deploy_proxy_desc: "Note that this proxy only works within this server and only for messaging to this server! Every other madmail server will have its own proxy.",
         deploy_proxy_usage: "How to use: Settings > Advanced > Network > SOCKS5 Proxy",
         deploy_proxy_footer: "* This proxy is specific to this Madmail server.",
-        deploy_custom_footer: "Customize appearance",
         // Docs index page
         docs_index_title: "Documentation Index",
         docs_index_subtitle: "Manage documentation for",
@@ -282,7 +281,6 @@ var TRANSLATIONS = {
         deploy_proxy_desc: "توجه داشته باشین که این پروکسی فقط در داخل همین سرور و فقط برای پیام رسانی به همین سرور قابل استفاده است! هر سرور دیگر madmail پروکسی خودش را خواهد داشت",
         deploy_proxy_usage: "نحوه استفاده: تنظیمات > پیشرفته > شبکه > پروکسی SOCKS5",
         deploy_proxy_footer: "* این پروکسی مختص همین سرور Madmail است.",
-        deploy_custom_footer: "شخصی‌سازی ظاهر",
         docs_index_title: "فهرست مستندات",
         docs_index_subtitle: "مستندات را در اینجا مدیریت کنید.",
         docs_general: "مستندات عمومی",
@@ -449,7 +447,6 @@ var TRANSLATIONS = {
         deploy_proxy_desc: "Обратите внимание, что этот прокси работает только в пределах этого сервера и только для обмена сообщениями с этим сервером! Каждый другой сервер madmail будет иметь свой собственный прокси.",
         deploy_proxy_usage: "Как использовать: Настройки > Дополнительно > Сеть > SOCKS5 Прокси",
         deploy_proxy_footer: "* Этот прокси специфичен для данного сервера Madmail.",
-        deploy_custom_footer: "Настроить внешний вид",
         docs_index_title: "Указатель документации",
         docs_index_subtitle: "Управление документацией для",
         docs_general: "Общая документация",
