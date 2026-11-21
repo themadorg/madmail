@@ -24,13 +24,17 @@ Three states, stored under `madmail-theme` in `localStorage`:
 Resolution, highest first:
 
 1. the stored value, if it is one of the three
-2. the legacy `madmail-light` key, migrated — `true` becomes `light`, anything else `system`
+2. the legacy `madmail-light` key, but only when it is exactly `true`, which becomes `light`
 3. `--default-mode`, if the installed stylesheet declares one
 4. `system`
 
+Each step applies only when its condition holds. A legacy key with any value other than
+`true`, or no legacy key at all, leaves the choice unset rather than resolving to `system`,
+so an operator default still applies.
+
 A visitor choosing automatic stores `system`, which outranks an operator default. Without that, a server pinning a mode would leave no way back to automatic.
 
-`landing/src/lib/theme.svelte.js` uses the same state names and the same legacy migration. The two sites never share storage, since `localStorage` is origin-scoped, so this is consistency rather than interoperation.
+`landing/src/lib/theme.svelte.js` uses the same state names and the same test on the legacy key, `madmail-light === 'true'` becoming `light`. What follows differs: landing returns `system`, having no operator default to defer to, where the embedded bootstrap returns nothing so that `--default-mode` can still apply. The two sites never share storage, since `localStorage` is origin-scoped, so this is consistency rather than interoperation.
 
 ### Applied state
 
