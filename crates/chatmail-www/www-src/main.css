@@ -663,11 +663,6 @@ input:focus {
   color: var(--foreground);
 }
 
-.mode-button:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
 .mode-button svg {
   width: 14px;
   height: 14px;
