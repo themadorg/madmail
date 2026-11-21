@@ -89,6 +89,10 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+case $want in
+  ''|*[!a-z0-9-]*)
+    echo "palette names use lowercase letters, digits and hyphens only"; exit 1 ;;
+esac
 known "$want" || { echo "no such palette: $want"; echo; echo "palettes:"; list; exit 1; }
 src="$SRC/$want.main.css"
 
@@ -99,12 +103,16 @@ if grep -n -- '--default-mode' "$src"; then
   echo "refusing - the palette declares --default-mode itself; --default-mode sets it"; exit 1
 fi
 [ -d "$WWW" ] || { echo "no served tree at $WWW"; exit 1; }
+if [ -h "$WWW/main.css" ] || { [ -e "$WWW/main.css" ] && [ ! -f "$WWW/main.css" ]; }; then
+  echo "refusing - $WWW/main.css is not a regular file"; exit 1
+fi
 
 tmp=$(mktemp "$WWW/.main.css.XXXXXX") || { echo "cannot write to $WWW"; exit 1; }
 trap 'rm -f "$tmp"' EXIT INT TERM
 emit "$src" "$mode" > "$tmp"
 chmod 644 "$tmp"
 mv "$tmp" "$WWW/main.css"
+[ -f "$WWW/main.css" ] || { echo "install failed - $WWW/main.css is not a regular file"; exit 1; }
 trap - EXIT INT TERM
 
 printf '%s %s\n' "$want" "$mode" > "$REC"

@@ -112,7 +112,8 @@ stylesheet.
 ## Adding a palette
 
 1. Copy an existing file to `src/<name>.main.css`, or copy `primer` if you want
-   the gentlest starting point.
+   the gentlest starting point. The name may use lowercase letters, digits and
+   hyphens.
 2. Change the values in the two palette blocks. Leave the rules alone unless you
    mean to.
 3. That is all. `madmail-theme <name>` installs it.

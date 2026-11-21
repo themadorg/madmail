@@ -96,6 +96,70 @@ class ThemeSwitchTest(unittest.TestCase):
         left = [p.name for p in self.www.iterdir() if p.name.startswith(".main.css.")]
         self.assertEqual(left, [])
 
+    # --- destination type -------------------------------------------------
+    # mv(1) moves its source *into* a directory destination, so a directory at
+    # main.css produced exit 0, an install record, and a stray stylesheet left
+    # inside the served tree, where any file is publicly fetchable.
+    def test_refuses_a_directory_at_main_css(self):
+        (self.www / "main.css").mkdir()
+        result = switch(self.themes, self.www, PALETTE)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not a regular file", result.stdout)
+        self.assertEqual(list((self.www / "main.css").iterdir()), [])
+        self.assertFalse((self.themes / ".installed").exists())
+
+    # rename(2) replaces a destination symlink rather than following it, so
+    # nothing was ever written outside the tree. Refusing avoids silently
+    # destroying an arrangement an operator made on purpose.
+    def test_refuses_a_symlink_at_main_css(self):
+        outside = self.www.parent / "elsewhere.css"
+        outside.write_text("untouched\n")
+        (self.www / "main.css").symlink_to(outside)
+        result = switch(self.themes, self.www, PALETTE)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.www / "main.css").is_symlink())
+        self.assertEqual(outside.read_text(), "untouched\n")
+
+    # -e is false for a dangling link, so only the -h test catches this one.
+    def test_refuses_a_dangling_symlink_at_main_css(self):
+        (self.www / "main.css").symlink_to(self.www.parent / "nothing.css")
+        result = switch(self.themes, self.www, PALETTE)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.www / "main.css").is_symlink())
+
+    # The guard stats rather than opens, so this does not block on a writer.
+    def test_refuses_a_non_regular_file_at_main_css(self):
+        os.mkfifo(self.www / "main.css")
+        result = switch(self.themes, self.www, PALETTE)
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_a_refused_install_leaves_no_temporary_files(self):
+        (self.www / "main.css").mkdir()
+        switch(self.themes, self.www, PALETTE)
+        left = [q.name for q in self.www.rglob("*") if q.name.startswith(".main.css.")]
+        self.assertEqual(left, [])
+
+    def test_a_refused_install_does_not_change_the_record(self):
+        switch(self.themes, self.www, PALETTE)
+        before = (self.themes / ".installed").read_text()
+        (self.www / "main.css").unlink()
+        (self.www / "main.css").mkdir()
+        result = switch(self.themes, self.www, "primer")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.themes / ".installed").read_text(), before)
+
+    # --- palette names ----------------------------------------------------
+    # known() asked whether a path resolved to a file, not whether the name was
+    # one of ours, so a name carrying .. installed a stylesheet from outside
+    # src/ and recorded it as the active palette.
+    def test_rejects_a_palette_name_that_is_not_a_single_segment(self):
+        (self.themes / "outside.main.css").write_text(":root { --x: 1; }\n")
+        result = switch(self.themes, self.www, "../outside")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("palette names", result.stdout)
+        self.assertFalse((self.www / "main.css").exists())
+        self.assertFalse((self.themes / ".installed").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
