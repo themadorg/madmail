@@ -20,7 +20,7 @@
 /* ── Color System ── */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #0a0a0a;
   --card: #ffffff;
@@ -43,6 +43,7 @@
    media query keeps dark mode working with JavaScript disabled. */
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not(.dark) {
+    color-scheme: dark;
     --background: #09090b;
     --foreground: #fafafa;
     --card: #09090b;
@@ -62,6 +63,7 @@
 }
 
 :root.dark {
+  color-scheme: dark;
   --background: #09090b;
   --foreground: #fafafa;
   --card: #09090b;

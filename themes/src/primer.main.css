@@ -65,8 +65,45 @@
   --overlay: rgba(0, 0, 0, 0.5);
 }
 
+/* Dark mode without JavaScript. The class set by the inline head script always
+   wins, so this applies only when the script has not run. The declarations are
+   a byte copy of :root.dark below. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    color-scheme: dark;
+    --pill-fg-warning: initial;
+  --table-header-bg: #262c36;
+  --input-bg: #0d1117;
+  --alert-success-bg: #2ea04326;
+  --alert-danger-bg: #f851491a;
+  --alert-info-bg: #4493f81a;
+  --alert-warning-bg: #bb800926;
+  --btn-primary-border: #1f232826;
+  --btn-primary-bg: var(--primary);
+  --btn-secondary-border-hover: #4493f8;
+    --background: #0d1117;
+    --foreground: #f0f6fc;
+    --card: #151b23;
+    --card-border: #3d444d;
+    --muted: #9198a1;
+  --nav-link: #9198a1;
+    --primary: #238636;
+  --btn-primary-hover: #29903b;
+    --primary-foreground: #f0f6fc;
+    --secondary-border: #3d444d;
+    --link: #4493f8;
+    --code-bg: #0d1117;
+    --destructive: #f85149;
+    --warning: #d29922;
+    --success: #3fb950;
+    --ring: #1f6feb;
+    --overlay: rgba(0, 0, 0, 0.7);
+  }
+}
+
 :root.dark {
     color-scheme: dark;
+    --pill-fg-warning: initial;
   --table-header-bg: #262c36;
   --input-bg: #0d1117;
   --alert-success-bg: #2ea04326;

@@ -76,6 +76,52 @@
 
 }
 
+/* Dark mode without JavaScript. The class set by the inline head script always
+   wins, so this applies only when the script has not run. The declarations are
+   a byte copy of :root.dark below. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    --pill-fg: initial;
+    --pill-fill: initial;
+  --input-ring: #9198a1;
+  --input-bg: #212830;
+  --table-header-bg: #2a313c;
+    --btn-primary-border: #1f232826;
+    --focus-glow: #9198a1;
+    --focus-glow-mix: 18%;
+    --btn-secondary-fg: var(--muted);
+    --btn-secondary-border: var(--card-border);
+    --btn-secondary-fg-hover: var(--foreground);
+    --btn-secondary-border-hover: #5c8cff;
+    color-scheme: dark;
+
+    --background: #212830;
+    --foreground: #d1d7e0;
+    --heading: #d1d7e0;
+    --card: #262c36;
+    --card-border: #57606a;
+    --muted: #9198a1;
+  --nav-link: #9198a1;
+
+    --primary: #0051ff;
+    --btn-primary-hover: #0046ff;
+    --primary-foreground: #ffffff;
+    --secondary-border: #57606a;
+
+    --link: #5c8cff;
+    --ring: #5c8cff;
+
+    --code-bg: #212631;
+
+    --info: #94f20d;
+    --destructive: #94f20d;
+    --warning: #f0f6fc;
+    --success: #94f20d;
+
+    --overlay: rgba(20, 25, 31, 0.8);
+  }
+}
+
 :root.dark {
     --pill-fg: initial;
     --pill-fill: initial;

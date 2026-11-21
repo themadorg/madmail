@@ -71,6 +71,45 @@
   --info: #eb1414;
 }
 
+/* Dark mode without JavaScript. The class set by the inline head script always
+   wins, so this applies only when the script has not run. The declarations are
+   a byte copy of :root.dark below. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    --focus-glow-mix: 100%;
+    --focus-glow: #2e3435;
+    --input-bg: #0f1415;
+    --table-header-bg: #0f1415;
+  --note-link: var(--link);
+  --btn-primary-border: #1f232826;
+  --btn-secondary-fg: var(--muted);
+  --btn-secondary-border: var(--card-border);
+  --btn-secondary-fg-hover: var(--foreground);
+  --btn-secondary-border-hover: var(--primary);
+  color-scheme: dark;
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #000000;
+  --card-border: #e5ebec;
+  --muted: #888888;
+  --nav-link: #b0b0b0;
+  --primary: #eb1414;
+  --btn-primary-hover: #f30c0c;
+  --primary-foreground: #ffffff;
+  --secondary-border: #9aafbc;
+  --link: #9aafbc;
+  --code-bg: #111718;
+  --destructive: #eb1414;
+  --warning: #9aafbc;
+  --success: #eb1414;
+  --ring: #ffffff;
+  --overlay: rgba(0, 0, 0, 0.7);
+
+  --heading: #ffffff;
+  --info: #eb1414;
+  }
+}
+
 :root.dark {
     --focus-glow-mix: 100%;
     --focus-glow: #2e3435;
