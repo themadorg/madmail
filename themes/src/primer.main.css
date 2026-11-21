@@ -34,6 +34,7 @@
 
 :root {
   color-scheme: light;
+  --pill-fg-warning: #8f5f00;
   --note-link: var(--link);
   --input-bg: #ffffff;
   --btn-primary-border: #1f232826;
