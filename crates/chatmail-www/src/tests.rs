@@ -1356,6 +1356,47 @@ fn every_page_declares_the_favicon_and_the_colour_mode_control() {
     assert!(checked > 0, "no embedded pages were checked");
 }
 
+/// The icon paths are copied Lucide artwork, some of it Feather-derived, so both
+/// notices ship in every page that carries them. Keyed on the artwork rather than
+/// on a list of pages: adding the control somewhere new without its notice fails
+/// here instead of shipping.
+#[test]
+fn every_page_with_the_icons_carries_their_licence_notices() {
+    let mut checked = 0;
+    for path in crate::assets::WwwAssets::iter() {
+        if !path.ends_with(".html") {
+            continue;
+        }
+        let file = crate::assets::WwwAssets::get(&path).expect("embedded page");
+        let src = String::from_utf8_lossy(&file.data);
+        if !src.contains("class=\"mi-auto\"") {
+            continue;
+        }
+        assert!(
+            src.contains("Copyright (c) 2026 Lucide Icons and Contributors"),
+            "{} carries the icons without the Lucide copyright notice",
+            path
+        );
+        assert!(
+            src.contains("Permission to use, copy, modify, and/or distribute"),
+            "{} carries the icons without the ISC permission notice",
+            path
+        );
+        assert!(
+            src.contains("Copyright (c) 2013-present Cole Bemis"),
+            "{} carries the icons without the Feather copyright notice",
+            path
+        );
+        assert!(
+            src.contains("Permission is hereby granted, free of charge"),
+            "{} carries the icons without the MIT permission notice",
+            path
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no pages with the icons were checked");
+}
+
 #[test]
 fn logo_begins_with_its_xml_declaration() {
     let file = crate::assets::WwwAssets::get("logo.svg").expect("logo.svg is embedded");
