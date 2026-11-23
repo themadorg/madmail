@@ -71,6 +71,11 @@ Parsed from `storage.imapsql` in `maddy.conf` (see [`13-configuration.md`](13-co
 
 Large APPEND bodies (≥ 64 KiB) stream socket → `tmp/` instead of buffering in RAM. PGP policy scans the first 64 KiB during streaming (`cas::HEADER_SCAN_PREFIX`).
 
+When committing a streamed file with CAS disabled, reopen it with write access
+for the durability flush, then close the handle before renaming it into `new/`.
+Windows `FlushFileBuffers` rejects read-only handles. Both `always` and
+`optimized` modes must preserve the full body through this path.
+
 ### Message metadata
 
 UID, flags, size, and internal date are cached in `chatmail-uidlist` on disk and in `MaildirListCache` in RAM. The SQL database holds only account/quota/policy rows — not per-message indexes (Madmail go-imap-sql `msgs` table is **not** replicated).

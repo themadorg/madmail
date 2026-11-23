@@ -442,8 +442,13 @@ async fn finalize_from_tmp(
     }
 
     // Non-CAS path (unchanged + eager uidlist)
-    let mut file = tokio::fs::File::open(&tmp.path).await?;
+    // Windows FlushFileBuffers requires a writable handle, even when only syncing.
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .open(&tmp.path)
+        .await?;
     store.fsync().sync_file_data(&mut file).await?;
+    drop(file);
     let new_path = paths.new.join(msg_id);
 
     // Under Never direct-to-final streaming the file may already be at new_path.
@@ -979,29 +984,44 @@ mod tests {
     /// P11-UT22: streaming finalize without CAS uses maildir rename (no blob store).
     #[tokio::test]
     async fn p11_ut22_streaming_without_cas_rename_path() {
-        let tmp = tempfile::tempdir().unwrap();
-        let policy = StoragePolicy {
-            cas_enabled: false,
-            stream_threshold: 1024,
-            ..StoragePolicy::default()
-        };
-        let store = MailboxStore::with_policy(tmp.path(), policy);
-        let body: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
+        for fsync_mode in [FsyncMode::Always, FsyncMode::Optimized] {
+            let tmp = tempfile::tempdir().unwrap();
+            let policy = StoragePolicy {
+                cas_enabled: false,
+                stream_threshold: 1024,
+                fsync_mode,
+            };
+            let store = MailboxStore::with_policy(tmp.path(), policy);
+            let body: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
 
-        let mut cursor = std::io::Cursor::new(body.clone());
-        let (path, read_back) = write_blob_mailbox_stream(
-            &store,
-            "u@test",
-            "INBOX",
-            "stream-no-cas",
-            &mut cursor,
-            body.len() as u64,
-        )
-        .await
-        .unwrap();
+            let mut cursor = std::io::Cursor::new(body.clone());
+            let (path, read_back) = write_blob_mailbox_stream(
+                &store,
+                "u@test",
+                "INBOX",
+                "stream-no-cas",
+                &mut cursor,
+                body.len() as u64,
+            )
+            .await
+            .unwrap();
 
-        assert_eq!(read_back, body);
-        assert!(path.ends_with("new/stream-no-cas"));
-        assert!(!tmp.path().join("blobs").exists());
+            assert_eq!(read_back, body);
+            assert!(path.ends_with("new/stream-no-cas"));
+            assert!(!tmp.path().join("blobs").exists());
+            assert!(!store
+                .maildir_for_user("u@test")
+                .tmp
+                .join("stream-no-cas")
+                .exists());
+            drop(store);
+            let reopened = MailboxStore::new(tmp.path());
+            assert_eq!(
+                read_blob(&reopened, "u@test", "INBOX", "stream-no-cas")
+                    .await
+                    .unwrap(),
+                body
+            );
+        }
     }
 }
