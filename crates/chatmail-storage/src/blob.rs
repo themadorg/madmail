@@ -745,7 +745,14 @@ mod tests {
             .unwrap();
         assert_eq!(got.as_deref(), Some(&body[..]));
 
-        let missing = read_blob_known(&store, "u@test", "INBOX", "msg-1:2,S")
+        let flagged = crate::maildir_message::maildir_filename(
+            "msg-1",
+            &crate::MaildirFlags {
+                seen: true,
+                deleted: false,
+            },
+        );
+        let missing = read_blob_known(&store, "u@test", "INBOX", &flagged)
             .await
             .unwrap();
         assert!(missing.is_none());

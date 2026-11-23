@@ -15,6 +15,16 @@ Chatmail's correctness is defined by **real Delta Chat client behavior**, not ju
    Unit     Integration
 ```
 
+## Windows Maildir regression tests
+
+Windows Maildir regression coverage (#254): `cargo test -p chatmail-storage`
+runs in the native Windows amd64 CI job as well as on Linux. Tests cover both
+flag suffix parsers, platform-specific filename generation, real `\Seen`
+renames, persistent UID/UIDNEXT and message content after reopening the store,
+move/copy/delete, and reading imported Windows filenames on Unix. Colon-bearing
+filesystem fixtures run only on platforms that permit them; both parsers are
+tested everywhere. A Linux pass alone does not validate NTFS filename behavior.
+
 ## Docker tests
 
 `make test-postgres-restart-docker` builds Madmail's Docker image and starts a disposable PostgreSQL 18 container. It verifies empty cold start, populated restart, forward migration from the original INT4 federation statistics schema, and the legacy ensure path with Go HTTPS column names. Every counter is checked for preservation and values above the INT4 limit. A PostgreSQL-backed Rust test also exercises runtime tracker updates, flushing, reconnecting, and hydration. Containers and database volumes are removed; logs remain under `target/postgres-restart-tests/`. Requirements: Docker, Cargo, OpenSSL, and curl. To test an existing image, set `MADMAIL_POSTGRES_TEST_IMAGE` and `MADMAIL_POSTGRES_TEST_SKIP_BUILD=1`; `MADMAIL_POSTGRES_TEST_DB_IMAGE` overrides the PostgreSQL image.

@@ -75,6 +75,23 @@ Large APPEND bodies (≥ 64 KiB) stream socket → `tmp/` instead of buffering i
 
 UID, flags, size, and internal date are cached in `chatmail-uidlist` on disk and in `MaildirListCache` in RAM. The SQL database holds only account/quota/policy rows — not per-message indexes (Madmail go-imap-sql `msgs` table is **not** replicated).
 
+### Maildir flag filenames on Windows (#254)
+
+Unix writes the standard `message-id:2,S` suffix for a seen message. Windows
+reserves `:` in filenames, so Windows writes `message-id!2,S` instead. Unflagged
+messages keep their original filename. Readers recognize both suffixes on every
+platform so a Windows Maildir remains readable after moving it to Unix. Before
+moving a Unix Maildir to Windows, flagged filenames must be converted to the
+Windows form while preserving the base ID and `chatmail-uidlist`; this change
+does not provide an import/conversion tool. See [Windows filename rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file).
+
+Both suffixes are storage metadata: the base ID alone identifies the message in
+the UID index. Renaming a message for `\Seen` must preserve its UID, UIDNEXT and
+body across a process restart. Listing, lookup, read, move, copy and deletion use
+the same filename codec. Unix continues to write standard Maildir names; it
+does not rewrite existing mailboxes on startup. Generated base IDs must not
+contain either flag delimiter.
+
 ## 2. In-Memory Hot Data Architecture
 
 All frequently accessed data is loaded into memory at startup and kept consistent via **write-through** or **write-behind** strategies.
