@@ -17,6 +17,8 @@ on:
       - "crates/chatmail/**"
       - "crates/chatmail-config/**"
       - "crates/chatmail-storage/**"
+      - "crates/chatmail-db/**"
+      - ".gitattributes"
       - "crates/madmail-tray/**"
       - "packaging/windows/**"
       - "scripts/build-windows.sh"
@@ -87,6 +89,9 @@ jobs:
 
       - name: Test Maildir storage on Windows
         run: cargo test -p chatmail-storage
+
+      - name: Test SQLite upgrade compatibility on Windows
+        run: cargo test -p chatmail-db --lib migration_compat
 
       - name: Tray smoke-exit
         shell: pwsh

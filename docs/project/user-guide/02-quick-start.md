@@ -304,6 +304,21 @@ state_dir/
 
 The simplest reliable backup is a snapshot or copy of the entire `state_dir` (ideally while the service is stopped, or using proper tools that handle SQLite WAL files correctly). If the application database is **PostgreSQL**, back that up separately — see [PostgreSQL as the application database](./18-postgres.md). `madmail install` always writes SQLite. To copy an existing SQLite application database into Postgres, use `madmail db sqlite-to-postgres` (same guide).
 
+### Windows upgrade compatibility
+
+Different historical Windows builds embedded SQLite migrations with LF or CRLF
+line endings. Builds containing the #255 compatibility fix recognize both exact
+historical checksum sets without changing your database's migration records.
+Keep a complete stopped-service backup before an upgrade, including any SQLite
+`-wal` files and the Maildir tree.
+
+If startup still reports an unrecognized migration checksum, preserve the
+backup and use a verified compatible binary while investigating. Do not delete
+the database, run `make reset-db` on a production installation, or overwrite
+arbitrary checksums to force startup. When downgrading to a build without this
+compatibility fix, retain a matching pre-upgrade backup; that older build may
+not recognize the database's line-ending variant.
+
 ## Self-Serving Binary and Documentation
 
 Every chatmail server can serve its own current binary at the `/madmail` path:

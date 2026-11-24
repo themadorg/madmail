@@ -25,6 +25,15 @@ move/copy/delete, and reading imported Windows filenames on Unix. Colon-bearing
 filesystem fixtures run only on platforms that permit them; both parsers are
 tested everywhere. A Linux pass alone does not validate NTFS filename behavior.
 
+## SQLite migration regressions
+
+SQLite upgrade regressions (#255): `cargo test -p chatmail-db --lib migration_compat`
+runs on Linux and native Windows. Tests cover LF, CRLF and mixed histories,
+unchanged migration records and application data across repeated startup,
+partial upgrades with pending LF migrations, fresh LF history, changed source,
+and rejection of unknown checksums/versions and failed migrations. The checksum
+error must give production-safe recovery guidance.
+
 ## Docker tests
 
 `make test-postgres-restart-docker` builds Madmail's Docker image and starts a disposable PostgreSQL 18 container. It verifies empty cold start, populated restart, forward migration from the original INT4 federation statistics schema, and the legacy ensure path with Go HTTPS column names. Every counter is checked for preservation and values above the INT4 limit. A PostgreSQL-backed Rust test also exercises runtime tracker updates, flushing, reconnecting, and hydration. Containers and database volumes are removed; logs remain under `target/postgres-restart-tests/`. Requirements: Docker, Cargo, OpenSSL, and curl. To test an existing image, set `MADMAIL_POSTGRES_TEST_IMAGE` and `MADMAIL_POSTGRES_TEST_SKIP_BUILD=1`; `MADMAIL_POSTGRES_TEST_DB_IMAGE` overrides the PostgreSQL image.
