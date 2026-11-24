@@ -7,7 +7,7 @@ This is the "I just want to make a change and see it work" guide.
 This section is the full onboarding flow for developers who are building and testing madmail-v2 from source.
 
 ### Requirements
-- Rust (stable, ≥ 1.75)
+- Rust (stable, ≥ 1.94)
 - `make`
 - (Optional but recommended) `bun` or `npm` — only needed if you plan to work on or preview the admin web UI
 

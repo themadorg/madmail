@@ -280,14 +280,14 @@ async fn delete_token(st: &AdminState, body: &Value) -> AdminResult {
                 .map_err(db_err)?
                 .rows_affected()
         }
-        chatmail_db::pool::DbConnection::Postgres(p) => {
-            sqlx::query(&pg_sql("DELETE FROM registration_tokens WHERE token = ?"))
-                .bind(&req.token)
-                .execute(p)
-                .await
-                .map_err(db_err)?
-                .rows_affected()
-        }
+        chatmail_db::pool::DbConnection::Postgres(p) => sqlx::query(sqlx::AssertSqlSafe(pg_sql(
+            "DELETE FROM registration_tokens WHERE token = ?",
+        )))
+        .bind(&req.token)
+        .execute(p)
+        .await
+        .map_err(db_err)?
+        .rows_affected(),
     };
 
     if affected == 0 {

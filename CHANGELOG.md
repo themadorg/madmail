@@ -1,3 +1,10 @@
+# [2.44.2](https://github.com/themadorg/madmail/compare/v2.44.1-unstable...v2.44.2-unstable) (2026-11-19)
+
+### Bug Fixes
+
+* update the release SQLite version pins ([f3e2612](https://github.com/themadorg/madmail/commit/f3e2612de772caedc76fa3cedefcf0e70fb84961))
+* upgrade sqlx to 0.9.1 for the SQLite advisory ([8851af2](https://github.com/themadorg/madmail/commit/8851af2b22ad288b452045f4efecf0f5ec59f5c6)), [#4516](https://github.com/themadorg/madmail/issues/4516), [#4517](https://github.com/themadorg/madmail/issues/4517)
+
 # [2.44.1](https://github.com/themadorg/madmail/compare/v2.44.0-unstable...v2.44.1-unstable) (2026-11-06)
 
 ### Bug Fixes

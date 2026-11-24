@@ -537,8 +537,8 @@ class AssetContractTests(unittest.TestCase):
         self.assertIn('"sqlite"', cargo)
         self.assertNotIn("sqlite-unbundled", cargo)
         lock = (root / "Cargo.lock").read_text(encoding="utf-8")
-        self.assertIn('name = "sqlx"\nversion = "0.8.6"', lock)
-        self.assertIn('name = "libsqlite3-sys"\nversion = "0.30.1"', lock)
+        self.assertIn('name = "sqlx"\nversion = "0.9.1"', lock)
+        self.assertIn('name = "libsqlite3-sys"\nversion = "0.40.0"', lock)
         workflows = [
             root / ".github/workflows/ci.yml",
             root / ".github/workflows/unstable-matrix.yml",
