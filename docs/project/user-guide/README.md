@@ -33,6 +33,7 @@ It is written in the same spirit as the original Madmail "chatmail" documentatio
 | Advanced / stealth deployment options | [12-advanced-deployment.md](./12-advanced-deployment.md) | Experienced operators |
 | Customizing the HTML pages and web UI | [17-customizing-html-pages.md](./17-customizing-html-pages.md) | Operators who want to brand or modify the public site |
 | PostgreSQL instead of SQLite | [18-postgres.md](./18-postgres.md) | Operators (new empty database only — not a SQLite conversion) |
+| Email for AI agents: HTTPS APIs, encryption, and approval boundaries | [19-ai-agent-email.md](./19-ai-agent-email.md) | Operators & agent developers |
 | Endpoint Rewrite (push-push / domain redirection) | [15-endpoint-rewrite.md](./15-endpoint-rewrite.md) | Advanced operators |
 | Exchangers (push-pull, pull-pull intermediaries) | [16-exchangers.md](./16-exchangers.md) | Advanced operators |
 

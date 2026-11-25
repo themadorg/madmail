@@ -19,6 +19,14 @@ Madmail is a **server relay** for the **[Delta Chat](https://delta.chat)** app, 
 
 A Rust rewrite of Madmail v1: SMTP, IMAP, encryption enforcement, and real-time relay built in.
 
+## Email for AI agents
+
+Give each agent a dedicated mailbox on a domain you control. Madmail's optional
+WebSMTP and WebIMAP APIs support PGP-encrypted mail over HTTPS with ordinary
+mailbox credentials. The [agent email quickstart](docs/project/user-guide/19-ai-agent-email.md)
+covers setup, an encrypted send/receive test, credential handling, and human
+approval for sensitive sends.
+
 ## Project status
 
 Madmail v2 is stable and actively maintained.
