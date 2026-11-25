@@ -4,6 +4,7 @@
 	import LanguageSwitcher from './LanguageSwitcher.svelte';
 	import { releases } from '$lib/releases.js';
 	import Button from '$lib/components/Button.svelte';
+	import AgentInstall from '$lib/components/AgentInstall.svelte';
 	import MadGlitchText from '$lib/components/MadGlitchText.svelte';
 	import MadmailLogo from '$lib/components/MadmailLogo.svelte';
 	import NavLinks from '$lib/components/NavLinks.svelte';
@@ -31,6 +32,7 @@
 		<Button href="{repo}/releases" variant="primary">{t("Download")}</Button>
 		<Button href="/docs/quick-setup">{t("Quick Start")}</Button>
 	</div>
+	<AgentInstall />
 	{#if latest}
 		<a class="latest-release" href="/releases">{latest.tag_name}</a>
 	{/if}

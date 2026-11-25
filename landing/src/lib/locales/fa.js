@@ -2,6 +2,11 @@ import phoneFa from './phone-fa.json' with { type: 'json' };
 
 export default {
 	...phoneFa,
+	"Install for agents": "نصب برای عامل‌ها",
+	"Set up a fresh Linux server for agent email in one command.": "یک سرور لینوکس تازه را با یک فرمان برای ایمیل عامل‌ها آماده کنید.",
+	"Linux x86_64, systemd, glibc 2.38+, curl and sudo. Configure DNS and allow ACME on port 80 first. Replace the example domain and contact email before running. Do not use this on an existing installation.": "نیازمند لینوکس x86_64،‏ systemd،‏ glibc 2.38 یا جدیدتر، curl و sudo است. ابتدا DNS را تنظیم و پورت ۸۰ را برای ACME باز کنید. پیش از اجرا، دامنه و ایمیل تماس نمونه را عوض کنید. روی نصب موجود اجرا نکنید.",
+	"Installs Madmail, enables WebSMTP and WebIMAP server-wide, and starts the service. Account and encryption-key setup follow in the guide.": "Madmail را نصب، WebSMTP و WebIMAP را برای کل سرور فعال و سرویس را راه‌اندازی می‌کند. ساخت حساب و کلید رمزنگاری در راهنما توضیح داده شده است.",
+	"Full agent email quickstart": "راهنمای کامل شروع ایمیل عامل‌ها",
 	"Not available in this language": "ترجمهٔ این صفحه به این زبان هنوز آماده نیست.",
 	"Delta Chat works best with a chatmail relay like Madmail: instant push notifications, reliable calls, strong privacy defaults, and easy setup.": "دلتاچت با یک رلهٔ چتمیل مانند Madmail بهتر کار می‌کند: اعلان‌های آنی، تماس‌های پایدار، تنظیمات پیش‌فرض حافظ حریم خصوصی و راه‌اندازی آسان.",
 	", encrypted, federated, one binary.": ": رمزنگاری‌شده، فدراسیونی، تک‌باینری.",

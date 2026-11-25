@@ -11,6 +11,40 @@ For a full messaging client, a chatmail-core-based tool such as
 [Sigma](https://github.com/omidz4t/sigma) can handle more of that protocol work.
 The REST example below demonstrates the underlying mail APIs independently.
 
+## Install for agents on Linux
+
+For a **fresh Linux x86_64 server with systemd and glibc 2.38 or newer**, this
+one-line recipe downloads the latest stable release, installs Madmail with a
+domain and ACME TLS, enables WebSMTP and WebIMAP, and enables/starts the service.
+It uses existing installer options and CLI settings; no config-file editing or
+new installer flag is required. Other defaults, including encrypted-submission
+policy, stay the same. The two APIs are enabled server-wide, not per account.
+
+Before running it:
+
+- Use a fresh server and an empty working directory. Do not run full installation
+  over an existing deployment: it can overwrite configuration. Existing operators
+  should use the API enable commands in step 1 instead.
+- Set up your domain's DNS and allow the required ports using the
+  [installation guide](../../guide/install.md). ACME needs inbound TCP 80;
+  the server also needs outbound access for downloads and certificate issuance.
+- Have `curl`, a trusted CA store, and `sudo` installed. Replace
+  `agents.example.org` and `admin@example.org` in the command with your domain
+  and ACME contact email. No passwords or private keys belong in this command.
+- For older glibc systems such as Debian 12, use `madmail-linux-amd64-legacy`
+  instead of `madmail-linux-amd64`. For other architectures and Windows, follow
+  [Quick Start](02-quick-start.md) and then enable the APIs in step 1.
+
+```bash
+curl -fsSL https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64 -o madmail && chmod +x madmail && sudo ./madmail install --simple --domain agents.example.org --acme-email admin@example.org --lang en && sudo /usr/local/bin/madmail --config /etc/madmail/madmail.conf --state-dir /var/lib/madmail websmtp enable && sudo /usr/local/bin/madmail --config /etc/madmail/madmail.conf --state-dir /var/lib/madmail webimap enable && sudo systemctl enable --now madmail
+```
+
+The `&&` chain stops at the first failure; it does not roll back completed steps.
+If it fails, fix the reported problem before continuing with the remaining CLI
+steps; do not blindly repeat full installation. Installation does not create an
+agent mailbox or encryption key. Continue below to create a dedicated account,
+keep its credentials outside the model, and verify encrypted mail delivery.
+
 ## 1. Prepare the server and account
 
 Start with a [standard deployment](02-quick-start.md), a domain you control,
