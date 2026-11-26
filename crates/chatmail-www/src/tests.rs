@@ -1327,3 +1327,138 @@ async fn documentation_follows_admin_language_even_with_reader_query() {
         }
     }
 }
+
+#[test]
+fn every_page_declares_the_favicon_and_the_colour_mode_control() {
+    let mut checked = 0;
+    for path in crate::assets::WwwAssets::iter() {
+        if !path.ends_with(".html") {
+            continue;
+        }
+        // app.html is the web client's own page, with its own head and control.
+        if path == "app.html" {
+            continue;
+        }
+        let file = crate::assets::WwwAssets::get(&path).expect("embedded page");
+        let src = String::from_utf8_lossy(&file.data);
+        assert!(
+            src.contains("rel=\"icon\""),
+            "{} does not declare a favicon",
+            path
+        );
+        assert!(
+            src.contains("class=\"mode-button\""),
+            "{} does not carry the colour mode control",
+            path
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no embedded pages were checked");
+}
+
+/// The icon paths are copied Lucide artwork, some of it Feather-derived, so both
+/// notices ship in every page that carries them. Keyed on the artwork rather than
+/// on a list of pages: adding the control somewhere new without its notice fails
+/// here instead of shipping.
+#[test]
+fn every_page_with_the_icons_carries_their_licence_notices() {
+    let mut checked = 0;
+    for path in crate::assets::WwwAssets::iter() {
+        if !path.ends_with(".html") {
+            continue;
+        }
+        let file = crate::assets::WwwAssets::get(&path).expect("embedded page");
+        let src = String::from_utf8_lossy(&file.data);
+        if !src.contains("class=\"mi-auto\"") {
+            continue;
+        }
+        assert!(
+            src.contains("Copyright (c) 2026 Lucide Icons and Contributors"),
+            "{} carries the icons without the Lucide copyright notice",
+            path
+        );
+        assert!(
+            src.contains("Permission to use, copy, modify, and/or distribute"),
+            "{} carries the icons without the ISC permission notice",
+            path
+        );
+        assert!(
+            src.contains("Copyright (c) 2013-present Cole Bemis"),
+            "{} carries the icons without the Feather copyright notice",
+            path
+        );
+        assert!(
+            src.contains("Permission is hereby granted, free of charge"),
+            "{} carries the icons without the MIT permission notice",
+            path
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no pages with the icons were checked");
+}
+
+#[test]
+fn logo_begins_with_its_xml_declaration() {
+    let file = crate::assets::WwwAssets::get("logo.svg").expect("logo.svg is embedded");
+    let src = String::from_utf8_lossy(&file.data);
+    assert!(
+        src.starts_with("<?xml"),
+        "an XML declaration must be the first thing in the document; with anything \
+         before it browsers reject the file and the favicon silently fails to render"
+    );
+}
+
+#[test]
+fn the_colour_mode_bootstrap_is_identical_in_every_copy() {
+    const OPEN: &str = "\n(function () {\n";
+    const CLOSE: &str = "\n})();\n";
+    const COPIES: [&str; 5] = [
+        "main.js",
+        "docker_docs.html",
+        "relay_docs.html",
+        "docs/fa/docker.html",
+        "docs/fa/relay.html",
+    ];
+    let mut first: Option<String> = None;
+    for path in COPIES {
+        let file = crate::assets::WwwAssets::get(path).expect("embedded copy");
+        let src = String::from_utf8_lossy(&file.data).into_owned();
+        assert_eq!(
+            src.matches(OPEN).count(),
+            1,
+            "{} does not contain exactly one bootstrap",
+            path
+        );
+        let start = src.find(OPEN).expect("bootstrap start");
+        let end = src[start..].find(CLOSE).expect("bootstrap end") + start + CLOSE.len();
+        let block = src[start..end].to_string();
+        match &first {
+            None => first = Some(block),
+            Some(expected) => assert_eq!(
+                expected, &block,
+                "{} has drifted from the copy in main.js",
+                path
+            ),
+        }
+    }
+}
+
+#[test]
+fn the_colour_mode_bootstrap_sets_both_classes() {
+    let file = crate::assets::WwwAssets::get("main.js").expect("main.js is embedded");
+    let src = String::from_utf8_lossy(&file.data);
+    for needle in [
+        "classList.toggle('dark'",
+        "classList.toggle('light'",
+        "madmail-light",
+        "prefers-color-scheme: dark",
+        "--default-mode",
+    ] {
+        assert!(
+            src.contains(needle),
+            "the bootstrap no longer contains {}; selecting light stops working \
+             if .light is not applied alongside .dark",
+            needle
+        );
+    }
+}
