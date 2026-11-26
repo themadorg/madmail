@@ -1,0 +1,2 @@
+# Keep SQLite migration bytes identical in Unix and Windows build checkouts.
+/crates/chatmail-db/migrations/sqlite/*.sql text eol=lf

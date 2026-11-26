@@ -75,6 +75,26 @@ Large APPEND bodies (≥ 64 KiB) stream socket → `tmp/` instead of buffering i
 
 UID, flags, size, and internal date are cached in `chatmail-uidlist` on disk and in `MaildirListCache` in RAM. The SQL database holds only account/quota/policy rows — not per-message indexes (Madmail go-imap-sql `msgs` table is **not** replicated).
 
+### SQLite migration compatibility (#255)
+
+SQLite migration SQL is checked out with LF through `.gitattributes` and
+normalized to LF before building SQLx's migrator. This gives new migrations the
+same SHA-384 checksum on Windows and Unix, including builds from source archives.
+
+The six SQLite migrations shipped through 2.44.2 have pinned LF hashes. Startup
+accepts their exact LF or CRLF hashes, including mixed histories, and matches a
+recognized historical checksum in the in-memory migrator. It does not rewrite
+`_sqlx_migrations`, re-run applied SQL, or mark failed migrations successful.
+Pending migrations execute normally and record LF checksums. Editing a shipped
+SQL file cannot expand the historical allowlist because its normalized source
+must still match the pin.
+
+The complete applied history is checked before pending SQL runs. Unknown
+checksums, unknown versions, and failed migrations remain errors; SQLx's normal
+locking and validation also run. PostgreSQL migration behavior is unchanged.
+An unrecognized checksum reports backup and compatible-binary guidance rather
+than recommending a development database reset.
+
 ## 2. In-Memory Hot Data Architecture
 
 All frequently accessed data is loaded into memory at startup and kept consistent via **write-through** or **write-behind** strategies.

@@ -380,8 +380,7 @@ pub(crate) async fn run_migrations(pool: &DbPool) -> Result<()> {
     }
 
     match pool.connection() {
-        crate::pool::DbConnection::Sqlite(p) => sqlx::migrate!("./migrations/sqlite")
-            .run(p)
+        crate::pool::DbConnection::Sqlite(p) => crate::migration_compat::run(p)
             .await
             .map_err(map_migration_error)?,
         crate::pool::DbConnection::Postgres(p) => sqlx::migrate!("./migrations/postgres")
@@ -659,8 +658,15 @@ pub fn pg_sql(sql: &str) -> String {
 fn map_migration_error(e: sqlx::migrate::MigrateError) -> ChatmailError {
     if let sqlx::migrate::MigrateError::VersionMismatch(version) = e {
         return ChatmailError::config(format!(
-            "migration {version} no longer matches the database checksum (the .sql file changed after it was applied). \
-             For local SQLite dev, run `make reset-db` then `make restart`"
+            "migration {version} no longer matches the database checksum. \
+             Keep a complete backup of the state directory (including SQLite WAL files) and use a verified compatible binary. \
+             Do not reset the database or overwrite migration checksums; investigate the unrecognized migration before retrying"
+        ));
+    }
+    if let sqlx::migrate::MigrateError::Dirty(version) = e {
+        return ChatmailError::config(format!(
+            "migration {version} is recorded as failed. Preserve a complete backup and investigate the failed migration; \
+             do not delete migration records or mark them successful to force startup"
         ));
     }
     ChatmailError::Db(sqlx::Error::Migrate(Box::new(e)))
