@@ -1,3 +1,13 @@
+# [2.44.3](https://github.com/themadorg/madmail/compare/v2.44.2-unstable...v2.44.3-unstable) (2026-11-26)
+
+### Bug Fixes
+
+* **db:** recognize historical SQLite migration line endings ([a316ff1](https://github.com/themadorg/madmail/commit/a316ff1b815387d8b4e16012a5ad7c17a03cd8de)), [#255](https://github.com/themadorg/madmail/issues/255)
+* **deps:** update url to 2.5.9 for RUSTSEC-2026-0592 ([22ab886](https://github.com/themadorg/madmail/commit/22ab88697713a36f94b0897dd084235294f96ee4))
+* **deps:** update url to 2.5.9 for RUSTSEC-2026-0592 ([de7e7e1](https://github.com/themadorg/madmail/commit/de7e7e19ea7664fbea0c4adbaef0c35f1542112a))
+* **storage:** open streamed blobs writable before flushing ([7ec03a7](https://github.com/themadorg/madmail/commit/7ec03a79afc8edb3437a798b387a5efef5488038))
+* **storage:** use Windows-safe Maildir flag filenames ([471fef1](https://github.com/themadorg/madmail/commit/471fef11609012aab3eabd20c0f74e0de856d885)), [#254](https://github.com/themadorg/madmail/issues/254)
+
 # [2.44.2](https://github.com/themadorg/madmail/compare/v2.44.1-unstable...v2.44.2-unstable) (2026-11-19)
 
 ### Bug Fixes
