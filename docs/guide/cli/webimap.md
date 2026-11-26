@@ -28,16 +28,11 @@ madmail webimap <status|enable|disable>
 ```bash
 madmail webimap status
 madmail webimap enable
-madmail reload
 ```
 
-After changing settings stored in the database, run:
-
-```bash
-madmail reload
-```
-
-to apply listener and HTTP route changes without a full process restart.
+These settings take effect on the next HTTP request. No reload or restart is
+needed. See the [agent email quickstart](../../project/user-guide/19-ai-agent-email.md)
+for an encrypted send/receive example using both APIs.
 
 ## Subcommand pages
 

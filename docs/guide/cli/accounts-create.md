@@ -23,7 +23,7 @@ madmail accounts create alice@example.org --password 'secret'
 
 ## Notes
 
-- `-p` / `--password`: omitted password is read from stdin (hidden prompt).
+- `-p` / `--password`: omitted password is read from stdin. The current terminal prompt can echo input; use a private terminal and treat the printed login link as a secret.
 - With a primary-domain list, usernames without `@` use the **first** domain.
 - Full email addresses select their domain explicitly; bare IPv4 domains are normalized to brackets.
 - Explicit admin creation bypasses the JIT domain allowlist. The resulting account can log in even when its domain no longer permits new JIT accounts.

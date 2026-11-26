@@ -1,0 +1,3 @@
+// Keep the install recipe identical to the operator quickstart.
+export const agentQuickstart = '/docs/project/user-guide/19-ai-agent-email';
+export const agentInstallCommand = 'curl -fsSL https://github.com/themadorg/madmail/releases/latest/download/madmail-linux-amd64 -o madmail && chmod +x madmail && sudo ./madmail install --simple --domain agents.example.org --acme-email admin@example.org --lang en && sudo /usr/local/bin/madmail --config /etc/madmail/madmail.conf --state-dir /var/lib/madmail websmtp enable && sudo /usr/local/bin/madmail --config /etc/madmail/madmail.conf --state-dir /var/lib/madmail webimap enable && sudo systemctl enable --now madmail';
