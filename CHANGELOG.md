@@ -1,3 +1,38 @@
+# [2.45.0](https://github.com/themadorg/madmail/compare/v2.44.3-unstable...v2.45.0-unstable) (2026-11-26)
+
+### Features
+
+* **www:** add the web client to the site navigation, hidden by default ([0015cfe](https://github.com/themadorg/madmail/commit/0015cfebbf7990ed25f92c2b16f46a16000c704a))
+* **www:** automatic colour mode, with an explicit control ([209faf8](https://github.com/themadorg/madmail/commit/209faf8a9da665422633c256860b8074e3077579))
+* **www:** declare the role variables the web client markup references ([38ee0da](https://github.com/themadorg/madmail/commit/38ee0da790667c70ec3ec5e17ebf4e668a27a9a1))
+* **www:** light/dark toggle with an opt-in theme default ([d7aee45](https://github.com/themadorg/madmail/commit/d7aee450c48ebe43a77ca93e05e9e599289ba116))
+* **www:** link the documentation from the main navigation ([18c5ebd](https://github.com/themadorg/madmail/commit/18c5ebd310edea8d4fad8d5552da2468580d5cbe))
+* **www:** route pill colours through palette variables ([e4ba6a5](https://github.com/themadorg/madmail/commit/e4ba6a52d370951aae245974ba4ef2289c224747))
+* **www:** route themeable values through custom properties ([f4da034](https://github.com/themadorg/madmail/commit/f4da0348bf6e6b3e15c6a993d0a35eccb13df222))
+* **www:** tell visitors the web client is a work in progress ([f87d753](https://github.com/themadorg/madmail/commit/f87d753cc444b9212e0687f752b1b9d7ed67bf76))
+
+### Bug Fixes
+
+* **themes:** match the code header band to the code block ([6997c33](https://github.com/themadorg/madmail/commit/6997c33ad8aec43d0817fa897b1270988128a893))
+* **themes:** validate the switcher's destination and palette name ([cfe3d53](https://github.com/themadorg/madmail/commit/cfe3d53a5e938512ab1e7903fe990e81e8bfb7be))
+* **www:** add the light class so selecting light takes effect ([9f8325e](https://github.com/themadorg/madmail/commit/9f8325e93f98ad8b1bf08a29b59c73796997d87b))
+* **www:** declare the favicon on every page ([1b0bbcb](https://github.com/themadorg/madmail/commit/1b0bbcb265b38f34875be09fbe7bd07c0a5ad6fe))
+* **www:** drop the hover fill from the colour mode control ([bcbe8ef](https://github.com/themadorg/madmail/commit/bcbe8ef860cc509d710b8a752c87582e9bbe787b))
+* **www:** follow new channel messages the way chats already do ([d16ffca](https://github.com/themadorg/madmail/commit/d16ffca7cfe6d7903bfc1e787492fb43fac2337f))
+* **www:** follow the colour preference without JavaScript ([f6446ab](https://github.com/themadorg/madmail/commit/f6446abd037a84bd8cb6b1096e71ab541e987946))
+* **www:** give the warning badges a legible foreground ([7c0b4f8](https://github.com/themadorg/madmail/commit/7c0b4f89fc8252fd76410879307c52ed154ff44a)), [#8](https://github.com/themadorg/madmail/issues/8), [#9](https://github.com/themadorg/madmail/issues/9)
+* **www:** keep link contrast on hover ([468c2c7](https://github.com/themadorg/madmail/commit/468c2c72ae7e8eb700f7b323e13b1aaf6ceae33e))
+* **www:** let the mode control take the default focus ring ([f705edf](https://github.com/themadorg/madmail/commit/f705edff669cf2eceb037935bb74d2aa1b7c59c5))
+* **www:** limit the pill knobs to the chartreuse badges ([a5f5d3e](https://github.com/themadorg/madmail/commit/a5f5d3e96d32d22e4e731a553ac989d5dabc656d)), [#94](https://github.com/themadorg/madmail/issues/94)
+* **www:** make logo.svg well-formed so the favicon can render ([4fda88e](https://github.com/themadorg/madmail/commit/4fda88e5d240d09b4d0b3e85bce7f4a381e9d0a4))
+* **www:** point the legacy docs pages at the current palette variable ([b03bcdd](https://github.com/themadorg/madmail/commit/b03bcdd80d742ba919ff7e1bda7f5763b0c19560))
+* **www:** remove the white veil from status pills and code headers ([583ba3e](https://github.com/themadorg/madmail/commit/583ba3ee46a933b7f57346c7077ffafcba6b8c4e))
+* **www:** render the admin API table of contents as links ([af7fb95](https://github.com/themadorg/madmail/commit/af7fb95c8b174ca977d1c471e5065ba304df1e3d))
+* **www:** route the remaining hardcoded surfaces through hooks ([e5afdb3](https://github.com/themadorg/madmail/commit/e5afdb36c660333afbbdcd0e5dbc58ecd951e093))
+* **www:** stop chat bubbles drifting left of the right margin ([8880cd2](https://github.com/themadorg/madmail/commit/8880cd2e0ed2852c7780f24fd0826b998d186f59))
+* **www:** stop highlighting elements that are not interactive ([6bedac9](https://github.com/themadorg/madmail/commit/6bedac9311360706e40138206b312a5f9a95891d))
+* **www:** style PATCH badges in the admin API docs ([ffb6987](https://github.com/themadorg/madmail/commit/ffb6987d56bbf20b1759230b3858ad7440de24d8))
+
 # [2.44.3](https://github.com/themadorg/madmail/compare/v2.44.2-unstable...v2.44.3-unstable) (2026-11-26)
 
 ### Bug Fixes
