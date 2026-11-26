@@ -23,7 +23,7 @@ use tokio::fs;
 
 use crate::maildir::MailboxStore;
 
-/// Parsed maildir filename flags (`:2,XY` suffix).
+/// Parsed maildir filename flags (`:2,XY`, or `!2,XY` on Windows).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MaildirFlags {
     pub seen: bool,
@@ -74,7 +74,8 @@ pub struct StoredMessage {
 }
 
 pub fn split_maildir_filename(name: &str) -> (&str, MaildirFlags) {
-    if let Some(pos) = name.find(":2,") {
+    // Read both forms so a Windows mailbox can also be opened on Unix.
+    if let Some(pos) = name.find(":2,").or_else(|| name.find("!2,")) {
         let base = &name[..pos];
         let flags = MaildirFlags::from_maildir_suffix(&name[pos + 3..]);
         (base, flags)
@@ -88,7 +89,9 @@ pub fn maildir_filename(base_id: &str, flags: &MaildirFlags) -> String {
     if suffix.is_empty() {
         base_id.to_string()
     } else {
-        format!("{base_id}:2,{suffix}")
+        // ':' is reserved on Windows (including NTFS alternate data streams).
+        let marker = if cfg!(windows) { "!2," } else { ":2," };
+        format!("{base_id}{marker}{suffix}")
     }
 }
 
@@ -336,10 +339,178 @@ mod tests {
             deleted: true,
         };
         let name = maildir_filename("abc", &flags);
-        assert_eq!(name, "abc:2,ST");
+        if cfg!(windows) {
+            assert_eq!(name, "abc!2,ST");
+        } else {
+            assert_eq!(name, "abc:2,ST");
+        }
         let (base, parsed) = split_maildir_filename(&name);
         assert_eq!(base, "abc");
         assert_eq!(parsed, flags);
+    }
+
+    #[test]
+    fn reads_windows_and_unix_maildir_flags() {
+        for marker in [":2,", "!2,"] {
+            for (suffix, seen, deleted) in [
+                ("", false, false),
+                ("S", true, false),
+                ("T", false, true),
+                ("ST", true, true),
+            ] {
+                let name = format!("message-id{marker}{suffix}");
+                let (base, flags) = split_maildir_filename(&name);
+                assert_eq!(base, "message-id");
+                assert_eq!(flags, MaildirFlags { seen, deleted });
+            }
+        }
+        assert_eq!(
+            split_maildir_filename("message-id"),
+            ("message-id", MaildirFlags::default())
+        );
+    }
+
+    #[tokio::test]
+    async fn imported_flag_names_preserve_uid_and_body() {
+        for marker in ["!2,", ":2,"] {
+            if cfg!(windows) && marker == ":2," {
+                continue; // Windows cannot create a colon filename, even as a fixture.
+            }
+            let tmp = tempfile::tempdir().unwrap();
+            let store = MailboxStore::new(tmp.path());
+            let user = "u@test";
+            write_blob(&store, user, "imported", b"original body")
+                .await
+                .unwrap();
+            let before = list_mailbox_messages(&store, user, "INBOX").await.unwrap();
+            let paths = store.maildir_for_user(user);
+            fs::rename(
+                paths.new.join("imported"),
+                paths.cur.join(format!("imported{marker}S")),
+            )
+            .await
+            .unwrap();
+            drop(store);
+            let store = MailboxStore::new(tmp.path());
+            let after = list_mailbox_messages(&store, user, "INBOX").await.unwrap();
+            assert_eq!(after.messages.len(), 1);
+            assert_eq!(after.messages[0].base_id, "imported");
+            assert_eq!(after.messages[0].uid, before.messages[0].uid);
+            assert_eq!(after.uid_next, before.uid_next);
+            assert!(after.messages[0].flags.seen);
+            assert_eq!(
+                crate::read_blob(&store, user, "INBOX", "imported")
+                    .await
+                    .unwrap(),
+                b"original body"
+            );
+            crate::delete_blob(&store, user, "imported").await.unwrap();
+            assert!(list_mailbox_messages(&store, user, "INBOX")
+                .await
+                .unwrap()
+                .messages
+                .is_empty());
+            fs::write(
+                paths.cur.join(format!("deleted{marker}ST")),
+                b"deleted body",
+            )
+            .await
+            .unwrap();
+            assert_eq!(expunge_deleted(&store, user, "INBOX").await.unwrap(), 1);
+            assert_eq!(expunge_deleted(&store, user, "INBOX").await.unwrap(), 0);
+        }
+    }
+
+    // Exercise the real filesystem operations with Windows-safe names (#254).
+    #[tokio::test]
+    async fn seen_message_survives_restart_move_copy_and_delete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = "u@test";
+        let body = b"Subject: test\r\n\r\nmessage body";
+        let store = MailboxStore::new(tmp.path());
+        write_blob(&store, user, "message-id", body).await.unwrap();
+        let before = list_mailbox_messages(&store, user, "INBOX").await.unwrap();
+        let uid = before.messages[0].uid;
+        store_add_flags(&store, user, "INBOX", "message-id", true, false)
+            .await
+            .unwrap();
+        let seen = list_mailbox_messages(&store, user, "INBOX").await.unwrap();
+        assert_eq!(seen.messages.len(), 1);
+        assert_eq!(seen.messages[0].uid, uid);
+        assert!(seen.messages[0].flags.seen);
+        assert_eq!(seen.uid_next, before.uid_next);
+        if cfg!(windows) {
+            assert_eq!(seen.messages[0].filename, "message-id!2,S");
+        } else {
+            assert_eq!(seen.messages[0].filename, "message-id:2,S");
+        }
+        drop(store);
+
+        let store = MailboxStore::new(tmp.path());
+        let reopened = list_mailbox_messages(&store, user, "INBOX").await.unwrap();
+        assert_eq!(reopened.messages.len(), 1);
+        assert_eq!(reopened.messages[0].uid, uid);
+        assert_eq!(reopened.uid_next, before.uid_next);
+        assert!(reopened.messages[0].flags.seen);
+        assert_eq!(
+            crate::read_blob(&store, user, "INBOX", "message-id")
+                .await
+                .unwrap(),
+            body
+        );
+        assert_eq!(
+            crate::read_blob_known(&store, user, "INBOX", &reopened.messages[0].filename)
+                .await
+                .unwrap()
+                .unwrap(),
+            body
+        );
+        // Repeated STORE must still find the renamed message.
+        store_add_flags(&store, user, "INBOX", "message-id", true, false)
+            .await
+            .unwrap();
+        move_message(&store, user, "INBOX", "DeltaChat", "message-id")
+            .await
+            .unwrap();
+        assert!(list_mailbox_messages(&store, user, "INBOX")
+            .await
+            .unwrap()
+            .messages
+            .is_empty());
+        let moved = list_mailbox_messages(&store, user, "DeltaChat")
+            .await
+            .unwrap();
+        assert_eq!(moved.messages.len(), 1);
+        assert!(moved.messages[0].flags.seen);
+        assert_eq!(
+            crate::read_blob(&store, user, "DeltaChat", "message-id")
+                .await
+                .unwrap(),
+            body
+        );
+        let copied_id = copy_message(&store, user, "DeltaChat", "INBOX", "message-id")
+            .await
+            .unwrap();
+        assert_eq!(
+            crate::read_blob(&store, user, "INBOX", &copied_id)
+                .await
+                .unwrap(),
+            body
+        );
+        store_add_flags(&store, user, "DeltaChat", "message-id", false, true)
+            .await
+            .unwrap();
+        assert!(list_mailbox_messages(&store, user, "DeltaChat")
+            .await
+            .unwrap()
+            .messages
+            .is_empty());
+        crate::delete_blob(&store, user, &copied_id).await.unwrap();
+        assert!(list_mailbox_messages(&store, user, "INBOX")
+            .await
+            .unwrap()
+            .messages
+            .is_empty());
     }
 
     /// P11-UT14: list_mailbox_messages serves cached listing when mtimes unchanged.

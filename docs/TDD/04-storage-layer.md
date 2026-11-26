@@ -71,9 +71,31 @@ Parsed from `storage.imapsql` in `maddy.conf` (see [`13-configuration.md`](13-co
 
 Large APPEND bodies (≥ 64 KiB) stream socket → `tmp/` instead of buffering in RAM. PGP policy scans the first 64 KiB during streaming (`cas::HEADER_SCAN_PREFIX`).
 
+When committing a streamed file with CAS disabled, reopen it with write access
+for the durability flush, then close the handle before renaming it into `new/`.
+Windows `FlushFileBuffers` rejects read-only handles. Both `always` and
+`optimized` modes must preserve the full body through this path.
+
 ### Message metadata
 
 UID, flags, size, and internal date are cached in `chatmail-uidlist` on disk and in `MaildirListCache` in RAM. The SQL database holds only account/quota/policy rows — not per-message indexes (Madmail go-imap-sql `msgs` table is **not** replicated).
+
+### Maildir flag filenames on Windows (#254)
+
+Unix writes the standard `message-id:2,S` suffix for a seen message. Windows
+reserves `:` in filenames, so Windows writes `message-id!2,S` instead. Unflagged
+messages keep their original filename. Readers recognize both suffixes on every
+platform so a Windows Maildir remains readable after moving it to Unix. Before
+moving a Unix Maildir to Windows, flagged filenames must be converted to the
+Windows form while preserving the base ID and `chatmail-uidlist`; this change
+does not provide an import/conversion tool. See [Windows filename rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file).
+
+Both suffixes are storage metadata: the base ID alone identifies the message in
+the UID index. Renaming a message for `\Seen` must preserve its UID, UIDNEXT and
+body across a process restart. Listing, lookup, read, move, copy and deletion use
+the same filename codec. Unix continues to write standard Maildir names; it
+does not rewrite existing mailboxes on startup. Generated base IDs must not
+contain either flag delimiter.
 
 ### SQLite migration compatibility (#255)
 

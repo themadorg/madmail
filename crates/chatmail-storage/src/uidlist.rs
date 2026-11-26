@@ -25,8 +25,8 @@
 //! This module mirrors Dovecot's approach:
 //!
 //! * A text index file (`chatmail-uidlist`) at the maildir root maps each message's stable base id
-//!   (the maildir filename without its `:2,FLAGS` suffix) to a permanent UID plus cached `size` and
-//!   `internal_date`.
+//!   (without its `:2,FLAGS` / Windows `!2,FLAGS` suffix) to a permanent UID plus cached
+//!   `size` and `internal_date`.
 //! * UIDs are handed out from a monotonic `next_uid` counter and **never reused**, so deletions
 //!   leave gaps instead of renumbering survivors.
 //! * On sync we still `readdir` `new/` and `cur/` to discover the current file set, but we only
@@ -501,8 +501,15 @@ mod tests {
         let before = uidlist.sync("u@test", "INBOX", &paths).await.unwrap().0;
         let uid = before[0].uid;
 
-        // Mark \Seen: move new/msg1 -> cur/msg1:2,S (same base id).
-        fs::rename(paths.new.join("msg1"), paths.cur.join("msg1:2,S"))
+        // A flag rename changes the filename, but not its stable base id.
+        let name = crate::maildir_message::maildir_filename(
+            "msg1",
+            &MaildirFlags {
+                seen: true,
+                deleted: false,
+            },
+        );
+        fs::rename(paths.new.join("msg1"), paths.cur.join(name))
             .await
             .unwrap();
         let after = uidlist.sync("u@test", "INBOX", &paths).await.unwrap().0;

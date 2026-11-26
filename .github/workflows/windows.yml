@@ -16,6 +16,7 @@ on:
     paths:
       - "crates/chatmail/**"
       - "crates/chatmail-config/**"
+      - "crates/chatmail-storage/**"
       - "crates/chatmail-db/**"
       - ".gitattributes"
       - "crates/madmail-tray/**"
@@ -85,6 +86,9 @@ jobs:
           CARGO_PROFILE_RELEASE_DEBUG: "0"
           RUSTFLAGS: "-D warnings -C link-arg=/IGNORE:4099"
         run: cargo build -p chatmail -p madmail-tray --release
+
+      - name: Test Maildir storage on Windows
+        run: cargo test -p chatmail-storage
 
       - name: Test SQLite upgrade compatibility on Windows
         run: cargo test -p chatmail-db --lib migration_compat

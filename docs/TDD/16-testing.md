@@ -15,6 +15,16 @@ Chatmail's correctness is defined by **real Delta Chat client behavior**, not ju
    Unit     Integration
 ```
 
+## Windows Maildir regression tests
+
+Windows Maildir regression coverage (#254): `cargo test -p chatmail-storage`
+runs in the native Windows amd64 CI job as well as on Linux. Tests cover both
+flag suffix parsers, platform-specific filename generation, real `\Seen`
+renames, persistent UID/UIDNEXT and message content after reopening the store,
+move/copy/delete, and reading imported Windows filenames on Unix. Colon-bearing
+filesystem fixtures run only on platforms that permit them; both parsers are
+tested everywhere. A Linux pass alone does not validate NTFS filename behavior.
+
 ## SQLite migration regressions
 
 SQLite upgrade regressions (#255): `cargo test -p chatmail-db --lib migration_compat`
