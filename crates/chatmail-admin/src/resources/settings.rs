@@ -784,6 +784,16 @@ pub(crate) async fn generic_setting(
                         if chatmail_config::settings_policy::admin_paths_overlap(&value, &other) {
                             return Err((400, "admin API and web paths must not overlap".into()));
                         }
+                        if db_key == settings_keys::ADMIN_PATH
+                            && chatmail_config::settings_policy::admin_path_uses_existing_post_route(
+                                &value,
+                            )
+                        {
+                            return Err((
+                                400,
+                                "admin API path conflicts with an existing POST route".into(),
+                            ));
+                        }
                     }
                     let mut enable_web = false;
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
@@ -860,6 +870,16 @@ pub(crate) async fn generic_setting(
                             return Err((
                                 400,
                                 "reset would overlap the admin API and web paths".into(),
+                            ));
+                        }
+                        if db_key == settings_keys::ADMIN_PATH
+                            && chatmail_config::settings_policy::admin_path_uses_existing_post_route(
+                                &fallback,
+                            )
+                        {
+                            return Err((
+                                400,
+                                "admin API path conflicts with an existing POST route".into(),
                             ));
                         }
                     }

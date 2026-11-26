@@ -4,7 +4,7 @@ Configuration precedence is **environment → explicit file setting → database
 
 Parent: [`admin-api`](admin-api.md)
 
-Show, set, or reset the admin API path. Setting or resetting asks a running server to remount HTTP routes. The request is sent to the path that is mounted now, so the route can move.
+Show, set, or reset the admin API path. Setting or resetting asks a running server to remount HTTP routes. The request is sent to the path that is mounted now, so the route can move. A path that already accepts POST, such as `/new`, `/share`, or `/mxdeliv`, is rejected and is not saved.
 
 ## Synopsis
 

@@ -996,6 +996,43 @@ async fn p9_admin_web_path_set_enables_and_reloads() {
 }
 
 #[tokio::test]
+async fn admin_path_new_is_rejected_before_it_is_saved() {
+    let pool = init_memory_db().await.unwrap();
+    seed_install_defaults(&pool).await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let app = Arc::new(AppState::with_quota_and_message_limit(
+        dir.path(),
+        chatmail_config::DEFAULT_QUOTA_BYTES,
+        &AppConfig::default(),
+        pool.clone(),
+    ));
+    app.hydrate(&pool, &AppConfig::default()).await.unwrap();
+    let st = AdminState::new(
+        pool.clone(),
+        app,
+        AppConfig::default(),
+        dir.path().to_path_buf(),
+        "example.org".into(),
+        "secret-token-01234567890123456789012345678901".into(),
+        None,
+    );
+    let err = resources::dispatch(
+        &st,
+        "POST",
+        "/admin/settings/admin_path",
+        &json!({ "action": "set", "value": "/new" }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.0, 400);
+    assert!(err.1.contains("existing POST route"), "{}", err.1);
+    assert!(get_setting(&pool, settings_keys::ADMIN_PATH)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
 async fn admin_path_set_persists_and_asks_for_an_http_remount() {
     let pool = init_memory_db().await.unwrap();
     seed_install_defaults(&pool).await.unwrap();

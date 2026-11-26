@@ -322,6 +322,25 @@ pub fn admin_paths_overlap(api: &str, web: &str) -> bool {
     api == web || api.starts_with(&format!("{web}/")) || web.starts_with(&format!("{api}/"))
 }
 
+/// POST routes already owned by the public HTTP router.
+///
+/// The admin API is itself `POST /` nested at `admin_path`. Mounting it on one
+/// of these paths panics when the routers are merged.
+const EXISTING_POST_ROUTES: &[&str] = &[
+    "/new",
+    "/share",
+    "/mxdeliv",
+    "/webimap/send",
+    "/websmtp/send",
+    "/webimap/message/flags",
+];
+
+/// True when `path` is an existing public `POST` route.
+pub fn admin_path_uses_existing_post_route(path: &str) -> bool {
+    let path = format!("/{}", path.trim_matches('/'));
+    EXISTING_POST_ROUTES.contains(&path.as_str())
+}
+
 impl crate::AppConfig {
     pub fn apply_deployment_environment(&mut self) -> Result<()> {
         self.apply_deployment_environment_from(|key| std::env::var(key).ok())
@@ -578,6 +597,17 @@ chatmail tls://0.0.0.0:443 {
         let long = format!("/{}", "a".repeat(253));
         assert!(validate_admin_path_write("admin_web_path", &long).is_err());
         assert!(validate("admin_web_path", "/panel+1").is_ok());
+    }
+
+    #[test]
+    fn admin_api_path_rejects_an_existing_post_route() {
+        assert!(admin_path_uses_existing_post_route("/new"));
+        assert!(admin_path_uses_existing_post_route("new"));
+        assert!(admin_path_uses_existing_post_route("/new/"));
+        assert!(admin_path_uses_existing_post_route("/mxdeliv"));
+        assert!(admin_path_uses_existing_post_route("/webimap/send"));
+        assert!(!admin_path_uses_existing_post_route("/api/admin"));
+        assert!(!admin_path_uses_existing_post_route("/webimap"));
     }
 
     #[test]

@@ -109,6 +109,13 @@ pub(crate) async fn build_admin_router(
         .unwrap_or_else(|| "/api/admin".into());
     let path = chatmail_config::settings_policy::validate("admin_path", &path)?;
     let path = normalize_admin_path(&path);
+    if chatmail_config::settings_policy::admin_path_uses_existing_post_route(&path) {
+        tracing::error!(
+            %path,
+            "admin API path conflicts with an existing POST route; not mounting"
+        );
+        return Ok(None);
+    }
 
     let hostname = file_config
         .hostname
@@ -243,6 +250,46 @@ mod configuration_tests {
         .unwrap()
         .is_none());
         task.abort();
+    }
+
+    /// Nesting the admin API on `POST /new` overlaps account registration.
+    /// Axum panics while merging those routers, so a stored `/new` must not
+    /// be mounted.
+    #[tokio::test]
+    async fn merging_the_admin_api_onto_post_new_panics_and_is_not_mounted() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = chatmail_db::init_memory_db().await.unwrap();
+        let cfg = AppConfig::default();
+        let app = Arc::new(AppState::new(dir.path(), pool.clone()));
+        let token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let www = www_router(WwwState::new(
+            pool.clone(),
+            Arc::clone(&app),
+            cfg.clone(),
+            dir.path(),
+        ));
+        let state = AdminState::new(
+            pool.clone(),
+            Arc::clone(&app),
+            cfg.clone(),
+            dir.path().to_path_buf(),
+            "example.org".into(),
+            token.into(),
+            None,
+        );
+        let nested = Router::new().nest("/new", admin_router(state));
+        let merged = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            merge_http_routers(Some(nested), None, www)
+        }));
+        assert!(merged.is_err(), "POST /new is already account registration");
+
+        chatmail_db::set_setting(&pool, chatmail_db::settings_keys::ADMIN_PATH, "/new")
+            .await
+            .unwrap();
+        let mounted = build_admin_router(&cfg, dir.path(), token, pool, app, None)
+            .await
+            .unwrap();
+        assert!(mounted.is_none());
     }
 
     // This service swaps the router and then signals done. The production

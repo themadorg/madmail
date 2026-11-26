@@ -154,7 +154,11 @@ fn post_reload_blocking(
     insecure: bool,
     timeout: std::time::Duration,
 ) -> Result<SoftReloadOutcome> {
-    let mut builder = Client::builder().timeout(timeout);
+    // The admin token is inside the JSON body. A 307 or 308 would make the
+    // client resend that body to the Location origin, so redirects are not followed.
+    let mut builder = Client::builder()
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none());
     if insecure {
         builder = builder.danger_accept_invalid_certs(true);
     }
@@ -178,6 +182,11 @@ fn post_reload_blocking(
             )));
         }
     };
+    if resp.status().is_redirection() {
+        return Err(ChatmailError::config(format!(
+            "admin API redirect from {api_url} was not followed"
+        )));
+    }
     if !resp.status().is_success() {
         return Ok(SoftReloadOutcome::ServerNotRunning);
     }
@@ -301,4 +310,90 @@ pub(crate) fn build_http_client(insecure: bool) -> Result<Client> {
     builder
         .build()
         .map_err(|e| ChatmailError::config(format!("HTTP client: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration as StdDuration;
+
+    /// First candidate answers 307. The redirect target must receive nothing,
+    /// and the next candidate is still asked.
+    #[tokio::test]
+    async fn a_reload_redirect_is_not_followed_and_the_next_candidate_is_tried() {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let evil = TcpListener::bind("127.0.0.1:0").unwrap();
+        let evil_addr = evil.local_addr().unwrap();
+        evil.set_nonblocking(true).unwrap();
+        let evil_hits = Arc::clone(&hits);
+        let evil_thread = thread::spawn(move || {
+            let start = std::time::Instant::now();
+            while start.elapsed() < StdDuration::from_secs(3) {
+                if evil.accept().is_ok() {
+                    evil_hits.fetch_add(1, Ordering::Relaxed);
+                }
+                thread::sleep(StdDuration::from_millis(20));
+            }
+        });
+
+        let first = serve_once(307, &format!("http://{evil_addr}/steal"));
+        let second = serve_once(200, "");
+        let urls = vec![first.url.clone(), second.url.clone()];
+        let outcome = try_remount_candidates("token-value", &urls).await;
+        assert!(outcome.applied, "{outcome:?}");
+        assert_eq!(hits.load(Ordering::Relaxed), 0);
+        assert_eq!(first.hits(), 1);
+        assert_eq!(second.hits(), 1);
+        drop(evil_thread);
+    }
+
+    struct OnceServer {
+        url: String,
+        hits: Arc<AtomicUsize>,
+    }
+
+    impl OnceServer {
+        fn hits(&self) -> usize {
+            self.hits.load(Ordering::Relaxed)
+        }
+    }
+
+    fn serve_once(status: u16, location: &str) -> OnceServer {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let recorded = Arc::clone(&hits);
+        let location = location.to_string();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = stream.set_read_timeout(Some(StdDuration::from_secs(2)));
+            let mut buf = [0_u8; 4096];
+            let _ = stream.read(&mut buf);
+            recorded.fetch_add(1, Ordering::Relaxed);
+            let body = if status == 200 {
+                r#"{"status":200}"#
+            } else {
+                ""
+            };
+            let location_header = if location.is_empty() {
+                String::new()
+            } else {
+                format!("Location: {location}\r\n")
+            };
+            let response = format!(
+                "HTTP/1.1 {status} OK\r\n{location_header}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+        });
+        OnceServer {
+            url: format!("http://127.0.0.1:{port}/api/admin"),
+            hits,
+        }
+    }
 }

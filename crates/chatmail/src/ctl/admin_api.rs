@@ -91,6 +91,11 @@ async fn apply_path(
                 "reset would overlap the admin API and web paths",
             ));
         }
+        if chatmail_config::settings_policy::admin_path_uses_existing_post_route(&fallback) {
+            return Err(ChatmailError::config(
+                "admin API path conflicts with an existing POST route",
+            ));
+        }
         delete_setting(pool, ADMIN_PATH).await?;
         let effective = effective_path(ctx, pool).await?;
         let new_url = {
@@ -122,6 +127,11 @@ async fn apply_path(
     if chatmail_config::settings_policy::admin_paths_overlap(&normalized, &web) {
         return Err(ChatmailError::config(
             "admin API and web paths must not overlap",
+        ));
+    }
+    if chatmail_config::settings_policy::admin_path_uses_existing_post_route(&normalized) {
+        return Err(ChatmailError::config(
+            "admin API path conflicts with an existing POST route",
         ));
     }
     set_setting(pool, ADMIN_PATH, &normalized).await?;
@@ -256,6 +266,13 @@ mod tests {
         assert!(apply_path(&ctx, &pool, Some("/api/secret"), false)
             .await
             .is_err());
+        assert!(get_setting(&pool, ADMIN_PATH).await.unwrap().is_none());
+
+        let conflict = match apply_path(&ctx, &pool, Some("/new"), false).await {
+            Err(err) => err.to_string(),
+            Ok(_) => panic!("/new must be rejected before it is saved"),
+        };
+        assert!(conflict.contains("existing POST route"), "{conflict}");
         assert!(get_setting(&pool, ADMIN_PATH).await.unwrap().is_none());
     }
 }
