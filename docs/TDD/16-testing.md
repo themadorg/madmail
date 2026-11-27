@@ -15,6 +15,25 @@ Chatmail's correctness is defined by **real Delta Chat client behavior**, not ju
    Unit     Integration
 ```
 
+## Windows Maildir regression tests
+
+Windows Maildir regression coverage (#254): `cargo test -p chatmail-storage`
+runs in the native Windows amd64 CI job as well as on Linux. Tests cover both
+flag suffix parsers, platform-specific filename generation, real `\Seen`
+renames, persistent UID/UIDNEXT and message content after reopening the store,
+move/copy/delete, and reading imported Windows filenames on Unix. Colon-bearing
+filesystem fixtures run only on platforms that permit them; both parsers are
+tested everywhere. A Linux pass alone does not validate NTFS filename behavior.
+
+## SQLite migration regressions
+
+SQLite upgrade regressions (#255): `cargo test -p chatmail-db --lib migration_compat`
+runs on Linux and native Windows. Tests cover LF, CRLF and mixed histories,
+unchanged migration records and application data across repeated startup,
+partial upgrades with pending LF migrations, fresh LF history, changed source,
+and rejection of unknown checksums/versions and failed migrations. The checksum
+error must give production-safe recovery guidance.
+
 ## Docker tests
 
 `make test-postgres-restart-docker` builds Madmail's Docker image and starts a disposable PostgreSQL 18 container. It verifies empty cold start, populated restart, forward migration from the original INT4 federation statistics schema, and the legacy ensure path with Go HTTPS column names. Every counter is checked for preservation and values above the INT4 limit. A PostgreSQL-backed Rust test also exercises runtime tracker updates, flushing, reconnecting, and hydration. Containers and database volumes are removed; logs remain under `target/postgres-restart-tests/`. Requirements: Docker, Cargo, OpenSSL, and curl. To test an existing image, set `MADMAIL_POSTGRES_TEST_IMAGE` and `MADMAIL_POSTGRES_TEST_SKIP_BUILD=1`; `MADMAIL_POSTGRES_TEST_DB_IMAGE` overrides the PostgreSQL image.
@@ -623,3 +642,43 @@ and the mobile screenshot gallery. Gallery checks include mouse dragging versus
 clicking, native touch swiping, keyboard navigation, focus and scroll restoration,
 and reduced-motion behavior. PostgreSQL method/OS choices must show only the
 matching installation and connection commands while keeping shared migration steps.
+
+## Public website theming and colour mode
+
+This is the site embedded in `chatmail-www`, not the marketing site above.
+
+Three tests in `crates/chatmail-www/src/tests.rs` walk the embedded tree. Every
+`.html` page except `app.html` must declare a favicon and carry the colour-mode
+control, so a page added later without either fails immediately. Every page
+carrying the copied icon artwork must also carry the Lucide and Feather notices,
+keyed on the artwork rather than on a list of pages, so adding the control
+somewhere new without its notice fails rather than shipping. `logo.svg` must
+begin with its XML declaration: anything before it, a licence header included,
+makes the file malformed, and browsers decline it silently while still serving
+with the correct MIME type, so nothing else would notice.
+
+`scripts/test_theme_switch.py` drives `themes/switch` against a temporary tree:
+the palette listing, install and verification, `--default-mode` landing directly
+under `:root`, reinstalling without the flag clearing it, a palette difference
+reported distinguishably from a mode difference, the palette refusal guards, a
+destination that is a directory, a symlink, a dangling symlink or any other
+non-regular file, a palette name that is not a single path segment, and that a
+refused install leaves neither a temporary file nor an altered record. CI runs it
+through `python3 -m unittest discover -s scripts -p 'test_*.py'`.
+
+Two tests pin the bootstrap's shape: that `main.js` and the four inline copies
+carry an identical block, and that it applies `.light` alongside `.dark`.
+`scripts/colour_mode_test.mjs` then executes it. The test slices the block out of
+`main.js` and runs it under `node:vm` against stub globals, so the shipped source
+is what gets exercised rather than a copy of it, covering mode resolution and its
+precedence order, the legacy-key migration including the values that must fall
+through, cycling, persistence, and a preference change while the page is open. It
+uses only Node built-ins and runs with
+`node --test scripts/colour_mode_test.mjs`. It is not wired into CI, which
+would need a setup-node step.
+
+Stubs are not a browser, so paint timing and a real `matchMedia` stay out of
+scope, and the four inline copies are covered by identity with the executed
+original rather than being run themselves.
+
+Design: [27-website-theming.md](27-website-theming.md).

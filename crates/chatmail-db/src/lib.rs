@@ -24,6 +24,7 @@ pub mod mail_ports;
 pub mod maintenance;
 pub mod message_retention;
 pub mod message_stats;
+mod migration_compat;
 pub mod models;
 pub mod modseq;
 pub mod passwords;

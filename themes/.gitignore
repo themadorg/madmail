@@ -1,0 +1,5 @@
+# Local artefacts, not part of the theme set:
+#   .installed  the switcher's record of what it last installed
+#   .active     the same, from older versions of the switcher
+.active
+.installed

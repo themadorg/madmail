@@ -20,7 +20,7 @@
 /* ── Color System ── */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #0a0a0a;
   --card: #ffffff;
@@ -38,8 +38,12 @@
   --overlay: rgba(0, 0, 0, 0.5);
 }
 
+/* Dark mode applies when the browser prefers it, unless a theme or the visitor
+   has chosen otherwise. The class set by the inline head script always wins; the
+   media query keeps dark mode working with JavaScript disabled. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light):not(.dark) {
+    color-scheme: dark;
     --background: #09090b;
     --foreground: #fafafa;
     --card: #09090b;
@@ -56,6 +60,25 @@
     --ring: #3b82f6;
     --overlay: rgba(0, 0, 0, 0.7);
   }
+}
+
+:root.dark {
+  color-scheme: dark;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #09090b;
+  --card-border: #27272a;
+  --muted: #a1a1aa;
+  --primary: #fafafa;
+  --primary-foreground: #171717;
+  --secondary-border: #27272a;
+  --link: #3b82f6;
+  --code-bg: #18181b;
+  --destructive: #dc2626;
+  --warning: #d97706;
+  --success: #16a34a;
+  --ring: #3b82f6;
+  --overlay: rgba(0, 0, 0, 0.7);
 }
 
 /* ── Reset & Base ── */
@@ -101,11 +124,11 @@ h3 {
 a {
   text-decoration: none;
   color: var(--link);
-  transition: opacity 0.2s;
 }
 
 a:hover {
-  opacity: 0.85;
+  /* Underline only. The 0.85 wash blended --link toward the backdrop and
+     took contrast from 5.17:1 to 3.98:1 light, 5.41:1 to 4.17:1 dark. */
   text-decoration: underline;
 }
 
@@ -417,22 +440,22 @@ input:focus {
 .is-ltr .alert { text-align: left; }
 
 .alert--info {
-  background: color-mix(in srgb, var(--link) 6%, transparent);
+  background: color-mix(in srgb, var(--link) var(--alert-fill, 6%), transparent);
   border-inline-start: 2px solid var(--link);
 }
 
 .alert--danger {
-  background: color-mix(in srgb, var(--destructive) 6%, transparent);
+  background: color-mix(in srgb, var(--destructive) var(--alert-fill, 6%), transparent);
   border-inline-start: 2px solid var(--destructive);
 }
 
 .alert--warning {
-  background: color-mix(in srgb, var(--warning) 6%, transparent);
+  background: color-mix(in srgb, var(--warning) var(--alert-fill, 6%), transparent);
   border-inline-start: 2px solid var(--warning);
 }
 
 .alert--success {
-  background: color-mix(in srgb, var(--success) 6%, transparent);
+  background: color-mix(in srgb, var(--success) var(--alert-fill, 6%), transparent);
   border-inline-start: 2px solid var(--success);
 }
 
@@ -613,4 +636,51 @@ input:focus {
   .card {
     padding: 16px;
   }
+}
+
+/* ── Colour mode control ──
+   Cycles automatic, dark, light. The icon shows the current state rather than
+   the next one: in automatic neither mode is pinned, so it draws both. Styled
+   from existing variables so it renders against any palette. */
+
+.mode-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.mode-button:hover {
+  background: var(--mode-hover-bg, transparent);
+  border-color: var(--btn-secondary-border-hover, var(--primary));
+  color: var(--foreground);
+}
+
+.mode-button svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.mode-button .mi-dark,
+.mode-button .mi-light { display: none; }
+:root[data-mode="dark"] .mode-button .mi-auto { display: none; }
+:root[data-mode="dark"] .mode-button .mi-dark { display: block; }
+:root[data-mode="light"] .mode-button .mi-auto { display: none; }
+:root[data-mode="light"] .mode-button .mi-light { display: block; }
+
+/* The control sits where a link's text would, not where its box does. The
+   links carry horizontal padding, and the button's border makes its edge read
+   harder than the old pill's rounded end, so this is tuned by eye rather than
+   set to the list's own gap. */
+.navbar__menu li:has(.mode-button),
+#menu li:has(.mode-button) {
+  margin-inline-start: 12px;
 }
