@@ -784,6 +784,16 @@ pub(crate) async fn generic_setting(
                         if chatmail_config::settings_policy::admin_paths_overlap(&value, &other) {
                             return Err((400, "admin API and web paths must not overlap".into()));
                         }
+                        if db_key == settings_keys::ADMIN_PATH
+                            && chatmail_config::settings_policy::admin_path_uses_existing_post_route(
+                                &value,
+                            )
+                        {
+                            return Err((
+                                400,
+                                "admin API path conflicts with an existing POST route".into(),
+                            ));
+                        }
                     }
                     let mut enable_web = false;
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
@@ -817,6 +827,22 @@ pub(crate) async fn generic_setting(
                     }
                     super::message_size::refresh_message_size_after_setting(st, db_key).await;
                     super::federation_size::refresh_federation_size_after_setting(st, db_key).await;
+                    if db_key == chatmail_db::settings_keys::ADMIN_PATH {
+                        let (applied, apply_error) =
+                            match super::toggles::trigger_http_routes_reload(st).await {
+                                Ok(()) => (true, None),
+                                Err((_, msg)) => (false, Some(msg)),
+                            };
+                        return Ok((
+                            200,
+                            Some(admin_path_result(
+                                &value,
+                                true,
+                                applied,
+                                apply_error.as_deref(),
+                            )),
+                        ));
+                    }
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
                         super::toggles::trigger_http_routes_reload(st).await?;
                     }
@@ -846,10 +872,44 @@ pub(crate) async fn generic_setting(
                                 "reset would overlap the admin API and web paths".into(),
                             ));
                         }
+                        if db_key == settings_keys::ADMIN_PATH
+                            && chatmail_config::settings_policy::admin_path_uses_existing_post_route(
+                                &fallback,
+                            )
+                        {
+                            return Err((
+                                400,
+                                "admin API path conflicts with an existing POST route".into(),
+                            ));
+                        }
                     }
                     delete_setting(&st.pool, db_key).await.map_err(db_err)?;
                     super::message_size::refresh_message_size_after_setting(st, db_key).await;
                     super::federation_size::refresh_federation_size_after_setting(st, db_key).await;
+                    if db_key == chatmail_db::settings_keys::ADMIN_PATH {
+                        let effective = st
+                            .file_config
+                            .admin_path
+                            .clone()
+                            .unwrap_or_else(|| "/api/admin".into());
+                        let effective =
+                            chatmail_config::settings_policy::validate("admin_path", &effective)
+                                .unwrap_or_else(|_| "/api/admin".into());
+                        let (applied, apply_error) =
+                            match super::toggles::trigger_http_routes_reload(st).await {
+                                Ok(()) => (true, None),
+                                Err((_, msg)) => (false, Some(msg)),
+                            };
+                        return Ok((
+                            200,
+                            Some(admin_path_result(
+                                &effective,
+                                false,
+                                applied,
+                                apply_error.as_deref(),
+                            )),
+                        ));
+                    }
                     if db_key == chatmail_db::settings_keys::ADMIN_WEB_PATH {
                         super::toggles::trigger_http_routes_reload(st).await?;
                     }
@@ -918,6 +978,17 @@ fn setting_response(key: &str, value: &str, is_set: bool, restart_required: bool
         "value": value,
         "is_set": is_set,
         "restart_required": restart_required
+    })
+}
+
+fn admin_path_result(value: &str, is_set: bool, applied: bool, apply_error: Option<&str>) -> Value {
+    json!({
+        "key": settings_keys::ADMIN_PATH,
+        "value": value,
+        "is_set": is_set,
+        "applied": applied,
+        "restart_required": !applied,
+        "apply_error": apply_error,
     })
 }
 

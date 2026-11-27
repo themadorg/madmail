@@ -62,6 +62,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `monitor` | [monitor.md](../guide/cli/monitor.md) | `monitor.rs` | **done** |
 | `completion` | [completion.md](../guide/cli/completion.md) | `docs.rs` | **done** |
 | `admin-token` | [admin-token.md](../guide/cli/admin-token.md) | `admin_token.rs` | **done** |
+| `admin-api` | [admin-api.md](../guide/cli/admin-api.md) | `admin_api.rs` | **done** |
 | `admin-web` | [admin-web.md](../guide/cli/admin-web.md) | `admin_web.rs` | **done** |
 | `certificate` | [certificate.md](../guide/cli/certificate.md) | `certificate.rs` | **done** (`get`, `regenerate`, `status`, `autocert`) |
 | `accounts` | [accounts.md](../guide/cli/accounts.md) | `accounts.rs` | **done** |
@@ -158,6 +159,7 @@ Status: **done** · **planned** (parsed, `not_implemented`) · **defer**
 | `iroh` | [iroh.md](../guide/cli/iroh.md) | `__IROH_ENABLED__` (+ config `iroh_relay_url`; port via `port iroh` / `__IROH_PORT__`) | **done** — [11-proxy-services.md](11-proxy-services.md) |
 | `webimap` | [webimap.md](../guide/cli/webimap.md) | `__WEBIMAP_ENABLED__` | **done** |
 | `websmtp` | [websmtp.md](../guide/cli/websmtp.md) | `__WEBSMTP_ENABLED__` | **done** |
+| `admin-api` | [admin-api.md](../guide/cli/admin-api.md) | `__ADMIN_PATH__` | **done** |
 | `admin-web` | [admin-web.md](../guide/cli/admin-web.md) | `__ADMIN_WEB_*__` | **done** |
 
 ### Web / HTML

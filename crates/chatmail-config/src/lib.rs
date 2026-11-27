@@ -44,7 +44,7 @@ use std::path::PathBuf;
 pub use autoconfig::{build_autoconfig_xml, AutoconfigParams};
 pub use bool_str::{is_falsy, is_truthy, parse_bool_str, parse_bool_str_opt};
 pub use cli::{
-    AdminWebCommand, Args, Cli, Command, CompletionShell, DbCommand, DkimCommand,
+    AdminApiCommand, AdminWebCommand, Args, Cli, Command, CompletionShell, DbCommand, DkimCommand,
     EndpointCacheCommand, FederationCommand, FederationTransportCommand, FirewallCommand,
     IrohCommand, LanguageCommand, OpenrelayCommand, PortCommand, PortServiceCommand, ProxyCommand,
     ProxySettingCommand, PushCommand, QueueCommand, RegistrationCommand, RegistrationTokensCommand,

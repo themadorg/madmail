@@ -102,7 +102,11 @@ async fn set_flag(args: &Args, ctx: &CtlContext, on: bool) -> Result<()> {
     let path = resolve_admin_web_path(&ctx.config, &pool)
         .await
         .unwrap_or_else(|| DEFAULT_ADMIN_WEB_PATH.into());
-    notify_http_routes_changed(ctx, &path).await?;
+    if on {
+        notify_http_routes_changed(ctx, &path).await?;
+    } else {
+        super::request_reload::notify_http_routes_reloaded(ctx).await?;
+    }
     out.done_msg(
         if on {
             format!("✅ Admin web dashboard enabled at {path}")
