@@ -201,6 +201,44 @@ One envelope per sample (newline-delimited when `--count` is not 1):
 }
 ```
 
+`upgrade` and `update` keep this envelope. Legacy path changes are reported on stderr. `--json` switches a leftover `maddy` service without asking. The question is only shown on a terminal.
+
+### `legacy-migrate`
+
+```json
+{
+  "ok": true,
+  "command": "legacy-migrate",
+  "message": "Legacy maddy service now runs the active madmail binary",
+  "data": {
+    "changed": true,
+    "already_canonical": false,
+    "stable": "/usr/local/bin/madmail",
+    "services": ["maddy.service"],
+    "retargeted": ["/usr/local/bin/maddy"],
+    "running": [
+      {
+        "service": "maddy.service",
+        "exe": "/opt/madmail/versions/2.44.1/madmail"
+      }
+    ],
+    "backups": ["/usr/local/bin/maddy.pre-migrate"]
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `changed` | A unit or command path was rewritten |
+| `already_canonical` | The unit and `maddy` command already used `stable` |
+| `stable` | Active `madmail` path |
+| `services` | Madmail units considered |
+| `retargeted` | Command paths pointed at `stable` |
+| `running` | `service` and the resolved `/proc/<pid>/exe` after restart |
+| `backups` | Regular files saved next to a replaced `maddy` command (`*.pre-migrate`) |
+
+When the layout was already canonical, `changed` is `false`, `already_canonical` is `true`, and `message` is `Legacy maddy layout already uses the active madmail binary`.
+
 ### `install`
 
 Use `madmail --json install ...` with a valid install or repair invocation.

@@ -280,6 +280,15 @@ mod tests {
     }
 
     #[test]
+    fn bash_completion_includes_legacy_migrate() {
+        let script = bash_completion("madmail").unwrap();
+        assert!(
+            script.contains("legacy-migrate"),
+            "bash completion should include top-level legacy-migrate"
+        );
+    }
+
+    #[test]
     fn bash_completion_includes_openrelay_subcommand() {
         let script = bash_completion("madmail").unwrap();
         assert!(

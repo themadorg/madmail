@@ -72,6 +72,20 @@ madmail upgrade https://github.com/themadorg/madmail/releases/latest/download/ma
 madmail upgrade --accept-unsafe-https https://self-signed.example/madmail
 ```
 
+## Legacy maddy command and service
+
+A versioned upgrade activates `/usr/local/bin/madmail`. When `maddy.service` or `/usr/local/bin/maddy` still runs an older Madmail build, `upgrade` and `update` ask before rewriting that program path to the stable entry. The question is `[y/N]`. Answering no leaves the old command and service in place and warns that they can conflict with the new binary. The new release is still installed. `madmail legacy-migrate` switches the service later. `--json`, or a session with no terminal, switches the leftover service without asking. `--config`, the state directory, accounts, and the rest of `ExecStart` stay as they are.
+
+The layout is inspected before services stop. Two Madmail installs with different config or state, or an `ExecStart` that is not a single command, abort the upgrade with the current service still running. After restart, the service main process has to be the new binary. A process that is still the old file restores the unit, the `maddy` command, and the previous version pointer.
+
+A host that already ran an older `maddy upgrade` (the new file is at `/usr/local/bin/madmail`, and `maddy.service` still executes the previous file) uses the one-time command instead. The old updater cannot learn this step.
+
+```bash
+sudo /usr/local/bin/madmail legacy-migrate
+```
+
+Details: [legacy-migrate.md](legacy-migrate.md).
+
 ## Notes
 
 - Only binaries signed with the official release key are accepted. There is **no** flag to install an unsigned or bad-signed binary — verification always runs and aborts on failure.

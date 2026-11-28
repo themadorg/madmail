@@ -77,6 +77,11 @@ Full CLI reference for new setup and existing-installation repair:
 ### [`update`](update.md)
 
 
+### [`legacy-migrate`](legacy-migrate.md)
+
+Point a legacy `maddy` command and systemd unit at the active `madmail` binary. `upgrade` and `update` ask before doing this on a terminal. Use the command once when an older updater left the service on the previous executable, or when that question was skipped.
+
+
 ### [`reload`](reload.md)
 
 
