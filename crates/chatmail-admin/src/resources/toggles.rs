@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 use tokio::sync::oneshot;
 use tokio::time::{timeout, Duration};
 
-use chatmail_db::{get_bool_setting, set_setting, settings_keys, DbPool};
+use chatmail_db::{get_bool_setting, get_setting, set_setting, settings_keys, DbPool};
 use chatmail_state::{ReloadRequest, ReloadScope};
 
 use super::{status_storage::db_err, AdminResult};
@@ -45,6 +45,57 @@ pub async fn jit(st: &AdminState, method: &str, body: &Value) -> AdminResult {
         "disabled",
     )
     .await
+}
+
+pub async fn contact_sharing(st: &AdminState, method: &str, body: &Value) -> AdminResult {
+    match method {
+        "GET" => Ok((200, Some(contact_sharing_body(st).await?))),
+        "POST" => {
+            let req: ActionBody = serde_json::from_value(body.clone())
+                .map_err(|e| (400, format!("invalid body: {e}")))?;
+            let on = match req.action.to_ascii_lowercase().as_str() {
+                "enable" => true,
+                "disable" => false,
+                _ => return Err((400, "action must be enable or disable".into())),
+            };
+            set_setting(
+                &st.pool,
+                settings_keys::CONTACT_SHARING_ENABLED,
+                if on { "true" } else { "false" },
+            )
+            .await
+            .map_err(db_err)?;
+            Ok((200, Some(contact_sharing_body(st).await?)))
+        }
+        _ => Err((405, format!("method {method} not allowed"))),
+    }
+}
+
+async fn contact_sharing_body(st: &AdminState) -> Result<Value, (u16, String)> {
+    let stored = get_setting(&st.pool, settings_keys::CONTACT_SHARING_ENABLED)
+        .await
+        .map_err(db_err)?;
+    let config_enabled = st.file_config.enable_contact_sharing;
+    let enabled = get_bool_setting(
+        &st.pool,
+        settings_keys::CONTACT_SHARING_ENABLED,
+        config_enabled,
+    )
+    .await
+    .map_err(db_err)?;
+    let source = if stored.is_some() {
+        "database"
+    } else {
+        "config"
+    };
+    Ok(json!({
+        "status": if enabled { "enabled" } else { "disabled" },
+        "enabled": enabled,
+        "source": source,
+        "config_enabled": config_enabled,
+        "reload_required": false,
+        "file_change_requires_restart": source == "config",
+    }))
 }
 
 pub async fn websocket_bridge(st: &AdminState, method: &str, body: &Value) -> AdminResult {

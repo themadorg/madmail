@@ -1099,6 +1099,32 @@ madmail-v2 writes `quotas`.
 }
 ```
 
+### `sharing status`
+
+`source` is `config` when no override is saved, and `database` after `enable` or `disable`. `config_enabled` is the file fallback. `reload_required` is `false` in both cases: `madmail reload` is not how this setting is applied. `file_change_requires_restart` is true when `source` is `config`. A saved row applies on the next HTTP request. A file-only value is the one captured at process start.
+
+```json
+{
+  "ok": true,
+  "command": "sharing status",
+  "data": {
+    "enabled": false,
+    "source": "config",
+    "config_enabled": false,
+    "reload_required": false,
+    "file_change_requires_restart": true
+  }
+}
+```
+
+### `sharing enable`
+
+Same `data` fields as `sharing status`, with `enabled` true and `source` set to `database`. `message` is `Contact sharing enabled`.
+
+### `sharing disable`
+
+Same `data` fields as `sharing status`, with `enabled` false and `source` set to `database`. `message` is `Contact sharing disabled`. Saved links are not deleted.
+
 ### `sharing create` / `edit` / `reserve` / `remove`
 
 ```json

@@ -333,6 +333,20 @@ mod tests {
     }
 
     #[test]
+    fn bash_completion_includes_sharing_toggle() {
+        let script = bash_completion("madmail").unwrap();
+        let marker = script
+            .find("__sharing)")
+            .or_else(|| script.find("sharing)"))
+            .expect("bash completion should list sharing");
+        let arm = script[marker..].split(";;").next().unwrap_or("");
+        assert!(
+            arm.contains("status") && arm.contains("enable") && arm.contains("disable"),
+            "bash completion should offer sharing status, enable, and disable: {arm}"
+        );
+    }
+
+    #[test]
     fn bash_completion_includes_dkim_subcommand() {
         let script = bash_completion("madmail").unwrap();
         assert!(

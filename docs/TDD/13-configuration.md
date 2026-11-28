@@ -119,6 +119,7 @@ Boot prefers `CHATMAIL_*_ADDR` env vars, then config listen addresses, then dev 
 | `admin_token` | Literal bearer token or `disabled` | — |
 | `language` | Default www UI language (`en`, `fa`, `ru`, `es`) | — |
 | `www_dir` | External www root (`html-serve` override) | embedded assets |
+| `enable_contact_sharing` | Public `/share` and contact slug pages when `__CONTACT_SHARING_ENABLED__` is unset. The process keeps this value from startup. Changing the file needs a restart. `madmail reload` does not reread it | `false` |
 | `ss_addr` / `ss_password` / `ss_cipher` / `ss_cert` / `ss_key` / `ss_allowed_ports` | Shadowsocks proxy (see [`11-proxy-services.md`](11-proxy-services.md)) | — |
 
 Runtime SS config resolves protected (environment / `settings { }`) values, then database values (`__SS_ENABLED__`, `__SS_PORT__`, …), then these file directives via `chatmail-shadowsocks::resolve_runtime`. Admin toggle `/admin/services/shadowsocks` requires `ss_addr` + `ss_password` in config.
@@ -191,6 +192,7 @@ Admin: `GET /admin/settings` (bulk) or `GET|POST /admin/settings/{name}` (`set` 
 | `__ADMIN_WEB_ENABLED__` | `false` | `/admin/services/admin_web` | Embedded admin SPA |
 | `__WEBIMAP_ENABLED__` | `false` | `/admin/services/webimap` | WebIMAP REST + WS |
 | `__WEBSMTP_ENABLED__` | `false` | `/admin/services/websmtp` | WebSMTP submit API |
+| `__CONTACT_SHARING_ENABLED__` | file `enable_contact_sharing` (`false`) | `/admin/services/contact_sharing` | Public `/share` and slug pages. CLI `madmail sharing status`. A saved row applies on the next HTTP request and does not need `madmail reload`. Does not delete `sharing.db` |
 | `__PUSH_ENABLED__` | `false` | settings bundle `push_enabled` | Legacy mirror of push on/off |
 | `__FEDERATION_ENABLED__` | `false` | `/admin/settings/federation` | Outbound federation master toggle |
 

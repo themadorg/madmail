@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use chatmail_config::{parse_maddy_config, AppConfig, RuntimeListeners};
-use chatmail_db::{init_memory_db, set_setting, settings_keys};
+use chatmail_db::{delete_setting, init_memory_db, set_setting, settings_keys};
 use chatmail_state::AppState;
 
 use crate::context_cache::WwwContextCache;
@@ -1015,6 +1015,137 @@ async fn contact_sharing_rejects_multipart_form() {
         text.contains("application/x-www-form-urlencoded"),
         "unexpected rejection body: {text}"
     );
+}
+
+/// A database override gates public pages immediately and leaves sharing.db in place.
+#[tokio::test]
+async fn contact_sharing_override_hides_pages_without_deleting_links() {
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    use chatmail_db::{get_sharing_contact, init_sharing_db};
+
+    let pool = init_memory_db().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = AppConfig::default();
+    cfg.enable_contact_sharing = false;
+    cfg.mail_domain = Some("share.test".into());
+    let sharing_db = dir.path().join("sharing.db");
+
+    let app = crate::www_router(crate::WwwState::new(
+        pool.clone(),
+        Arc::new(AppState::new(dir.path(), pool.clone())),
+        cfg.clone(),
+        dir.path(),
+    ));
+
+    let hidden = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/share")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+    assert!(
+        !sharing_db.exists(),
+        "a disabled GET must not create sharing.db"
+    );
+
+    set_setting(&pool, settings_keys::CONTACT_SHARING_ENABLED, "true")
+        .await
+        .unwrap();
+    let form = "url=https%3A%2F%2Fi.delta.chat%2F%23ABCDEF0123456789%26name%3DTest&name=Alice&slug=alicepage";
+    let created = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/share")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(axum::body::Body::from(form))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::OK);
+
+    set_setting(&pool, settings_keys::CONTACT_SHARING_ENABLED, "false")
+        .await
+        .unwrap();
+    for uri in ["/share", "/alicepage"] {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{uri}");
+    }
+    let rejected = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/share")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(axum::body::Body::from(form))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(rejected.status(), StatusCode::NOT_FOUND);
+
+    let sharing_pool = init_sharing_db(&sharing_db).await.unwrap();
+    let row = get_sharing_contact(&sharing_pool, "alicepage")
+        .await
+        .unwrap()
+        .expect("saved link");
+    assert_eq!(row.name, "Alice");
+
+    // Same files and pool, new process state: the saved disable still wins over config.
+    cfg.enable_contact_sharing = true;
+    let restarted = crate::www_router(crate::WwwState::new(
+        pool.clone(),
+        Arc::new(AppState::new(dir.path(), pool.clone())),
+        cfg.clone(),
+        dir.path(),
+    ));
+    let still_hidden = restarted
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/alicepage")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(still_hidden.status(), StatusCode::NOT_FOUND);
+
+    delete_setting(&pool, settings_keys::CONTACT_SHARING_ENABLED)
+        .await
+        .unwrap();
+    let restored = restarted
+        .oneshot(
+            Request::builder()
+                .uri("/alicepage")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(restored.status(), StatusCode::OK);
+    let page = to_bytes(restored.into_body(), usize::MAX).await.unwrap();
+    assert!(String::from_utf8_lossy(&page).contains("Alice"));
 }
 
 /// Dev browser access (WebIMAP + WebSMTP) also applies CORS to `POST /new` / OPTIONS.
